@@ -232,7 +232,7 @@ async def _fetch_rich_optimized(netid, password):
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            headless=False,
+            headless=True,
             executable_path="/usr/bin/chromium",
             args=["--disable-blink-features=AutomationControlled",
                   "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
