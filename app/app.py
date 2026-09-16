@@ -608,9 +608,9 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   {% endif %}
 
   <div class="tab-bar">
-    <button class="active" onclick="switchTab('attendance',this)">Attendance</button>
-    <button onclick="switchTab('timetable',this)">Timetable</button>
-    <button onclick="switchTab('personal',this)">Personal Details</button>
+    <button class="active" data-tab="attendance">Attendance</button>
+    <button data-tab="timetable">Timetable</button>
+    <button data-tab="personal">Personal Details</button>
   </div>
 
   <div id="tab-attendance" class="tab-panel active">
