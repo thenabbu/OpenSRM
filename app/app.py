@@ -12,8 +12,10 @@ Audit fixes (Sep 16 2026):
   - Expired session tokens pruned on login
 
 Kept from prior work:
-  - _fetch_rich_optimized: domcontentloaded, wait_for_url/selector, 35ms, Promise.all
-  - _scrape_sem: one Playwright at a time (xvfb display can't be shared)
+# Xvfb removed Sep 2026: headless=True proven safe (anti-bot bypass via
+# webdriver strip + --disable-blink-features). See skill: srm-portal-attendance
+# Xvfb removed Sep 2026: headless=True proven safe (anti-bot bypass via
+# webdriver strip + --disable-blink-features). See skill: srm-portal-attendance
   - Speed ~9s end-to-end
 """
 import os, json, base64, time, asyncio, sqlite3, secrets, math, re, threading
