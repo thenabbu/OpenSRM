@@ -78,6 +78,11 @@ def init_db():
         netid TEXT NOT NULL,
         created INTEGER NOT NULL
     )""")
+    # v2: personal details column (idempotent migration)
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN personal_details_json TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     c.commit(); c.close()
 
 _solver = None
@@ -208,6 +213,20 @@ def parse_attendance(html):
                 })
     return out
 
+
+# ── Personal details (formId 17) ───────────────────────────────
+def parse_personal_details(html):
+    """Extract key-value pairs from the personal details page (formId 17).
+    The portal renders label/value table rows inside #divMainDetails."""
+    out = {}
+    for m in re.finditer(
+            r'<td[^>]*>\s*([^<]+?)\s*</td>\s*<td[^>]*>\s*(.*?)\s*</td>', html, re.S):
+        key = re.sub(r'<[^>]+>', '', m.group(1)).strip().rstrip(':').strip()
+        val = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+        if key and val and key.lower() not in ('', 's.no', 's. no'):
+            out[key] = val
+    return out
+
 # ── Speed-optimized scraper ────────────────────────────────────────
 async def _fetch_rich_optimized(netid, password):
     from playwright.async_api import async_playwright
@@ -311,8 +330,20 @@ async def _fetch_rich_optimized(netid, password):
                 daily[t["mstr"]] = rows
         data["daily_absent"] = daily
 
+        # v2: personal details (formId 17) — non-critical, never fail the scrape
+        personal = {}
+        try:
+            await page.evaluate("funSetFormId(17)")
+            await page.wait_for_timeout(2500)
+            personal_html = await page.evaluate(
+                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            if personal_html:
+                personal = parse_personal_details(personal_html)
+        except Exception:
+            pass
+
         await browser.close()
-        return {"ok": True, "data": data, "fetched": int(time.time())}
+        return {"ok": True, "data": data, "personal": personal, "fetched": int(time.time())}
 
 def fetch_attendance(netid, password):
     if not _check_rate(netid):
@@ -393,7 +424,7 @@ def set_security_headers(resp):
 
 LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRM Attendance</title>
+<title>OpenSRM</title>
 <link rel="stylesheet" href="/static/login.css"></head><body>
 <div class="box">
   <div class="brand">
@@ -416,7 +447,7 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 
 DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SRM Attendance \u2014 {{ netid }}</title>
+<title>OpenSRM \u2014 {{ netid }}</title>
 <style>
 :root{--bg:#161616;--panel:#262626;--panel-2:#333333;--border:#393939;
   --text:#f4f4f4;--muted:#c6c6c6;--dim:#8d8d8d;
@@ -533,6 +564,20 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
   .hero-card{flex-direction:column;align-items:flex-start;text-align:left}
   .course-grid{grid-template-columns:1fr}}
+
+/* -- Tabs -- */
+.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px}
+.tab-bar button{flex:1;padding:10px 0;background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;margin-bottom:-2px}
+.tab-bar button:hover{color:var(--text)}
+.tab-bar button.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.personal-grid{display:grid;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.personal-row{display:flex;border-bottom:1px solid var(--border);font-size:13px}
+.personal-row:last-child{border-bottom:none}
+.personal-key{flex:0 0 180px;padding:10px 14px;color:var(--dim);font-weight:500;background:var(--panel)}
+.personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace}
 </style></head><body>
 
 <div class="topbar">
@@ -556,88 +601,113 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 </div>
 
 <main class="wrap">
-  {% if period %}<div class="period-chip">{{ period.from }} \u2192 {{ period.to }}</div>{% endif %}
+  {% if period %}<div class="period-chip">{{ period.from }} → {{ period.to }}</div>{% endif %}
 
   {% if hours_old and hours_old > 24 %}
-  <div class="period-chip warn">\u26a0 Data is {{ hours_old }} hours old \u2014 click Refresh</div>
+  <div class="period-chip warn">⚠ Data is {{ hours_old }} hours old — click Refresh</div>
   {% endif %}
 
-  <section class="hero-card hero-card--{{ overall.status }}">
-    <div class="hero-ring" style="--pct: {{ overall.pct }}">
-      <span class="hero-pct">{{ overall.pct }}%</span>
-    </div>
-    <div class="hero-detail">
-      <h2>Overall attendance</h2>
-      <p class="hero-sub">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
-      {% if overall.bunk_line %}<p class="hero-bunk">{{ overall.bunk_line }}</p>{% endif %}
-    </div>
-  </section>
+  <div class="tab-bar">
+    <button class="active" onclick="switchTab('attendance',this)">Attendance</button>
+    <button onclick="switchTab('timetable',this)">Timetable</button>
+    <button onclick="switchTab('personal',this)">Personal Details</button>
+  </div>
 
-  {% if not has_data %}
-  <div class="empty">No attendance data yet. Hit refresh once a sync has completed.</div>
-  {% endif %}
+  <div id="tab-attendance" class="tab-panel active">
+    <section class="hero-card hero-card--{{ overall.status }}">
+      <div class="hero-ring" style="--pct: {{ overall.pct }}">
+        <span class="hero-pct">{{ overall.pct }}%</span>
+      </div>
+      <div class="hero-detail">
+        <h2>Overall attendance</h2>
+        <p class="hero-sub">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
+        {% if overall.bunk_line %}<p class="hero-bunk">{{ overall.bunk_line }}</p>{% endif %}
+      </div>
+    </section>
 
-  <section>
-    <h2>Courses</h2>
-    <div class="course-grid">
-      {% for c in courses %}
-      <div class="course-card course-card--{{ c.status }}">
-        <div class="course-top">
-          <span class="course-code">{{ c.code }}</span>
-          <span class="course-pct">{{ c.pct }}%</span>
+    {% if not has_data %}
+    <div class="empty">No attendance data yet. Hit refresh once a sync has completed.</div>
+    {% endif %}
+
+    <section>
+      <h2>Courses</h2>
+      <div class="course-grid">
+        {% for c in courses %}
+        <div class="course-card course-card--{{ c.status }}">
+          <div class="course-top">
+            <span class="course-code">{{ c.code }}</span>
+            <span class="course-pct">{{ c.pct }}%</span>
+          </div>
+          <div class="course-desc" title="{{ c.description }}">{{ c.description }}</div>
+          <div class="course-bar"><div class="course-bar-fill" style="width: {{ c.pct }}%"></div></div>
+          <div class="course-stats">
+            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
+          </div>
+          {% if c.bunk_line %}<div class="course-bunk">{{ c.bunk_line }}</div>{% endif %}
         </div>
-        <div class="course-desc" title="{{ c.description }}">{{ c.description }}</div>
-        <div class="course-bar"><div class="course-bar-fill" style="width: {{ c.pct }}%"></div></div>
-        <div class="course-stats">
-          <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
-        </div>
-        {% if c.bunk_line %}<div class="course-bunk">{{ c.bunk_line }}</div>{% endif %}
+        {% endfor %}
+      </div>
+    </section>
+
+    <section>
+      <h2>Monthly attendance</h2>
+      <div class="table-scroll">
+        <table class="month-table"><thead><tr>
+          <th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th>
+        </tr></thead><tbody>
+        {% for m in monthly %}
+        <tr>
+          <td>{{ m.month }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td>
+          <td>{{ m.od_present }}</td><td>{{ m.od_absent }}</td><td>{{ m.ml }}</td>
+          <td>{% if m.pct is not none %}
+            <div class="month-bar-cell">
+              <div class="month-bar"><div class="month-bar-fill" style="width: {{ m.pct }}%"></div></div>
+              <span class="month-bar-label">{{ m.pct }}%</span>
+            </div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody></table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Daily absences</h2>
+      {% if daily_absent %}
+        {% for month, days in daily_absent.items() %}
+        <details class="absent-month" {% if loop.first %}open{% endif %}>
+          <summary><span>{{ month }}</span>
+            <span class="absent-count">{{ days|length }} day{{ '' if days|length == 1 else 's' }}</span>
+          </summary>
+          <div class="absent-list">
+            {% for d in days %}<div class="absent-row"><span>{{ d.date }}</span><span>{{ d.hours }} hr</span></div>{% endfor %}
+          </div>
+        </details>
+        {% endfor %}
+      {% else %}
+        <p class="empty">No absences recorded — perfect attendance across all months.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div id="tab-timetable" class="tab-panel">
+    {{ timetable|safe }}
+  </div>
+
+  <div id="tab-personal" class="tab-panel">
+    {% if personal %}
+    <div class="personal-grid">
+      {% for key, value in personal.items() %}
+      <div class="personal-row">
+        <span class="personal-key">{{ key }}</span>
+        <span class="personal-val">{{ value }}</span>
       </div>
       {% endfor %}
     </div>
-  </section>
-
-  <section>
-    <h2>Monthly attendance</h2>
-    <div class="table-scroll">
-      <table class="month-table"><thead><tr>
-        <th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th>
-      </tr></thead><tbody>
-      {% for m in monthly %}
-      <tr>
-        <td>{{ m.month }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td>
-        <td>{{ m.od_present }}</td><td>{{ m.od_absent }}</td><td>{{ m.ml }}</td>
-        <td>{% if m.pct is not none %}
-          <div class="month-bar-cell">
-            <div class="month-bar"><div class="month-bar-fill" style="width: {{ m.pct }}%"></div></div>
-            <span class="month-bar-label">{{ m.pct }}%</span>
-          </div>{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-      </tbody></table>
-    </div>
-  </section>
-
-  <section>
-    <h2>Daily absences</h2>
-    {% if daily_absent %}
-      {% for month, days in daily_absent.items() %}
-      <details class="absent-month" {% if loop.first %}open{% endif %}>
-        <summary><span>{{ month }}</span>
-          <span class="absent-count">{{ days|length }} day{{ '' if days|length == 1 else 's' }}</span>
-        </summary>
-        <div class="absent-list">
-          {% for d in days %}<div class="absent-row"><span>{{ d.date }}</span><span>{{ d.hours }} hr</span></div>{% endfor %}
-        </div>
-      </details>
-      {% endfor %}
     {% else %}
-      <p class="empty">No absences recorded \u2014 perfect attendance across all months.</p>
+    <div class="empty">No personal details available yet. Click Refresh to fetch.</div>
     {% endif %}
-  </section>
-
-  <section>{{ timetable|safe }}</section>
+  </div>
 </main>
 
 <script src="/static/dash.js"></script></body></html>"""
@@ -648,7 +718,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 def index():
     netid = get_current_user()
     c = db()
-    row = c.execute("SELECT attendance_json, last_fetch FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     data = json.loads(row["attendance_json"]) if row and row["attendance_json"] else {"courses": [], "monthly": [], "period": None, "daily_absent": {}}
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
@@ -663,7 +733,8 @@ def index():
         DASH_HTML, netid=netid, courses=courses, monthly=monthly, overall=overall,
         period=data.get("period"), daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
-        timetable=timetable_html())
+        timetable=timetable_html(),
+        personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
 
 @app.route("/login")
 def login():
@@ -703,9 +774,11 @@ def api_login():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch) VALUES(?,?,?,?) "
-              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, last_fetch=excluded.last_fetch",
-              (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"]))
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json) VALUES(?,?,?,?,?) "
+              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, "
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json",
+              (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
+               json.dumps(res.get("personal", {}))))
     c.commit(); c.close()
     token = make_session_token(netid)
     resp = make_response({"ok": True})
@@ -730,7 +803,8 @@ def api_refresh():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=? WHERE netid=?", (json.dumps(res["data"]), res["fetched"], netid))
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=? WHERE netid=?",
+              (json.dumps(res["data"]), res["fetched"], json.dumps(res.get("personal", {})), netid))
     c.commit(); c.close()
     return {"ok": True}
 
