@@ -11,7 +11,7 @@ fernet.key
 *.db-shm
 
 # Docker data
-/data/
+/data/ # Docker volume (root-owned, not repo data)
 
 # Python
 __pycache__/
