@@ -1,0 +1,15 @@
+services:
+  srm-sp-auto:
+    build: .
+    image: srm-sp-auto
+    container_name: srm-sp-auto
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    volumes:
+      - srm-sp-auto-data:/app/data
+    environment:
+      - TZ=Asia/Kolkata
+
+volumes:
+  srm-sp-auto-data:
