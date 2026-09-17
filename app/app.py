@@ -303,6 +303,23 @@ async def _fetch_rich_optimized(netid, password):
             await ctx.close()
             return {"ok": False, "error": "login failed (wrong creds or captcha misread)"}
 
+        # Grab student photo — non-critical, fail silently
+        photo_b64 = ""
+        try:
+            photo_b64 = await page.evaluate("""
+                () => {
+                    const img = document.querySelector(
+                        'img.imgPhoto, img[alt*=Student], img[src*=sphotos]');
+                    if (!img || !img.naturalWidth) return "";
+                    const c = document.createElement("canvas");
+                    c.width = img.naturalWidth; c.height = img.naturalHeight;
+                    c.getContext("2d").drawImage(img, 0, 0);
+                    return c.toDataURL("image/jpeg", 0.85).split(",")[1] || "";
+                }
+            """)
+        except Exception:
+            pass
+
         await page.evaluate("funSetFormId(9)")
         try:
             await page.wait_for_selector("#divMainDetails table tbody tr", timeout=15000)
@@ -382,7 +399,7 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        return {"ok": True, "data": data, "personal": personal, "fetched": int(time.time())}
+        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "fetched": int(time.time())}
     finally:
         await ctx.close()
 
@@ -513,7 +530,7 @@ a{color:#a6c8ff}
 .topbar-id{display:flex;align-items:center;gap:10px;min-width:0}
 .topbar-avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;
-  font-family:'IBM Plex Mono',monospace}
+  font-family:'IBM Plex Mono',monospace;object-fit:cover}
 .topbar-id strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar-id span{display:block;font-size:11px;color:var(--dim)}
 .topbar-actions{display:flex;align-items:center;gap:14px}
@@ -547,6 +564,7 @@ section{margin-bottom:28px}
 .hero-detail h2{margin-bottom:3px}
 .hero-sub{margin:0 0 6px;color:var(--muted);font-size:13px}
 .hero-bunk{margin:0;font-size:13px;color:var(--ring);font-weight:500}
+.hero-period{margin:4px 0 0;font-size:11px;color:var(--dim);font-weight:400}
 .empty{color:var(--dim);font-size:13px;padding:16px;background:var(--panel);
   border:1px dashed var(--border);border-radius:var(--radius);text-align:center}
 .course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
@@ -644,7 +662,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 
 <div class="topbar">
   <div class="topbar-id">
-    <span class="topbar-avatar">{{ netid[:2]|upper }}</span>
+    {% if photo %}<img class="topbar-avatar" src="data:image/jpeg;base64,{{ photo }}" alt="{{ netid }}">{% else %}<span class="topbar-avatar">{{ netid[:2]|upper }}</span>{% endif %}
     <div><strong>{{ netid }}</strong>
       <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }} UTC">{{ last }} UTC</span>
     </div>
@@ -663,8 +681,6 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 </div>
 
 <main class="wrap">
-  {% if period %}<div class="period-chip">{{ period.from }} → {{ period.to }}</div>{% endif %}
-
   {% if hours_old and hours_old > 24 %}
   <div class="period-chip warn">⚠ Data is {{ hours_old }} hours old — click Refresh</div>
   {% endif %}
@@ -684,6 +700,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
         <h2>Overall attendance</h2>
         <p class="hero-sub">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
         {% if overall.bunk_line %}<p class="hero-bunk">{{ overall.bunk_line }}</p>{% endif %}
+        {% if period %}<p class="hero-period">{{ period.from }} → {{ period.to }}</p>{% endif %}
       </div>
     </section>
 
@@ -780,7 +797,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 def index():
     netid = get_current_user()
     c = db()
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, photo_b64 FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     data = json.loads(row["attendance_json"]) if row and row["attendance_json"] else {"courses": [], "monthly": [], "period": None, "daily_absent": {}}
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
@@ -793,7 +810,7 @@ def index():
 
     return render_template_string(
         DASH_HTML, netid=netid, courses=courses, monthly=monthly, overall=overall,
-        period=data.get("period"), daily_absent=data.get("daily_absent", {}),
+        period=data.get("period"), photo=row["photo_b64"] if row and "photo_b64" in row.keys() else "", daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         timetable=timetable_html(),
         personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
@@ -836,11 +853,11 @@ def api_login():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json) VALUES(?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64) VALUES(?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               json.dumps(res.get("personal", {}))))
+               json.dumps(res.get("personal", {})), res.get("photo", "")))
     c.commit(); c.close()
     token = make_session_token(netid)
     resp = make_response({"ok": True})
