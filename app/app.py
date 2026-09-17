@@ -477,7 +477,7 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <div class="box">
   <div class="brand">
     <div class="brand-mark">SP</div>
-    <div><h1>SRM Attendance</h1><p>Self-hosted portal sync</p></div>
+    <div><h1>OpenSRM</h1><p>Self-hosted portal sync</p></div>
   </div>
   <form id="f">
     <input type="text" id="netid" name="netid" placeholder="Net ID" required
