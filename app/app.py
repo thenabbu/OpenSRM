@@ -558,7 +558,7 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
-:root{--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
+:root{--bg:#111111;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
   --text:#ffffff;--muted:#a0a0a0;--dim:#666666;
   --accent:#ffffff;--accent-hover:#d0d0d0;
   --ok:#4ade80;--warn:#fbbf24;--danger:#f87171;--radius:8px}
@@ -585,7 +585,7 @@ a{color:var(--muted)}
 .btn-logout{color:var(--muted);text-decoration:none;font-size:13px}
 .btn-logout:hover{color:var(--text);text-decoration:underline}
 @keyframes spin{to{transform:rotate(360deg)}}
-.overlay{position:fixed;inset:0;background:rgba(10,10,10,.9);display:none;align-items:center;
+.overlay{position:fixed;inset:0;background:rgba(17,17,17,.92);display:none;align-items:center;
   justify-content:center;flex-direction:column;gap:14px;z-index:50;font-size:13.5px;color:var(--muted)}
 .overlay.show{display:flex}
 .overlay-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border);
@@ -660,14 +660,14 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;border:1px solid transparent}
 .tt-row:nth-child(odd){background:rgba(255,255,255,.02)}
 .tt-row--current{border-color:var(--ok);background:rgba(66,190,101,.08)}
-.tt-row--upcoming{border-color:var(--accent);background:rgba(15,98,254,.08)}
+.tt-row--upcoming{border-color:var(--accent);background:rgba(255,255,255,.08)}
 .tt-time{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim);flex:0 0 60px}
 .tt-time small{display:block;color:var(--dim)}
 .tt-info{flex:1;min-width:0;display:flex;flex-direction:column}
 .tt-info strong{font-size:13px;font-family:'IBM Plex Mono',monospace}
 .tt-name{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-loc{font-size:11px;color:var(--dim)}
-.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:#0a2e14;font-weight:600}
+.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:var(--ok);font-weight:600}
 .tt-badge--soon{background:var(--text);color:var(--bg)}
 .tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
