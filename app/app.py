@@ -307,14 +307,21 @@ async def _fetch_rich_optimized(netid, password):
             await ctx.close()
             return {"ok": False, "error": "login failed (wrong creds or captcha misread)"}
 
-        # Grab student photo — non-critical, fail silently
+        # Grab student photo — non-critical, fail silently.
+        # Wait briefly for the portal dashboard to render the photo (loaded via AJAX).
         photo_b64 = ""
         try:
+            await page.wait_for_timeout(1500)
             photo_b64 = await page.evaluate("""
                 () => {
                     const img = document.querySelector(
-                        'img.imgPhoto, img[alt*=Student], img[src*=sphotos]');
-                    if (!img || !img.naturalWidth) return "";
+                        'img.imgPhoto, img.img-account-profile, img[alt*=Student], img[src*=sphotos], img[src*=photo]');
+                    if (!img) return "NO_IMG_FOUND";
+                    if (!img.naturalWidth && !img.complete) {
+                        img.scrollIntoView();
+                        return "IMG_NOT_LOADED_YET";
+                    }
+                    if (!img.naturalWidth) return "IMG_NO_NATURAL_WIDTH";
                     const c = document.createElement("canvas");
                     c.width = img.naturalWidth; c.height = img.naturalHeight;
                     c.getContext("2d").drawImage(img, 0, 0);
