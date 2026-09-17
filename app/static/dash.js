@@ -40,3 +40,6 @@ function switchTab(name, btn) {
 document.querySelectorAll('.tab-bar button').forEach(function(b) {
   b.addEventListener('click', function() { switchTab(b.dataset.tab, b); });
 });
+
+// Refresh: CSP forbids inline onclick, so bind programmatically (same as tabs).
+document.getElementById('refreshBtn').addEventListener('click', ref);

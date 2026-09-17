@@ -636,7 +636,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
     </div>
   </div>
   <div class="topbar-actions">
-    <button class="btn-refresh" id="refreshBtn" onclick="ref()">
+    <button class="btn-refresh" id="refreshBtn">
       <span class="icon">\u27f3</span><span>Refresh</span>
     </button>
     <a class="btn-logout" href="/logout">Log out</a>
