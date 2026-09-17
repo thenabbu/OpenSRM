@@ -85,6 +85,10 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN personal_details_json TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN photo_b64 TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     c.commit(); c.close()
 
 _solver = None
