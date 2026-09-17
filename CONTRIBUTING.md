@@ -1,40 +1,39 @@
 # Contributing to OpenSRM
 
-Thanks for your interest in contributing!
-
-## Getting Started
-
-1. Fork the repository
-2. Clone your fork
-3. Create a feature branch (`git checkout -b feature/my-feature`)
-4. Make your changes
-5. Test locally: `docker compose up -d --build`
-6. Commit with a clear message
-7. Push to your fork and open a Pull Request
-
-## Development Setup
-
-```bash
-docker compose up -d --build
-```
-
-The app will be available at `http://localhost:8083`.
+Thanks for considering a contribution.
 
 ## Guidelines
 
-- Keep it simple — if stdlib does it, use stdlib
-- No unnecessary dependencies
-- Test your changes end-to-end before submitting
-- Use meaningful commit messages
+1. **Branch** — create a feature branch from `main` (`git checkout -b feature/your-thing`)
+2. **Test** — verify changes work against the live SRM portal (use `scripts/srm_attendance.py` for standalone testing)
+3. **Commit** — write clear, descriptive commit messages. One logical change per commit.
+4. **PR** — open a PR against `main` with a description of what changed and why.
 
-## Reporting Issues
+## Code Style
 
-Open an issue with:
-- What you expected
+- Python: PEP 8 where reasonable, no linter enforced
+- CSS: hand-written, IBM Carbon aesthetic, no preprocessor
+- No new dependencies unless strictly necessary (check the ladder in skill)
+
+## Architecture Constraints
+
+- **gunicorn: exactly 1 worker** — the persistent browser singleton and ddddocr pre-warm are process-local. More workers = more Chromium instances = OOM.
+- **No inline JS** — CSP blocks it (`script-src 'self'`). All event handlers go in `static/*.js` via `addEventListener`.
+- **No new frameworks** — the frontend is vanilla JS + CSS. No React, no build step.
+- **SQLite** — single-file database. No migrations framework; use idempotent `ALTER TABLE` with `try/except`.
+
+## Testing Against the Portal
+
+The app scrapes a live external portal. Rate limits apply:
+- Per-netid: 3 scrapes per 10 minutes
+- Per-IP: 10 login attempts per hour
+
+Don't hammer the portal during testing. Use `scripts/srm_attendance.py` for quick standalone checks.
+
+## Reporting Bugs
+
+Use the GitHub issue templates. Include:
+- What you expected to happen
 - What actually happened
+- Browser/device (if frontend issue)
 - Steps to reproduce
-- Your environment (OS, Docker version)
-
-## Security
-
-If you find a security vulnerability, please open a private issue or contact the maintainer directly. Do not open a public issue for security vulnerabilities.

@@ -1,35 +1,17 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting Vulnerabilities
 
-If you discover a security vulnerability, please report it responsibly:
+If you find a security issue, **do not open a public GitHub issue**. Instead, contact the maintainer directly via GitHub DM or email.
 
-1. **Do NOT open a public issue**
-2. Email the maintainer directly, or
-3. Open a private security advisory on GitHub
+## What We Protect
 
-## What to Include
-
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-## Response
-
-You can expect:
-- Acknowledgement within 48 hours
-- Assessment within 1 week
-- Fix or mitigation within 2 weeks (depending on severity)
+- **Passwords** — encrypted at rest using Fernet (AES-128-CBC). Key stored in `/app/data/fernet.key`.
+- **Sessions** — HTTP-only, Secure-flagged (when behind HTTPS), 30-day expiry.
+- **CSP** — `script-src 'self'`, no inline JS, no `unsafe-eval`.
+- **Rate limiting** — per-netid and per-IP to prevent abuse.
+- **Input validation** — Net ID validated via regex, max lengths enforced.
 
 ## Scope
 
-- This software scrapes the SRM student portal using Playwright
-- It stores credentials (Fernet-encrypted) in SQLite
-- It serves a web dashboard with session cookies
-
-## Out of Scope
-
-- Issues with the SRM student portal itself
-- Social engineering attacks
-- Physical attacks
+This is a student-built tool, not production infrastructure. Treat credentials stored here as you would any shared secret — don't reuse the same password for other services.
