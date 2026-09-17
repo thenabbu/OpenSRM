@@ -493,7 +493,7 @@ def set_security_headers(resp):
         "default-src 'self'; script-src 'self'; "  # F3: scripts externalized; style keeps unsafe-inline (Jinja-interpolated dash CSS)
         "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
-        "form-action 'self'")
+        "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     return resp
 
@@ -839,7 +839,13 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   </div>
 </main>
 
-<script src="/static/dash.js"></script></body></html>"""
+<script src="/static/dash.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js', {scope: '/'}).catch(function(){});
+}
+</script>
+</body></html>"""
 
 # ── Routes ─────────────────────────────────────────────────────────
 @app.route("/")
