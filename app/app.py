@@ -229,18 +229,56 @@ def parse_personal_details(html):
             out[key] = val
     return out
 
-# ── Speed-optimized scraper ────────────────────────────────────────
+
+# ── Persistent browser + event-loop singletons (speed warm-up, Sep 2026) ──
+# Launch Chromium ONCE and reuse it across requests via a dedicated worker
+# event loop. Each scrape gets a FRESH context (isolated cookies); we close
+# only the context, never the shared browser. This removes ~2.5-3s of
+# per-request browser launch and ~3s ddddocr cold start.
+# Requires gunicorn -w 1 (singletons are process-local). Thread-safe: all
+# browser access serializes through _scrape_lock in fetch_attendance.
+_pw = None
+_browser = None
+_loop = None
+_loop_thread = None
+
+def _ensure_loop():
+    """Return a long-lived asyncio loop running in a daemon thread."""
+    global _loop, _loop_thread
+    if _loop is None or _loop.is_closed():
+        _loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(target=_loop.run_forever, daemon=True,
+                                        name="srm-async-loop")
+        _loop_thread.start()
+    return _loop
+
+async def _get_browser():
+    """Lazily start ONE shared Chromium. Callers must NOT close it."""
+    global _pw, _browser
+    if _browser is not None:
+        try:
+            if _browser.is_connected():
+                return _browser
+        except Exception:
+            _browser = None
+    if _pw is None:
+        from playwright.async_api import async_playwright
+        _pw = await async_playwright().start()
+    _browser = await _pw.chromium.launch(
+        headless=True,
+        executable_path="/usr/bin/chromium",
+        args=["--disable-blink-features=AutomationControlled",
+              "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
+    return _browser
+
+# ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
 async def _fetch_rich_optimized(netid, password):
-    from playwright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            executable_path="/usr/bin/chromium",
-            args=["--disable-blink-features=AutomationControlled",
-                  "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
-        ctx = await browser.new_context()
-        await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-        page = await ctx.new_page()
+    # Shared browser; per-scrape isolated context (fresh cookies per login).
+    browser = await _get_browser()
+    ctx = await browser.new_context()
+    await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+    page = await ctx.new_page()
+    try:
 
         await page.goto(LOGIN_URL, wait_until="domcontentloaded")
         await page.wait_for_selector('input[name="username"]', state="visible")
@@ -250,7 +288,7 @@ async def _fetch_rich_optimized(netid, password):
 
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
-            await browser.close()
+            await ctx.close()
             return {"ok": False, "error": "captcha image not found"}
         captcha = solve_captcha_b64(b64)
 
@@ -262,7 +300,7 @@ async def _fetch_rich_optimized(netid, password):
         try:
             await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
         except Exception:
-            await browser.close()
+            await ctx.close()
             return {"ok": False, "error": "login failed (wrong creds or captcha misread)"}
 
         await page.evaluate("funSetFormId(9)")
@@ -284,11 +322,11 @@ async def _fetch_rich_optimized(netid, password):
             raw = await page.evaluate(
                 '() => (document.getElementById("divMainDetails")||document.body).innerText || ""')
             if "ABC ID" in raw or "Aadhaar" in raw:
-                await browser.close()
+                await ctx.close()
                 return {"ok": False, "error": "Portal requires ABC ID Generation first — "
                                               "log in at sp.srmist.edu.in and complete the "
                                               "Aadhaar/ABC ID form, then try again."}
-            await browser.close()
+            await ctx.close()
             return {"ok": False, "error": "Attendance page did not load (portal returned no "
                                           "course table). The portal may be slow or your "
                                           "account may be restricted."}
@@ -344,8 +382,9 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        await browser.close()
         return {"ok": True, "data": data, "personal": personal, "fetched": int(time.time())}
+    finally:
+        await ctx.close()
 
 def fetch_attendance(netid, password):
     if not _check_rate(netid):
@@ -354,7 +393,14 @@ def fetch_attendance(netid, password):
     if not _scrape_lock.acquire(blocking=False):
         return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
     try:
-        return asyncio.run(_fetch_rich_optimized(netid, password))
+        loop = _ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password), loop)
+        return future.result(timeout=60)  # browser lives on the worker loop, survives across calls
+    except Exception as e:
+        # Loop/browser may have died — force a fresh launch next time.
+        global _browser, _loop_thread
+        _browser = None
+        return {"ok": False, "error": "scrape worker died: %s" % e}
     finally:
         _scrape_lock.release()
 
@@ -820,6 +866,10 @@ def logout():
     # 'Secure; Path=/' Set-Cookie here because delete_cookie didn't inherit them
     resp.delete_cookie("srm_session", secure=_cookie_secure(), httponly=True, samesite="Lax")
     return resp
+
+# Pre-warm ddddocr on import so the first real scrape isn't +3s cold.
+import threading as _tw
+_tw.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
 
 init_db()
 if __name__ == "__main__":
