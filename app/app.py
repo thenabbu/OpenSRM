@@ -610,8 +610,18 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-badge--soon{background:var(--accent);color:#fff}
 .tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
-  .hero-card{flex-direction:column;align-items:flex-start;text-align:left}
-  .course-grid{grid-template-columns:1fr}}
+  .hero-card{flex-direction:column;align-items:flex-start;text-align:left;padding:16px}
+  .hero-ring{--size:84px}
+  .course-grid{grid-template-columns:1fr}
+  .topbar-actions{gap:10px}
+  /* Personal Details: stack key above value on narrow screens so the
+     value column never gets squeezed to ~120px on a 360px phone. */
+  .personal-row{flex-direction:column}
+  .personal-key{flex:0 0 auto;width:100%;padding:8px 14px 2px;background:transparent}
+  .personal-val{flex:1;width:100%;padding:2px 14px 10px}
+  /* Timetable: give the class name room on narrow screens. */
+  .tt-time{flex:0 0 48px;font-size:11px}
+  .tt-badge{white-space:nowrap}}
 
 /* -- Tabs -- */
 .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px}
