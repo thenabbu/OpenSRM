@@ -43,3 +43,15 @@ document.querySelectorAll('.tab-bar button').forEach(function(b) {
 
 // Refresh: CSP forbids inline onclick, so bind programmatically (same as tabs).
 document.getElementById('refreshBtn').addEventListener('click', ref);
+
+// PWA offline indicator
+window.addEventListener('offline', function() {
+  var el = document.getElementById('offline-banner') || document.createElement('div');
+  el.id = 'offline-banner';
+  el.textContent = 'You are offline \u2014 showing cached data';
+  document.body.appendChild(el);
+});
+window.addEventListener('online', function() {
+  var el = document.getElementById('offline-banner');
+  if (el) el.remove();
+});

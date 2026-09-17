@@ -615,6 +615,7 @@ section{margin-bottom:28px}
 .hero-sub{margin:0 0 6px;color:var(--muted);font-size:13px}
 .hero-bunk{margin:0;font-size:13px;color:var(--ring);font-weight:500}
 .hero-period{margin:4px 0 0;font-size:11px;color:var(--dim);font-weight:400}
+#offline-banner{position:fixed;bottom:0;left:0;right:0;background:var(--warn);color:var(--bg);text-align:center;padding:8px;font-size:13px;z-index:100;font-weight:500}
 .empty{color:var(--dim);font-size:13px;padding:16px;background:var(--panel);
   border:1px dashed var(--border);border-radius:var(--radius);text-align:center}
 .course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
