@@ -6,8 +6,7 @@ body{font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-s
   min-height:100vh;margin:0;padding:20px}
 .box{background:var(--panel);padding:28px;border-radius:8px;width:340px;max-width:100%;border:1px solid var(--border)}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
-.brand-mark{width:36px;height:36px;border-radius:8px;background:var(--accent);display:flex;
-  align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
+  .brand-mark{width:36px;height:36px;border-radius:8px;object-fit:cover;display:block
 .brand h1{font-size:17px;margin:0;font-weight:600}
 .brand p{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
 input{width:100%;padding:10px 12px;margin-bottom:12px;border:1px solid var(--border);

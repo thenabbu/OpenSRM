@@ -501,11 +501,14 @@ def set_security_headers(resp):
 
 LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>OpenSRM</title>
 <link rel="stylesheet" href="/static/login.css"></head><body>
 <div class="box">
   <div class="brand">
-    <div class="brand-mark">SP</div>
+    <img class="brand-mark" src="/static/icon-192.png" alt="OpenSRM" width="36" height="36">
     <div><h1>OpenSRM</h1><p>Self-hosted portal sync</p></div>
   </div>
   <form id="f">
@@ -524,6 +527,9 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 
 DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
 :root{--bg:#161616;--panel:#262626;--panel-2:#333333;--border:#393939;
