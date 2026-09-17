@@ -532,39 +532,38 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
-:root{--bg:#161616;--panel:#262626;--panel-2:#333333;--border:#393939;
-  --text:#f4f4f4;--muted:#c6c6c6;--dim:#8d8d8d;
-  --accent:#0f62fe;--accent-hover:#4589ff;
-  --ok:#42be65;--warn:#f1c21b;--danger:#fa4d56;--radius:8px}
+:root{--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
+  --text:#ffffff;--muted:#a0a0a0;--dim:#666666;
+  --accent:#ffffff;--accent-hover:#d0d0d0;
+  --ok:#4ade80;--warn:#fbbf24;--danger:#f87171;--radius:8px}
 *{box-sizing:border-box}
 body{font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
   font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);margin:0;padding-bottom:60px}
 h2{font-size:16px;font-weight:600;margin:0 0 10px}
-a{color:#a6c8ff}
+a{color:var(--muted)}
 .topbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;
   align-items:center;padding:12px 20px;background:rgba(38,38,38,.94);backdrop-filter:blur(6px);
   border-bottom:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .topbar-id{display:flex;align-items:center;gap:10px;min-width:0}
-.topbar-avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
-  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;
-  font-family:'IBM Plex Mono',monospace;object-fit:cover}
+.topbar-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
+.topbar-avatar-fallback{width:32px;height:32px;border-radius:50%;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;font-family:'IBM Plex Mono',monospace;border:1px solid var(--border)}
 .topbar-id strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar-id span{display:block;font-size:11px;color:var(--dim)}
 .topbar-actions{display:flex;align-items:center;gap:14px}
-.btn-refresh{display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border:none;
+.btn-refresh{display:flex;align-items:center;gap:6px;background:var(--text);color:var(--bg);border:none;
   padding:8px 14px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500}
-.btn-refresh:hover{background:var(--accent-hover)}
-.btn-refresh:disabled{background:#525252;cursor:wait}
+.btn-refresh:hover{opacity:.85}
+.btn-refresh:disabled{background:var(--border);color:var(--dim);cursor:wait}
 .btn-refresh .icon{display:inline-block}
 .btn-refresh.spinning .icon{animation:spin 1s linear infinite}
 .btn-logout{color:var(--muted);text-decoration:none;font-size:13px}
 .btn-logout:hover{color:var(--text);text-decoration:underline}
 @keyframes spin{to{transform:rotate(360deg)}}
-.overlay{position:fixed;inset:0;background:rgba(22,22,22,.85);display:none;align-items:center;
+.overlay{position:fixed;inset:0;background:rgba(10,10,10,.9);display:none;align-items:center;
   justify-content:center;flex-direction:column;gap:14px;z-index:50;font-size:13.5px;color:var(--muted)}
 .overlay.show{display:flex}
 .overlay-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border);
-  border-top-color:var(--accent);animation:spin .8s linear infinite}
+  border-top-color:var(--text);animation:spin .8s linear infinite}
 main.wrap{max-width:960px;margin:0 auto;padding:20px}
 section{margin-bottom:28px}
 .period-chip{display:inline-block;background:var(--panel);border:1px solid var(--border);
@@ -642,8 +641,8 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-info strong{font-size:13px;font-family:'IBM Plex Mono',monospace}
 .tt-name{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-loc{font-size:11px;color:var(--dim)}
-.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:#053b17;font-weight:600}
-.tt-badge--soon{background:var(--accent);color:#fff}
+.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:#0a2e14;font-weight:600}
+.tt-badge--soon{background:var(--text);color:var(--bg)}
 .tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
   .hero-card{flex-direction:column;align-items:flex-start;text-align:left;padding:16px}
@@ -679,7 +678,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 
 <div class="topbar">
   <div class="topbar-id">
-    {% if photo %}<img class="topbar-avatar" src="data:image/jpeg;base64,{{ photo }}" alt="{{ netid }}">{% else %}<span class="topbar-avatar">{{ netid[:2]|upper }}</span>{% endif %}
+    {% if photo %}<img class="topbar-avatar" src="data:image/jpeg;base64,{{ photo }}" alt="{{ netid }}">{% else %}<span class="topbar-avatar-fallback">{{ netid[:2]|upper }}</span>{% endif %}
     <div><strong>{{ netid }}</strong>
       <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }} UTC">{{ last }} UTC</span>
     </div>
