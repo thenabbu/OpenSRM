@@ -504,6 +504,14 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpenSRM">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpenSRM">
 <meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal. Fast, clean, multi-user.">
 <meta name="theme-color" content="#0a0a0a">
 <meta name="robots" content="noindex, nofollow">
@@ -861,7 +869,11 @@ def index():
 def static_no_cache(filename):
     from flask import send_from_directory
     resp = send_from_directory("/app/app/static", filename)
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    # Service worker and manifest need cacheable responses; CSS stays no-store
+    if filename.endswith(('.js', '.json')):
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    else:
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
 
 @app.route("/login")
