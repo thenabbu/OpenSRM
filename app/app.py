@@ -857,6 +857,13 @@ def index():
         timetable=timetable_html(),
         personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
 
+@app.route("/static/<path:filename>")
+def static_no_cache(filename):
+    from flask import send_from_directory
+    resp = send_from_directory("/app/app/static", filename)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
 @app.route("/login")
 def login():
     if get_current_user(): return redirect("/")
