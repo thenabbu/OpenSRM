@@ -614,11 +614,12 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   .hero-ring{--size:84px}
   .course-grid{grid-template-columns:1fr}
   .topbar-actions{gap:10px}
-  /* Personal Details: stack key above value on narrow screens so the
-     value column never gets squeezed to ~120px on a 360px phone. */
-  .personal-row{flex-direction:column}
-  .personal-key{flex:0 0 auto;width:100%;padding:8px 14px 2px;background:transparent}
-  .personal-val{flex:1;width:100%;padding:2px 14px 10px}
+  /* Personal Details: stack key above value on narrow screens. Key
+     becomes a subtle label above its value, grouped in a mini-card. */
+  .personal-grid{gap:0}
+  .personal-row{flex-direction:column;padding:0;border:0;border-bottom:1px solid var(--border);border-radius:0}
+  .personal-key{flex:none;width:100%;padding:8px 14px 2px;font-size:11px;color:var(--dim);font-weight:400;background:var(--panel)}
+  .personal-val{flex:1;width:100%;padding:4px 14px 12px;font-size:13px;word-break:break-word}
   /* Timetable: give the class name room on narrow screens. */
   .tt-time{flex:0 0 48px;font-size:11px}
   .tt-badge{white-space:nowrap}}
