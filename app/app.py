@@ -504,6 +504,19 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal. Fast, clean, multi-user.">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="OpenSRM — Student Attendance Dashboard">
+<meta property="og:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
+<meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
+<meta property="og:url" content="https://srm.200871.xyz">
+<meta property="og:site_name" content="OpenSRM">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="OpenSRM — Student Attendance Dashboard">
+<meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
+<meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
 <link rel="stylesheet" href="/static/login.css"></head><body>
 <div class="box">
@@ -530,6 +543,19 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="description" content="OpenSRM attendance dashboard for {{ netid }}.">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="OpenSRM — {{ netid }}">
+<meta property="og:description" content="Student attendance dashboard for the SRM Student Portal.">
+<meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
+<meta property="og:url" content="https://srm.200871.xyz">
+<meta property="og:site_name" content="OpenSRM">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="OpenSRM — {{ netid }}">
+<meta name="twitter:description" content="Student attendance dashboard for the SRM Student Portal.">
+<meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
 :root{--bg:#0a0a0a;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
