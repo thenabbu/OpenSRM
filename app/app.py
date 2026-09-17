@@ -466,6 +466,7 @@ def set_security_headers(resp):
         "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'")
+    resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
     return resp
 
 # ── HTML Templates ─────────────────────────────────────────────────
