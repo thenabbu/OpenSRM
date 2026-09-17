@@ -559,7 +559,7 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
 :root{--bg:#111111;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
-  --text:#ffffff;--muted:#a0a0a0;--dim:#666666;
+  --text:#ffffff;--muted:#b0b0b0;--dim:#888888;
   --accent:#ffffff;--accent-hover:#d0d0d0;
   --ok:#4ade80;--warn:#fbbf24;--danger:#f87171;--radius:8px}
 *{box-sizing:border-box}
@@ -576,9 +576,9 @@ a{color:var(--muted)}
 .topbar-id strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar-id span{display:block;font-size:11px;color:var(--dim)}
 .topbar-actions{display:flex;align-items:center;gap:14px}
-.btn-refresh{display:flex;align-items:center;gap:6px;background:var(--text);color:var(--bg);border:none;
+.btn-refresh{display:flex;align-items:center;gap:6px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);
   padding:8px 14px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500}
-.btn-refresh:hover{opacity:.85}
+.btn-refresh:hover{background:var(--border)}
 .btn-refresh:disabled{background:var(--border);color:var(--dim);cursor:wait}
 .btn-refresh .icon{display:inline-block}
 .btn-refresh.spinning .icon{animation:spin 1s linear infinite}
