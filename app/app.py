@@ -796,7 +796,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   .course-grid{grid-template-columns:1fr}
   .course-desc{text-transform:none;white-space:normal}
   .topbar-actions{gap:8px}
-  .tab-bar button{padding:12px 0;font-size:12px}
+  .tab-bar button{padding:16px 0;font-size:12px;min-height:44px}
   .personal-grid{background:var(--panel);border:0;border-radius:var(--radius);overflow:hidden}
   .personal-row{flex-direction:column;padding:10px 14px;border:0;border-bottom:1px solid var(--border)}
   .personal-row:last-child{border-bottom:none}
