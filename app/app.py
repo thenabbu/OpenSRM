@@ -739,7 +739,7 @@ section{margin-bottom:28px}
 .course-desc{font-size:13px;color:var(--muted);text-transform:capitalize;white-space:normal;line-height:1.3}
 .course-bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden}
 .course-bar-fill{height:100%;background:var(--status);border-radius:3px;transition:width .3s}
-.course-stats{display:flex;gap:10px;font-size:11px;color:var(--dim);font-family:'IBM Plex Mono',monospace;flex-wrap:wrap}
+.course-stats{display:flex;gap:6px 12px;font-size:11px;color:var(--dim);font-family:'IBM Plex Mono',monospace;flex-wrap:wrap}
 .course-bunk{font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px}
 .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:var(--radius)}
 table.month-table{border-collapse:collapse;width:100%;min-width:540px}
@@ -791,21 +791,24 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-badge--soon{background:var(--text);color:var(--bg)}
 .tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
-  .hero-card{flex-direction:column;align-items:flex-start;text-align:left;padding:16px}
+  .hero-card{flex-direction:column;align-items:flex-start;text-align:left;padding:16px;max-width:100%}
   .hero-ring{--size:84px}
   .course-grid{grid-template-columns:1fr}
-  .topbar-actions{gap:10px}
-  /* Personal Details: on phone, use a clean grouped card layout.
-     Key = small muted label on its own line, value = prominent below,
-     each field in a padded card cell with consistent spacing. */
+  .course-desc{text-transform:none;white-space:normal}
+  .topbar-actions{gap:8px}
+  .tab-bar button{padding:12px 0;font-size:12px}
   .personal-grid{background:var(--panel);border:0;border-radius:var(--radius);overflow:hidden}
-  .personal-row{flex-direction:column;padding:12px 16px;border:0;border-bottom:1px solid var(--border)}
+  .personal-row{flex-direction:column;padding:10px 14px;border:0;border-bottom:1px solid var(--border)}
   .personal-row:last-child{border-bottom:none}
-  .personal-key{flex:none;width:100%;margin-bottom:2px;font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-  .personal-val{flex:1;width:100%;font-size:14px;word-break:break-word;color:var(--text);line-height:1.4}
-  /* Timetable: give the class name room on narrow screens. */
+  .personal-key{flex:none;width:100%;margin-bottom:2px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+  .personal-val{flex:1;width:100%;font-size:13px;word-break:break-word;color:var(--text);line-height:1.4}
   .tt-time{flex:0 0 48px;font-size:11px}
-  .tt-badge{white-space:nowrap}}
+  .tt-badge{white-space:nowrap}
+  .btn-refresh span:not(.icon){display:none}
+  .btn-refresh{padding:8px}
+  #tt-edit-btn{width:100%;justify-content:center}
+  .personal-section{padding:10px 14px 4px;font-size:10px}}
+}
 
 /* -- Tabs -- */
 .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px}
@@ -819,7 +822,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .personal-row{display:flex;border-bottom:1px solid var(--border);font-size:13px}
 .personal-row:last-child{border-bottom:none}
 .personal-key{flex:0 0 180px;padding:10px 14px;color:var(--dim);font-weight:500;background:var(--panel)}
-.personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace}
+.personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace;word-break:break-word}
 .personal-section{grid-column:1/-1;padding:14px 14px 6px;font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid var(--border);margin-top:4px}
 .personal-section:first-child{border-top:none;margin-top:0}
 
