@@ -500,18 +500,19 @@ def set_security_headers(resp):
 # ── HTML Templates ─────────────────────────────────────────────────
 
 LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#111111">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="OpenSRM">
-<link rel="manifest" href="/static/manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="OpenSRM">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="msapplication-TileColor" content="#111111">
+<meta name="msapplication-TileImage" content="/static/icon-192.png">
 <meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal. Fast, clean, multi-user.">
 <meta name="theme-color" content="#0a0a0a">
 <meta name="robots" content="noindex, nofollow">
@@ -544,10 +545,16 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
   <div class="status" id="status" role="alert" aria-live="polite"></div>
   <p class="hint">Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.</p>
 </div>
-<script src="/static/login.js"></script></body></html>"""
+<script src="/static/login.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
+}
+</script>
+</body></html>"""
 
 DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
@@ -564,6 +571,10 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="twitter:title" content="OpenSRM — {{ netid }}">
 <meta name="twitter:description" content="Student attendance dashboard for the SRM Student Portal.">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="msapplication-TileColor" content="#111111">
+<meta name="msapplication-TileImage" content="/static/icon-192.png">
 <title>OpenSRM \u2014 {{ netid }}</title>
 <style>
 :root{--bg:#111111;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
@@ -572,11 +583,11 @@ DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
   --ok:#4ade80;--warn:#fbbf24;--danger:#f87171;--radius:8px}
 *{box-sizing:border-box}
 body{font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
-  font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);margin:0;padding-bottom:60px}
+  font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);margin:0;padding-bottom:60px;padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 h2{font-size:16px;font-weight:600;margin:0 0 10px}
 a{color:var(--muted)}
 .topbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;
-  align-items:center;padding:12px 20px;background:rgba(38,38,38,.94);backdrop-filter:blur(6px);
+  align-items:center;padding:12px 20px;padding-top:calc(12px + env(safe-area-inset-top));background:rgba(22,22,22,.96);backdrop-filter:blur(6px);
   border-bottom:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.3)}
 .topbar-id{display:flex;align-items:center;gap:10px;min-width:0}
 .topbar-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
