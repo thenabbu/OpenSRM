@@ -12,7 +12,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 - **Login** — authenticates against SRM's student portal (Playwright + captcha solver)
 - **Attendance** — course-wise, monthly, and daily absent details with live percentages
-- **Timetable** — weekly schedule with current/next class status
+- **Timetable** — per-group schedule with current/next class status, drag-and-drop editor
 - **Personal Details** — student info scraped from the portal
 - **Student Photo** — real portal photo as the nav avatar (with initials fallback)
 - **Period Note** — attendance period shown in the hero card
