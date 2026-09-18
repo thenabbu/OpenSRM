@@ -764,7 +764,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-hero{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:6px;background:var(--panel-2);margin-bottom:14px;border-left:3px solid var(--border)}
 .tt-hero strong{display:block;font-size:13.5px;font-weight:600}
 .tt-hero-sub,.tt-hero-loc{font-size:11.5px;color:var(--dim)}
-.tt-hero--now{border-left-color:var(--ok)} .tt-hero--next{border-left-color:var(--accent)}
+.tt-hero--now{border-left-color:var(--ok)} .tt-hero--next{border-left-color:var(--ok)}
 .tt-hero--break{border-left-color:var(--warn)}
 .tt-hero-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
 .tt-hero-dot--now{background:var(--ok)} .tt-hero-dot--next{background:var(--accent)}
@@ -773,20 +773,20 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-tabbar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .tt-tabbar label{padding:6px 14px;border-radius:999px;background:var(--panel-2);color:var(--muted);font-size:12.5px;cursor:pointer;position:relative}
 .tt-tabbar label.tt-today::after{content:"";position:absolute;top:5px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
-#day-Monday:checked~.tt-tabbar label[for="day-Monday"],#day-Tuesday:checked~.tt-tabbar label[for="day-Tuesday"],#day-Wednesday:checked~.tt-tabbar label[for="day-Wednesday"],#day-Thursday:checked~.tt-tabbar label[for="day-Thursday"],#day-Friday:checked~.tt-tabbar label[for="day-Friday"]{background:var(--accent);color:#fff}
+#day-Monday:checked~.tt-tabbar label[for="day-Monday"],#day-Tuesday:checked~.tt-tabbar label[for="day-Tuesday"],#day-Wednesday:checked~.tt-tabbar label[for="day-Wednesday"],#day-Thursday:checked~.tt-tabbar label[for="day-Thursday"],#day-Friday:checked~.tt-tabbar label[for="day-Friday"]{background:var(--accent);color:var(--bg)}
 .day-panel{display:none;flex-direction:column;gap:6px}
 #day-Monday:checked~.panels #panel-Monday,#day-Tuesday:checked~.panels #panel-Tuesday,#day-Wednesday:checked~.panels #panel-Wednesday,#day-Thursday:checked~.panels #panel-Thursday,#day-Friday:checked~.panels #panel-Friday{display:flex}
 .tt-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;border:1px solid transparent}
 .tt-row:nth-child(odd){background:rgba(255,255,255,.02)}
 .tt-row--current{border-color:var(--ok);background:rgba(66,190,101,.08)}
-.tt-row--upcoming{border-color:var(--accent);background:rgba(255,255,255,.08)}
+.tt-row--upcoming{border-color:var(--ok);background:rgba(66,190,101,.05)}
 .tt-time{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim);flex:0 0 60px}
 .tt-time small{display:block;color:var(--dim)}
 .tt-info{flex:1;min-width:0;display:flex;flex-direction:column}
 .tt-info strong{font-size:13px;font-family:'IBM Plex Mono',monospace}
 .tt-name{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-loc{font-size:11px;color:var(--dim)}
-.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:var(--ok);font-weight:600}
+.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:var(--bg);font-weight:600}
 .tt-badge--soon{background:var(--text);color:var(--bg)}
 .tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
 @media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
@@ -831,7 +831,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .tt-subject-code{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text)}
 .tt-subject-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
 .tt-grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tt-grid-header,.tt-grid-row{display:grid;grid-template-columns:80px repeat(5,1fr);gap:4px}
+.tt-grid-header,.tt-grid-row{display:grid;grid-template-columns:60px repeat(7,1fr);gap:4px}
 .tt-grid-header div{font-size:11px;font-weight:600;color:var(--dim);text-align:center;padding:6px 0}
 .tt-grid-time-head{}
 .tt-grid-row{margin-bottom:4px}
