@@ -36,6 +36,7 @@
 
     function openEditor() {
         document.getElementById('tab-timetable-view').style.display = 'none';
+        document.getElementById('tt-edit-btn').style.display = 'none';
         document.getElementById('tt-editor').style.display = 'block';
 
         // Load current timetable
@@ -62,6 +63,7 @@
 
     function closeEditor() {
         document.getElementById('tab-timetable-view').style.display = '';
+        document.getElementById('tt-edit-btn').style.display = '';
         document.getElementById('tt-editor').style.display = 'none';
     }
 
