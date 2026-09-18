@@ -3,7 +3,7 @@ const CACHE_NAME = 'opensrm-v1';
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE_NAME).then(c =>
-      c.addAll(['/static/icon-192.png', '/static/icon-512.png', '/static/favicon.ico'])
+      c.addAll(['/static/icon-192.png', '/static/icon-512.png', '/static/icon-maskable-512.png', '/static/favicon.ico'])
     ).then(() => self.skipWaiting())
   );
 });
