@@ -1029,7 +1029,7 @@ def index():
         DASH_HTML, netid=netid, courses=courses, monthly=monthly, overall=overall,
         period=data.get("period"), photo=row["photo_b64"] if row and "photo_b64" in row.keys() else "", daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
-        timetable=timetable_html(),
+        timetable=timetable_html(_group_key(json.loads(row["personal_details_json"])) if row and row["personal_details_json"] else None),
         personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
