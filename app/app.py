@@ -19,6 +19,7 @@ Kept from prior work:
   - Speed ~9s end-to-end
 """
 import os, json, base64, time, asyncio, sqlite3, secrets, math, re, threading
+from datetime import datetime
 from functools import wraps
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, request, redirect, render_template_string, make_response, g
