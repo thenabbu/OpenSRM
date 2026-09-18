@@ -700,7 +700,8 @@ a{color:var(--muted)}
 .btn-refresh:disabled{background:var(--border);color:var(--dim);cursor:wait}
 .btn-refresh .icon{display:inline-block}
 .btn-refresh.spinning .icon{animation:spin 1s linear infinite}
-.btn-logout{color:var(--muted);text-decoration:none;font-size:13px}
+.btn-logout{color:var(--muted);text-decoration:none;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;transition:color .15s,border-color .15s}
+.btn-logout:hover{color:var(--text);border-color:var(--muted)}
 .btn-logout:hover{color:var(--text);text-decoration:underline}
 @keyframes spin{to{transform:rotate(360deg)}}
 .overlay{position:fixed;inset:0;background:rgba(17,17,17,.92);display:none;align-items:center;
@@ -713,7 +714,7 @@ section{margin-bottom:28px}
 .period-chip{display:inline-block;background:var(--panel);border:1px solid var(--border);
   color:var(--muted);padding:6px 12px;border-radius:999px;font-size:12px;margin-bottom:18px}
 .period-chip.warn{border-color:var(--warn);color:var(--warn)}
-.hero-card{display:flex;align-items:center;gap:22px;background:var(--panel);
+.hero-card{display:flex;align-items:center;gap:22px;background:var(--panel);max-width:540px;
   border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:28px}
 .hero-card--ok{--ring:var(--ok)} .hero-card--warn{--ring:var(--warn)} .hero-card--danger{--ring:var(--danger)}
 .hero-ring{--size:92px;width:var(--size);height:var(--size);border-radius:50%;flex:0 0 auto;
@@ -733,9 +734,9 @@ section{margin-bottom:28px}
   border-radius:var(--radius);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
 .course-card--ok{--status:var(--ok)} .course-card--warn{--status:var(--warn)} .course-card--danger{--status:var(--danger)}
 .course-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.course-code{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.course-code{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted)}
 .course-pct{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--status)}
-.course-desc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.course-desc{font-size:13px;color:var(--muted);text-transform:capitalize;white-space:normal;line-height:1.3}
 .course-bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden}
 .course-bar-fill{height:100%;background:var(--status);border-radius:3px;transition:width .3s}
 .course-stats{display:flex;gap:10px;font-size:11px;color:var(--dim);font-family:'IBM Plex Mono',monospace;flex-wrap:wrap}
@@ -819,6 +820,8 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .personal-row:last-child{border-bottom:none}
 .personal-key{flex:0 0 180px;padding:10px 14px;color:var(--dim);font-weight:500;background:var(--panel)}
 .personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace}
+.personal-section{grid-column:1/-1;padding:14px 14px 6px;font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid var(--border);margin-top:4px}
+.personal-section:first-child{border-top:none;margin-top:0}
 
 /* Timetable Editor */
 .tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
@@ -855,7 +858,7 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
     <button class="btn-refresh" id="refreshBtn">
       <span class="icon">\u27f3</span><span>Refresh</span>
     </button>
-    <a class="btn-logout" href="/logout">Log out</a>
+    <a class="btn-logout" href="/logout" style="color:var(--muted);text-decoration:none;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px">Log out</a>
   </div>
 </div>
 
@@ -985,11 +988,41 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   <div id="tab-personal" class="tab-panel">
     {% if personal %}
     <div class="personal-grid">
-      {% for key, value in personal.items() %}
-      <div class="personal-row">
-        <span class="personal-key">{{ key }}</span>
-        <span class="personal-val">{{ value }}</span>
-      </div>
+      {% set academic = ["Student Name", "Register No.", "Institution", "Program", "Batch", "Semester", "Section", "ABC NUMBER"] %}
+      {% set personal_keys = ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"] %}
+      {% set family = ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"] %}
+      {% set contact = ["Address", "Pincode", "District", "State", "Personal Email ID", "Student Mobile No.", "Alternative Student Mobile No."] %}
+
+      {% for key in academic %}
+        {% if key in personal %}
+          {% if loop.index0 == 0 %}<div class="personal-section">Academic</div>{% endif %}
+          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
+        {% endif %}
+      {% endfor %}
+
+      {% for key in personal_keys %}
+        {% if key in personal %}
+          {% if loop.index0 == 0 %}<div class="personal-section">Personal</div>{% endif %}
+          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
+        {% endif %}
+      {% endfor %}
+
+      {% for key in family %}
+        {% if key in personal %}
+          {% if loop.index0 == 0 %}<div class="personal-section">Family</div>{% endif %}
+          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
+        {% endif %}
+      {% endfor %}
+
+      {% for key in contact %}
+        {% if key in personal %}
+          {% if loop.index0 == 0 %}<div class="personal-section">Contact & Address</div>{% endif %}
+          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">
+            {% if "@" in personal[key] and "." in personal[key] %}<a href="mailto:{{ personal[key] }}" style="color:var(--accent);text-decoration:none">{{ personal[key] }}</a>
+            {% elif personal[key]|length == 10 and personal[key][0] in "0123456789" %}<a href="tel:+91{{ personal[key] }}" style="color:var(--accent);text-decoration:none">+91 {{ personal[key] }}</a>
+            {% else %}{{ personal[key] }}{% endif %}
+          </span></div>
+        {% endif %}
       {% endfor %}
     </div>
     {% else %}
