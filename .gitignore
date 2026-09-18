@@ -1,44 +1,11 @@
-# Environment / secrets
-.env
-*.key
-fernet.key
-*.pem
-
-# SQLite database
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-
-# Docker data
-/data/ # Docker volume (root-owned, not repo data)
-
-# Python
 __pycache__/
 *.pyc
 *.pyo
+.env
+*.db
+/data/
 *.egg-info/
 dist/
 build/
-.venv/
-venv/
-*.egg
-
-# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Backups
-*.bak
-*.backup*
-*.tar.gz
-
-# Scraps / local development
-*.tmp

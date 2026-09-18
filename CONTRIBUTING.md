@@ -1,39 +1,37 @@
 # Contributing to OpenSRM
 
-Thanks for considering a contribution.
+## Quick Start
+
+```bash
+git clone https://github.com/thenabbu/OpenSRM.git
+cd OpenSRM
+docker compose up -d --build
+```
 
 ## Guidelines
 
-1. **Branch** — create a feature branch from `main` (`git checkout -b feature/your-thing`)
-2. **Test** — verify changes work against the live SRM portal (use `scripts/srm_attendance.py` for standalone testing)
-3. **Commit** — write clear, descriptive commit messages. One logical change per commit.
-4. **PR** — open a PR against `main` with a description of what changed and why.
-
-## Code Style
-
-- Python: PEP 8 where reasonable, no linter enforced
-- CSS: hand-written, IBM Carbon aesthetic, no preprocessor
-- No new dependencies unless strictly necessary (check the ladder in skill)
+1. **Branch** — create a feature branch from `main`
+2. **Test** — verify against the live SRM portal (use `scripts/srm_attendance.py` for standalone testing)
+3. **Commit** — clear, descriptive messages. One logical change per commit.
+4. **PR** — open against `main` with description of what changed and why.
 
 ## Architecture Constraints
 
-- **gunicorn: exactly 1 worker** — the persistent browser singleton and ddddocr pre-warm are process-local. More workers = more Chromium instances = OOM.
-- **No inline JS** — CSP blocks it (`script-src 'self'`). All event handlers go in `static/*.js` via `addEventListener`.
-- **No new frameworks** — the frontend is vanilla JS + CSS. No React, no build step.
-- **SQLite** — single-file database. No migrations framework; use idempotent `ALTER TABLE` with `try/except`.
+- **gunicorn: exactly 1 worker** — Chromium + ddddocr are process-level singletons. More workers = OOM.
+- **No inline JS** — CSP blocks it (`script-src 'self'`). All handlers in `static/*.js` via `addEventListener`.
+- **No new frameworks** — vanilla JS + CSS. No React, no build step.
+- **SQLite** — idempotent `ALTER TABLE` with `try/except` for migrations. No ORM.
+- **Static file caching** — `.js` and `.json` are `max-age=3600` (for PWA). CSS is `no-store` (changes on deploy).
+- **Service Worker** — bump `CACHE_NAME` in `sw.js` on deploys that change static assets.
 
-## Testing Against the Portal
+## Portal Rate Limits
 
-The app scrapes a live external portal. Rate limits apply:
 - Per-netid: 3 scrapes per 10 minutes
 - Per-IP: 10 login attempts per hour
+- Don't hammer during testing.
 
-Don't hammer the portal during testing. Use `scripts/srm_attendance.py` for quick standalone checks.
+## Code Style
 
-## Reporting Bugs
-
-Use the GitHub issue templates. Include:
-- What you expected to happen
-- What actually happened
-- Browser/device (if frontend issue)
-- Steps to reproduce
+- Python: PEP 8 where reasonable
+- CSS: hand-written, dark theme (#111111 bg), IBM Plex Sans
+- Commit messages: `type: description` (feat/fix/ui/meta/docs/pwa)
