@@ -645,8 +645,6 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
   <p class="hint">Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.</p>
 </div>
 <script src="/static/login.js"></script>
-<script src="/static/timetable.js"></script>
-<script src="/static/drag-drop-touch.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
@@ -1006,6 +1004,8 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/static/sw.js', {scope: '/'}).catch(function(){});
 }
 </script>
+<script src="/static/timetable.js"></script>
+<script src="/static/drag-drop-touch.js"></script>
 </body></html>"""
 
 # ── Routes ─────────────────────────────────────────────────────────
