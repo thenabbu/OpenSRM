@@ -645,6 +645,8 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
   <p class="hint">Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.</p>
 </div>
 <script src="/static/login.js"></script>
+<script src="/static/timetable.js"></script>
+<script src="/static/drag-drop-touch.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
@@ -819,6 +821,29 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
 .personal-row:last-child{border-bottom:none}
 .personal-key{flex:0 0 180px;padding:10px 14px;color:var(--dim);font-weight:500;background:var(--panel)}
 .personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace}
+
+/* Timetable Editor */
+.tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tt-palette-wrap{overflow-x:auto;padding:8px 0;margin-bottom:16px}
+.tt-palette{display:flex;gap:8px;flex-wrap:wrap}
+.tt-subject-block{display:flex;flex-direction:column;padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;cursor:grab;user-select:none;min-width:120px;transition:opacity .15s}
+.tt-subject-block:active{cursor:grabbing;opacity:.8}
+.tt-subject-block.dragging{opacity:.4}
+.tt-subject-code{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text)}
+.tt-subject-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.tt-grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tt-grid-header,.tt-grid-row{display:grid;grid-template-columns:80px repeat(5,1fr);gap:4px}
+.tt-grid-header div{font-size:11px;font-weight:600;color:var(--dim);text-align:center;padding:6px 0}
+.tt-grid-time-head{}
+.tt-grid-row{margin-bottom:4px}
+.tt-grid-time{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);text-align:right;padding:8px 8px 8px 0;line-height:1.3}
+.tt-grid-cell{min-height:44px;border:1px solid var(--border);border-radius:6px;padding:4px 6px;display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s;touch-action:none}
+.tt-grid-cell.tt-cell-hover{border-color:var(--accent);background:rgba(255,255,255,.05)}
+.tt-grid-cell.tt-cell-filled{background:var(--panel-2);border-color:var(--ok);position:relative}
+.tt-grid-cell .cell-code{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--text);text-align:center}
+.tt-grid-cell .cell-remove{position:absolute;top:2px;right:4px;background:none;border:none;color:var(--danger);font-size:14px;cursor:pointer;padding:0;line-height:1}
+.tt-grid-break{grid-column:1/-1;text-align:center;font-size:11px;color:var(--dim);padding:4px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border);margin:4px 0}
 </style></head><body>
 
 <div class="topbar">
@@ -931,7 +956,32 @@ details.absent-month[open] summary::before{transform:rotate(90deg)}
   </div>
 
   <div id="tab-timetable" class="tab-panel">
-    {{ timetable|safe }}
+    <div id="tab-timetable-view">
+      {{ timetable|safe }}
+    </div>
+    <button id="tt-edit-btn" class="btn-refresh" style="margin:16px 0 8px;background:var(--text);color:var(--bg);border:1px solid var(--border)">
+      <span>\u270f</span><span>Edit Timetable</span>
+    </button>
+    <div id="tt-editor" style="display:none">
+      <div class="tt-editor-header">
+        <h3 style="margin:0 0 8px;font-size:16px;color:var(--text)">Drag subjects into time slots</h3>
+        <div class="tt-editor-actions">
+          <button id="tt-save-btn" class="btn-refresh" style="background:var(--ok);color:#0a2e14;border:none">Save</button>
+          <button id="tt-cancel-btn" class="btn-refresh" style="background:var(--border);color:var(--text);border:none">Cancel</button>
+          <button id="tt-add-subject-btn" class="btn-refresh" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border)">+ Add Subject</button>
+        </div>
+      </div>
+      <div class="tt-palette-wrap">
+        <div id="tt-palette" class="tt-palette"></div>
+      </div>
+      <div class="tt-grid-wrap">
+        <div id="tt-grid-header" class="tt-grid-header">
+          <div class="tt-grid-time-head"></div>
+          <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
+        </div>
+        <div id="tt-grid-body" class="tt-grid-body"></div>
+      </div>
+    </div>
   </div>
 
   <div id="tab-personal" class="tab-panel">
