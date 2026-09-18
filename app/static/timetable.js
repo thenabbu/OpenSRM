@@ -96,26 +96,18 @@
         var grid = document.getElementById('tt-grid-body');
         grid.innerHTML = '';
 
-        SLOTS.forEach(function(slot, idx) {
-            if (slot.type === 'break') {
-                var div = document.createElement('div');
-                div.className = 'tt-grid-break';
-                div.textContent = slot.name;
-                grid.appendChild(div);
-                return;
-            }
+        var classSlots = SLOTS.filter(function(s) { return s.type === 'class'; });
 
+        DAYS.forEach(function(day) {
             var row = document.createElement('div');
             row.className = 'tt-grid-row';
 
-            // Time label
-            var timeDiv = document.createElement('div');
-            timeDiv.className = 'tt-grid-time';
-            timeDiv.innerHTML = slot.start + '<br><small>' + slot.end + '</small>';
-            row.appendChild(timeDiv);
+            var dayDiv = document.createElement('div');
+            dayDiv.className = 'tt-grid-day';
+            dayDiv.textContent = day.slice(0, 3);
+            row.appendChild(dayDiv);
 
-            // Day cells
-            DAYS.forEach(function(day) {
+            classSlots.forEach(function(slot) {
                 var cell = document.createElement('div');
                 cell.className = 'tt-grid-cell';
                 cell.dataset.day = day;
