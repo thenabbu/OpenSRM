@@ -487,7 +487,22 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "fetched": int(time.time())}
+        # v2: course list (formId 7) — for timetable subjects, non-critical
+        courses = []
+        try:
+            await page.evaluate("funSetFormId(7)")
+            await page.wait_for_selector("#divMainDetails table tbody tr", timeout=10000)
+            await page.wait_for_timeout(400)
+            course_html = await page.evaluate(
+                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", course_html, re.S):
+                cells = _cells(row)
+                if len(cells) >= 3 and cells[0] and not cells[0].lower().startswith("total"):
+                    courses.append({"code": cells[0], "name": cells[1], "credits": int(cells[2] or 0)})
+        except Exception:
+            pass
+
+        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "fetched": int(time.time())}
     finally:
         await ctx.close()
 
@@ -1151,6 +1166,26 @@ def api_login():
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
                json.dumps(res.get("personal", {})), res.get("photo", "")))
     c.commit(); c.close()
+
+    # Save timetable group and scraped subjects (non-critical, separate tx)
+    try:
+        personal = json.loads(json.dumps(res.get("personal", {})))
+        gk = _group_key(personal)
+        if gk and res.get("courses"):
+            c2 = db()
+            c2.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
+                       "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
+                       (gk, personal.get("Program",""), int(personal.get("Batch",0)),
+                        _semester_int(personal.get("Semester","")), personal.get("Section","")))
+            gid = c2.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
+            for sub in res.get("courses", []):
+                c2.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
+                           "VALUES(?,?,?,?,0) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
+                           (gid, sub["code"], sub["name"], sub["credits"]))
+            c2.commit(); c2.close()
+    except Exception:
+        pass
+
     token = make_session_token(netid)
     resp = make_response({"ok": True})
     resp.set_cookie("srm_session", token, max_age=SESSION_MAX_AGE, httponly=True,
