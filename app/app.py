@@ -20,7 +20,7 @@ Kept from prior work:
 """
 import os, json, base64, time, asyncio, sqlite3, secrets, math, re, threading
 from functools import wraps
-from app.timetable import timetable_html
+# timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, request, redirect, render_template_string, make_response, g
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
@@ -62,7 +62,46 @@ def decrypt_pw(blob):
     except Exception:
         return ""
 
+def _import_legacy_timetable():
+    """One-time import: timetable.json -> SQLite for existing users."""
+    json_path = os.path.join(os.path.dirname(__file__), "data", "timetable.json")
+    if not os.path.exists(json_path): return
+    data = json.load(open(json_path))
+    # Infer group from ng2776's known data
+    group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
+    c = db()
+    try:
+        c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
+                  "VALUES(?,?,?,?,?)", (group_key, "B.Tech.-CSE Cloud Computing", 2025, 3, "A"))
+        gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()[0]
+        # Import subjects from attendance data
+        for u in c.execute("SELECT personal_details_json, attendance_json FROM users").fetchall():
+            if u[0]:
+                pd = json.loads(u[0])
+                gk = _group_key(pd)
+                if gk == group_key and u[1]:
+                    att = json.loads(u[1])
+                    seen = set()
+                    for course in att.get("courses", []):
+                        code = course.get("code", "")
+                        if code and code not in seen:
+                            seen.add(code)
+                            c.execute("INSERT OR IGNORE INTO timetable_subjects(group_id,code,name,credits,is_custom) "
+                                      "VALUES(?,?,?,0,0)", (gid, code, course.get("description",""), 0))
+        # Import slots from JSON
+        for day, slots in data.items():
+            for i, s in enumerate(slots):
+                period = i + 1
+                if period > 7: period = 7  # clamp
+                c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
+                          "VALUES(?,?,?,?,?,?)", (gid, day, period, s.get("code",""), s.get("name",""), s.get("location","")))
+        c.commit()
+    except: pass
+    c.close()
+    os.rename(json_path, json_path + ".bak")
+
 def db():
+
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     return c
@@ -89,6 +128,23 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN photo_b64 TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+    _import_legacy_timetable()
+    c.execute("""CREATE TABLE IF NOT EXISTS timetable_groups (
+        id INTEGER PRIMARY KEY, group_key TEXT UNIQUE NOT NULL,
+        program TEXT, batch INTEGER, semester INTEGER, section TEXT,
+        created_at INTEGER DEFAULT (strftime('%s','now')),
+        updated_at INTEGER DEFAULT (strftime('%s','now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS timetable_slots (
+        id INTEGER PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
+        day TEXT NOT NULL, period INTEGER NOT NULL,
+        subject_code TEXT, subject_name TEXT, location TEXT DEFAULT '',
+        UNIQUE(group_id, day, period))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS timetable_subjects (
+        id INTEGER PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
+        code TEXT NOT NULL, name TEXT NOT NULL, credits INTEGER DEFAULT 0,
+        is_custom INTEGER DEFAULT 0, UNIQUE(group_id, code))""")
     c.commit(); c.close()
 
 _solver = None
@@ -190,6 +246,27 @@ def _client_ip():
 def _cells(row_html):
     return [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
             for c in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)]
+
+ROMAN = {'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
+
+def _semester_int(semester_str):
+    """Convert 'III SEMESTER' -> 3."""
+    roman = semester_str.split()[0].strip()
+    return ROMAN.get(roman, 0)
+
+def _group_key(personal):
+    """Extract timetable group from personal details dict."""
+    program = personal.get("Program", "")
+    program = re.sub(r"\[.*?\]", "", program).strip()
+    batch = personal.get("Batch", "")
+    semester = _semester_int(personal.get("Semester", ""))
+    section = personal.get("Section", "")
+    if not all([program, batch, semester, section]):
+        return None
+    short = re.sub(r"B\.Tech\.\s*-\s*", "", program).strip()
+    short = re.sub(r"with specialization in\s*", "", short).strip()
+    short = short.replace(",", "")
+    return f"{short}_{batch}_{semester}_{section}"
 
 def parse_attendance(html):
     out = {"courses": [], "monthly": [], "period": None}
@@ -889,6 +966,136 @@ def index():
         timetable=timetable_html(),
         personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
 
+# ── Timetable (SQLite-backed, per-group) ─────────────────────────
+DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+SLOTS = [
+    {"period": 1, "start": "09:30", "end": "10:20", "type": "class"},
+    {"period": 2, "start": "10:20", "end": "11:10", "type": "class"},
+    {"period": 0, "start": "11:10", "end": "11:20", "type": "break", "name": "Break"},
+    {"period": 3, "start": "11:20", "end": "12:10", "type": "class"},
+    {"period": 4, "start": "12:10", "end": "13:00", "type": "class"},
+    {"period": 0, "start": "13:00", "end": "14:10", "type": "break", "name": "Lunch"},
+    {"period": 5, "start": "14:10", "end": "15:00", "type": "class"},
+    {"period": 6, "start": "15:00", "end": "15:50", "type": "class"},
+    {"period": 0, "start": "15:50", "end": "16:00", "type": "break", "name": "Break"},
+    {"period": 7, "start": "16:00", "end": "16:50", "type": "class"},
+]
+
+def _now_next_from_slots(day, slots):
+    now_mins = datetime.now().hour * 60 + datetime.now().minute
+    for s in slots:
+        sm = int(s["start"].split(":")[0]) * 60 + int(s["start"].split(":")[1])
+        em = int(s["end"].split(":")[0]) * 60 + int(s["end"].split(":")[1])
+        if sm <= now_mins < em:
+            if s.get("type") == "break":
+                return {"kind": "break", "label": s.get("name","Break"), "until": s["end"]}
+            return {"kind": "current", "code": s["code"], "name": s["name"],
+                    "loc": s.get("location",""), "until": s["end"]}
+    upcoming = [s for s in slots if s.get("type") != "break" and
+                int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1]) > now_mins]
+    if upcoming:
+        s = upcoming[0]
+        sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
+        return {"kind": "next", "code": s["code"], "name": s["name"],
+                "loc": s.get("location",""), "at": s["start"],
+                "in_mins": sm - now_mins}
+    return {"kind": "done"} if slots else None
+
+def timetable_html(group_key):
+    if not group_key:
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
+                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+                "<div><strong>No timetable found</strong>"
+                "<div class=\"tt-hero-sub\">No timetable exists for your group yet.</div></div></div></div>")
+    c = db()
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
+    if not gid:
+        c.close()
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
+                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+                "<div><strong>No timetable set</strong>"
+                "<div class=\"tt-hero-sub\">Your group has no timetable. Use the editor to build one.</div></div></div></div>")
+    gid = gid[0]
+    day_slots = {}
+    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
+        if r[1] not in day_slots: day_slots[r[1]] = {}
+        day_slots[r[1]][r[0]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
+    c.close()
+    # If no slots at all, show empty state
+    has_slots = any(day_slots.get(d) for d in DAY_ORDER)
+    if not has_slots:
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
+                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+                "<div><strong>Timetable empty</strong>"
+                "<div class=\"tt-hero-sub\">Use the editor to map out your schedule.</div></div></div></div>")
+    # Build today's slots for hero
+    today = datetime.now().strftime("%A")
+    today_slots = []
+    for s in SLOTS:
+        if s["type"] == "break":
+            today_slots.append(s)
+        elif today in day_slots and s["period"] in day_slots[today]:
+            m = day_slots[today][s["period"]]
+            today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"]})
+    hero_status = _now_next_from_slots(today, today_slots)
+    # Hero HTML
+    if hero_status is None or hero_status["kind"] == "done":
+        hero = ("<div class=\"tt-hero tt-hero--done\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+                "<div><strong>Done for today</strong><div class=\"tt-hero-sub\">No more classes</div></div></div>")
+    elif hero_status["kind"] == "break":
+        hero = ("<div class=\"tt-hero tt-hero--break\"><span class=\"tt-hero-dot tt-hero-dot--break\"></span>"
+                "<div><strong>{label}</strong><div class=\"tt-hero-sub\">Until {until}</div></div></div>").format(**hero_status)
+    elif hero_status["kind"] == "current":
+        hero = ("<div class=\"tt-hero tt-hero--now\"><span class=\"tt-hero-dot tt-hero-dot--now\"></span>"
+                "<div><strong>{code} \u2014 {name}</strong>"
+                "<div class=\"tt-hero-sub\">Ends {until}</div>"
+                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(**hero_status)
+    elif hero_status["kind"] == "next":
+        hero = ("<div class=\"tt-hero tt-hero--next\"><span class=\"tt-hero-dot tt-hero-dot--next\"></span>"
+                "<div><strong>{code} \u2014 {name}</strong>"
+                "<div class=\"tt-hero-sub\">Starts at {at} (in {in_mins}m)</div>"
+                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(**hero_status)
+    else:
+        hero = ("<div class=\"tt-hero tt-hero--off\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+                "<div><strong>No classes today</strong></div></div>")
+    # Day tabs + panels
+    default_day = today if today in DAY_ORDER else "Monday"
+    radios = "".join("<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(d, " checked" if d == default_day else "") for d in DAY_ORDER)
+    tabs = "".join("<label for=day-{0}{1}>{2}</label>".format(d, " class=tt-today" if d == today else "", d[:3]) for d in DAY_ORDER)
+    panels = []
+    for d in DAY_ORDER:
+        rows = []
+        for s in SLOTS:
+            if s["type"] == "break":
+                rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
+                continue
+            sl = day_slots.get(d, {}).get(s["period"])
+            if not sl:
+                continue
+            code, name, loc = sl["code"], sl["name"], sl.get("location", "")
+            now_mins = datetime.now().hour * 60 + datetime.now().minute
+            sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
+            em = int(s["end"].split(":")[0])*60 + int(s["end"].split(":")[1])
+            hl = ""
+            if d == today and sm <= now_mins < em:
+                hl = "current"
+            elif d == today and now_mins < sm and (sm - now_mins) <= 120:
+                hl = "upcoming"
+            cls = " tt-row--" + hl if hl else ""
+            badge = ""
+            if hl == "current": badge = "<span class=tt-badge>Now</span>"
+            elif hl == "upcoming": badge = "<span class=tt-badge tt-badge--soon>Soon</span>"
+            loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
+            rows.append("<div class=tt-row{0}><div class=tt-time>{1}<small>{2}</small></div>"
+                        "<div class=tt-info><strong>{3}</strong><span class=tt-name>{4}</span>{5}</div>"
+                        "{6}</div>".format(cls, s["start"], s["end"], code, name, loc_html, badge))
+        panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(d, "".join(rows)))
+    return ("<div class=tt-wrap>" + hero
+            + "<div class=tt-tabs>" + radios
+            + "<div class=tt-tabbar>" + tabs + "</div>"
+            + "<div class=panels>" + "".join(panels) + "</div>"
+            + "</div></div>")
+
 @app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
@@ -969,6 +1176,69 @@ def api_refresh():
     c = db()
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], json.dumps(res.get("personal", {})), netid))
+    c.commit(); c.close()
+    return {"ok": True}
+
+# ── Timetable API ───────────────────────────────────────────────
+@app.route("/api/timetable", methods=["GET"])
+def api_get_timetable():
+    netid = get_current_user()
+    if not netid: return {"ok": False, "error": "not logged in"}, 401
+    personal = {}
+    try:
+        c = db()
+        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+        c.close()
+        if r and r[0]: personal = json.loads(r[0])
+    except: pass
+    gk = _group_key(personal)
+    if not gk: return {"ok": True, "slots": {}, "subjects": [], "group_key": None}
+    c = db()
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()
+    if not gid: c.close(); return {"ok": True, "slots": {}, "subjects": [], "group_key": gk}
+    gid = gid[0]
+    slots = {}
+    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
+        slots[str(r[0]) + "-" + str(r[1])] = {"code": r[2], "name": r[3], "location": r[4] or ""}
+    subjects = [{"code":r[0], "name":r[1], "credits":r[2], "custom":bool(r[3])}
+                for r in c.execute("SELECT code,name,credits,is_custom FROM timetable_subjects WHERE group_id=?", (gid,))]
+    c.close()
+    return {"ok": True, "slots": slots, "subjects": subjects, "group_key": gk}
+
+@app.route("/api/timetable", methods=["POST"])
+def api_save_timetable():
+    netid = get_current_user()
+    if not netid: return {"ok": False, "error": "not logged in"}, 401
+    data = request.get_json(silent=True) or {}
+    slots = data.get("slots", {})
+    custom = data.get("custom_subjects", [])
+    personal = {}
+    try:
+        c = db()
+        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+        c.close()
+        if r and r[0]: personal = json.loads(r[0])
+    except: pass
+    gk = _group_key(personal)
+    if not gk: return {"ok": False, "error": "could not determine group"}, 400
+    c = db()
+    c.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
+              "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
+              (gk, personal.get("Program",""), int(personal.get("Batch",0)),
+               _semester_int(personal.get("Semester","")), personal.get("Section","")))
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
+    for sub in custom:
+        c.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
+                  "VALUES(?,?,?,0,1) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
+                  (gid, sub["code"], sub["name"]))
+    c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
+    for key, val in slots.items():
+        if val:
+            parts = key.rsplit("-", 1)
+            if len(parts) == 2:
+                day, period = parts
+                c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name) "
+                          "VALUES(?,?,?,?,?)", (gid, day, int(period), val.get("code",""), val.get("name","")))
     c.commit(); c.close()
     return {"ok": True}
 
