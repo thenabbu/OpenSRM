@@ -1033,8 +1033,8 @@ def timetable_html(group_key):
     gid = gid[0]
     day_slots = {}
     for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
-        if r[1] not in day_slots: day_slots[r[1]] = {}
-        day_slots[r[1]][r[0]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
+        if r[0] not in day_slots: day_slots[r[0]] = {}
+        day_slots[r[0]][r[1]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
     c.close()
     # If no slots at all, show empty state
     has_slots = any(day_slots.get(d) for d in DAY_ORDER)
