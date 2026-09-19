@@ -755,7 +755,7 @@ table.month-table tr:hover td{background:var(--panel-2)}
 details.absent-month{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden}
 details.absent-month summary{cursor:pointer;padding:12px 16px;font-weight:600;display:flex;justify-content:space-between;align-items:center;list-style:none}
 details.absent-month summary::-webkit-details-marker{display:none}
-details.absent-month summary::before{content:"\u25b8";color:var(--accent);margin-right:8px;display:inline-block;transition:transform .15s}
+details.absent-month summary::before{content:"";width:0;height:0;border-left:5px solid var(--accent);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-right:8px;display:inline-block;transition:transform .15s}
 details.absent-month[open] summary::before{transform:rotate(90deg)}
 .absent-count{font-size:11px;color:var(--dim);font-weight:400}
 .absent-list{border-top:1px solid var(--border)}
