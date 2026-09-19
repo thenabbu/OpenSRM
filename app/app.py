@@ -594,8 +594,8 @@ def set_security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; "  # F3: scripts externalized; style keeps unsafe-inline (Jinja-interpolated dash CSS)
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -603,15 +603,12 @@ def set_security_headers(resp):
 
 # ── HTML Templates ─────────────────────────────────────────────────
 
-LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
+LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
-<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
-<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
-<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
 <link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
 <link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
 <link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
@@ -623,41 +620,88 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
 <meta name="msapplication-TileImage" content="/static/icon-192.png">
-<meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal. Fast, clean, multi-user.">
-<meta name="theme-color" content="#0a0a0a">
+<meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="OpenSRM — Student Attendance Dashboard">
+<meta property="og:title" content="OpenSRM - Student Attendance Dashboard">
 <meta property="og:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
 <meta property="og:url" content="https://srm.200871.xyz">
 <meta property="og:site_name" content="OpenSRM">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="OpenSRM — Student Attendance Dashboard">
+<meta name="twitter:title" content="OpenSRM - Student Attendance Dashboard">
 <meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
-<link rel="stylesheet" href="/static/login.css?v=1789833202">
-<style>.pw-row{display:flex;gap:8px;align-items:center}.pw-row input{flex:1;min-width:0;padding-right:12px;width:0}.pw-toggle{flex:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:14px;width:40px;height:40px;border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:.6}.pw-toggle:hover{opacity:1;border-color:var(--muted)}</style></head><body>
-<div class="box">
-  <div class="brand">
-    <img class="brand-mark" src="/static/icon-192.png" alt="OpenSRM" width="36" height="36">
-    <div><h1>OpenSRM</h1><p>Self-hosted portal sync</p></div>
-  </div>
-  <form id="f">
-    <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
-      autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50">
-    <div class="pw-row">
-      <input type="password" id="pw" name="password" placeholder="Password" required
-        autocomplete="current-password" maxlength="128">
-      <button type="button" class="pw-toggle" aria-label="Show password">◉</button>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+<style>
+:root, [data-theme=dark] {
+  --color-base-100: oklch(20% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(26% 0 0);
+  --color-base-content: oklch(100% 0 0);
+  --color-primary: oklch(0% 0 0);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(97% 0.014 343.198);
+  --color-accent: oklch(0% 0 0);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(14% 0 0);
+  --color-neutral-content: oklch(98% 0 0);
+  --color-info: oklch(58% 0.158 241.966);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(68% 0.162 75.834);
+  --color-warning-content: oklch(98% 0.026 102.212);
+  --color-error: oklch(57% 0.245 27.325);
+  --color-error-content: oklch(97% 0.013 17.38);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  color-scheme: dark;
+}
+</style>
+</head><body class="bg-base-100 text-base-content">
+<div class="flex justify-center items-center min-h-[100dvh] p-5">
+  <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
+    <div class="card-body gap-4">
+      <div class="flex items-center gap-3">
+        <img class="w-9 h-9 rounded-box object-cover" src="/static/icon-192.png" alt="OpenSRM">
+        <div>
+          <h1 class="text-lg font-semibold leading-tight">OpenSRM</h1>
+          <p class="text-xs text-base-content/50">Self-hosted portal sync</p>
+        </div>
+      </div>
+      <form id="f" class="flex flex-col gap-3">
+        <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
+          class="input input-bordered w-full" autocomplete="username"
+          autocapitalize="off" autocorrect="off" maxlength="50">
+        <div class="join w-full">
+          <input type="password" id="pw" name="password" placeholder="Password" required
+            class="input input-bordered join-item flex-1 min-w-0"
+            autocomplete="current-password" maxlength="128">
+          <button type="button" class="btn btn-ghost join-item px-3" id="pw-toggle"
+            aria-label="Show password">◉</button>
+        </div>
+        <button type="submit" id="b" class="btn btn-primary w-full mt-1">
+          <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
+          <span id="btnLabel">Sign in</span>
+        </button>
+      </form>
+      <div id="status" role="alert" aria-live="polite"
+        class="text-center text-sm min-h-5"></div>
+      <p class="text-center text-xs text-base-content/40 leading-relaxed">
+        Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.
+      </p>
     </div>
-    <button type="submit" id="b">
-      <span class="spinner"></span><span id="btnLabel">Sign in</span>
-    </button>
-  </form>
-  <div class="status" id="status" role="alert" aria-live="polite"></div>
-  <p class="hint">Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.</p>
+  </div>
 </div>
 <script src="/static/login.js"></script>
 <script>
@@ -667,397 +711,194 @@ if ("serviceWorker" in navigator) {
 </script>
 </body></html>"""
 
-DASH_HTML = """<!doctype html><html><head><meta charset="utf-8">
+DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <meta name="description" content="OpenSRM attendance dashboard for {{ netid }}.">
-<meta name="theme-color" content="#0a0a0a">
+<meta name="theme-color" content="#111111">
 <meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="OpenSRM — {{ netid }}">
-<meta property="og:description" content="Student attendance dashboard for the SRM Student Portal.">
+<meta property="og:title" content="OpenSRM - {{ netid }}">
+<meta property="og:description" content="Student attendance dashboard.">
 <meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
-<meta property="og:url" content="https://srm.200871.xyz">
-<meta property="og:site_name" content="OpenSRM">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="OpenSRM — {{ netid }}">
-<meta name="twitter:description" content="Student attendance dashboard for the SRM Student Portal.">
-<meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
-
+<meta name="twitter:title" content="OpenSRM - {{ netid }}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
-<meta name="msapplication-TileImage" content="/static/icon-192.png">
-<title>OpenSRM \u2014 {{ netid }}</title>
+<title>OpenSRM - {{ netid }}</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
 <style>
-:root{--bg:#111111;--panel:#161616;--panel-2:#1e1e1e;--border:#2a2a2a;
-  --text:#ffffff;--muted:#b0b0b0;--dim:#888888;
-  --accent:#ffffff;--accent-hover:#d0d0d0;
-  --ok:#4ade80;--warn:#fbbf24;--danger:#f87171;--radius:8px}
-*{box-sizing:border-box}
-body{font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
-  font-size:14px;line-height:1.5;background:var(--bg);color:var(--text);margin:0;padding-bottom:60px;padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
-h2{font-size:16px;font-weight:600;margin:0 0 10px}
-a{color:var(--muted)}
-.topbar{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;
-  align-items:center;padding:12px 20px;padding-top:calc(12px + env(safe-area-inset-top));background:rgba(22,22,22,.96);backdrop-filter:blur(6px);
-  border-bottom:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.3)}
-.topbar-id{display:flex;align-items:center;gap:10px;min-width:0}
-.topbar-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
-.topbar-avatar-fallback{width:32px;height:32px;border-radius:50%;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;font-family:'IBM Plex Mono',monospace;border:1px solid var(--border)}
-.topbar-id strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.topbar-id span{display:block;font-size:11px;color:var(--dim)}
-.topbar-actions{display:flex;align-items:center;gap:14px}
-.btn-refresh{display:flex;align-items:center;gap:6px;background:var(--panel-2);color:var(--text);border:1px solid var(--border);
-  padding:8px 14px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500}
-.btn-refresh:hover{background:var(--border)}
-.btn-refresh:disabled{background:var(--border);color:var(--dim);cursor:wait}
-.btn-refresh .icon{display:inline-block}
-.btn-refresh.spinning .icon{animation:spin 1s linear infinite}
-.btn-logout{color:var(--muted);text-decoration:none;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;transition:color .15s,border-color .15s}
-.btn-logout:hover{color:var(--text);border-color:var(--muted)}
-.btn-logout:hover{color:var(--text);text-decoration:underline}
-@keyframes spin{to{transform:rotate(360deg)}}
-.overlay{position:fixed;inset:0;background:rgba(17,17,17,.92);display:none;align-items:center;
-  justify-content:center;flex-direction:column;gap:14px;z-index:50;font-size:13.5px;color:var(--muted)}
-.overlay.show{display:flex}
-.overlay-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border);
-  border-top-color:var(--text);animation:spin .8s linear infinite}
-main.wrap{max-width:960px;margin:0 auto;padding:20px}
-section{margin-bottom:28px}
-.period-chip{display:inline-block;background:var(--panel);border:1px solid var(--border);
-  color:var(--muted);padding:6px 12px;border-radius:999px;font-size:12px;margin-bottom:18px}
-.period-chip.warn{border-color:var(--warn);color:var(--warn)}
-.hero-card{display:flex;align-items:center;gap:22px;background:var(--panel);max-width:540px;
-  border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:28px}
-.hero-card--ok{--ring:var(--ok)} .hero-card--warn{--ring:var(--warn)} .hero-card--danger{--ring:var(--danger)}
-.hero-ring{--size:92px;width:var(--size);height:var(--size);border-radius:50%;flex:0 0 auto;
-  position:relative;background:conic-gradient(var(--ring) calc(var(--pct)*1%), var(--border) 0)}
-.hero-ring::before{content:"";position:absolute;inset:8px;background:var(--panel);border-radius:50%}
-.hero-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:700}
-.hero-detail h2{margin-bottom:3px}
-.hero-sub{margin:0 0 6px;color:var(--muted);font-size:13px}
-.hero-bunk{margin:0;font-size:13px;color:var(--ring);font-weight:500}
-.hero-period{margin:4px 0 0;font-size:11px;color:var(--dim);font-weight:400}
-#offline-banner{position:fixed;bottom:0;left:0;right:0;background:var(--warn);color:var(--bg);text-align:center;padding:8px;font-size:13px;z-index:100;font-weight:500}
-.empty{color:var(--dim);font-size:13px;padding:16px;background:var(--panel);
-  border:1px dashed var(--border);border-radius:var(--radius);text-align:center}
-.course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
-.course-card{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--status);
-  border-radius:var(--radius);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
-.course-card--ok{--status:var(--ok)} .course-card--warn{--status:var(--warn)} .course-card--danger{--status:var(--danger)}
-.course-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.course-code{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted)}
-.course-pct{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--status)}
-.course-desc{font-size:13px;color:var(--muted);text-transform:capitalize;white-space:normal;line-height:1.3}
-.course-bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden}
-.course-bar-fill{height:100%;background:var(--status);border-radius:3px;transition:width .3s}
-.course-stats{display:flex;gap:6px 12px;font-size:11px;color:var(--dim);font-family:'IBM Plex Mono',monospace;flex-wrap:wrap}
-.course-bunk{font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:8px}
-.table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:var(--radius)}
-table.month-table{border-collapse:collapse;width:100%;min-width:540px}
-table.month-table th,table.month-table td{padding:10px 12px;font-size:12.5px;text-align:left;border-bottom:1px solid var(--border)}
-table.month-table th{color:var(--dim);font-weight:600;font-size:11.5px}
-table.month-table td{font-family:'IBM Plex Mono',monospace}
-table.month-table tr:last-child td{border-bottom:none}
-table.month-table tr:hover td{background:var(--panel-2)}
-.month-bar-cell{min-width:120px;display:flex;align-items:center;gap:8px}
-.month-bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;width:60px;flex:0 0 auto}
-.month-bar-fill{height:100%;background:var(--ok)}
-.month-bar-label{font-size:11px;color:var(--dim)}
-details.absent-month{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden}
-details.absent-month summary{cursor:pointer;padding:12px 16px;font-weight:600;display:flex;justify-content:space-between;align-items:center;list-style:none}
-details.absent-month summary::-webkit-details-marker{display:none}
-details.absent-month summary::before{content:"";width:0;height:0;border-left:5px solid var(--accent);border-top:4px solid transparent;border-bottom:4px solid transparent;margin-right:8px;display:inline-block;transition:transform .15s}
-details.absent-month[open] summary::before{transform:rotate(90deg)}
-.absent-count{font-size:11px;color:var(--dim);font-weight:400}
-.absent-list{border-top:1px solid var(--border)}
-.absent-row{display:flex;justify-content:space-between;padding:8px 16px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;color:var(--muted)}
-.absent-row:nth-child(odd){background:rgba(255,255,255,.02)}
-.tt-wrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-.tt-hero{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:6px;background:var(--panel-2);margin-bottom:14px;border-left:3px solid var(--border)}
-.tt-hero strong{display:block;font-size:13.5px;font-weight:600}
-.tt-hero-sub,.tt-hero-loc{font-size:11.5px;color:var(--dim)}
-.tt-hero--now{border-left-color:var(--ok)} .tt-hero--next{border-left-color:var(--ok)}
-.tt-hero--break{border-left-color:var(--warn)}
-.tt-hero-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
-.tt-hero-dot--now{background:var(--ok)} .tt-hero-dot--next{background:var(--accent)}
-.tt-hero-dot--break{background:var(--warn)} .tt-hero-dot--off{background:var(--dim)}
-.tt-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
-.tt-tabbar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
-.tt-tabbar label{padding:6px 14px;border-radius:999px;background:var(--panel-2);color:var(--muted);font-size:12.5px;cursor:pointer;position:relative}
-.tt-tabbar label.tt-today::after{content:"";position:absolute;top:5px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
-#day-Monday:checked~.tt-tabbar label[for="day-Monday"],#day-Tuesday:checked~.tt-tabbar label[for="day-Tuesday"],#day-Wednesday:checked~.tt-tabbar label[for="day-Wednesday"],#day-Thursday:checked~.tt-tabbar label[for="day-Thursday"],#day-Friday:checked~.tt-tabbar label[for="day-Friday"]{background:var(--accent);color:var(--bg)}
-.day-panel{display:none;flex-direction:column;gap:6px}
-#day-Monday:checked~.panels #panel-Monday,#day-Tuesday:checked~.panels #panel-Tuesday,#day-Wednesday:checked~.panels #panel-Wednesday,#day-Thursday:checked~.panels #panel-Thursday,#day-Friday:checked~.panels #panel-Friday{display:flex}
-.tt-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;border:1px solid transparent}
-.tt-row:nth-child(odd){background:rgba(255,255,255,.02)}
-.tt-row--current{border-color:var(--ok);background:rgba(66,190,101,.08)}
-.tt-row--upcoming{border-color:var(--ok);background:rgba(66,190,101,.05)}
-.tt-time{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--dim);flex:0 0 60px}
-.tt-time small{display:block;color:var(--dim)}
-.tt-info{flex:1;min-width:0;display:flex;flex-direction:column}
-.tt-info strong{font-size:13px;font-family:'IBM Plex Mono',monospace}
-.tt-name{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tt-loc{font-size:11px;color:var(--dim)}
-.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--ok);color:var(--bg);font-weight:600}
-.tt-badge--soon{background:var(--text);color:var(--bg)}
-.tt-divider{font-size:11px;color:var(--dim);text-align:center;padding:4px 0}
-@media(max-width:600px){.topbar{padding:10px 14px}main.wrap{padding:14px}
-  .hero-card{flex-direction:column;align-items:flex-start;text-align:left;padding:16px;max-width:100%}
-  .hero-ring{--size:84px}
-  .course-grid{grid-template-columns:1fr}
-  .course-desc{text-transform:none;white-space:normal}
-  .topbar-actions{gap:8px}
-  .tab-bar button{padding:16px 0;font-size:12px;min-height:44px}
-  .personal-grid{background:var(--panel);border:0;border-radius:var(--radius);overflow:hidden}
-  .personal-row{flex-direction:column;padding:10px 14px;border:0;border-bottom:1px solid var(--border)}
-  .personal-row:last-child{border-bottom:none}
-  .personal-key{flex:none;width:100%;margin-bottom:2px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-  .personal-val{flex:1;width:100%;font-size:13px;word-break:break-word;color:var(--text);line-height:1.4}
-  .tt-time{flex:0 0 48px;font-size:11px}
-  .tt-badge{white-space:nowrap}
-  .btn-refresh span:not(.icon){display:none}
-  .btn-refresh{padding:8px}
-  #tt-edit-btn{width:100%;justify-content:center}
-  .personal-section{padding:10px 14px 4px;font-size:10px}}
+:root, [data-theme="dark"] {
+  --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(26% 0 0); --color-base-content: oklch(100% 0 0);
+  --color-primary: oklch(0% 0 0); --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(65% 0.241 354.308); --color-secondary-content: oklch(97% 0.014 343.198);
+  --color-accent: oklch(0% 0 0); --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(14% 0 0); --color-neutral-content: oklch(98% 0 0);
+  --color-info: oklch(58% 0.158 241.966); --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(76% 0.177 163.223); --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(68% 0.162 75.834); --color-warning-content: oklch(98% 0.026 102.212);
+  --color-error: oklch(57% 0.245 27.325); --color-error-content: oklch(97% 0.013 17.38);
+  --radius-selector: 0.5rem; --radius-field: 0.5rem; --radius-box: 0.5rem;
+  --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
+  color-scheme: dark;
 }
-
-/* -- Tabs -- */
-.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px}
-.tab-bar button{flex:1;padding:10px 0;background:none;border:none;border-bottom:2px solid transparent;
-  color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;margin-bottom:-2px}
-.tab-bar button:hover{color:var(--text)}
-.tab-bar button.active{color:var(--accent);border-bottom-color:var(--accent)}
-.tab-panel{display:none}
-.tab-panel.active{display:block}
-.personal-grid{display:grid;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
-.personal-row{display:flex;border-bottom:1px solid var(--border);font-size:13px}
-.personal-row:last-child{border-bottom:none}
-.personal-key{flex:0 0 180px;padding:10px 14px;color:var(--dim);font-weight:500;background:var(--panel)}
-.personal-val{flex:1;padding:10px 14px;font-family:'IBM Plex Mono',monospace;word-break:break-word}
-.personal-section{grid-column:1/-1;padding:14px 14px 6px;font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;border-top:1px solid var(--border);margin-top:4px}
-.personal-section:first-child{border-top:none;margin-top:0}
-
-/* Timetable Editor */
-.tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
-.tt-palette-wrap{overflow-x:auto;padding:8px 0;margin-bottom:16px}
-.tt-palette{display:flex;gap:8px;flex-wrap:wrap}
-.tt-subject-block{display:flex;flex-direction:column;padding:8px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;cursor:grab;user-select:none;min-width:120px;transition:opacity .15s}
-.tt-subject-block:active{cursor:grabbing;opacity:.8}
-.tt-subject-block.dragging{opacity:.4}
-.tt-subject-code{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text)}
-.tt-subject-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
-.tt-grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tt-grid-header,.tt-grid-row{display:grid;grid-template-columns:60px repeat(7,1fr);gap:4px}
-.tt-grid-header div{font-size:11px;font-weight:600;color:var(--dim);text-align:center;padding:6px 0}
-.tt-grid-time-head{}
-.tt-grid-row{margin-bottom:4px}
-.tt-grid-time{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);text-align:right;padding:8px 8px 8px 0;line-height:1.3}
-.tt-grid-cell{min-height:44px;border:1px solid var(--border);border-radius:6px;padding:4px 6px;display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s;touch-action:none}
-.tt-grid-cell.tt-cell-hover{border-color:var(--accent);background:rgba(255,255,255,.05)}
-.tt-grid-cell.tt-cell-filled{background:var(--panel-2);border-color:var(--ok);position:relative}
-.tt-grid-cell .cell-code{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--text);text-align:center}
-.tt-grid-cell .cell-remove{position:absolute;top:2px;right:4px;background:none;border:none;color:var(--danger);font-size:14px;cursor:pointer;padding:0;line-height:1}
-.tt-grid-break{grid-column:1/-1;text-align:center;font-size:11px;color:var(--dim);padding:4px 0;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border);margin:4px 0}
-</style></head><body>
-
-<div class="topbar">
-  <div class="topbar-id">
-    {% if photo %}<img class="topbar-avatar" src="data:image/jpeg;base64,{{ photo }}" alt="{{ netid }}">{% else %}<span class="topbar-avatar-fallback">{{ netid[:2]|upper }}</span>{% endif %}
-    <div><strong>{{ netid }}</strong>
-      <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }} UTC">{{ last }} UTC</span>
+</style>
+</head><body class="bg-base-100 text-base-content">
+<div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
+  <div class="navbar-start gap-3 min-w-0 flex-1">
+    <img class="w-8 h-8 rounded-full object-cover border border-base-300" src="data:image/jpeg;base64,{{ photo_b64 }}"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="w-8 h-8 rounded-full bg-base-300 text-base-content flex items-center justify-center text-xs font-bold hidden"
+      style="font-family:'IBM Plex Mono',monospace">{{ netid[0]|upper }}</div>
+    <div class="min-w-0">
+      <strong class="text-sm block truncate">{{ netid }}</strong>
+      <span id="lastSync" data-ts="{{ fetch_ts }}" data-full="{{ fetch_full }}"
+        class="text-xs text-base-content/40 block">Synced ...</span>
     </div>
   </div>
-  <div class="topbar-actions">
-    <button class="btn-refresh" id="refreshBtn">
-      <span class="icon">\u27f3</span><span>Refresh</span>
+  <div class="navbar-end gap-2">
+    <button class="btn btn-ghost btn-sm gap-1" id="refreshBtn">
+      <span class="icon text-base">⟳</span>
+      <span class="hidden sm:inline">Refresh</span>
     </button>
-    <a class="btn-logout" href="/logout" style="color:var(--muted);text-decoration:none;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px">Log out</a>
+    <a class="btn btn-outline btn-error btn-sm" href="/logout">Log out</a>
   </div>
 </div>
-
-<div class="overlay" id="overlay">
-  <div class="overlay-spinner"></div>
-  <div>Syncing attendance\u2026</div>
-</div>
-
-<main class="wrap">
-  {% if hours_old and hours_old > 24 %}
-  <div class="period-chip warn">⚠ Data is {{ hours_old }} hours old — click Refresh</div>
-  {% endif %}
-
-  <div class="tab-bar">
-    <button class="active" data-tab="attendance">Attendance</button>
-    <button data-tab="timetable">Timetable</button>
-    <button data-tab="personal">Personal Details</button>
+<dialog id="overlay" class="modal">
+  <div class="modal-box bg-base-200 flex flex-col items-center gap-3">
+    <span class="loading loading-spinner loading-lg"></span>
+    <span class="text-sm text-base-content/60">Refreshing attendance...</span>
   </div>
-
-  <div id="tab-attendance" class="tab-panel active">
-    <section class="hero-card hero-card--{{ overall.status }}">
-      <div class="hero-ring" style="--pct: {{ overall.pct }}">
-        <span class="hero-pct">{{ overall.pct }}%</span>
-      </div>
-      <div class="hero-detail">
-        <h2>Overall attendance</h2>
-        <p class="hero-sub">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
-        {% if overall.bunk_line %}<p class="hero-bunk">{{ overall.bunk_line }}</p>{% endif %}
-        {% if period %}<p class="hero-period">{{ period.from }} → {{ period.to }}</p>{% endif %}
-      </div>
-    </section>
-
-    {% if not has_data %}
-    <div class="empty">No attendance data yet. Hit refresh once a sync has completed.</div>
-    {% endif %}
-
-    <section>
-      <h2>Courses</h2>
-      <div class="course-grid">
-        {% for c in courses %}
-        <div class="course-card course-card--{{ c.status }}">
-          <div class="course-top">
-            <span class="course-code">{{ c.code }}</span>
-            <span class="course-pct">{{ c.pct }}%</span>
+</dialog>
+<main class="max-w-3xl mx-auto px-4 py-5">
+  <div role="tablist" class="tabs tabs-border mb-5">
+    <button role="tab" class="tab tab-active" data-tab="attendance">Attendance</button>
+    <button role="tab" class="tab" data-tab="timetable">Timetable</button>
+    <button role="tab" class="tab" data-tab="personal">Personal Details</button>
+  </div>
+  <div id="tab-attendance" style="">
+    <div class="card bg-base-200 border border-base-300 mb-5">
+      <div class="card-body p-5">
+        <div class="flex items-center gap-5">
+          <div class="radial-progress text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}"
+            style="--value:{{ overall.pct }}; --size:5rem; --thickness:6px;" role="progressbar">
+            <span class="text-base-content font-bold text-sm">{{ overall.pct }}%</span>
           </div>
-          <div class="course-desc" title="{{ c.description }}">{{ c.description }}</div>
-          <div class="course-bar"><div class="course-bar-fill" style="width: {{ c.pct }}%"></div></div>
-          <div class="course-stats">
-            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
+          <div class="flex-1 min-w-0">
+            <h2 class="card-title text-base">Overall attendance</h2>
+            <p class="text-sm text-base-content/60">{{ overall.attended }} of {{ overall.total }} hours attended</p>
+            <p class="text-sm font-medium text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}">Can miss {{ overall.bunk }} more classes</p>
+            <p class="text-xs text-base-content/40 mt-1">{{ overall.period }}</p>
           </div>
-          {% if c.bunk_line %}<div class="course-bunk">{{ c.bunk_line }}</div>{% endif %}
         </div>
-        {% endfor %}
       </div>
-    </section>
-
-    <section>
-      <h2>Monthly attendance</h2>
-      <div class="table-scroll">
-        <table class="month-table"><thead><tr>
-          <th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th>
-        </tr></thead><tbody>
-        {% for m in monthly %}
-        <tr>
-          <td>{{ m.month }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td>
-          <td>{{ m.od_present }}</td><td>{{ m.od_absent }}</td><td>{{ m.ml }}</td>
-          <td>{% if m.pct is not none %}
-            <div class="month-bar-cell">
-              <div class="month-bar"><div class="month-bar-fill" style="width: {{ m.pct }}%"></div></div>
-              <span class="month-bar-label">{{ m.pct }}%</span>
-            </div>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody></table>
-      </div>
-    </section>
-
-    <section>
-      <h2>Daily absences</h2>
-      {% if daily_absent %}
-        {% for month, days in daily_absent.items() %}
-        <details class="absent-month" {% if loop.first %}open{% endif %}>
-          <summary><span>{{ month }}</span>
-            <span class="absent-count">{{ days|length }} day{{ '' if days|length == 1 else 's' }}</span>
-          </summary>
-          <div class="absent-list">
-            {% for d in days %}<div class="absent-row"><span>{{ d.date }}</span><span>{{ d.hours }} hr</span></div>{% endfor %}
-          </div>
-        </details>
-        {% endfor %}
-      {% else %}
-        <p class="empty">No absences recorded — perfect attendance across all months.</p>
-      {% endif %}
-    </section>
-  </div>
-
-  <div id="tab-timetable" class="tab-panel">
-    <div id="tab-timetable-view">
-      {{ timetable|safe }}
     </div>
-    <button id="tt-edit-btn" class="btn-refresh" style="margin:16px 0 8px;background:var(--text);color:var(--bg);border:1px solid var(--border)">
-      <span>\u270f</span><span>Edit Timetable</span>
-    </button>
+    <h3 class="text-base font-semibold mb-3">Courses</h3>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+      {% for c in courses %}
+      <div class="card bg-base-200 border border-base-300 border-l-3 border-l-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">
+        <div class="card-body p-4 gap-2">
+          <div class="flex justify-between items-baseline gap-2">
+            <span class="font-mono text-xs text-base-content/60">{{ c.code }}</span>
+            <span class="font-mono font-bold text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">{{ c.pct }}%</span>
+          </div>
+          <h3 class="text-sm capitalize leading-snug">{{ c.name }}</h3>
+          <progress class="progress progress-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}" value="{{ c.pct }}" max="100"></progress>
+          <div class="flex gap-3 font-mono text-xs text-base-content/40 flex-wrap">
+            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.total }} total</span>
+          </div>
+          <p class="text-xs text-base-content/50 border-t border-base-300 pt-2">Can miss {{ c.bunk }} more classes</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <h3 class="text-base font-semibold mb-3">Monthly attendance</h3>
+    <div class="overflow-x-auto border border-base-300 rounded-box mb-5">
+      <table class="table table-pin-rows table-sm">
+        <thead><tr class="bg-base-200"><th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th></tr></thead>
+        <tbody>
+          {% for m in months %}
+          <tr><td>{{ m.label }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td><td>{{ m.od_p }}</td><td>{{ m.od_a }}</td><td>{{ m.ml }}</td><td class="font-mono font-bold">{{ m.pct }}%</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3 class="text-base font-semibold mb-3">Daily absences</h3>
+    <div class="flex flex-col gap-2 mb-5">
+      {% for m in absent_detail %}
+      <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+        <input type="radio" name="absent-accordion" />
+        <div class="collapse-title text-sm font-semibold flex justify-between items-center">
+          <span>{{ m.label }}</span>
+          <span class="badge badge-sm badge-error">{{ m.days }} day{{ 's' if m.days != 1 }}</span>
+        </div>
+        <div class="collapse-content">
+          {% for d in m.dates %}
+          <div class="flex justify-between items-center py-1 text-sm font-mono text-base-content/60">
+            <span>{{ d.date }}</span>
+            <span class="badge badge-sm badge-warning">{{ d.hours }} hr</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div id="tab-timetable" style="display:none">
+    <div id="tab-timetable-view">{{ timetable_html | safe }}
+      <button class="btn btn-primary btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
+    </div>
     <div id="tt-editor" style="display:none">
-      <div class="tt-editor-header">
-        <h3 style="margin:0 0 8px;font-size:16px;color:var(--text)">Drag subjects into time slots</h3>
-        <div class="tt-editor-actions">
-          <button id="tt-save-btn" class="btn-refresh" style="background:var(--ok);color:#0a2e14;border:none">Save</button>
-          <button id="tt-cancel-btn" class="btn-refresh" style="background:var(--border);color:var(--text);border:none">Cancel</button>
-          <button id="tt-add-subject-btn" class="btn-refresh" style="background:var(--panel-2);color:var(--text);border:1px solid var(--border)">+ Add Subject</button>
+      <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
+        <h3 class="text-base font-semibold">Edit Timetable</h3>
+        <div class="flex gap-2 flex-wrap">
+          <button id="tt-save-btn" class="btn btn-success btn-sm hidden">Save</button>
+          <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
+          <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
         </div>
       </div>
-      <div class="tt-palette-wrap">
-        <div id="tt-palette" class="tt-palette"></div>
-      </div>
-      <div class="tt-grid-wrap">
-        <div id="tt-grid-header" class="tt-grid-header">
-          <div class="tt-grid-time-head"></div>
-          <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div>
-        </div>
-        <div id="tt-grid-body" class="tt-grid-body"></div>
+      <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
+      <div class="overflow-x-auto">
+        <table class="table table-pin-rows table-pin-cols table-sm">
+          <thead><tr class="bg-base-200">
+            <th class="bg-base-200 w-16"></th>
+            <th class="bg-base-200 text-center text-xs">Mon</th><th class="bg-base-200 text-center text-xs">Tue</th>
+            <th class="bg-base-200 text-center text-xs">Wed</th><th class="bg-base-200 text-center text-xs">Thu</th>
+            <th class="bg-base-200 text-center text-xs">Fri</th><th class="bg-base-200 text-center text-xs">Sat</th>
+            <th class="bg-base-200 text-center text-xs">Sun</th>
+          </tr></thead>
+          <tbody id="tt-grid-body"></tbody>
+        </table>
       </div>
     </div>
   </div>
-
-  <div id="tab-personal" class="tab-panel">
-    {% if personal %}
-    <div class="personal-grid">
-      {% set academic = ["Student Name", "Register No.", "Institution", "Program", "Batch", "Semester", "Section", "ABC NUMBER"] %}
-      {% set personal_keys = ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"] %}
-      {% set family = ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"] %}
-      {% set contact = ["Address", "Pincode", "District", "State", "Personal Email ID", "Student Mobile No.", "Alternative Student Mobile No."] %}
-
-      {% for key in academic %}
-        {% if key in personal %}
-          {% if loop.index0 == 0 %}<div class="personal-section">Academic</div>{% endif %}
-          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
-        {% endif %}
-      {% endfor %}
-
-      {% for key in personal_keys %}
-        {% if key in personal %}
-          {% if loop.index0 == 0 %}<div class="personal-section">Personal</div>{% endif %}
-          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
-        {% endif %}
-      {% endfor %}
-
-      {% for key in family %}
-        {% if key in personal %}
-          {% if loop.index0 == 0 %}<div class="personal-section">Family</div>{% endif %}
-          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">{{ personal[key] }}</span></div>
-        {% endif %}
-      {% endfor %}
-
-      {% for key in contact %}
-        {% if key in personal %}
-          {% if loop.index0 == 0 %}<div class="personal-section">Contact & Address</div>{% endif %}
-          <div class="personal-row"><span class="personal-key">{{ key }}</span><span class="personal-val">
-            {% if "@" in personal[key] and "." in personal[key] %}<a href="mailto:{{ personal[key] }}" style="color:var(--accent);text-decoration:none">{{ personal[key] }}</a>
-            {% elif personal[key]|length == 10 and personal[key][0] in "0123456789" %}<a href="tel:+91{{ personal[key] }}" style="color:var(--accent);text-decoration:none">+91 {{ personal[key] }}</a>
-            {% else %}{{ personal[key] }}{% endif %}
-          </span></div>
-        {% endif %}
-      {% endfor %}
+  <div id="tab-personal" style="display:none">
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body p-0">
+        <ul class="list">
+          {% for section, items in personal_sections %}
+          <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/40 py-2 px-4">{{ section }}</li>
+          {% for k, v in items %}
+          <li class="list-row items-center">
+            <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ k }}</span>
+            <span class="text-sm font-mono break-all">{{ v }}</span>
+          </li>
+          {% endfor %}{% endfor %}
+        </ul>
+      </div>
     </div>
-    {% else %}
-    <div class="empty">No personal details available yet. Click Refresh to fetch.</div>
-    {% endif %}
   </div>
 </main>
-
+<div id="offline-banner"></div>
 <script src="/static/dash.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/static/sw.js', {scope: '/'}).catch(function(){});
-}
-</script>
 <script src="/static/timetable.js"></script>
 <script src="/static/drag-drop-touch.js"></script>
 </body></html>"""
+
 
 # ── Routes ─────────────────────────────────────────────────────────
 @app.route("/")

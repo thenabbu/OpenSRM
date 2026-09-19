@@ -14,44 +14,44 @@
 
 function ref() {
   var btn = document.getElementById('refreshBtn');
-  btn.disabled = true; btn.classList.add('spinning');
-  document.getElementById('overlay').classList.add('show');
+  btn.disabled = true;
+  btn.querySelector('.icon').classList.add('animate-spin');
+  document.getElementById('overlay').showModal();
   fetch('/api/refresh', {method: 'POST'})
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d.ok) { location.reload(); return; }
-      document.getElementById('overlay').classList.remove('show');
-      btn.disabled = false; btn.classList.remove('spinning');
+      document.getElementById('overlay').close();
+      btn.disabled = false; btn.querySelector('.icon').classList.remove('animate-spin');
       alert(d.error || 'Refresh failed');
     }).catch(function () {
-      document.getElementById('overlay').classList.remove('show');
-      btn.disabled = false; btn.classList.remove('spinning');
+      document.getElementById('overlay').close();
+      btn.disabled = false; btn.querySelector('.icon').classList.remove('animate-spin');
       alert('Network error \u2014 refresh failed');
     });
 }
 
-// Tabs: CSP forbids inline onclick (script-src 'self'), so bind here.
 function switchTab(name, btn) {
-  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-  document.querySelectorAll('.tab-bar button').forEach(function(b) { b.classList.remove('active'); });
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
+  document.querySelectorAll('[id^=tab-]').forEach(function(p) {
+    if (p.id === 'tab-' + name) p.style.display = '';
+    else if (p.id.startsWith('tab-') && p.id !== 'tab-') p.style.display = 'none';
+  });
+  document.querySelectorAll('[data-tab]').forEach(function(b) { b.classList.remove('tab-active'); });
+  btn.classList.add('tab-active');
 }
-document.querySelectorAll('.tab-bar button').forEach(function(b) {
+document.querySelectorAll('[data-tab]').forEach(function(b) {
   b.addEventListener('click', function() { switchTab(b.dataset.tab, b); });
 });
 
-// Refresh: CSP forbids inline onclick, so bind programmatically (same as tabs).
 document.getElementById('refreshBtn').addEventListener('click', ref);
 
-// PWA offline indicator
 window.addEventListener('offline', function() {
-  var el = document.getElementById('offline-banner') || document.createElement('div');
-  el.id = 'offline-banner';
+  var el = document.getElementById('offline-banner');
+  el.className = 'alert alert-warning fixed bottom-0 left-0 right-0 z-50 rounded-none';
   el.textContent = 'You are offline \u2014 showing cached data';
-  document.body.appendChild(el);
 });
 window.addEventListener('online', function() {
   var el = document.getElementById('offline-banner');
-  if (el) el.remove();
+  el.className = '';
+  el.textContent = '';
 });
