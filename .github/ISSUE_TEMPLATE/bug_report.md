@@ -36,7 +36,7 @@ What actually happened.
 If applicable, paste relevant log output.
 
 ```
-docker logs srm-sp-auto
+docker logs opensrm
 ```
 
 ## Screenshots
