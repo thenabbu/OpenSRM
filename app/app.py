@@ -633,8 +633,8 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
     <div><h1>OpenSRM</h1><p>Self-hosted portal sync</p></div>
   </div>
   <form id="f">
-    <input type="text" id="netid" name="netid" placeholder="Net ID" required
-      autocomplete="username" autocapitalize="off" autocorrect="off" pattern="[a-zA-Z0-9]{2,20}" maxlength="20">
+    <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
+      autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50">
     <input type="password" id="pw" name="password" placeholder="Password" required
       autocomplete="current-password" maxlength="128">
     <button type="submit" id="b">
@@ -1232,7 +1232,7 @@ def api_login():
     if not _check_ip_rate(_client_ip()):
         return {"ok": False, "error": "Too many attempts from your address. Try again in an hour."}, 429
 
-    netid = (d.get("netid") or "").strip().lower() if isinstance(d.get("netid"), str) else ""
+    netid = (d.get("netid") or "").strip().lower().split("@")[0] if isinstance(d.get("netid"), str) else ""
     password = d.get("password") if isinstance(d.get("password"), str) else ""
     if not netid or not password:
         return {"ok": False, "error": "netid and password required"}, 400
