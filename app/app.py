@@ -633,8 +633,6 @@ LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="u
 <meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
 <style>
 :root, [data-theme=dark] {
   --color-base-100: oklch(20% 0 0);
@@ -667,11 +665,10 @@ LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="u
   --noise: 0;
   color-scheme: dark;
 }
-
-
-<style>
-
-</head><body class=bg-base-100 text-base-content>
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+</head><body class="bg-base-100 text-base-content">
 <div class="flex justify-center items-center min-h-[100dvh] p-5">
   <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
     <div class="card-body gap-4">
@@ -731,8 +728,6 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
 <title>OpenSRM - {{ netid }}</title>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
 <style>
 :root, [data-theme="dark"] {
   --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);
@@ -750,6 +745,8 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
   color-scheme: dark;
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
 <link rel="stylesheet" href="/static/timetable.css">
 </head><body class="bg-base-100 text-base-content">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
