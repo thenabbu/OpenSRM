@@ -667,8 +667,11 @@ LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="u
   --noise: 0;
   color-scheme: dark;
 }
-</style>
-</head><body class="bg-base-100 text-base-content">
+
+
+<style>
+
+</head><body class=bg-base-100 text-base-content>
 <div class="flex justify-center items-center min-h-[100dvh] p-5">
   <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
     <div class="card-body gap-4">
@@ -747,6 +750,7 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
   color-scheme: dark;
 }
 </style>
+<link rel="stylesheet" href="/static/timetable.css">
 </head><body class="bg-base-100 text-base-content">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
   <div class="navbar-start gap-3 min-w-0 flex-1">
@@ -829,15 +833,15 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
     </div>
     <h3 class="text-base font-semibold mb-3">Daily absences</h3>
     <div class="flex flex-col gap-2 mb-5">
-      {% for m in absent_detail %}
+      {% for label, dates in daily_absent.items() %}
       <div class="collapse collapse-arrow bg-base-200 border border-base-300">
         <input type="radio" name="absent-accordion" />
         <div class="collapse-title text-sm font-semibold flex justify-between items-center">
-          <span>{{ m.label }}</span>
-          <span class="badge badge-sm badge-error">{{ m.days }} day{{ 's' if m.days != 1 }}</span>
+          <span>{{ label }}</span>
+          <span class="badge badge-sm badge-error">{{ dates|length }} day{{ 's' if dates|length != 1 }}</span>
         </div>
         <div class="collapse-content">
-          {% for d in m.dates %}
+          {% for d in dates %}
           <div class="flex justify-between items-center py-1 text-sm font-mono text-base-content/60">
             <span>{{ d.date }}</span>
             <span class="badge badge-sm badge-warning">{{ d.hours }} hr</span>
@@ -849,7 +853,7 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
     </div>
   </div>
   <div id="tab-timetable" style="display:none">
-    <div id="tab-timetable-view">{{ timetable_html | safe }}
+    <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <button class="btn btn-primary btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
     </div>
     <div id="tt-editor" style="display:none">
@@ -880,14 +884,12 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body p-0">
         <ul class="list">
-          {% for section, items in personal_sections %}
-          <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/40 py-2 px-4">{{ section }}</li>
-          {% for k, v in items %}
+          {% for k, v in personal.items() %}
           <li class="list-row items-center">
             <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ k }}</span>
             <span class="text-sm font-mono break-all">{{ v }}</span>
           </li>
-          {% endfor %}{% endfor %}
+          {% endfor %}
         </ul>
       </div>
     </div>
