@@ -645,8 +645,8 @@ LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="u
   --color-primary-content: oklch(100% 0 0);
   --color-secondary: oklch(65% 0.241 354.308);
   --color-secondary-content: oklch(97% 0.014 343.198);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
+  --color-accent: oklch(100% 0 0);
+  --color-accent-content: oklch(0% 0 0);
   --color-neutral: oklch(14% 0 0);
   --color-neutral-content: oklch(98% 0 0);
   --color-info: oklch(58% 0.158 241.966);
@@ -739,7 +739,7 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
   --color-base-300: oklch(26% 0 0); --color-base-content: oklch(100% 0 0);
   --color-primary: oklch(0% 0 0); --color-primary-content: oklch(100% 0 0);
   --color-secondary: oklch(65% 0.241 354.308); --color-secondary-content: oklch(97% 0.014 343.198);
-  --color-accent: oklch(0% 0 0); --color-accent-content: oklch(100% 0 0);
+  --color-accent: oklch(100% 0 0); --color-accent-content: oklch(0% 0 0);
   --color-neutral: oklch(14% 0 0); --color-neutral-content: oklch(98% 0 0);
   --color-info: oklch(58% 0.158 241.966); --color-info-content: oklch(97% 0.013 236.62);
   --color-success: oklch(76% 0.177 163.223); --color-success-content: oklch(98% 0.014 180.72);
