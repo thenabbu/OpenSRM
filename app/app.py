@@ -368,22 +368,33 @@ async def _fetch_rich_optimized(netid, password):
         await page.click('input[name="password"]')
         await page.type('input[name="password"]', password, delay=35)
 
-        b64 = await page.evaluate(CAPTCHA_JS)
-        if not b64:
-            await ctx.close()
-            return {"ok": False, "error": "captcha image not found"}
-        captcha = solve_captcha_b64(b64)
+        MAX_CAPTCHA_RETRIES = 3
+        for _ca in range(MAX_CAPTCHA_RETRIES):
+            b64 = await page.evaluate(CAPTCHA_JS)
+            if not b64:
+                await ctx.close()
+                return {"ok": False, "error": "captcha image not found"}
+            captcha = solve_captcha_b64(b64)
 
-        await page.click('input[name="captcha"]')
-        await page.type('input[name="captcha"]', captcha, delay=35)
-        await page.mouse.move(500, 400, steps=10)
-        await page.click('button:has-text("Login")')
+            await page.click('input[name="captcha"]')
+            await page.type('input[name="captcha"]', captcha, delay=35)
+            await page.mouse.move(500, 400, steps=10)
+            await page.click('button:has-text("Login")')
 
-        try:
-            await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
-        except Exception:
-            await ctx.close()
-            return {"ok": False, "error": "login failed (wrong creds or captcha misread)"}
+            try:
+                await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
+                break  # success
+            except Exception:
+                if _ca < MAX_CAPTCHA_RETRIES - 1:
+                    # Reload page and retry with fresh captcha
+                    await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+                    await page.wait_for_selector('input[name="username"]', state="visible")
+                    await page.fill('input[name="username"]', netid)
+                    await page.click('input[name="password"]')
+                    await page.type('input[name="password"]', password, delay=35)
+                    continue
+                await ctx.close()
+                return {"ok": False, "error": f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts (wrong creds or persistent captcha misread)"}
 
         # Grab student photo — non-critical, fail silently.
         # Wait briefly for the portal dashboard to render the photo (loaded via AJAX).
@@ -635,8 +646,11 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
   <form id="f">
     <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
       autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50">
-    <input type="password" id="pw" name="password" placeholder="Password" required
-      autocomplete="current-password" maxlength="128">
+    <div class="pw-wrap">
+      <input type="password" id="pw" name="password" placeholder="Password" required
+        autocomplete="current-password" maxlength="128">
+      <button type="button" class="pw-toggle" aria-label="Toggle password">◉</button>
+    </div>
     <button type="submit" id="b">
       <span class="spinner"></span><span id="btnLabel">Sign in</span>
     </button>
