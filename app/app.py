@@ -646,10 +646,10 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
   <form id="f">
     <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
       autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50">
-    <div class="pw-wrap">
+    <div class="pw-row">
       <input type="password" id="pw" name="password" placeholder="Password" required
         autocomplete="current-password" maxlength="128">
-      <button type="button" class="pw-toggle" aria-label="Toggle password">◉</button>
+      <button type="button" class="pw-toggle" aria-label="Show password">◉</button>
     </div>
     <button type="submit" id="b">
       <span class="spinner"></span><span id="btnLabel">Sign in</span>
