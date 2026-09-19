@@ -637,7 +637,8 @@ LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
-<link rel="stylesheet" href="/static/login.css"></head><body>
+<link rel="stylesheet" href="/static/login.css?v=1789833202">
+<style>.pw-row{display:flex;gap:8px;align-items:center}.pw-row input{flex:1;min-width:0;padding-right:12px;width:0}.pw-toggle{flex:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:14px;width:40px;height:40px;border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:.6}.pw-toggle:hover{opacity:1;border-color:var(--muted)}</style></head><body>
 <div class="box">
   <div class="brand">
     <img class="brand-mark" src="/static/icon-192.png" alt="OpenSRM" width="36" height="36">

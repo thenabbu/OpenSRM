@@ -14,7 +14,7 @@ input{width:100%;padding:12px 12px;margin-bottom:12px;border:1px solid var(--bor
 input::placeholder{color:#6f6f6f}
 input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,255,255,.15)}
 .pw-row{display:flex;gap:8px;align-items:center}
-.pw-row input{flex:1;padding-right:12px}
+.pw-row input{flex:1;min-width:0;padding-right:12px;width:0}
 .pw-toggle{flex:none;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:14px;width:40px;height:40px;border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:.6}
 .pw-toggle:hover{opacity:1;border-color:var(--muted)}
 button[type="submit"]{width:100%;padding:12px;background:var(--accent);border:none;border-radius:4px;
@@ -30,3 +30,5 @@ button.loading .spinner{display:inline-block}
 .status.err{color:var(--danger)}
 .status.retry{color:#fbbf24}
 .hint{font-size:11px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.4}
+
+@media(max-width:400px){.box{width:100%;padding:20px}}
