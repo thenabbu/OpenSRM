@@ -18,3 +18,9 @@ document.getElementById('f').onsubmit = function (ev) {
     document.getElementById('btnLabel').textContent = 'Sign in';
   });
 };
+
+document.querySelector('.pw-toggle').onclick = function() {
+  var inp = document.getElementById('pw');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  this.textContent = inp.type === 'password' ? '◉' : '○';
+};

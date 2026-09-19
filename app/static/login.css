@@ -2,8 +2,8 @@
   --accent:#ffffff;--accent-hover:#d0d0d0;--danger:#f87171}
 *{box-sizing:border-box}
 body{font-family:'IBM Plex Sans',-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
-  background:var(--bg);color:var(--text);display:flex;justify-content:center;
-  min-height:100vh;margin:0;padding:20px}
+  background:var(--bg);color:var(--text);display:flex;justify-content:center;align-items:flex-start;
+  min-height:100vh;margin:0;padding:20px;padding-top:min(20vh,120px)}
 .box{background:var(--panel);padding:28px;border-radius:8px;width:340px;max-width:100%;border:1px solid var(--border)}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}
 .brand-mark{width:36px;height:36px;border-radius:8px;object-fit:cover;display:block}
