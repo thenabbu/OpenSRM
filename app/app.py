@@ -634,7 +634,7 @@ LOGIN_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="u
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
 <style>
-:root, [data-theme=dark] {
+html[data-theme="openSRM"] {
   --color-base-100: oklch(20% 0 0);
   --color-base-200: oklch(14% 0 0);
   --color-base-300: oklch(26% 0 0);
@@ -729,7 +729,7 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
 <meta name="msapplication-TileColor" content="#111111">
 <title>OpenSRM - {{ netid }}</title>
 <style>
-:root, [data-theme="dark"] {
+html[data-theme="openSRM"] {
   --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);
   --color-base-300: oklch(26% 0 0); --color-base-content: oklch(100% 0 0);
   --color-primary: oklch(0% 0 0); --color-primary-content: oklch(100% 0 0);
@@ -878,18 +878,32 @@ DASH_HTML = """<!doctype html><html data-theme="openSRM"><head><meta charset="ut
     </div>
   </div>
   <div id="tab-personal" style="display:none">
+    {% if personal %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body p-0">
         <ul class="list">
-          {% for k, v in personal.items() %}
-          <li class="list-row items-center">
-            <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ k }}</span>
-            <span class="text-sm font-mono break-all">{{ v }}</span>
-          </li>
+          {% set sections = {"Academic": ["Student Name", "Register No.", "Institution", "Program", "Batch", "Semester", "Section", "ABC NUMBER"], "Personal": ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"], "Family": ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"], "Contact": ["Address", "Pincode", "District", "State", "Personal Email ID", "Student Mobile No.", "Alternative Student Mobile No."]} %}
+          {% for section_name, keys in sections.items() %}
+            {% set ns = namespace(shown=false) %}
+            {% for key in keys %}
+              {% if key in personal %}
+                {% if not ns.shown %}
+                <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/40 py-2 px-4">{{ section_name }}</li>
+                {% set ns.shown = true %}
+                {% endif %}
+                <li class="list-row items-center">
+                  <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ key }}</span>
+                  <span class="text-sm font-mono break-all">{{ personal[key] }}</span>
+                </li>
+              {% endif %}
+            {% endfor %}
           {% endfor %}
         </ul>
       </div>
     </div>
+    {% else %}
+    <div class="alert alert-info">No personal details available.</div>
+    {% endif %}
   </div>
 </main>
 <div id="offline-banner"></div>
