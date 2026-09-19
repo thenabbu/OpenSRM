@@ -1,7 +1,6 @@
 services:
   opensrm:
-    build: .
-    image: opensrm
+    image: ghcr.io/thenabbu/opensrm:latest
     container_name: opensrm
     restart: unless-stopped
     ports:

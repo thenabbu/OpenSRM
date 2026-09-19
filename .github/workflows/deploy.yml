@@ -1,0 +1,52 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: thenabbu/opensrm
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: thenabbu
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/thenabbu/opensrm:latest
+            ghcr.io/thenabbu/opensrm:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to lab
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LAB_HOST }}
+          username: ${{ secrets.LAB_USER }}
+          key: ${{ secrets.LAB_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/thenabbu/opensrm:latest
+            docker stop opensrm 2>/dev/null
+            docker rm opensrm 2>/dev/null
+            docker run -d --name opensrm --restart unless-stopped               -p 8083:8080               -v opensrm-data:/app/data               -e TZ=Asia/Kolkata               ghcr.io/thenabbu/opensrm:latest
+            sleep 5
+            docker logs opensrm 2>&1 | tail -3
