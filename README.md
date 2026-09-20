@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo-rect.png" alt="OpenSRM" width="400">
+</p>
+
 # OpenSRM
 
 A self-hosted attendance dashboard for the SRM Student Portal, built as a progressive web app (PWA).
