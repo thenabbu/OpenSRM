@@ -1,4 +1,7 @@
-<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
+<!doctype html>
+<html data-theme="openSRM">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
@@ -14,7 +17,7 @@
 <meta name="apple-mobile-web-app-title" content="OpenSRM">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
-<meta name="msapplication-TileImage" content="/static/icon-192.png">
+<meta name="msapplication-TileImage" href="/static/icon-192.png">
 <meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
@@ -52,7 +55,7 @@ html[data-theme="openSRM"] {
   --color-error-content: oklch(97% 0.013 17.38);
   --radius-selector: 0.5rem;
   --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
+  --radius-box: 1rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
@@ -63,45 +66,95 @@ html[data-theme="openSRM"] {
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-</head><body class="bg-base-100 text-base-content">
-<div class="flex justify-center items-center min-h-[100dvh] p-5">
-  <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
-    <div class="card-body gap-4">
-      <div class="flex items-center gap-3">
-        <img class="w-9 h-9 rounded-box object-cover" src="/static/icon-192.png" alt="OpenSRM">
-        <div>
-          <h1 class="text-lg font-semibold leading-tight">OpenSRM</h1>
-          <p class="text-xs text-base-content/50">Self-hosted portal sync</p>
+</head>
+<body class="bg-base-100 text-base-content min-h-[100dvh] flex flex-col">
+
+  <!-- Main content -->
+  <main class="flex-1 flex items-center justify-center p-4 sm:p-6">
+    <div class="w-full max-w-md">
+
+      <!-- Logo -->
+      <div class="mb-6">
+        <img src="/static/logo-rect.png" alt="OpenSRM"
+             class="w-full h-auto rounded-[16px]">
+      </div>
+
+      <!-- Login card -->
+      <div class="card bg-base-200 border border-base-300 shadow-xl">
+        <div class="card-body p-6 sm:p-8">
+
+          <!-- Form -->
+          <form id="f" class="flex flex-col gap-5">
+
+            <!-- Net ID field -->
+            <div class="form-control">
+              <label class="label pb-1" for="netid">
+                <span class="label-text font-medium">Net ID or Email</span>
+              </label>
+              <input type="text" id="netid" name="netid" placeholder="e.g. ng2776 or ng2776@srmist.edu.in"
+                     required autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50"
+                     class="input input-bordered w-full focus:input-primary">
+            </div>
+
+            <!-- Password field -->
+            <div class="form-control">
+              <label class="label pb-1" for="pw">
+                <span class="label-text font-medium">Password</span>
+              </label>
+              <div class="relative">
+                <input type="password" id="pw" name="password" placeholder="Enter your portal password"
+                       required autocomplete="current-password" maxlength="128"
+                       class="input input-bordered w-full pr-12 focus:input-primary">
+                <button type="button" id="pw-toggle"
+                        class="absolute right-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square"
+                        aria-label="Toggle password visibility">
+                  <svg id="pw-eye-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                       stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                  </svg>
+                  <svg id="pw-eye-closed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                       stroke-width="1.5" stroke="currentColor" class="w-5 h-5 hidden">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Submit button -->
+            <button type="submit" id="b" class="btn btn-accent btn-lg w-full mt-1">
+              <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
+              <span id="btnLabel">Sign in</span>
+            </button>
+
+          </form>
+
+          <!-- Status message -->
+          <div id="status" role="alert" aria-live="polite"
+               class="text-center text-sm min-h-5 mt-2"></div>
+
         </div>
       </div>
-      <form id="f" class="flex flex-col gap-3">
-        <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
-          class="input input-bordered w-full" autocomplete="username"
-          autocapitalize="off" autocorrect="off" maxlength="50">
-        <div class="join w-full">
-          <input type="password" id="pw" name="password" placeholder="Password" required
-            class="input input-bordered join-item flex-1 min-w-0"
-            autocomplete="current-password" maxlength="128">
-          <button type="button" class="btn btn-ghost join-item px-3" id="pw-toggle"
-            aria-label="Show password">◉</button>
-        </div>
-        <button type="submit" id="b" class="btn btn-primary w-full mt-1">
-          <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
-          <span id="btnLabel">Sign in</span>
-        </button>
-      </form>
-      <div id="status" role="alert" aria-live="polite"
-        class="text-center text-sm min-h-5"></div>
-      <p class="text-center text-xs text-base-content/40 leading-relaxed">
-        Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.
+
+      <!-- Footer info -->
+      <p class="text-center text-xs text-base-content/40 mt-6 leading-relaxed px-4">
+        Securely logs into the SRM student portal and syncs your attendance data.
+        <br>First login takes about 15 seconds.
       </p>
+
     </div>
-  </div>
-</div>
-<script src="/static/login.js"></script>
-<script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
-}
-</script>
-</body></html>
+  </main>
+
+  <!-- Safe area padding for iOS -->
+  <div class="h-[env(safe-area-inset-bottom)]"></div>
+
+  <script src="/static/login.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
+    }
+  </script>
+</body>
+</html>
