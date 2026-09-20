@@ -32,9 +32,8 @@ function ref() {
 }
 
 function switchTab(name, btn) {
-  document.querySelectorAll('[id^=tab-]').forEach(function(p) {
-    if (p.id === 'tab-' + name) p.style.display = '';
-    else if (p.id.startsWith('tab-') && p.id !== 'tab-') p.style.display = 'none';
+  document.querySelectorAll('[data-tabpanel]').forEach(function(p) {
+    p.style.display = (p.id === 'tab-' + name) ? '' : 'none';
   });
   document.querySelectorAll('[data-tab]').forEach(function(b) { b.classList.remove('tab-active'); });
   btn.classList.add('tab-active');

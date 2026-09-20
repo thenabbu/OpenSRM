@@ -98,6 +98,21 @@
 
         var classSlots = SLOTS.filter(function(s) { return s.type === 'class'; });
 
+        // Header row: empty corner + time-slot labels (horizontal = time)
+        var header = document.createElement('div');
+        header.className = 'tt-grid-header';
+        var corner = document.createElement('div');
+        header.appendChild(corner);
+        classSlots.forEach(function(slot) {
+            var h = document.createElement('div');
+            h.textContent = slot.start;
+            h.title = slot.start + ' - ' + slot.end;
+            h.className = 'tt-grid-time';
+            header.appendChild(h);
+        });
+        grid.appendChild(header);
+
+        // Vertical = days of week
         DAYS.forEach(function(day) {
             var row = document.createElement('div');
             row.className = 'tt-grid-row';

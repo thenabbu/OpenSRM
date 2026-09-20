@@ -532,7 +532,8 @@ def fetch_attendance(netid, password):
         # Loop/browser may have died — force a fresh launch next time.
         global _browser, _loop_thread
         _browser = None
-        return {"ok": False, "error": "scrape worker died: %s" % e}
+        msg = str(e) or repr(e)
+        return {"ok": False, "error": "scrape worker died: %s" % msg}
     finally:
         _scrape_lock.release()
 
@@ -781,7 +782,7 @@ html[data-theme="openSRM"] {
     <button role="tab" class="tab" data-tab="timetable">Timetable</button>
     <button role="tab" class="tab" data-tab="personal">Personal Details</button>
   </div>
-  <div id="tab-attendance" style="">
+  <div id="tab-attendance" data-tabpanel style="">
     <div class="card bg-base-200 border border-base-300 mb-5">
       <div class="card-body p-5">
         <div class="flex items-center gap-5">
@@ -791,8 +792,8 @@ html[data-theme="openSRM"] {
           </div>
           <div class="flex-1 min-w-0">
             <h2 class="card-title text-base">Overall attendance</h2>
-            <p class="text-sm text-base-content/60">{{ overall.attended }} of {{ overall.total }} hours attended</p>
-            <p class="text-sm font-medium text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}">Can miss {{ overall.bunk }} more classes</p>
+            <p class="text-sm text-base-content/60">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
+            <p class="text-sm font-medium text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}">{{ overall.bunk_line }}</p>
             <p class="text-xs text-base-content/40 mt-1">{{ overall.period }}</p>
           </div>
         </div>
@@ -807,12 +808,12 @@ html[data-theme="openSRM"] {
             <span class="font-mono text-xs text-base-content/60">{{ c.code }}</span>
             <span class="font-mono font-bold text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">{{ c.pct }}%</span>
           </div>
-          <h3 class="text-sm capitalize leading-snug">{{ c.name }}</h3>
+          <h3 class="text-sm capitalize leading-snug">{{ c.description }}</h3>
           <progress class="progress progress-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}" value="{{ c.pct }}" max="100"></progress>
           <div class="flex gap-3 font-mono text-xs text-base-content/40 flex-wrap">
-            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.total }} total</span>
+            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
           </div>
-          <p class="text-xs text-base-content/50 border-t border-base-300 pt-2">Can miss {{ c.bunk }} more classes</p>
+          <p class="text-xs text-base-content/50 border-t border-base-300 pt-2">{{ c.bunk_line }}</p>
         </div>
       </div>
       {% endfor %}
@@ -822,8 +823,8 @@ html[data-theme="openSRM"] {
       <table class="table table-pin-rows table-sm">
         <thead><tr class="bg-base-200"><th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th></tr></thead>
         <tbody>
-          {% for m in months %}
-          <tr><td>{{ m.label }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td><td>{{ m.od_p }}</td><td>{{ m.od_a }}</td><td>{{ m.ml }}</td><td class="font-mono font-bold">{{ m.pct }}%</td></tr>
+          {% for m in monthly %}
+          <tr><td>{{ m.month }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td><td>{{ m.od_present }}</td><td>{{ m.od_absent }}</td><td>{{ m.ml }}</td><td class="font-mono font-bold">{{ m.pct }}%</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -849,7 +850,7 @@ html[data-theme="openSRM"] {
       {% endfor %}
     </div>
   </div>
-  <div id="tab-timetable" style="display:none">
+  <div id="tab-timetable" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <button class="btn btn-primary btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
     </div>
@@ -863,21 +864,12 @@ html[data-theme="openSRM"] {
         </div>
       </div>
       <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
-      <div class="overflow-x-auto">
-        <table class="table table-pin-rows table-pin-cols table-sm">
-          <thead><tr class="bg-base-200">
-            <th class="bg-base-200 w-16"></th>
-            <th class="bg-base-200 text-center text-xs">Mon</th><th class="bg-base-200 text-center text-xs">Tue</th>
-            <th class="bg-base-200 text-center text-xs">Wed</th><th class="bg-base-200 text-center text-xs">Thu</th>
-            <th class="bg-base-200 text-center text-xs">Fri</th><th class="bg-base-200 text-center text-xs">Sat</th>
-            <th class="bg-base-200 text-center text-xs">Sun</th>
-          </tr></thead>
-          <tbody id="tt-grid-body"></tbody>
-        </table>
+      <div class="overflow-x-auto tt-grid-wrap">
+        <div id="tt-grid-body"></div>
       </div>
     </div>
   </div>
-  <div id="tab-personal" style="display:none">
+  <div id="tab-personal" data-tabpanel style="display:none">
     {% if personal %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body p-0">
