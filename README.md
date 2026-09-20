@@ -16,7 +16,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Personal Details** — student info grouped into sections (Academic, Personal, Family, Contact); clickable email/phone links
 - **Student Photo** — real portal photo as nav avatar (initials fallback)
 - **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view; service worker (network-first dashboard, cache-first static)
-- **Security** — Fernet-encrypted passwords, rate limiting (3/netid/10min, 10/IP/hr), CSP headers, HSTS
+- **Security** — Fernet-encrypted passwords, rate limiting (3/netid/10min, 10/IP/hr), CSP headers
 - **Mobile-first** — responsive layout; 44px touch targets; compact personal grid; icon-only refresh on phones
 - **Dark theme** — B&W palette from logo (#111111 bg, #ffffff text, green/amber/red status)
 
@@ -26,23 +26,33 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Flask 3.0, Python 3.12, gunicorn (1 worker) |
+| Backend | Flask 3.0, Python 3.11, gunicorn (gthread, 1 worker, 8 threads) |
 | Scraping | Playwright (headless Chromium, anti-bot via webdriver strip) |
 | Captcha | ddddocr (self-contained, pre-warmed in persistent browser) |
 | Database | SQLite (users, attendance, personal details, timetable groups/slots) |
-| Frontend | Hand-written CSS (dark theme), vanilla JS, no framework |
+| Frontend | Tailwind CSS v4 + daisyUI v5 (CDN), vanilla JS, Jinja2 templates |
 | PWA | Service worker (network-first dashboard, cache-first static) |
-| Deployment | Docker, Cloudflare Tunnel |
+| CI/CD | GitHub Actions (ruff lint → Docker build → GHCR push) |
+| Deployment | Docker on lab, Cloudflare Tunnel for HTTPS, dockhand auto-pull |
 
 ---
 
 ## Quick Start
 
 ```bash
+# Production (Docker)
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
-docker compose up -d --build
+docker compose up -d
 # Access at http://localhost:8083
+
+# Development (venv)
+cd OpenSRM
+uv venv .venv && source .venv/bin/activate
+uv pip install -r requirements.txt
+playwright install chromium
+DATA_DIR=./data gunicorn -w 1 --threads 8 -b 0.0.0.0:8084 app.app:app
+# Access at http://localhost:8084
 ```
 
 ---
@@ -52,29 +62,35 @@ docker compose up -d --build
 ```
 OpenSRM/
 ├── app/
-│   ├── app.py              # Flask app: routes, scraper, security, templates, APIs
+│   ├── app.py              # Flask app: routes, scraper, security, APIs
+│   ├── templates/
+│   │   ├── login.html      # Login page (Jinja2)
+│   │   └── dashboard.html  # Dashboard page (Jinja2)
 │   ├── static/
 │   │   ├── manifest.json   # PWA manifest
 │   │   ├── sw.js           # Service worker
-│   │   ├── dash.js         # Dashboard JS (tabs, offline indicator, daily absences)
+│   │   ├── dash.js         # Dashboard JS (tabs, offline indicator)
 │   │   ├── login.js        # Login JS (auth, password toggle)
-│   │   ├── login.css       # Login styles
-│   │   ├── timetable.js    # Timetable editor (drag-drop, grid, subject palette)
+│   │   ├── timetable.js    # Timetable editor (drag-drop, grid)
+│   │   ├── timetable.css   # Timetable + editor styles
 │   │   ├── drag-drop-touch.js  # Touch polyfill for mobile drag-and-drop
-│   │   ├── favicon.ico     # Multi-size favicon (16/32/48)
-│   │   ├── icon-192.png    # PWA icon 192px
-│   │   ├── icon-512.png    # PWA icon 512px
-│   │   ├── icon-1024.png   # PWA icon 1024px (high-DPI splash)
-│   │   ├── icon-maskable-512.png  # Maskable adaptive icon
+│   │   ├── favicon.ico     # Multi-size favicon
+│   │   ├── icon-*.png      # PWA icons (192/512/1024/maskable)
 │   │   └── apple-touch-startup-*.png  # iOS startup images
 │   └── data/
 │       ├── srm.db          # SQLite (auto-created)
 │       ├── secret          # Session secret (auto-generated)
 │       └── fernet.key      # Fernet encryption key
-├── Dockerfile
-├── docker-compose.yml
-├── entrypoint.sh
-├── requirements.txt
+├── .github/
+│   ├── workflows/
+│   │   ├── build.yml       # Lint → Docker build → GHCR push
+│   │   └── lint.yml        # Ruff lint on push
+│   └── dependabot.yml      # Auto PRs for dep updates
+├── ruff.toml               # Linter config
+├── Dockerfile              # Python 3.11-slim + Chromium
+├── docker-compose.yml      # Production (port 8083)
+├── entrypoint.sh           # Container entrypoint
+├── requirements.txt        # Python deps
 ├── CONTRIBUTING.md
 ├── SECURITY.md
 └── README.md
@@ -89,10 +105,10 @@ OpenSRM/
 3. **Attendance** — calls funSetFormId(9), parses course/monthly tables from HTML
 4. **Daily Absence** — AJAX-fetched per-month details (Promise.all for concurrency)
 5. **Personal Details** — calls funSetFormId(17), extracts key-value pairs into grouped sections
-6. **Course List** — calls funSetFormId(7), extracts subject code/name/credits for timetable subjects
+6. **Course List** — extracts subject code/name/credits from attendance page for timetable subjects
 7. **Timetable** — renders from SQLite timetable_groups/slots; per-group schedule with drag-drop editor
 8. **Store** — saves to SQLite (attendance JSON, personal details, photo, timetable groups, timestamps)
-9. **Serve** — renders dashboard with real-time calculations (bunk lines, percentages)
+9. **Serve** — renders Jinja2 templates with real-time calculations (bunk lines, percentages)
 
 ---
 
@@ -104,7 +120,12 @@ OpenSRM/
 | Rate limit (netid) | 3 per 10 min | Scrapes per account |
 | Rate limit (IP) | 10 per hour | Login attempts per IP |
 | Session | 30 days | Cookie lifetime |
-| Workers | 1 (required) | Single gunicorn worker for Chromium + ddddocr singletons |
+| Workers | 1 worker, 8 threads | gunicorn gthread for concurrent requests |
+
+Environment variables:
+- `DATA_DIR` — SQLite data directory (default: `/app/data`)
+- `CHROMIUM_PATH` — Chromium executable path (default: `/usr/bin/chromium`)
+- `TZ` — timezone (default: `Asia/Kolkata`)
 
 ---
 
@@ -117,11 +138,19 @@ OpenSRM/
 
 ---
 
+## CI/CD
+
+- **Lint** — ruff checks on every push to main (catches undefined names, unused imports, bare excepts)
+- **Build** — Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest` with OCI labels
+- **Deploy** — dockhand auto-pulls the latest image every 24 hours
+- **Dependabot** — weekly pip updates, monthly Actions updates
+
+---
+
 ## Known Limitations
 
 - **First-year accounts** — SRM may gate behind ABC ID Generation until Aadhaar form is completed
 - **No background sync** — attendance fetched on-demand (login or Refresh click)
-- **Single worker** — Chromium + ddddocr are process-level singletons; more workers = OOM
 
 ---
 

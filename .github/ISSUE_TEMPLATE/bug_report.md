@@ -30,6 +30,7 @@ What actually happened.
 - OS: [e.g., Ubuntu 22.04]
 - Docker version: [e.g., 24.0.5]
 - Browser: [e.g., Chrome 119]
+- Image: ghcr.io/thenabbu/opensrm:latest
 
 ## Logs
 
