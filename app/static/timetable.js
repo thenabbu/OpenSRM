@@ -165,21 +165,33 @@
     }
 
     function showAddSubject() {
-        var code = prompt('Subject code (e.g. 21XYZ123):');
-        if (!code) return;
-        var name = prompt('Subject name:');
-        if (!name) return;
-        code = code.trim().toUpperCase();
-        name = name.trim();
+        var modal = document.getElementById('add-subject-modal');
+        var codeInput = document.getElementById('subj-code');
+        var nameInput = document.getElementById('subj-name');
+        var confirmBtn = document.getElementById('subj-confirm-btn');
+        codeInput.value = '';
+        nameInput.value = '';
+        modal.showModal();
+        codeInput.focus();
 
-        // Add to subjects list
-        var existing = subjects.find(function(s) { return s.code === code; });
-        if (existing) {
-            existing.name = name;
-        } else {
-            subjects.push({code: code, name: name, credits: 0, custom: true});
+        function onConfirm() {
+            var code = codeInput.value.trim().toUpperCase();
+            var name = nameInput.value.trim();
+            if (!code || !name) return;
+            var existing = subjects.find(function(s) { return s.code === code; });
+            if (existing) {
+                existing.name = name;
+            } else {
+                subjects.push({code: code, name: name, credits: 0, custom: true});
+            }
+            renderPalette();
+            modal.close();
+            cleanup();
         }
-        renderPalette();
+        function cleanup() {
+            confirmBtn.removeEventListener('click', onConfirm);
+        }
+        confirmBtn.addEventListener('click', onConfirm);
     }
 
     function saveTimetable() {

@@ -15,26 +15,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
 <title>OpenSRM - {{ netid }}</title>
-<style>
-html[data-theme="openSRM"] {
-  --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);
-  --color-base-300: oklch(26% 0 0); --color-base-content: oklch(100% 0 0);
-  --color-primary: oklch(0% 0 0); --color-primary-content: oklch(100% 0 0);
-  --color-secondary: oklch(65% 0.241 354.308); --color-secondary-content: oklch(97% 0.014 343.198);
-  --color-accent: oklch(100% 0 0); --color-accent-content: oklch(0% 0 0);
-  --color-neutral: oklch(26% 0 0); --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(58% 0.158 241.966); --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(76% 0.177 163.223); --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(68% 0.162 75.834); --color-warning-content: oklch(98% 0.026 102.212);
-  --color-error: oklch(57% 0.245 27.325); --color-error-content: oklch(97% 0.013 17.38);
-  --radius-selector: 0.5rem; --radius-field: 0.5rem; --radius-box: 0.5rem;
-  --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
-  color-scheme: dark;
-}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-<link rel="stylesheet" href="/static/timetable.css">
+{% include "partials/theme.html" %}<link rel="stylesheet" href="/static/timetable.css">
 </head><body class="bg-base-100 text-base-content">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
   <div class="navbar-start gap-3 min-w-0 flex-1">
@@ -47,7 +28,7 @@ html[data-theme="openSRM"] {
       <strong class="text-sm block truncate">{{ student_name or netid }}</strong>
       {% if student_name %}<span class="text-xs text-base-content/50 block font-mono">{{ netid }}</span>{% endif %}
       <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }}"
-        class="text-xs text-base-content/55 block">Synced ...</span>
+        class="text-xs text-base-content/60 block">Synced ...</span>
     </div>
   </div>
   <div class="navbar-end gap-2">
@@ -84,7 +65,7 @@ html[data-theme="openSRM"] {
             <h2 class="card-title text-base">Overall attendance</h2>
             <p class="text-sm text-base-content/60">{{ overall.attended }} of {{ overall.max_hours }} hours attended</p>
             <p class="text-sm font-medium text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}">{{ overall.bunk_line }}</p>
-            <p class="text-xs text-base-content/40 mt-1">{{ overall.period }}</p>
+            <p class="text-xs text-base-content/50 mt-1">{{ overall.period }}</p>
           </div>
         </div>
       </div>
@@ -100,7 +81,7 @@ html[data-theme="openSRM"] {
           </div>
           <h3 class="text-sm capitalize leading-snug">{{ c.description }}</h3>
           <progress class="progress progress-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}" value="{{ c.pct }}" max="100"></progress>
-          <div class="flex gap-3 font-mono text-xs text-base-content/40 flex-wrap">
+          <div class="flex gap-3 font-mono text-xs text-base-content/50 flex-wrap">
             <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
           </div>
           <p class="text-xs text-base-content/50 border-t border-base-300 pt-2">{{ c.bunk_line }}</p>
@@ -142,13 +123,13 @@ html[data-theme="openSRM"] {
   </div>
   <div id="tab-timetable" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
-      <button class="btn btn-primary btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
+      <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
     </div>
     <div id="tt-editor" style="display:none">
       <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
         <h3 class="text-base font-semibold">Edit Timetable</h3>
         <div class="flex gap-2 flex-wrap">
-          <button id="tt-save-btn" class="btn btn-success btn-sm hidden">Save</button>
+          <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
           <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
           <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
         </div>
@@ -170,11 +151,11 @@ html[data-theme="openSRM"] {
             {% for key in keys %}
               {% if key in personal %}
                 {% if not ns.shown %}
-                <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/40 py-2 px-4">{{ section_name }}</li>
+                <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/50 py-2 px-4">{{ section_name }}</li>
                 {% set ns.shown = true %}
                 {% endif %}
                 <li class="list-row items-center">
-                  <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ key }}</span>
+                  <span class="text-xs text-base-content/50 uppercase tracking-wide w-28 shrink-0">{{ key }}</span>
                   <span class="text-sm font-mono" style="word-break:break-word;overflow-wrap:break-word">{{ personal[key] }}</span>
                 </li>
               {% endif %}
@@ -189,6 +170,24 @@ html[data-theme="openSRM"] {
   </div>
 </main>
 <div id="offline-banner"></div>
+<dialog id="add-subject-modal" class="modal">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 class="font-bold text-base mb-4">Add custom subject</h3>
+    <fieldset class="fieldset">
+      <label class="label" for="subj-code"><span class="fieldset-legend">Subject code</span></label>
+      <input type="text" id="subj-code" class="input w-full" placeholder="e.g. 21XYZ123" maxlength="20">
+    </fieldset>
+    <fieldset class="fieldset mt-3">
+      <label class="label" for="subj-name"><span class="fieldset-legend">Subject name</span></label>
+      <input type="text" id="subj-name" class="input w-full" placeholder="e.g. Cloud Computing" maxlength="100">
+    </fieldset>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+      <button id="subj-confirm-btn" class="btn btn-accent btn-sm">Add</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 <div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert"></div>
 <script src="/static/dash.js"></script>
 <script src="/static/timetable.js"></script>

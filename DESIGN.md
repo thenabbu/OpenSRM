@@ -488,16 +488,16 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 | # | Drift | Where | Target |
 |---|---|---|---|
 | 1 | `--radius-box` is `1rem` on login, `0.5rem` on the dashboard | `login.html` theme block | `0.5rem` |
-| 2 | Theme tokens are duplicated in two `<style>` blocks and can diverge | both templates | One shared Jinja include |
+| 2 | ~~Theme tokens duplicated~~ → **fixed**: shared `partials/theme.html` include | — | — |
 | 3 | `timetable.css` is hard-coded hex although its header says it uses tokens | `timetable.css` | Migration map below |
 | 4 | Timetable greens/ambers/reds are lighter Tailwind-400 tints; the dashboard cards use the theme tokens, so the two screens disagree | `timetable.css` | Tokens |
-| 5 | `.tt-wrap` uses `#161616`, the same as the page, so it reads as an outline, not a card | `timetable.css` | `base-200` |
-| 6 | daisyUI 4 classes `input-bordered`, `form-control`, `label-text` (no-ops in v5) and `focus:input-primary` (black focus ring) on the login inputs | `login.html` | §4.6 |
+| 5 | ~~`.tt-wrap` page-colored~~ → **fixed**: `background:var(--color-base-200)` | — | — |
+| 6 | ~~daisyUI 4 classes on login~~ → **fixed** (already v5 markup) | — | — |
 | 7 | `IBM Plex Mono` is referenced but never loaded | `timetable.css` | `font-mono` |
-| 8 | `text-base-content/40` on informational text (≈ 3.8:1) | `dashboard.html` | `/50` minimum |
+| 8 | ~~`/40` contrast~~ → **fixed**: all bumped to `/50` minimum | — | — |
 | 9 | Solid `btn-success`, `badge-warning`, `alert-warning` with pale labels (1.9–2.8:1) | `dashboard.html`, `dash.js` | §2.8 |
-| 10 | Native `alert()` / `prompt()` for errors and "Add subject" | `dash.js`, `timetable.js` | Modal or inline alert |
-| 11 | `.tt-today::after{content:;…}` is an invalid declaration, so the "today" dot never renders | `timetable.css` | `content:""` |
+| 10 | ~~Native `prompt()` for Add Subject~~ → **fixed**: daisyUI `<dialog>` modal | — | — |
+| 11 | ~~Invalid `.tt-today::after` content~~ → **fixed** (already `content:""`) | — | — |
 | 12 | Browser chrome color `#111111` vs navbar `base-200` ≈ `#090909` | `theme-color`, `manifest.json`, `sw.js` | Leave unless asked |
 
 **`timetable.css` migration map**

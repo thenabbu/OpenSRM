@@ -31,42 +31,7 @@
 <meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
 <title>OpenSRM</title>
-<style>
-html[data-theme="openSRM"] {
-  --color-base-100: oklch(20% 0 0);
-  --color-base-200: oklch(14% 0 0);
-  --color-base-300: oklch(26% 0 0);
-  --color-base-content: oklch(100% 0 0);
-  --color-primary: oklch(0% 0 0);
-  --color-primary-content: oklch(100% 0 0);
-  --color-secondary: oklch(65% 0.241 354.308);
-  --color-secondary-content: oklch(97% 0.014 343.198);
-  --color-accent: oklch(100% 0 0);
-  --color-accent-content: oklch(0% 0 0);
-  --color-neutral: oklch(26% 0 0);
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(76% 0.177 163.223);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(68% 0.162 75.834);
-  --color-warning-content: oklch(98% 0.026 102.212);
-  --color-error: oklch(57% 0.245 27.325);
-  --color-error-content: oklch(97% 0.013 17.38);
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
-  --depth: 1;
-  --noise: 0;
-  color-scheme: dark;
-}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
-</head>
+{% include "partials/theme.html" %}</head>
 <body class="bg-base-100 text-base-content min-h-[100dvh] flex flex-col">
 
   <!-- Main content -->
@@ -74,7 +39,7 @@ html[data-theme="openSRM"] {
     <div class="w-full max-w-md">
 
       <!-- Single card: logo + form -->
-      <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card bg-base-200 border border-base-300">
         <figure>
           <img src="/static/logo-rect.png" alt="OpenSRM"
                class="w-full h-auto">
@@ -137,7 +102,7 @@ html[data-theme="openSRM"] {
       </div>
 
       <!-- Footer info -->
-      <p class="text-center text-xs text-base-content/40 mt-6 leading-relaxed px-4">
+      <p class="text-center text-xs text-base-content/50 mt-6 leading-relaxed px-4">
         Securely logs into the SRM student portal and syncs your attendance data.
         <br>First login takes about 15 seconds.
       </p>
