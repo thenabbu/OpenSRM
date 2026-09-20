@@ -3,13 +3,13 @@ FROM python:3.11-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY vendor/cv2-stub/cv2.py /tmp/cv2_stub.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project \
     && rm -f /app/.venv/lib/python3.11/site-packages/ddddocr/common_det.onnx \
              /app/.venv/lib/python3.11/site-packages/ddddocr/common_old.onnx \
     && rm -rf /app/.venv/lib/python3.11/site-packages/cv2 \
-    && cp /tmp/cv2_stub.py /app/.venv/lib/python3.11/site-packages/cv2.py
+    && printf 'raise RuntimeError("cv2 stub: real OpenCV removed. Install opencv-python-headless if needed.")\n' \
+       > /app/.venv/lib/python3.11/site-packages/cv2.py
 
 # Playwright headless shell only. Cache-mounted so uv.lock bumps don't force a 278MB re-download.
 ENV PATH="/app/.venv/bin:$PATH"
