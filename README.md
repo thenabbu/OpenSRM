@@ -49,7 +49,7 @@ docker compose up -d
 # Development (venv)
 cd OpenSRM
 uv venv .venv && source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync --frozen
 playwright install chromium
 DATA_DIR=./data gunicorn -w 1 --threads 8 -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
@@ -90,7 +90,8 @@ OpenSRM/
 ├── Dockerfile              # Python 3.11-slim + Chromium
 ├── docker-compose.yml      # Production (port 8083)
 ├── entrypoint.sh           # Container entrypoint
-├── requirements.txt        # Python deps
+├── pyproject.toml         # Project metadata + deps
+├── uv.lock               # Locked dependencies
 ├── CONTRIBUTING.md
 ├── SECURITY.md
 └── README.md
@@ -143,7 +144,7 @@ Environment variables:
 - **Lint** — ruff checks on every push to main (catches undefined names, unused imports, bare excepts)
 - **Build** — Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest` with OCI labels
 - **Deploy** — dockhand auto-pulls the latest image every 24 hours
-- **Dependabot** — weekly pip updates, monthly Actions updates
+- **Dependabot** — weekly dependency updates, monthly Actions updates
 
 ---
 

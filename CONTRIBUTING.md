@@ -15,7 +15,7 @@ docker compose up -d
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
 uv venv .venv && source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync --frozen
 playwright install chromium
 DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
