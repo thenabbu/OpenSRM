@@ -55,7 +55,7 @@ html[data-theme="openSRM"] {
   --color-error-content: oklch(97% 0.013 17.38);
   --radius-selector: 0.5rem;
   --radius-field: 0.5rem;
-  --radius-box: 1rem;
+  --radius-box: 0.5rem;
   --size-selector: 0.25rem;
   --size-field: 0.25rem;
   --border: 1px;
@@ -85,24 +85,24 @@ html[data-theme="openSRM"] {
           <form id="f" class="flex flex-col gap-5">
 
             <!-- Net ID field -->
-            <div class="form-control">
+            <fieldset class="fieldset">
               <label class="label pb-1" for="netid">
-                <span class="label-text font-medium">NetID / Email</span>
+                <span class="fieldset-legend">NetID / Email</span>
               </label>
               <input type="text" id="netid" name="netid" placeholder="NetID / SRM email id"
                      required autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50"
-                     class="input input-bordered w-full focus:input-primary">
+                     class="input w-full">
             </div>
 
             <!-- Password field -->
-            <div class="form-control">
+            <fieldset class="fieldset">
               <label class="label pb-1" for="pw">
-                <span class="label-text font-medium">Password</span>
+                <span class="fieldset-legend">Password</span>
               </label>
               <div class="relative">
                 <input type="password" id="pw" name="password" placeholder="Password"
                        required autocomplete="current-password" maxlength="128"
-                       class="input input-bordered w-full pr-12 focus:input-primary">
+                       class="input w-full pr-12">
                 <button type="button" id="pw-toggle"
                         class="absolute right-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square"
                         aria-label="Toggle password visibility">
