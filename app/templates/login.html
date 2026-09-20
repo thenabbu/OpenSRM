@@ -1,0 +1,107 @@
+<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="apple-touch-startup-image" href="/static/apple-touch-startup-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpenSRM">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="msapplication-TileColor" content="#111111">
+<meta name="msapplication-TileImage" content="/static/icon-192.png">
+<meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
+<meta name="robots" content="noindex, nofollow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="OpenSRM - Student Attendance Dashboard">
+<meta property="og:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
+<meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
+<meta property="og:url" content="https://srm.200871.xyz">
+<meta property="og:site_name" content="OpenSRM">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="OpenSRM - Student Attendance Dashboard">
+<meta name="twitter:description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
+<meta name="twitter:image" content="https://srm.200871.xyz/static/icon-512.png">
+<title>OpenSRM</title>
+<style>
+html[data-theme="openSRM"] {
+  --color-base-100: oklch(20% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(26% 0 0);
+  --color-base-content: oklch(100% 0 0);
+  --color-primary: oklch(0% 0 0);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(97% 0.014 343.198);
+  --color-accent: oklch(100% 0 0);
+  --color-accent-content: oklch(0% 0 0);
+  --color-neutral: oklch(26% 0 0);
+  --color-neutral-content: oklch(98% 0 0);
+  --color-info: oklch(58% 0.158 241.966);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(68% 0.162 75.834);
+  --color-warning-content: oklch(98% 0.026 102.212);
+  --color-error: oklch(57% 0.245 27.325);
+  --color-error-content: oklch(97% 0.013 17.38);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+  color-scheme: dark;
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+</head><body class="bg-base-100 text-base-content">
+<div class="flex justify-center items-center min-h-[100dvh] p-5">
+  <div class="card bg-base-200 border border-base-300 w-full max-w-sm">
+    <div class="card-body gap-4">
+      <div class="flex items-center gap-3">
+        <img class="w-9 h-9 rounded-box object-cover" src="/static/icon-192.png" alt="OpenSRM">
+        <div>
+          <h1 class="text-lg font-semibold leading-tight">OpenSRM</h1>
+          <p class="text-xs text-base-content/50">Self-hosted portal sync</p>
+        </div>
+      </div>
+      <form id="f" class="flex flex-col gap-3">
+        <input type="text" id="netid" name="netid" placeholder="Net ID or email" required
+          class="input input-bordered w-full" autocomplete="username"
+          autocapitalize="off" autocorrect="off" maxlength="50">
+        <div class="join w-full">
+          <input type="password" id="pw" name="password" placeholder="Password" required
+            class="input input-bordered join-item flex-1 min-w-0"
+            autocomplete="current-password" maxlength="128">
+          <button type="button" class="btn btn-ghost join-item px-3" id="pw-toggle"
+            aria-label="Show password">◉</button>
+        </div>
+        <button type="submit" id="b" class="btn btn-primary w-full mt-1">
+          <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
+          <span id="btnLabel">Sign in</span>
+        </button>
+      </form>
+      <div id="status" role="alert" aria-live="polite"
+        class="text-center text-sm min-h-5"></div>
+      <p class="text-center text-xs text-base-content/40 leading-relaxed">
+        Logs into the SRM student portal and pulls your attendance.<br>Takes about 15 seconds.
+      </p>
+    </div>
+  </div>
+</div>
+<script src="/static/login.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
+}
+</script>
+</body></html>
