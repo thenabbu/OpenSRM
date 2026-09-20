@@ -5,7 +5,19 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Run ruff
+        run: uvx ruff check app/
+
   build:
+    needs: lint
     runs-on: ubuntu-latest
     permissions:
       contents: read

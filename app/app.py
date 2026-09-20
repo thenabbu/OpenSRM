@@ -18,11 +18,21 @@ Kept from prior work:
 # webdriver strip + --disable-blink-features). See skill: srm-portal-attendance
   - Speed ~9s end-to-end
 """
-import os, json, base64, time, asyncio, sqlite3, secrets, math, re, threading
+import asyncio
+import base64
+import json
+import math
+import os
+import re
+import secrets
+import sqlite3
+import threading
+import time
 from datetime import datetime
 from functools import wraps
+
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, request, redirect, render_template, render_template_string, make_response, g
+from flask import Flask, make_response, redirect, render_template, request
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
 
@@ -937,6 +947,7 @@ def logout():
 
 # Pre-warm ddddocr on import so the first real scrape isn't +3s cold.
 import threading as _tw
+
 _tw.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
 
 init_db()

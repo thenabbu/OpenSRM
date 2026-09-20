@@ -1,0 +1,24 @@
+target-version = "py311"
+line-length = 200
+
+[lint]
+select = [
+    "F",     # Pyflakes (undefined names, unused imports)
+    "E722",  # bare except
+    "I",     # import sorting
+    "B",     # bugbear (common bugs)
+]
+ignore = [
+    "F841",  # local variable assigned but never used (scraper code)
+    "B007",  # loop control variable not used
+    "B904",  # raise without from in except
+    "B905",  # zip strict= not needed for known-length pairs
+]
+
+[lint.per-file-ignores]
+"app/app.py" = [
+    "E722",  # bare except — intentional in scraper error handling
+]
+
+[lint.isort]
+known-first-party = ["app"]
