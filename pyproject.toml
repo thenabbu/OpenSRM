@@ -1,0 +1,16 @@
+[project]
+name = "opensrm"
+version = "1.0.0"
+description = "Self-hosted attendance dashboard for the SRM Student Portal"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "flask==3.1.3",
+    "playwright==1.63.0",
+    "ddddocr==1.6.1",
+    "gunicorn==26.2.0",
+    "cryptography>=50.0.1",
+]
+
+[project.scripts]
