@@ -186,12 +186,13 @@
             }
             renderPalette();
             modal.close();
-            cleanup();
         }
-        function cleanup() {
+        function onClose() {
             confirmBtn.removeEventListener('click', onConfirm);
+            modal.removeEventListener('close', onClose);
         }
         confirmBtn.addEventListener('click', onConfirm);
+        modal.addEventListener('close', onClose);
     }
 
     function saveTimetable() {
