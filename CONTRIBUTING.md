@@ -29,6 +29,9 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 4. **Commit** — clear, descriptive messages. One logical change per commit.
 5. **Push** — push to main. CI runs lint then Docker build then GHCR push automatically.
 
+- **Docker: multi-stage build** — Builder stage installs deps + Playwright headless shell. Runtime stage copies only .venv + headless shell binary. All heavy builds go to /data/ssd240 (root partition is 89% full).
+- **Chromium** — Uses Playwright headless shell (`playwright install --only-shell chromium`, 261 MB), NOT apt chromium (375 MB + 305 MB system libs). CHROMIUM_PATH env var points to the headless shell binary.
+
 ## Architecture Constraints
 
 - **gunicorn: 1 worker, 8 threads** — Chromium + ddddocr are process-level singletons. Multiple workers = OOM. Threads handle concurrency.
@@ -37,7 +40,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 - **SQLite** — idempotent ALTER TABLE with try/except for migrations. No ORM.
 - **Static file caching** — .js and .json are max-age=3600 (for PWA). CSS has no-store.
 - **Service Worker** — bump CACHE_NAME in sw.js on deploys that change static assets.
-- **Persistent browser** — Chromium launched once, reused via dedicated event loop. Fresh context per login. Do not close the browser instance.
+- **Persistent browser** — Playwright headless shell launched once, reused via dedicated event loop. Fresh context per login. Do not close the browser instance. CHROMIUM_PATH env var points to the headless shell binary.
 - **CSS** — Tailwind CSS v4 + daisyUI v5 via CDN. Custom theme via html data-theme="openSRM" with oklch variables.
 
 ## CI/CD

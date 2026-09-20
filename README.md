@@ -38,6 +38,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 | PWA | Service worker (network-first dashboard, cache-first static) |
 | CI/CD | GitHub Actions (ruff lint → Docker build → GHCR push) |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS, dockhand auto-pull |
+| Image size | **1.17 GB** (multi-stage build, Playwright headless shell, uv cache eliminated) |
 
 ---
 
@@ -91,7 +92,7 @@ OpenSRM/
 │   │   └── lint.yml        # Ruff lint on push
 │   └── dependabot.yml      # Auto PRs for dep updates
 ├── ruff.toml               # Linter config
-├── Dockerfile              # Python 3.11-slim + Chromium
+├── Dockerfile              # Multi-stage: Python 3.11-slim + Playwright headless shell (1.17 GB)
 ├── docker-compose.yml      # Production (port 8083)
 ├── entrypoint.sh           # Container entrypoint
 ├── pyproject.toml         # Project metadata + deps
