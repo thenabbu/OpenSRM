@@ -2,7 +2,7 @@ document.getElementById("f").onsubmit = function (ev) {
   ev.preventDefault();
   var btn = document.getElementById("b"), status = document.getElementById("status");
   btn.disabled = true;
-  btn.classList.add("loading");
+  // loading class handled by loginSpinner
   document.getElementById("loginSpinner").classList.remove("hidden");
   document.getElementById("btnLabel").textContent = "Signing in\u2026";
   status.className = "text-center text-sm text-base-content/60";
@@ -17,14 +17,14 @@ document.getElementById("f").onsubmit = function (ev) {
     status.className = "text-center text-sm text-error mt-2";
     status.textContent = d.error || "Login failed";
     btn.disabled = false;
-    btn.classList.remove("loading");
+    
     document.getElementById("loginSpinner").classList.add("hidden");
     document.getElementById("btnLabel").textContent = "Sign in";
   }).catch(function () {
     status.className = "text-center text-sm text-error mt-2";
     status.textContent = "Network error \u2014 is the server reachable?";
     btn.disabled = false;
-    btn.classList.remove("loading");
+    
     document.getElementById("loginSpinner").classList.add("hidden");
     document.getElementById("btnLabel").textContent = "Sign in";
   });
