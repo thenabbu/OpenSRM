@@ -73,15 +73,13 @@ html[data-theme="openSRM"] {
   <main class="flex-1 flex items-center justify-center p-4 sm:p-6">
     <div class="w-full max-w-md">
 
-      <!-- Logo -->
-      <div class="mb-6">
-        <img src="/static/logo-rect.png" alt="OpenSRM"
-             class="w-full h-auto rounded-[16px]">
-      </div>
-
-      <!-- Login card -->
+      <!-- Single card: logo + form -->
       <div class="card bg-base-200 border border-base-300 shadow-xl">
-        <div class="card-body p-6 sm:p-8">
+        <figure>
+          <img src="/static/logo-rect.png" alt="OpenSRM"
+               class="w-full h-auto">
+        </figure>
+        <div class="card-body p-6 sm:p-8 pt-4 sm:pt-5">
 
           <!-- Form -->
           <form id="f" class="flex flex-col gap-5">
@@ -89,9 +87,9 @@ html[data-theme="openSRM"] {
             <!-- Net ID field -->
             <div class="form-control">
               <label class="label pb-1" for="netid">
-                <span class="label-text font-medium">Net ID or Email</span>
+                <span class="label-text font-medium">Username</span>
               </label>
-              <input type="text" id="netid" name="netid" placeholder="e.g. ng2776 or ng2776@srmist.edu.in"
+              <input type="text" id="netid" name="netid" placeholder="Your net ID or email"
                      required autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50"
                      class="input input-bordered w-full focus:input-primary">
             </div>
@@ -102,7 +100,7 @@ html[data-theme="openSRM"] {
                 <span class="label-text font-medium">Password</span>
               </label>
               <div class="relative">
-                <input type="password" id="pw" name="password" placeholder="Enter your portal password"
+                <input type="password" id="pw" name="password" placeholder="Your password"
                        required autocomplete="current-password" maxlength="128"
                        class="input input-bordered w-full pr-12 focus:input-primary">
                 <button type="button" id="pw-toggle"
