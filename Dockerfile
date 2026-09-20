@@ -26,7 +26,12 @@ ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Install deps from lockfile (cached layer)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project \
+    # Phase 1: eliminate uv cache (~540 MB)
+    && rm -rf /root/.cache \
+    # Phase 1: remove unused ddddocr models (~33 MB) — only beta model used
+    && rm -f /app/.venv/lib/python3.11/site-packages/ddddocr/common_det.onnx \
+             /app/.venv/lib/python3.11/site-packages/ddddocr/common_old.onnx
 
 # Copy app code
 COPY . .
