@@ -1,5 +1,12 @@
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.title="OpenSRM" \
+      org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \
+      org.opencontainers.image.url="https://github.com/thenabbu/OpenSRM" \
+      org.opencontainers.image.source="https://github.com/thenabbu/OpenSRM" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="thenabbu"
+
 # System deps + chromium directly (playwright --with-deps fails on trixie)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
