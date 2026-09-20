@@ -184,7 +184,7 @@
 
     function saveTimetable() {
         if (!groupKey) {
-            alert('No timetable group found. Login again to create one.');
+            showError('No timetable group found. Login again to create one.');
             return;
         }
 
@@ -202,11 +202,11 @@
                 closeEditor();
                 location.reload();
             } else {
-                alert('Save failed: ' + (data.error || 'unknown error'));
+                showError('Save failed: ' + (data.error || 'unknown error'));
             }
         })
         .catch(function(err) {
-            alert('Save failed: ' + err.message);
+            showError('Save failed: ' + err.message);
         });
     }
 

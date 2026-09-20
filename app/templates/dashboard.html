@@ -132,7 +132,7 @@ html[data-theme="openSRM"] {
           {% for d in dates %}
           <div class="flex justify-between items-center py-1 text-sm font-mono text-base-content/60">
             <span>{{ d.date }}</span>
-            <span class="badge badge-sm badge-warning">{{ d.hours }} hr</span>
+            <span class="badge badge-sm badge-soft badge-warning">{{ d.hours }} hr</span>
           </div>
           {% endfor %}
         </div>
@@ -184,11 +184,12 @@ html[data-theme="openSRM"] {
       </div>
     </div>
     {% else %}
-    <div class="alert alert-info">No personal details available.</div>
+    <div class="alert alert-soft alert-info">No personal details available.</div>
     {% endif %}
   </div>
 </main>
 <div id="offline-banner"></div>
+<div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert"></div>
 <script src="/static/dash.js"></script>
 <script src="/static/timetable.js"></script>
 <script src="/static/drag-drop-touch.js"></script>

@@ -1,3 +1,12 @@
+// Error toast helper (global — used by timetable.js too)
+function showError(msg) {
+  var t = document.getElementById('error-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(function() { t.classList.add('hidden'); }, 5000);
+}
+
 (function () {
   var el = document.getElementById('lastSync');
   var ts = parseInt(el.dataset.ts || '0', 10);
@@ -24,11 +33,11 @@ function ref() {
       if (d.ok) { location.reload(); return; }
       document.getElementById('overlay').close();
       btn.disabled = false; icon.classList.remove('animate-spin');
-      alert(d.error || 'Refresh failed');
+      showError(d.error || 'Refresh failed');
     }).catch(function () {
       document.getElementById('overlay').close();
       btn.disabled = false; icon.classList.remove('animate-spin');
-      alert('Network error \u2014 refresh failed');
+      showError('Network error \u2014 is the server reachable?');
     });
 }
 
@@ -47,7 +56,7 @@ document.getElementById('refreshBtn').addEventListener('click', ref);
 
 window.addEventListener('offline', function() {
   var el = document.getElementById('offline-banner');
-  el.className = 'alert alert-warning fixed bottom-0 left-0 right-0 z-50 rounded-none';
+  el.className = 'alert alert-soft alert-warning fixed bottom-0 left-0 right-0 z-50 rounded-none';
   el.textContent = 'You are offline \u2014 showing cached data';
 });
 window.addEventListener('online', function() {
