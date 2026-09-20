@@ -40,13 +40,14 @@ html[data-theme="openSRM"] {
   <div class="navbar-start gap-3 min-w-0 flex-1">
     <div class="avatar placeholder">
       <div class="bg-base-300 w-9 rounded-full">
-        <img src="https://api.dicebear.com/9.x/adventurer/svg?seed={{ netid }}" alt="{{ netid }}">
+        <img src="https://api.dicebear.com/10.x/gaze/svg?seed={{ netid }}&animationVariant=medium" alt="{{ netid }}">
       </div>
     </div>
     <div class="min-w-0">
       <strong class="text-sm block truncate">{{ student_name or netid }}</strong>
+      {% if student_name %}<span class="text-xs text-base-content/40 block font-mono">{{ netid }}</span>{% endif %}
       <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }}"
-        class="text-xs text-base-content/40 block">Synced ...</span>
+        class="text-xs text-base-content/55 block">Synced ...</span>
     </div>
   </div>
   <div class="navbar-end gap-2">
@@ -56,7 +57,7 @@ html[data-theme="openSRM"] {
       </svg>
       <span class="hidden sm:inline">Refresh</span>
     </button>
-    <a class="btn btn-outline btn-error btn-sm" href="/logout">Log out</a>
+    <a class="btn btn-ghost btn-sm text-base-content/60" href="/logout">Log out</a>
   </div>
 </div>
 <dialog id="overlay" class="modal">
@@ -110,7 +111,7 @@ html[data-theme="openSRM"] {
     <h3 class="text-base font-semibold mb-3">Monthly attendance</h3>
     <div class="overflow-x-auto border border-base-300 rounded-box mb-5">
       <table class="table table-pin-rows table-sm">
-        <thead><tr class="bg-base-200"><th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th></th></tr></thead>
+        <thead><tr class="bg-base-200"><th>Month</th><th>Present</th><th>Absent</th><th>OD (P)</th><th>OD (A)</th><th>ML</th><th>%</th></tr></thead>
         <tbody>
           {% for m in monthly %}
           <tr><td>{{ m.month }}</td><td>{{ m.present }}</td><td>{{ m.absent }}</td><td>{{ m.od_present }}</td><td>{{ m.od_absent }}</td><td>{{ m.ml }}</td><td class="font-mono font-bold">{{ m.pct }}%</td></tr>
@@ -174,7 +175,7 @@ html[data-theme="openSRM"] {
                 {% endif %}
                 <li class="list-row items-center">
                   <span class="text-xs text-base-content/40 uppercase tracking-wide w-28 shrink-0">{{ key }}</span>
-                  <span class="text-sm font-mono break-all">{{ personal[key] }}</span>
+                  <span class="text-sm font-mono" style="word-break:break-word;overflow-wrap:break-word">{{ personal[key] }}</span>
                 </li>
               {% endif %}
             {% endfor %}
