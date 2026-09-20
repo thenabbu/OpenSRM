@@ -1,0 +1,21 @@
+services:
+  opensrm:
+    build:
+      context: .
+    image: opensrm:dev
+    volumes:
+      - ./app:/app/app
+    command:
+      - gunicorn
+      - --reload
+      - -w
+      - "1"
+      - --threads
+      - "8"
+      - -t
+      - "120"
+      - --worker-class
+      - gthread
+      - -b
+      - 0.0.0.0:8080
+      - app.app:app

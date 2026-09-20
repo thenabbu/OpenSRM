@@ -1,28 +1,24 @@
 FROM python:3.11-slim AS builder
 
-# Runtime deps only (no chromium binary — Playwright manages headless shell)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-    libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
-    libatspi2.0-0 libx11-xcb1 fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv and Python packages
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
+COPY vendor/cv2-stub/cv2.py /tmp/cv2_stub.py
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project \
     && rm -f /app/.venv/lib/python3.11/site-packages/ddddocr/common_det.onnx \
-             /app/.venv/lib/python3.11/site-packages/ddddocr/common_old.onnx
+             /app/.venv/lib/python3.11/site-packages/ddddocr/common_old.onnx \
+    && rm -rf /app/.venv/lib/python3.11/site-packages/cv2 \
+    && cp /tmp/cv2_stub.py /app/.venv/lib/python3.11/site-packages/cv2.py
 
-# Install Playwright headless shell only (261MB vs apt chromium 375MB)
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Playwright headless shell only. Cache-mounted so uv.lock bumps don't force a 278MB re-download.
 ENV PATH="/app/.venv/bin:$PATH"
-RUN playwright install --only-shell chromium
+RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
+    PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright playwright install --only-shell chromium \
+    && mkdir -p /ms-playwright \
+    && cp -a /root/.cache/ms-playwright/. /ms-playwright/
 
-# ── Stage 2: Runtime ──────────────────────────────────────────────
+# -- Stage 2: Runtime --
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="OpenSRM" \
@@ -32,27 +28,23 @@ LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="thenabbu"
 
-# Runtime deps only
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
-    libatspi2.0-0 libx11-xcb1 fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+    libatspi2.0-0 libx11-xcb1 fonts-liberation
 
-# Copy Python venv from builder
 COPY --from=builder /app/.venv /app/.venv
-# Copy Playwright headless shell from builder
 COPY --from=builder /ms-playwright /ms-playwright
 
-# Find and symlink the headless shell binary
 RUN ln -sf $(find /ms-playwright -name chrome-headless-shell -type f | head -1) /usr/local/bin/chromium
 
 ENV CHROMIUM_PATH=/usr/local/bin/chromium
 ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 WORKDIR /app
 
-# Copy app code
 COPY . .
 
 EXPOSE 8080
