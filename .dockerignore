@@ -21,7 +21,5 @@ CONTRIBUTING.md
 SECURITY.md
 LICENSE
 ruff.toml
-pyproject.toml
-uv.lock
 requirements.txt
 docs/

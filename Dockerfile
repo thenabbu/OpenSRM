@@ -8,13 +8,17 @@ LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.vendor="thenabbu"
 
 # System deps + chromium directly (playwright --with-deps fails on trixie)
+# Phase 2: strip system cruft not needed for headless chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
     libatspi2.0-0 libx11-xcb1 fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/share/icons /usr/share/doc /usr/share/mime \
+             /usr/share/X11 /usr/lib/systemd /usr/share/gtk-3.0 \
+             /usr/bin/perl /usr/share/zsh
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
