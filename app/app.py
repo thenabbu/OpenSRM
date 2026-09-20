@@ -606,7 +606,7 @@ def set_security_headers(resp):
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
         "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://api.dicebear.com; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -631,12 +631,17 @@ def index():
     monthly = [_month_view(x) for x in data.get("monthly", [])]
     overall = _overall_view(courses)
 
+    # Extract student name from personal details
+    personal_data = json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {}
+    student_name = personal_data.get("Student Name", "").title()
+
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly, overall=overall,
-        period=data.get("period"), photo=row["photo_b64"] if row and "photo_b64" in row.keys() else "", daily_absent=data.get("daily_absent", {}),
+        period=data.get("period"), daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
+        student_name=student_name,
         timetable=timetable_html(_group_key(json.loads(row["personal_details_json"])) if row and row["personal_details_json"] else None),
-        personal=json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {})
+        personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
 DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]

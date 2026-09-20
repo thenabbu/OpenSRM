@@ -38,13 +38,14 @@ html[data-theme="openSRM"] {
 </head><body class="bg-base-100 text-base-content">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
   <div class="navbar-start gap-3 min-w-0 flex-1">
-    <img class="w-8 h-8 rounded-full object-cover border border-base-300" src="data:image/jpeg;base64,{{ photo_b64 }}"
-      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-    <div class="w-8 h-8 rounded-full bg-base-300 text-base-content flex items-center justify-center text-xs font-bold hidden"
-      style="font-family:'IBM Plex Mono',monospace">{{ netid[0]|upper }}</div>
+    <div class="avatar placeholder">
+      <div class="bg-base-300 w-9 rounded-full">
+        <img src="https://api.dicebear.com/9.x/adventurer/svg?seed={{ netid }}" alt="{{ netid }}">
+      </div>
+    </div>
     <div class="min-w-0">
-      <strong class="text-sm block truncate">{{ netid }}</strong>
-      <span id="lastSync" data-ts="{{ fetch_ts }}" data-full="{{ fetch_full }}"
+      <strong class="text-sm block truncate">{{ student_name or netid }}</strong>
+      <span id="lastSync" data-ts="{{ last_epoch }}" data-full="{{ last }}"
         class="text-xs text-base-content/40 block">Synced ...</span>
     </div>
   </div>

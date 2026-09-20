@@ -14,19 +14,20 @@
 
 function ref() {
   var btn = document.getElementById('refreshBtn');
+  var icon = document.getElementById('refreshIcon');
   btn.disabled = true;
-  btn.querySelector('.icon').classList.add('animate-spin');
+  icon.classList.add('animate-spin');
   document.getElementById('overlay').showModal();
   fetch('/api/refresh', {method: 'POST'})
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d.ok) { location.reload(); return; }
       document.getElementById('overlay').close();
-      btn.disabled = false; btn.querySelector('.icon').classList.remove('animate-spin');
+      btn.disabled = false; icon.classList.remove('animate-spin');
       alert(d.error || 'Refresh failed');
     }).catch(function () {
       document.getElementById('overlay').close();
-      btn.disabled = false; btn.querySelector('.icon').classList.remove('animate-spin');
+      btn.disabled = false; icon.classList.remove('animate-spin');
       alert('Network error \u2014 refresh failed');
     });
 }
