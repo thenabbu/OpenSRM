@@ -1,19 +1,19 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.title="OpenSRM" \\
-      org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \\
-      org.opencontainers.image.url="https://github.com/thenabbu/OpenSRM" \\
-      org.opencontainers.image.source="https://github.com/thenabbu/OpenSRM" \\
-      org.opencontainers.image.licenses="MIT" \\
+LABEL org.opencontainers.image.title="OpenSRM" \
+      org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \
+      org.opencontainers.image.url="https://github.com/thenabbu/OpenSRM" \
+      org.opencontainers.image.source="https://github.com/thenabbu/OpenSRM" \
+      org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="thenabbu"
 
 # System deps + chromium directly (playwright --with-deps fails on trixie)
-RUN apt-get update && apt-get install -y --no-install-recommends \\
-    chromium \\
-    libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \\
-    libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \\
-    libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \\
-    libatspi2.0-0 libx11-xcb1 fonts-liberation curl \\
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+    libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    libatspi2.0-0 libx11-xcb1 fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -22,7 +22,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
-ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Install deps from lockfile (cached layer)
 COPY pyproject.toml uv.lock ./
