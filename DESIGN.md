@@ -487,7 +487,7 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 
 | # | Drift | Where | Target |
 |---|---|---|---|
-| 1 | `--radius-box` is `1rem` on login, `0.5rem` on the dashboard | `login.html` theme block | `0.5rem` |
+| 1 | ~~`--radius-box` mismatch~~ → **fixed**: single shared `partials/theme.html` (both pages use `0.5rem`) | — | — |
 | 2 | ~~Theme tokens duplicated~~ → **fixed**: shared `partials/theme.html` include | — | — |
 | 3 | `timetable.css` is hard-coded hex although its header says it uses tokens | `timetable.css` | Migration map below |
 | 4 | Timetable greens/ambers/reds are lighter Tailwind-400 tints; the dashboard cards use the theme tokens, so the two screens disagree | `timetable.css` | Tokens |
@@ -495,7 +495,7 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 | 6 | ~~daisyUI 4 classes on login~~ → **fixed** (already v5 markup) | — | — |
 | 7 | `IBM Plex Mono` is referenced but never loaded | `timetable.css` | `font-mono` |
 | 8 | ~~`/40` contrast~~ → **fixed**: all bumped to `/50` minimum | — | — |
-| 9 | Solid `btn-success`, `badge-warning`, `alert-warning` with pale labels (1.9–2.8:1) | `dashboard.html`, `dash.js` | §2.8 |
+| 9 | ~~Badge/alert contrast~~ → **already compliant**: only status badges are `badge-error` (solid, 4.4:1 ✓) and `badge-soft badge-warning` (soft ≈5.4:1 ✓), plus `alert-soft alert-warning` per §2.8 | — | — |
 | 10 | ~~Native `prompt()` for Add Subject~~ → **fixed**: daisyUI `<dialog>` modal | — | — |
 | 11 | ~~Invalid `.tt-today::after` content~~ → **fixed** (already `content:""`) | — | — |
 | 12 | Browser chrome color `#111111` vs navbar `base-200` ≈ `#090909` | `theme-color`, `manifest.json`, `sw.js` | Leave unless asked |
