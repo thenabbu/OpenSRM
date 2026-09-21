@@ -38,6 +38,10 @@
         document.getElementById('tab-timetable-view').style.display = 'none';
         document.getElementById('tt-edit-btn').style.display = 'none';
         document.getElementById('tt-editor').style.display = 'block';
+        // Reveal the editor action buttons (hidden by default in the template)
+        ['tt-save-btn', 'tt-cancel-btn', 'tt-add-subject-btn'].forEach(function(id) {
+            document.getElementById(id).classList.remove('hidden');
+        });
 
         // Load current timetable
         fetch('/api/timetable', {credentials: 'same-origin'})
@@ -65,6 +69,9 @@
         document.getElementById('tab-timetable-view').style.display = '';
         document.getElementById('tt-edit-btn').style.display = '';
         document.getElementById('tt-editor').style.display = 'none';
+        ['tt-save-btn', 'tt-cancel-btn', 'tt-add-subject-btn'].forEach(function(id) {
+            document.getElementById(id).classList.add('hidden');
+        });
     }
 
     function renderPalette() {
