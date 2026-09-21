@@ -45,11 +45,25 @@ function switchTab(name, btn) {
   document.querySelectorAll('[data-tabpanel]').forEach(function(p) {
     p.style.display = (p.id === 'tab-' + name) ? '' : 'none';
   });
-  document.querySelectorAll('[data-tab]').forEach(function(b) { b.classList.remove('tab-active'); });
-  btn.classList.add('tab-active');
+  document.querySelectorAll('[data-tab]').forEach(function(b) {
+    var on = (b === btn) || (b.dataset.tab === name && !btn);
+    b.classList.toggle('tab-active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+  });
+  if (btn) btn.focus();
 }
-document.querySelectorAll('[data-tab]').forEach(function(b) {
+var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
+tabButtons.forEach(function(b) {
   b.addEventListener('click', function() { switchTab(b.dataset.tab, b); });
+  b.addEventListener('keydown', function(e) {
+    var idx = tabButtons.indexOf(b), next = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = tabButtons[(idx + 1) % tabButtons.length];
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = tabButtons[(idx - 1 + tabButtons.length) % tabButtons.length];
+    else if (e.key === 'Home') next = tabButtons[0];
+    else if (e.key === 'End') next = tabButtons[tabButtons.length - 1];
+    if (next) { e.preventDefault(); switchTab(next.dataset.tab, next); }
+  });
 });
 
 document.getElementById('refreshBtn').addEventListener('click', ref);

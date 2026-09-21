@@ -49,12 +49,15 @@
   </div>
 </dialog>
 <main class="max-w-3xl mx-auto px-4 py-5">
-  <div role="tablist" class="tabs tabs-border mb-5">
-    <button role="tab" class="tab tab-active" data-tab="attendance">Attendance</button>
-    <button role="tab" class="tab" data-tab="timetable">Timetable</button>
-    <button role="tab" class="tab" data-tab="personal">Personal Details</button>
+  <div role="tablist" aria-label="Dashboard sections" class="tabs tabs-border mb-5">
+    <button role="tab" id="tab-attendance-tab" class="tab tab-active" data-tab="attendance"
+            aria-controls="tab-attendance" aria-selected="true" tabindex="0">Attendance</button>
+    <button role="tab" id="tab-timetable-tab" class="tab" data-tab="timetable"
+            aria-controls="tab-timetable" aria-selected="false" tabindex="-1">Timetable</button>
+    <button role="tab" id="tab-personal-tab" class="tab" data-tab="personal"
+            aria-controls="tab-personal" aria-selected="false" tabindex="-1">Personal Details</button>
   </div>
-  <div id="tab-attendance" data-tabpanel style="">
+  <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel style="">
     <div class="card bg-base-200 border border-base-300 mb-5">
       <div class="card-body p-5">
         <div class="flex items-center gap-5">
@@ -122,7 +125,7 @@
       {% endfor %}
     </div>
   </div>
-  <div id="tab-timetable" data-tabpanel style="display:none">
+  <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
     </div>
@@ -141,7 +144,7 @@
       </div>
     </div>
   </div>
-  <div id="tab-personal" data-tabpanel style="display:none">
+  <div id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-tab" data-tabpanel style="display:none">
     {% if personal %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body p-0">
