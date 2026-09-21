@@ -200,13 +200,21 @@ def require_login(f):
 def _cookie_secure():
     return request.headers.get("X-Forwarded-Proto") == "https"
 
-CAPTCHA_JS = """() => {
+CAPTCHA_JS = """async () => {
     const img = document.querySelector('img[alt="Captcha"]');
-    if (!img) return null;
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    c.getContext('2d').drawImage(img, 0, 0);
-    return c.toDataURL('image/png').split(',')[1];
+    // The captcha blob may not have painted yet — a 0x0 canvas yields a
+    // blank image and a garbage OCR read, so the login always fails the
+    // captcha. Poll until the image actually has dimensions.
+    for (let i = 0; i < 40; i++) {
+        if (img && img.complete && img.naturalWidth > 0) {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            return c.toDataURL('image/png').split(',')[1];
+        }
+        await new Promise(r => setTimeout(r, 250));
+    }
+    return null;
 }"""
 
 MONTHS = {
