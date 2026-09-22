@@ -21,6 +21,7 @@ Kept from prior work:
 import asyncio
 import base64
 import json
+import logging
 import math
 import os
 import re
@@ -29,13 +30,12 @@ import sqlite3
 import threading
 import time
 from datetime import datetime
-from logging_setup import setup_logging, log_with_kv, timed
-from migrations import migrate_db
-import logging
 from functools import wraps
 
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, make_response, redirect, render_template, request
+from logging_setup import log_with_kv, setup_logging
+from migrations import migrate_db
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
 
