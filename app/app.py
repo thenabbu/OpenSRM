@@ -497,6 +497,39 @@ async def _get_browser():
               "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"])
     return _browser
 
+
+# ── Persistent browser context ───────────────────────────────────────
+# ponytail: single global ctx, enough for one-user portal.
+_persistent_ctx = None
+_persistent_page = None
+
+
+async def _get_persistent_page():
+    """Reuse one browser context across scrapes. Returns (page, ctx)."""
+    global _persistent_ctx, _persistent_page
+    # Check if existing page is still alive and on HRDSystem
+    if _persistent_page is not None:
+        try:
+            url = _persistent_page.url
+            if "HRDSystem" in url or "youLogin" in url:
+                return _persistent_page, _persistent_ctx
+        except Exception:
+            _persistent_ctx = None
+            _persistent_page = None
+
+    # Create fresh context
+    browser = await _get_browser()
+    _persistent_ctx = await browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        viewport={"width": 1280, "height": 800},
+        locale="en-IN",
+    )
+    await _persistent_ctx.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+    _persistent_page = await _persistent_ctx.new_page()
+    return _persistent_page, _persistent_ctx
+
+
 # ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
 
 async def _do_login(page, ctx, netid, password):
@@ -528,11 +561,8 @@ async def _do_login(page, ctx, netid, password):
                 continue
             return False, f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts"
 async def _fetch_rich_optimized(netid, password):
-    # Shared browser; per-scrape isolated context (fresh cookies per login).
-    browser = await _get_browser()
-    ctx = await browser.new_context()
-    await ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-    page = await ctx.new_page()
+    # Persistent context — reuse across scrapes for speed.
+    page, ctx = await _get_persistent_page()
     try:
 
         # Try cached session first
@@ -552,8 +582,7 @@ async def _fetch_rich_optimized(netid, password):
         if not logged_in:
             ok, err = await _do_login(page, ctx, netid, password)
             if not ok:
-                await ctx.close()
-                return {"ok": False, "error": err}
+                                return {"ok": False, "error": err}
             # Save session for next time
             try:
                 cookies = await ctx.cookies()
@@ -614,11 +643,9 @@ async def _fetch_rich_optimized(netid, password):
             raw = await page.evaluate(
                 '() => (document.getElementById("divMainDetails")||document.body).innerText || ""')
             if "ABC ID" in raw or "Aadhaar" in raw:
-                await ctx.close()
                 return {"ok": False, "error": "Portal requires ABC ID Generation first — "
                                               "log in at sp.srmist.edu.in and complete the "
                                               "Aadhaar/ABC ID form, then try again."}
-            await ctx.close()
             return {"ok": False, "error": "Attendance page did not load (portal returned no "
                                           "course table). The portal may be slow or your "
                                           "account may be restricted."}
@@ -722,7 +749,8 @@ async def _fetch_rich_optimized(netid, password):
 
         return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
     finally:
-        await ctx.close()
+        # Don't close persistent context — keep alive for next request
+        pass
 
 def fetch_attendance(netid, password):
     if not _check_rate(netid):
