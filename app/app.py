@@ -870,10 +870,13 @@ def timetable_html(group_key):
 @app.route("/api/marks")
 @require_login
 def api_marks():
-    user = get_current_user()
-    if not user:
+    netid = get_current_user()
+    if not netid:
         return {"ok": False, "error": "not logged in"}, 401
-    marks = json.loads(user.get("marks_json", "[]"))
+    c = db()
+    row = c.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c.close()
+    marks = json.loads(row["marks_json"]) if row and row["marks_json"] else []
     return {"ok": True, "marks": marks}
 
 @app.route("/static/<path:filename>")
