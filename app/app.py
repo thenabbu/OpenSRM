@@ -561,38 +561,38 @@ async def _fetch_rich_optimized(netid, password):
             except Exception:
                 pass
 
-        # Grab student photo — poll for content instead of fixed sleep
+        # Photo: extract from profile page HTML (parallel-fetched above)
         photo_b64 = ""
         try:
-            for _ in range(10):
-                has_photo = await page.evaluate("""
-                    () => {
-                        const img = document.querySelector(
-                            'img.imgPhoto, img.img-account-profile, img[alt*=Student], img[src*=sphotos], img[src*=photo]');
-                        return img && img.complete && img.naturalWidth > 0;
-                    }
-                """)
-                if has_photo:
-                    break
-                await page.wait_for_timeout(300)
-            photo_b64 = await page.evaluate("""
-                () => {
-                    const img = document.querySelector(
-                        'img.imgPhoto, img.img-account-profile, img[alt*=Student], img[src*=sphotos], img[src*=photo]');
-                    if (!img || !img.naturalWidth) return "";
-                    const c = document.createElement("canvas");
-                    c.width = img.naturalWidth; c.height = img.naturalHeight;
-                    c.getContext("2d").drawImage(img, 0, 0);
-                    return c.toDataURL("image/jpeg", 0.85).split(",")[1] || "";
-                }
-            """)
+            profile_html = parallel_html.get("1", "")
+            if profile_html:
+                # Extract photo src from profile HTML
+                import re as _re
+                photo_match = _re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, _re.I)
+                if photo_match:
+                    photo_src = photo_match.group(1)
+                    if photo_src.startswith("/"):
+                        photo_src = "https://sp.srmist.edu.in" + photo_src
+                    # Fetch photo via page context (same-origin)
+                    photo_b64 = await page.evaluate("""async (src) => {
+                        try {
+                            const resp = await fetch(src, {credentials: 'include'});
+                            const blob = await resp.blob();
+                            return new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
+                                reader.readAsDataURL(blob);
+                            });
+                        } catch(e) { return ''; }
+                    }""", photo_src)
         except Exception:
             pass
 
-        # ── Parallel fetch: all JSPs simultaneously ────────────────────
+        # ── Parallel fetch: all JSPs + photo simultaneously ────────────
         parallel_html = await page.evaluate("""async () => {
             const r = {};
             const JSPS = {
+                "1": "../../students/report/studentProfile.jsp",
                 "9": "../../students/report/studentAttendanceDetails.jsp",
                 "13": "../../students/report/studentInternalMarkDetails.jsp",
                 "17": "../../students/report/studentPersonalDetails.jsp",
