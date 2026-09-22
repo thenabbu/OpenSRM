@@ -11,7 +11,7 @@
     });
   }
   function pct(s, m) { return !m ? 0 : Math.round((s / m) * 1000) / 10; }
-  function statusFor(p) { return p >= 75 ? "success" : p >= 50 ? "warning" : "error"; }
+  function statusFor(p) { return p >= 75 ? "success" : p >= 65 ? "warning" : "error"; }
 
   // DESIGN.md: primary=black(invisible on dark), secondary=pink, accent=white, ghost=neutral
   function compBadge(name) {

@@ -42,7 +42,13 @@ LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/
 
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "srm.db")
-SECRET = open(os.path.join(DATA_DIR, "secret")).read().strip() if os.path.exists(os.path.join(DATA_DIR, "secret")) else secrets.token_hex(32)
+_secret_path = os.path.join(DATA_DIR, "secret")
+if not os.path.exists(_secret_path):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(_secret_path, "w") as f:
+        f.write(secrets.token_hex(32))
+    os.chmod(_secret_path, 0o600)
+SECRET = open(_secret_path).read().strip()
 
 app = Flask(__name__)
 app.secret_key = SECRET
@@ -171,10 +177,12 @@ def require_login(f):
         return f(*a, **kw)
     return w
 
-# audit: Secure flag only when the request actually arrived via HTTPS
-# (Cloudflare sets X-Forwarded-Proto; plain LAN http:// access keeps working)
+# audit: Only trust CF headers when request came through Cloudflare (cf-ray present)
+def _behind_cf():
+    return bool(request.headers.get("cf-ray"))
+
 def _cookie_secure():
-    return request.headers.get("X-Forwarded-Proto") == "https"
+    return _behind_cf() and request.headers.get("X-Forwarded-Proto") == "https"
 
 CAPTCHA_JS = """async () => {
     const img = document.querySelector('img[alt="Captcha"]');
@@ -214,9 +222,12 @@ _scrape_lock = threading.Lock()
 #   per-IP login limit    — brute-force protection (netid rotation-proof)
 _login_attempts = {}   # netid -> [ts, ...]  (scrapes, 10-min window)
 _ip_attempts = {}      # ip -> [ts, ...]    (login POSTs, 1-hour window)
+_RATE_CAP = 10000      # ponytail: memory exhaustion guard; upgrade to LRU if throughput matters
 
 def _check_rate(netid):
     now = time.time()
+    if len(_login_attempts) > _RATE_CAP:
+        _login_attempts.clear()
     attempts = _login_attempts.get(netid, [])
     _login_attempts[netid] = [t for t in attempts if now - t < 600]
     if len(_login_attempts[netid]) >= 3:
@@ -226,6 +237,8 @@ def _check_rate(netid):
 
 def _check_ip_rate(ip):
     now = time.time()
+    if len(_ip_attempts) > _RATE_CAP:
+        _ip_attempts.clear()
     attempts = _ip_attempts.get(ip, [])
     _ip_attempts[ip] = [t for t in attempts if now - t < 3600]
     if len(_ip_attempts[ip]) >= 10:
@@ -233,9 +246,11 @@ def _check_ip_rate(ip):
     _ip_attempts[ip].append(now)
     return True
 def _client_ip():
-    # Behind the CF tunnel, remote_addr is cloudflared itself; CF sets the
-    # real client IP. LAN clients without the header fall back to remote_addr.
-    return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
+    # Only trust CF-Connecting-IP when request came through Cloudflare.
+    # Direct access spoofing the header would bypass rate limiting otherwise.
+    if _behind_cf():
+        return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
+    return request.remote_addr or "?"
 
 # ── HTML parsing ───────────────────────────────────────────────────
 def _cells(row_html):
@@ -739,8 +754,8 @@ def set_security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://api.dicebear.com; "
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: https://api.dicebear.com; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")

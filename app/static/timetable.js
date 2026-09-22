@@ -2,6 +2,8 @@
 (function() {
     'use strict';
 
+    function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+
     var SLOTS = [
         {period:1, start:'09:30', end:'10:20', type:'class'},
         {period:2, start:'10:20', end:'11:10', type:'class'},
@@ -83,8 +85,8 @@
             block.draggable = true;
             block.dataset.code = s.code;
             block.dataset.name = s.name;
-            block.innerHTML = '<span class="tt-subject-code">' + s.code + '</span>' +
-                              '<span class="tt-subject-name">' + s.name + '</span>';
+            block.innerHTML = '<span class="tt-subject-code">' + esc(s.code) + '</span>' +
+                              '<span class="tt-subject-name">' + esc(s.name) + '</span>';
 
             block.addEventListener('dragstart', function(e) {
                 e.dataTransfer.setData('text/plain', JSON.stringify({code: s.code, name: s.name}));
@@ -139,7 +141,7 @@
                 var placed = editorState[key];
                 if (placed) {
                     cell.classList.add('tt-cell-filled');
-                    cell.innerHTML = '<span class="cell-code">' + placed.code + '</span>' +
+                    cell.innerHTML = '<span class="cell-code">' + esc(placed.code) + '</span>' +
                                      '<button class="cell-remove" data-key="' + key + '">&times;</button>';
                     cell.querySelector('.cell-remove').addEventListener('click', function() {
                         delete editorState[key];
