@@ -123,6 +123,7 @@ def init_db():
         netid TEXT PRIMARY KEY,
         password TEXT NOT NULL,
         attendance_json TEXT,
+        marks_json TEXT DEFAULT '[]',
         last_fetch INTEGER DEFAULT 0
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS cookies(
@@ -137,6 +138,10 @@ def init_db():
         pass  # column already exists
     try:
         c.execute("ALTER TABLE users ADD COLUMN photo_b64 TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN marks_json TEXT DEFAULT '[]'")
     except sqlite3.OperationalError:
         pass  # column already exists
     _import_legacy_timetable()
@@ -342,6 +347,74 @@ _browser = None
 _loop = None
 _loop_thread = None
 
+
+
+# -- Internal marks (formId 13) --
+def parse_marks(html):
+    """Parse internal marks from studentInternalMarkDetails.jsp."""
+    out = []
+    if not html:
+        return out
+    if re.search(r"no\s+record\s+found", html, re.I):
+        return out
+    table_m = re.search(r"<table[^>]*>.*?<tr[^>]*>(.*?)</tr>(.*?)</table>", html, re.S)
+    if not table_m:
+        return out
+    headers = [re.sub(r"<[^>]+>", "", h).strip().lower()
+               for h in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", table_m.group(1), re.S)]
+    if not headers or not any("code" in h for h in headers):
+        return out
+    code_i = next((i for i, h in enumerate(headers) if "code" in h), 0)
+    desc_i = next((i for i, h in enumerate(headers)
+                    if any(k in h for k in ("desc", "course", "subject"))), 1)
+    test_i = next((i for i, h in enumerate(headers)
+                    if any(k in h for k in ("test", "exam", "assess", "component"))), None)
+    by_code = {}
+    order = []
+    pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table_m.group(2), re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        if len(cells) < 3:
+            continue
+        code = cells[code_i] if code_i < len(cells) else ""
+        if not code or re.match(r"total|s\.?\s*no", code, re.I):
+            continue
+        scored = maximum = 0.0
+        for cell in cells:
+            m = pair_re.search(cell)
+            if m:
+                scored, maximum = float(m.group(1)), float(m.group(2))
+                break
+        if maximum <= 0:
+            continue
+        desc = cells[desc_i] if desc_i < len(cells) and desc_i != code_i else ""
+        test_name = ""
+        if test_i is not None and test_i < len(cells):
+            val = cells[test_i].strip()
+            if val and val.lower() not in ("view details", "nil", "-", ""):
+                test_name = val
+        if not test_name:
+            if maximum <= 5:
+                n = sum(1 for v in by_code.get(code, {}).get("components", [])
+                        if v.get("max", 0) <= 5) + 1
+                test_name = f"FT{n}"
+            else:
+                n = sum(1 for v in by_code.get(code, {}).get("components", [])
+                        if v.get("max", 0) > 5) + 1
+                test_name = f"CT {n}"
+        if code not in by_code:
+            by_code[code] = {"code": code, "title": desc, "components": [],
+                             "scored_total": 0.0, "max_total": 0.0}
+            order.append(code)
+        elif not by_code[code]["title"] and desc:
+            by_code[code]["title"] = desc
+        by_code[code]["components"].append(
+            {"name": test_name, "scored": scored, "max": maximum})
+        by_code[code]["scored_total"] = round(by_code[code]["scored_total"] + scored, 2)
+        by_code[code]["max_total"] = round(by_code[code]["max_total"] + maximum, 2)
+    return [by_code[c] for c in order]
+
 def _ensure_loop():
     """Return a long-lived asyncio loop running in a daemon thread."""
     global _loop, _loop_thread
@@ -532,7 +605,19 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "fetched": int(time.time())}
+        # marks: internal marks (formId 13, non-critical)
+        marks = []
+        try:
+            await page.evaluate("funSetFormId(13)")
+            await page.wait_for_timeout(2000)
+            marks_html = await page.evaluate(
+                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            if marks_html:
+                marks = parse_marks(marks_html)
+        except Exception:
+            pass
+
+        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "marks": marks, "fetched": int(time.time())}
     finally:
         await ctx.close()
 
@@ -781,6 +866,16 @@ def timetable_html(group_key):
             + "<div class=panels>" + "".join(panels) + "</div>"
             + "</div></div>")
 
+
+@app.route("/api/marks")
+@require_login
+def api_marks():
+    user = get_current_user()
+    if not user:
+        return {"ok": False, "error": "not logged in"}, 401
+    marks = json.loads(user.get("marks_json", "[]"))
+    return {"ok": True, "marks": marks}
+
 @app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
@@ -830,11 +925,11 @@ def api_login():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64) VALUES(?,?,?,?,?,?) "
-              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json) VALUES(?,?,?,?,?,?,?) "
+              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               json.dumps(res.get("personal", {})), res.get("photo", "")))
+               json.dumps(res.get("personal", {})), res.get("photo", ""), json.dumps(res.get("marks", []))))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
