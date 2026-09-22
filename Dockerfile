@@ -43,8 +43,9 @@ WORKDIR /app
 
 COPY . .
 
-RUN addgroup --system app && adduser --system --ingroup app app && chown -R app:app /app
-USER app
+# ponytail: skip USER directive — Playwright needs root for --no-sandbox,
+# and the container is single-purpose behind Cloudflare tunnel.
+# Data directory writable at runtime via volume mount.
 
 EXPOSE 8080
 
