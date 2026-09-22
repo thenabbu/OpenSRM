@@ -402,7 +402,7 @@ def parse_marks(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
-            m = pair_re.search(cell)
+            m = pairre.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
                 break
@@ -450,7 +450,7 @@ def _parse_component_inner(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
-            m = pair_re.search(cell)
+            m = pairre.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
                 break
@@ -459,7 +459,7 @@ def _parse_component_inner(html):
         name = ""
         for cell in cells:
             t = cell.strip()
-            if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
+            if t and not pairre.search(t) and t.lower() not in ("", "-", "nil", "total"):
                 name = t
                 break
         if not name:
@@ -567,8 +567,8 @@ async def _fetch_rich_optimized(netid, password):
             profile_html = parallel_html.get("1", "")
             if profile_html:
                 # Extract photo src from profile HTML
-                import re as _re
-                photo_match = _re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, _re.I)
+
+                photo_match = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, _re.I)
                 if photo_match:
                     photo_src = photo_match.group(1)
                     if photo_src.startswith("/"):
