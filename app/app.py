@@ -365,8 +365,8 @@ def parse_marks(html):
         return out, {}
     # Extract subjectId + status from onclick="funViewComponentWiseMarks(id, code, desc, status)"
     subject_map = {}
-    for m in re.finditer(r'funViewComponentWiseMarks\s*\(\s*["\']?(\d+)["\']?\s*,\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']\s*,\s*(\d+)', html):
-        sid, scode, _sdesc, sstatus = m.group(1), m.group(2), m.group(3), int(m.group(4))
+    for fm in re.finditer(r"funViewComponentWiseMarks\('(\d+)',\s*'([^']+)',\s*'([^']+)',\s*(\d+)\)", html):
+        sid, scode, _sdesc, sstatus = fm.group(1), fm.group(2), fm.group(3), int(fm.group(4))
         subject_map[scode] = {"id": int(sid), "status": sstatus}
     table_m = re.search(r"<table[^>]*>.*?<tr[^>]*>(.*?)</tr>(.*?)</table>", html, re.S)
     if not table_m:
