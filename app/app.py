@@ -197,7 +197,7 @@ CAPTCHA_JS = """async () => {
             c.getContext('2d').drawImage(img, 0, 0);
             return c.toDataURL('image/png').split(',')[1];
         }
-        await new Promise(r => setTimeout(r, 250));
+        await new Promise(r => setTimeout(r, 100));
     }
     return null;
 }"""
@@ -502,10 +502,9 @@ async def _get_browser():
 async def _do_login(page, ctx, netid, password):
     """Perform login with captcha retry. Returns (ok, error_or_none)."""
     await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    await page.wait_for_selector('input[name="username"]', state="visible")
     await page.fill('input[name="username"]', netid)
     await page.click('input[name="password"]')
-    await page.type('input[name="password"]', password, delay=35)
+    await page.type('input[name="password"]', password, delay=10)
 
     MAX_CAPTCHA_RETRIES = 3
     for _ca in range(MAX_CAPTCHA_RETRIES):
@@ -514,19 +513,18 @@ async def _do_login(page, ctx, netid, password):
             return False, "captcha image not found"
         captcha = solve_captcha_b64(b64)
         await page.click('input[name="captcha"]')
-        await page.type('input[name="captcha"]', captcha, delay=35)
-        await page.mouse.move(500, 400, steps=10)
+        await page.type('input[name="captcha"]', captcha, delay=10)
+        await page.mouse.move(300, 200, steps=3)
         await page.click('button:has-text("Login")')
         try:
-            await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
+            await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=8000)
             return True, None
         except Exception:
             if _ca < MAX_CAPTCHA_RETRIES - 1:
                 await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-                await page.wait_for_selector('input[name="username"]', state="visible")
                 await page.fill('input[name="username"]', netid)
                 await page.click('input[name="password"]')
-                await page.type('input[name="password"]', password, delay=35)
+                await page.type('input[name="password"]', password, delay=10)
                 continue
             return False, f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts"
 async def _fetch_rich_optimized(netid, password):
@@ -545,7 +543,7 @@ async def _fetch_rich_optimized(netid, password):
                 cookies = json.loads(cached)
                 await ctx.add_cookies(cookies)
                 await page.goto("https://sp.srmist.edu.in/srmiststudentportal/students/template/HRDSystem.jsp",
-                                wait_until="networkidle", timeout=15000)
+                                wait_until="domcontentloaded", timeout=8000)
                 if "HRDSystem" in page.url:
                     logged_in = True
             except Exception:
