@@ -5,6 +5,8 @@ services:
     image: opensrm:dev
     volumes:
       - ./app:/app/app
+    environment:
+      - LOG_LEVEL=DEBUG
     command:
       - gunicorn
       - --reload

@@ -29,6 +29,9 @@ import sqlite3
 import threading
 import time
 from datetime import datetime
+from logging_setup import setup_logging, log_with_kv, timed
+from migrations import migrate_db
+import logging
 from functools import wraps
 
 # timetable_html is now defined locally (SQLite-backed)
@@ -43,6 +46,13 @@ SECRET = open(os.path.join(DATA_DIR, "secret")).read().strip() if os.path.exists
 app = Flask(__name__)
 app.secret_key = SECRET
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
+
+setup_logging()
+log = logging.getLogger("opensrm")
+log_http = logging.getLogger("opensrm.http")
+log_auth = logging.getLogger("opensrm.auth")
+log_portal = logging.getLogger("opensrm.portal")
+log_db = logging.getLogger("opensrm.db")
 
 SESSION_MAX_AGE = 60 * 60 * 24 * 30          # 30 days
 
@@ -119,54 +129,9 @@ def db():
 
 def init_db():
     c = db()
-    c.execute("""CREATE TABLE IF NOT EXISTS users(
-        netid TEXT PRIMARY KEY,
-        password TEXT NOT NULL,
-        attendance_json TEXT,
-        marks_json TEXT DEFAULT '[]',
-        subjects_json TEXT DEFAULT '{}',
-        last_fetch INTEGER DEFAULT 0
-    )""")
-    c.execute("""CREATE TABLE IF NOT EXISTS cookies(
-        token TEXT PRIMARY KEY,
-        netid TEXT NOT NULL,
-        created INTEGER NOT NULL
-    )""")
-    # v2: personal details column (idempotent migration)
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN personal_details_json TEXT")
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN photo_b64 TEXT")
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN marks_json TEXT DEFAULT '[]'")
-    except sqlite3.OperationalError:
-        pass  # column already exists
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN subjects_json TEXT DEFAULT '{}'")
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    migrate_db(c)  # versioned migration system — handles all schema upgrades
     _import_legacy_timetable()
-    c.execute("""CREATE TABLE IF NOT EXISTS timetable_groups (
-        id INTEGER PRIMARY KEY, group_key TEXT UNIQUE NOT NULL,
-        program TEXT, batch INTEGER, semester INTEGER, section TEXT,
-        created_at INTEGER DEFAULT (strftime('%s','now')),
-        updated_at INTEGER DEFAULT (strftime('%s','now')))""")
-    c.execute("""CREATE TABLE IF NOT EXISTS timetable_slots (
-        id INTEGER PRIMARY KEY,
-        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
-        day TEXT NOT NULL, period INTEGER NOT NULL,
-        subject_code TEXT, subject_name TEXT, location TEXT DEFAULT '',
-        UNIQUE(group_id, day, period))""")
-    c.execute("""CREATE TABLE IF NOT EXISTS timetable_subjects (
-        id INTEGER PRIMARY KEY,
-        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
-        code TEXT NOT NULL, name TEXT NOT NULL, credits INTEGER DEFAULT 0,
-        is_custom INTEGER DEFAULT 0, UNIQUE(group_id, code))""")
-    c.commit(); c.close()
+    c.close()
 
 _solver = None
 def get_solver():
@@ -753,6 +718,19 @@ def _overall_view(courses):
     return {"attended": total_att, "max_hours": total_max, "pct": pct,
             "status": _status_for_pct(pct), "bunk_line": _bunk_line(total_att, total_max)}
 
+# ── Request logging ─────────────────────────────────────────────────
+@app.before_request
+def _log_request_start():
+    request._start_time = time.monotonic()
+
+@app.after_request
+def _log_request(resp):
+    duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
+    log_with_kv(log_http, logging.INFO, "request",
+                method=request.method, path=request.path,
+                status=resp.status_code, duration_ms=duration_ms)
+    return resp
+
 # ── Security headers ───────────────────────────────────────────────
 @app.after_request
 def set_security_headers(resp):
@@ -984,11 +962,17 @@ def api_login():
     if len(password) > 128:
         return {"ok": False, "error": "invalid password"}, 400
 
+    login_t0 = time.monotonic()
     res = fetch_attendance(netid, password)
+    login_ms = int((time.monotonic() - login_t0) * 1000)
     if not res["ok"]:
+        log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
+                    error=res["error"][:80], duration_ms=login_ms)
         # audit F4: auth failures are 401; busy/rate are 429/503
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
+    log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
+                duration_ms=login_ms, subjects=len(res.get("marks", [])))
     c = db()
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, "

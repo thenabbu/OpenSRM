@@ -38,6 +38,7 @@ RUN ln -sf $(find /ms-playwright -name chrome-headless-shell -type f | head -1) 
 
 ENV CHROMIUM_PATH=/usr/local/bin/chromium
 ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+ENV LOG_LEVEL=INFO
 WORKDIR /app
 
 COPY . .
