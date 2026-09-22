@@ -636,6 +636,37 @@ async def _fetch_rich_optimized(netid, password):
             pass
 
         content_html = parallel_html.get("9", "")
+        if "youLogin" in content_html or "Login" in content_html[:2000] and "captcha" in content_html.lower():
+            # Session silently expired mid-scrape — relogin and refetch
+            _clear_session(netid)
+            ok, err = await _do_login(page, ctx, netid, password)
+            if not ok:
+                return {"ok": False, "error": err}
+            try:
+                cookies = await ctx.cookies()
+                _save_session(netid, json.dumps(cookies))
+            except Exception:
+                pass
+            parallel_html = await page.evaluate("""async () => {
+                const r = {};
+                const JSPS = {
+                    "1": "../../students/report/studentProfile.jsp",
+                    "9": "../../students/report/studentAttendanceDetails.jsp",
+                    "13": "../../students/report/studentInternalMarkDetails.jsp",
+                    "17": "../../students/report/studentPersonalDetails.jsp",
+                    "7": "../../students/report/studentSubjectLists.jsp"
+                };
+                await Promise.all(Object.entries(JSPS).map(([f, u]) =>
+                    $.post(u, [
+                        {name:'iden', value:parseInt(f)},
+                        {name:'filter', value:''},
+                        {name:'hdnFormDetails', value:1},
+                        {name:'csrfPreventionSalt', value:''}
+                    ], 'html').then(h => { r[f] = h; }).catch(() => { r[f] = ''; })
+                ));
+                return r;
+            }""")
+            content_html = parallel_html.get("9", "")
         data = parse_attendance(content_html)
 
         # Guard: ABC ID gate check
