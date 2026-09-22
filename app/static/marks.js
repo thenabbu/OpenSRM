@@ -27,7 +27,7 @@
       var cp = pct(c.scored, c.max), cst = statusFor(cp);
       return '<div class="flex items-center gap-2 py-1">' +
         '<span class="badge badge-sm badge-outline font-mono ' + compBadge(c.name) + '">' + esc(c.name) + '</span>' +
-        '<span class="font-mono text-xs text-base-content/70">' + c.scored.toFixed(2) + '/' + c.max.toFixed(2) + '</span>' +
+        '<span class="font-mono text-xs text-base-content/60">' + c.scored.toFixed(2) + '/' + c.max.toFixed(2) + '</span>' +
         '<span class="font-mono text-xs font-bold text-' + cst + ' ml-auto">' + cp + '%</span>' +
         '<progress class="progress progress-' + cst + ' h-1.5 w-16" value="' + cp + '" max="100"></progress>' +
         '</div>';
@@ -38,9 +38,9 @@
         '<span class="font-mono font-bold text-' + st + ' text-lg">' + p + '%</span>' +
         '<span class="font-mono text-xs text-base-content/50">' + s.scored_total.toFixed(2) + '/' + s.max_total.toFixed(2) + '</span>' +
       '</div>' +
-      '<h3 class="text-sm font-semibold text-base-content/80 capitalize mb-0.5">' + esc(s.title || s.code) + '</h3>' +
+      '<h3 class="text-sm font-semibold text-base-content/60 capitalize mb-0.5">' + esc(s.title || s.code) + '</h3>' +
       '<span class="font-mono text-xs text-base-content/40 mb-2 block">' + esc(s.code) + '</span>' +
-      '<div class="border-t border-base-300/50 pt-2">' +
+      '<div class="border-t border-base-300 pt-2">' +
         (comps || '<p class="text-xs text-base-content/40 italic">No assessment data</p>') +
       '</div>' +
       '</div>';
@@ -54,7 +54,7 @@
       el.innerHTML =
         '<div class="flex flex-col items-center justify-center py-12 text-center">' +
           '<div class="text-4xl mb-3 opacity-30">📊</div>' +
-          '<h3 class="text-base font-semibold text-base-content/70">No internal marks published yet</h3>' +
+          '<h3 class="text-base font-semibold text-base-content/60">No internal marks published yet</h3>' +
           '<p class="text-sm text-base-content/50 mt-1 max-w-sm">They appear here once your faculty publishes FT/CT marks on the portal.</p></div>';
       return;
     }

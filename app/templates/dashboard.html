@@ -180,7 +180,7 @@
     </div>
   </div>
 </main>
-<div id="offline-banner"></div>
+<div id="offline-banner" role="status" aria-live="polite"></div>
 <dialog id="add-subject-modal" class="modal">
   <div class="modal-box bg-base-200 border border-base-300">
     <h3 class="font-bold text-base mb-4">Add custom subject</h3>
@@ -199,7 +199,7 @@
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
-<div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert"></div>
+<div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert" aria-live="assertive"></div>
 <script defer src="/static/dash.js"></script>
 <script defer src="/static/timetable.js"></script>
 <script defer src="/static/marks.js?v=3"></script>
