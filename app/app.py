@@ -402,7 +402,7 @@ def parse_marks(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
-            m = pairre.search(cell)
+            m = pair_re.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
                 break
@@ -450,7 +450,7 @@ def _parse_component_inner(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
-            m = pairre.search(cell)
+            m = pair_re.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
                 break
@@ -459,7 +459,7 @@ def _parse_component_inner(html):
         name = ""
         for cell in cells:
             t = cell.strip()
-            if t and not pairre.search(t) and t.lower() not in ("", "-", "nil", "total"):
+            if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
                 name = t
                 break
         if not name:
@@ -561,32 +561,6 @@ async def _fetch_rich_optimized(netid, password):
             except Exception:
                 pass
 
-        # Photo: extract from profile page HTML (parallel-fetched above)
-        photo_b64 = ""
-        try:
-            profile_html = parallel_html.get("1", "")
-            if profile_html:
-                # Extract photo src from profile HTML
-
-                photo_match = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, _re.I)
-                if photo_match:
-                    photo_src = photo_match.group(1)
-                    if photo_src.startswith("/"):
-                        photo_src = "https://sp.srmist.edu.in" + photo_src
-                    # Fetch photo via page context (same-origin)
-                    photo_b64 = await page.evaluate("""async (src) => {
-                        try {
-                            const resp = await fetch(src, {credentials: 'include'});
-                            const blob = await resp.blob();
-                            return new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
-                                reader.readAsDataURL(blob);
-                            });
-                        } catch(e) { return ''; }
-                    }""", photo_src)
-        except Exception:
-            pass
 
         # ── Parallel fetch: all JSPs + photo simultaneously ────────────
         parallel_html = await page.evaluate("""async () => {
@@ -608,6 +582,29 @@ async def _fetch_rich_optimized(netid, password):
             ));
             return r;
         }""")
+
+        # Photo: extract from profile page (formId 1, parallel-fetched)
+        try:
+            profile_html = parallel_html.get("1", "")
+            if profile_html:
+                photo_match = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, re.I)
+                if photo_match:
+                    photo_src = photo_match.group(1)
+                    if photo_src.startswith("/"):
+                        photo_src = "https://sp.srmist.edu.in" + photo_src
+                    photo_b64 = await page.evaluate("""async (src) => {
+                        try {
+                            const resp = await fetch(src, {credentials: 'include'});
+                            const blob = await resp.blob();
+                            return new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
+                                reader.readAsDataURL(blob);
+                            });
+                        } catch(e) { return ''; }
+                    }""", photo_src)
+        except Exception:
+            pass
 
         content_html = parallel_html.get("9", "")
         data = parse_attendance(content_html)
