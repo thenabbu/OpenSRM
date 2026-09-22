@@ -124,6 +124,7 @@ def init_db():
         password TEXT NOT NULL,
         attendance_json TEXT,
         marks_json TEXT DEFAULT '[]',
+        subjects_json TEXT DEFAULT '{}',
         last_fetch INTEGER DEFAULT 0
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS cookies(
@@ -351,12 +352,18 @@ _loop_thread = None
 
 # -- Internal marks (formId 13) --
 def parse_marks(html):
-    """Parse internal marks from studentInternalMarkDetails.jsp."""
+    """Parse internal marks from studentInternalMarkDetails.jsp.
+    Returns (marks_list, subject_map) where subject_map maps code -> {id, status}."""
     out = []
     if not html:
         return out
     if re.search(r"no\s+record\s+found", html, re.I):
-        return out
+        return out, {}
+    # Extract subjectId + status from onclick="funViewComponentWiseMarks(id, code, desc, status)"
+    subject_map = {}
+    for m in re.finditer(r'funViewComponentWiseMarks\s*\(\s*["\']?(\d+)["\']?\s*,\s*["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']\s*,\s*(\d+)', html):
+        sid, scode, _sdesc, sstatus = m.group(1), m.group(2), m.group(3), int(m.group(4))
+        subject_map[scode] = {"id": int(sid), "status": sstatus}
     table_m = re.search(r"<table[^>]*>.*?<tr[^>]*>(.*?)</tr>(.*?)</table>", html, re.S)
     if not table_m:
         return out
@@ -413,7 +420,40 @@ def parse_marks(html):
             {"name": test_name, "scored": scored, "max": maximum})
         by_code[code]["scored_total"] = round(by_code[code]["scored_total"] + scored, 2)
         by_code[code]["max_total"] = round(by_code[code]["max_total"] + maximum, 2)
-    return [by_code[c] for c in order]
+    return [by_code[c] for c in order], subject_map
+
+def _parse_component_inner(html):
+    """Parse inner JSP response for component-wise marks breakdown."""
+    comps = []
+    if not html:
+        return comps
+    if re.search(r"no\s+record\s+found", html, re.I):
+        return comps
+    pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+        if len(cells) < 2:
+            continue
+        scored = maximum = 0.0
+        for cell in cells:
+            m = pair_re.search(cell)
+            if m:
+                scored, maximum = float(m.group(1)), float(m.group(2))
+                break
+        if maximum <= 0:
+            continue
+        name = ""
+        for cell in cells:
+            t = cell.strip()
+            if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
+                name = t
+                break
+        if not name:
+            name = f"Assessment {len(comps)+1}"
+        comps.append({"name": name, "scored": scored, "max": maximum})
+    return comps
+
 
 def _ensure_loop():
     """Return a long-lived asyncio loop running in a daemon thread."""
@@ -607,17 +647,36 @@ async def _fetch_rich_optimized(netid, password):
 
         # marks: internal marks (formId 13, non-critical)
         marks = []
+        subject_map = {}
         try:
             await page.evaluate("funSetFormId(13)")
             await page.wait_for_timeout(2000)
             marks_html = await page.evaluate(
                 '() => document.getElementById("divMainDetails")?.innerHTML || ""')
             if marks_html:
-                marks = parse_marks(marks_html)
+                marks, subject_map = parse_marks(marks_html)
+                # Fetch component-wise breakdown for each subject
+                for m in marks:
+                    s = subject_map.get(m["code"])
+                    if s:
+                        try:
+                            await page.evaluate(
+                                f"funViewComponentWiseMarks({s['id']}, '{m['code']}', '', {s['status']})")
+                            await page.wait_for_timeout(1500)
+                            inner_html = await page.evaluate(
+                                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+                            if inner_html:
+                                comps = _parse_component_inner(inner_html)
+                                if comps:
+                                    m["components"] = comps
+                                    m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
+                                    m["max_total"] = round(sum(x["max"] for x in comps), 2)
+                        except Exception:
+                            pass
         except Exception:
             pass
 
-        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "marks": marks, "fetched": int(time.time())}
+        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
     finally:
         await ctx.close()
 
@@ -928,11 +987,11 @@ def api_login():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json) VALUES(?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               json.dumps(res.get("personal", {})), res.get("photo", ""), json.dumps(res.get("marks", []))))
+               json.dumps(res.get("personal", {})), res.get("photo", ""), json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {}))))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
