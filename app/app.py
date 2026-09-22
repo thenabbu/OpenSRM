@@ -217,6 +217,33 @@ NETID_RE = re.compile(r"^[a-z0-9]{2,20}$")  # audit: SRM NetIDs are lowercase al
 # so counters below are also process-wide.
 _scrape_lock = threading.Lock()
 
+# ── Session cache: skip login when cookies are still valid ──────────
+_SESSION_CACHE_TTL = 4 * 3600  # 4 hours
+
+def _save_session(netid, cookies_json):
+    """Persist Playwright cookies for session reuse."""
+    c = db()
+    c.execute("INSERT OR REPLACE INTO cookies(token, netid, created) VALUES(?, ?, ?)",
+              (cookies_json, netid, int(time.time())))
+    c.commit(); c.close()
+
+def _load_session(netid):
+    """Load cached cookies if still valid (< TTL)."""
+    c = db()
+    row = c.execute("SELECT token, created FROM cookies WHERE netid=? ORDER BY created DESC LIMIT 1",
+                    (netid,)).fetchone()
+    c.close()
+    if not row: return None
+    if time.time() - row["created"] > _SESSION_CACHE_TTL:
+        return None  # expired
+    return row["token"]
+
+def _clear_session(netid):
+    """Remove cached cookies (on failed session restore)."""
+    c = db()
+    c.execute("DELETE FROM cookies WHERE netid=?", (netid,))
+    c.commit(); c.close()
+
 # ── Rate limiting ──────────────────────────────────────────────────
 # Two independent limits:
 #   per-netid scrape limit — portal-friendliness (each scrape = real SRM login)
@@ -471,6 +498,37 @@ async def _get_browser():
     return _browser
 
 # ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
+
+async def _do_login(page, ctx, netid, password):
+    """Perform login with captcha retry. Returns (ok, error_or_none)."""
+    await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    await page.wait_for_selector('input[name="username"]', state="visible")
+    await page.fill('input[name="username"]', netid)
+    await page.click('input[name="password"]')
+    await page.type('input[name="password"]', password, delay=35)
+
+    MAX_CAPTCHA_RETRIES = 3
+    for _ca in range(MAX_CAPTCHA_RETRIES):
+        b64 = await page.evaluate(CAPTCHA_JS)
+        if not b64:
+            return False, "captcha image not found"
+        captcha = solve_captcha_b64(b64)
+        await page.click('input[name="captcha"]')
+        await page.type('input[name="captcha"]', captcha, delay=35)
+        await page.mouse.move(500, 400, steps=10)
+        await page.click('button:has-text("Login")')
+        try:
+            await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
+            return True, None
+        except Exception:
+            if _ca < MAX_CAPTCHA_RETRIES - 1:
+                await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+                await page.wait_for_selector('input[name="username"]', state="visible")
+                await page.fill('input[name="username"]', netid)
+                await page.click('input[name="password"]')
+                await page.type('input[name="password"]', password, delay=35)
+                continue
+            return False, f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts"
 async def _fetch_rich_optimized(netid, password):
     # Shared browser; per-scrape isolated context (fresh cookies per login).
     browser = await _get_browser()
@@ -479,55 +537,51 @@ async def _fetch_rich_optimized(netid, password):
     page = await ctx.new_page()
     try:
 
-        await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        await page.wait_for_selector('input[name="username"]', state="visible")
-        await page.fill('input[name="username"]', netid)
-        await page.click('input[name="password"]')
-        await page.type('input[name="password"]', password, delay=35)
-
-        MAX_CAPTCHA_RETRIES = 3
-        for _ca in range(MAX_CAPTCHA_RETRIES):
-            b64 = await page.evaluate(CAPTCHA_JS)
-            if not b64:
-                await ctx.close()
-                return {"ok": False, "error": "captcha image not found"}
-            captcha = solve_captcha_b64(b64)
-
-            await page.click('input[name="captcha"]')
-            await page.type('input[name="captcha"]', captcha, delay=35)
-            await page.mouse.move(500, 400, steps=10)
-            await page.click('button:has-text("Login")')
-
+        # Try cached session first
+        cached = _load_session(netid)
+        logged_in = False
+        if cached:
             try:
-                await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=15000)
-                break  # success
+                cookies = json.loads(cached)
+                await ctx.add_cookies(cookies)
+                await page.goto("https://sp.srmist.edu.in/srmiststudentportal/students/template/HRDSystem.jsp",
+                                wait_until="networkidle", timeout=15000)
+                if "HRDSystem" in page.url:
+                    logged_in = True
             except Exception:
-                if _ca < MAX_CAPTCHA_RETRIES - 1:
-                    # Reload page and retry with fresh captcha
-                    await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-                    await page.wait_for_selector('input[name="username"]', state="visible")
-                    await page.fill('input[name="username"]', netid)
-                    await page.click('input[name="password"]')
-                    await page.type('input[name="password"]', password, delay=35)
-                    continue
-                await ctx.close()
-                return {"ok": False, "error": f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts (wrong creds or persistent captcha misread)"}
+                _clear_session(netid)
 
-        # Grab student photo — non-critical, fail silently.
-        # Wait briefly for the portal dashboard to render the photo (loaded via AJAX).
+        if not logged_in:
+            ok, err = await _do_login(page, ctx, netid, password)
+            if not ok:
+                await ctx.close()
+                return {"ok": False, "error": err}
+            # Save session for next time
+            try:
+                cookies = await ctx.cookies()
+                _save_session(netid, json.dumps(cookies))
+            except Exception:
+                pass
+
+        # Grab student photo — poll for content instead of fixed sleep
         photo_b64 = ""
         try:
-            await page.wait_for_timeout(1500)
+            for _ in range(10):
+                has_photo = await page.evaluate("""
+                    () => {
+                        const img = document.querySelector(
+                            'img.imgPhoto, img.img-account-profile, img[alt*=Student], img[src*=sphotos], img[src*=photo]');
+                        return img && img.complete && img.naturalWidth > 0;
+                    }
+                """)
+                if has_photo:
+                    break
+                await page.wait_for_timeout(300)
             photo_b64 = await page.evaluate("""
                 () => {
                     const img = document.querySelector(
                         'img.imgPhoto, img.img-account-profile, img[alt*=Student], img[src*=sphotos], img[src*=photo]');
-                    if (!img) return "NO_IMG_FOUND";
-                    if (!img.naturalWidth && !img.complete) {
-                        img.scrollIntoView();
-                        return "IMG_NOT_LOADED_YET";
-                    }
-                    if (!img.naturalWidth) return "IMG_NO_NATURAL_WIDTH";
+                    if (!img || !img.naturalWidth) return "";
                     const c = document.createElement("canvas");
                     c.width = img.naturalWidth; c.height = img.naturalHeight;
                     c.getContext("2d").drawImage(img, 0, 0);
@@ -537,21 +591,30 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        await page.evaluate("funSetFormId(9)")
-        try:
-            await page.wait_for_selector("#divMainDetails table tbody tr", timeout=15000)
-        except Exception:
-            pass
-        await page.wait_for_timeout(400)
+        # ── Parallel fetch: all JSPs simultaneously ────────────────────
+        parallel_html = await page.evaluate("""async () => {
+            const r = {};
+            const JSPS = {
+                "9": "../../students/report/studentAttendanceDetails.jsp",
+                "13": "../../students/report/studentInternalMarkDetails.jsp",
+                "17": "../../students/report/studentPersonalDetails.jsp",
+                "7": "../../students/report/studentSubjectLists.jsp"
+            };
+            await Promise.all(Object.entries(JSPS).map(([f, u]) =>
+                $.post(u, [
+                    {name:'iden', value:parseInt(f)},
+                    {name:'filter', value:''},
+                    {name:'hdnFormDetails', value:1},
+                    {name:'csrfPreventionSalt', value:''}
+                ], 'html').then(h => { r[f] = h; }).catch(() => { r[f] = ''; })
+            ));
+            return r;
+        }""")
 
-        content_html = await page.evaluate('() => document.getElementById("divMainDetails")?.innerHTML || document.body.innerHTML')
+        content_html = parallel_html.get("9", "")
         data = parse_attendance(content_html)
 
-        # Guard: a reachable attendance page ALWAYS has the course table. When
-        # the portal soft-locks the account (e.g. 1st-years blocked until ABC ID
-        # Generation is submitted) every formId — including 9 — renders the
-        # gate page instead, so parsing yields empty lists. Fail loudly rather
-        # than storing an empty record that looks like real data.
+        # Guard: ABC ID gate check
         if not data.get("courses"):
             raw = await page.evaluate(
                 '() => (document.getElementById("divMainDetails")||document.body).innerText || ""')
@@ -565,6 +628,7 @@ async def _fetch_rich_optimized(netid, password):
                                           "course table). The portal may be slow or your "
                                           "account may be restricted."}
 
+        # Daily absence drill-downs (unchanged — already parallel)
         targets = []
         for mo in data.get("monthly", []):
             mstr = mo["month"]
@@ -604,26 +668,19 @@ async def _fetch_rich_optimized(netid, password):
                 daily[t["mstr"]] = rows
         data["daily_absent"] = daily
 
-        # v2: personal details (formId 17) — non-critical, never fail the scrape
+        # Personal details (from parallel fetch)
         personal = {}
         try:
-            await page.evaluate("funSetFormId(17)")
-            await page.wait_for_timeout(2500)
-            personal_html = await page.evaluate(
-                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            personal_html = parallel_html.get("17", "")
             if personal_html:
                 personal = parse_personal_details(personal_html)
         except Exception:
             pass
 
-        # v2: course list (formId 7) — for timetable subjects, non-critical
+        # Course list (from parallel fetch)
         courses = []
         try:
-            await page.evaluate("funSetFormId(7)")
-            await page.wait_for_selector("#divMainDetails table tbody tr", timeout=10000)
-            await page.wait_for_timeout(400)
-            course_html = await page.evaluate(
-                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            course_html = parallel_html.get("7", "")
             for row in re.findall(r"<tr[^>]*>(.*?)</tr>", course_html, re.S):
                 cells = _cells(row)
                 if len(cells) >= 3 and cells[0] and not cells[0].lower().startswith("total"):
@@ -631,33 +688,40 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        # marks: internal marks (formId 13, non-critical)
+        # Marks (from parallel fetch)
         marks = []
         subject_map = {}
         try:
-            await page.evaluate("funSetFormId(13)")
-            await page.wait_for_timeout(2000)
-            marks_html = await page.evaluate(
-                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
+            marks_html = parallel_html.get("13", "")
             if marks_html:
                 marks, subject_map = parse_marks(marks_html)
-                # Fetch component-wise breakdown via direct POST
-                for m in marks:
-                    s = subject_map.get(m["code"])
-                    if not s:
-                        continue
-                    try:
-                        inner_html = await page.evaluate(
-                            "async ([sid, st]) => {const r = await fetch('/students/report/studentInternalMarkDetailsInner.jsp', {method: 'POST',headers: {'Content-Type': 'application/x-www-form-urlencoded','X-Requested-With': 'XMLHttpRequest'},body: 'iden=1&hdnSubjectId=' + sid + '&status=' + st});return r.ok ? await r.text() : '';}",
-                            [s["id"], s["status"]])
-                        if inner_html:
-                            comps = _parse_component_inner(inner_html)
-                            if comps:
-                                m["components"] = comps
-                                m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
-                                m["max_total"] = round(sum(x["max"] for x in comps), 2)
-                    except Exception:
-                        pass
+                # Parallel drill-downs for all subjects
+                drill_subjects = [{"sid": v["id"], "st": v["status"], "code": k}
+                                  for k, v in subject_map.items() if v.get("id")]
+                if drill_subjects:
+                    all_drill = await page.evaluate("""async (subjects) => {
+                        const results = [];
+                        await Promise.all(subjects.map(s =>
+                            fetch('../../students/report/studentInternalMarkDetailsInner.jsp', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/x-www-form-urlencoded',
+                                          'X-Requested-With': 'XMLHttpRequest'},
+                                body: 'iden=1&hdnSubjectId=' + s.sid + '&status=' + s.st
+                            }).then(r => r.ok ? r.text() : '').then(html => {
+                                if (html) results.push({code: s.code, html: html});
+                            })
+                        ));
+                        return results;
+                    }""", drill_subjects)
+                    for drill in all_drill:
+                        for m in marks:
+                            if m["code"] == drill["code"]:
+                                comps = _parse_component_inner(drill["html"])
+                                if comps:
+                                    m["components"] = comps
+                                    m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
+                                    m["max_total"] = round(sum(x["max"] for x in comps), 2)
+                                break
         except Exception:
             pass
 
@@ -992,7 +1056,7 @@ def api_login():
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     c = db()
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?,?) "
-              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, "
+              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
                json.dumps(res.get("personal", {})), res.get("photo", ""), json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {}))))
