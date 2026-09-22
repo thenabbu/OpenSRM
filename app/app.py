@@ -145,6 +145,10 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN marks_json TEXT DEFAULT '[]'")
     except sqlite3.OperationalError:
         pass  # column already exists
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN subjects_json TEXT DEFAULT '{}'")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     _import_legacy_timetable()
     c.execute("""CREATE TABLE IF NOT EXISTS timetable_groups (
         id INTEGER PRIMARY KEY, group_key TEXT UNIQUE NOT NULL,
@@ -655,24 +659,23 @@ async def _fetch_rich_optimized(netid, password):
                 '() => document.getElementById("divMainDetails")?.innerHTML || ""')
             if marks_html:
                 marks, subject_map = parse_marks(marks_html)
-                # Fetch component-wise breakdown for each subject
+                # Fetch component-wise breakdown via direct POST
                 for m in marks:
                     s = subject_map.get(m["code"])
-                    if s:
-                        try:
-                            await page.evaluate(
-                                f"funViewComponentWiseMarks({s['id']}, '{m['code']}', '', {s['status']})")
-                            await page.wait_for_timeout(1500)
-                            inner_html = await page.evaluate(
-                                '() => document.getElementById("divMainDetails")?.innerHTML || ""')
-                            if inner_html:
-                                comps = _parse_component_inner(inner_html)
-                                if comps:
-                                    m["components"] = comps
-                                    m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
-                                    m["max_total"] = round(sum(x["max"] for x in comps), 2)
-                        except Exception:
-                            pass
+                    if not s:
+                        continue
+                    try:
+                        inner_html = await page.evaluate(
+                            "async ([sid, st]) => {const r = await fetch('/students/report/studentInternalMarkDetailsInner.jsp', {method: 'POST',headers: {'Content-Type': 'application/x-www-form-urlencoded','X-Requested-With': 'XMLHttpRequest'},body: 'iden=1&hdnSubjectId=' + sid + '&status=' + st});return r.ok ? await r.text() : '';}",
+                            [s["id"], s["status"]])
+                        if inner_html:
+                            comps = _parse_component_inner(inner_html)
+                            if comps:
+                                m["components"] = comps
+                                m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
+                                m["max_total"] = round(sum(x["max"] for x in comps), 2)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
