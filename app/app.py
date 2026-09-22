@@ -34,8 +34,9 @@ from functools import wraps
 
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, make_response, redirect, render_template, request
-from logging_setup import log_with_kv, setup_logging
-from migrations import migrate_db
+
+from .logging_setup import log_with_kv, setup_logging
+from .migrations import migrate_db
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
 
