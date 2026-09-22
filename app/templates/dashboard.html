@@ -22,7 +22,7 @@
   <div class="navbar-start gap-3 min-w-0 flex-1">
     <div class="avatar placeholder">
       <div class="bg-base-300 w-9 rounded-full">
-        <img src="https://api.dicebear.com/10.x/gaze/svg?seed={{ netid }}&animationVariant=medium" alt="{{ netid }}">
+        <img loading="lazy" decoding="async" src="https://api.dicebear.com/10.x/gaze/svg?seed={{ netid }}&animationVariant=medium" alt="{{ netid }}">
       </div>
     </div>
     <div class="min-w-0">
@@ -204,4 +204,5 @@
 <script defer src="/static/timetable.js"></script>
 <script defer src="/static/marks.js?v=3"></script>
 <script defer src="/static/drag-drop-touch.js"></script>
+<div class="h-[env(safe-area-inset-bottom)]"></div>
 </body></html>

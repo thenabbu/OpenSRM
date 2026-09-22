@@ -1,8 +1,11 @@
 # Contributing to OpenSRM
 
-## Quick Start
+Thanks for wanting to help! Here's everything you need to get started.
 
-### Production (Docker)
+## Setup
+
+### Option A: Docker (easiest)
+
 ```bash
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
@@ -10,7 +13,8 @@ docker compose up -d
 # Access at http://localhost:8083
 ```
 
-### Development (venv)
+### Option B: Local dev (venv)
+
 ```bash
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
@@ -21,51 +25,61 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 # Access at http://localhost:8084
 ```
 
-## Guidelines
+## Submitting changes
 
-1. **Branch** — create a feature branch from main
+1. **Branch** — create a feature branch from `main`
 2. **Lint** — run `ruff check app/` before committing (CI blocks on failures)
 3. **Test** — verify against the live SRM portal (login, attendance, timetable editor)
 4. **Commit** — clear, descriptive messages. One logical change per commit.
-5. **Push** — push to main. CI runs lint then Docker build then GHCR push automatically.
+5. **Push** — push to main. CI runs lint → Docker build → GHCR push automatically.
 
-- **Docker: multi-stage build** — Builder stage installs deps + Playwright headless shell. Runtime stage copies only .venv + headless shell binary. All heavy builds go to /data/ssd240 (root partition is 89% full).
-- **Chromium** — Uses Playwright headless shell (`playwright install --only-shell chromium`, 261 MB), NOT apt chromium (375 MB + 305 MB system libs). CHROMIUM_PATH env var points to the headless shell binary.
+### Commit format
 
-## Architecture Constraints
+```
+type: short description
 
-- **gunicorn: 1 worker, 8 threads** — Chromium + ddddocr are process-level singletons. Multiple workers = OOM. Threads handle concurrency.
-- **Templates** — Jinja2 files in `app/templates/`. Not inline strings. Use `render_template()`.
-- **No new JS frameworks** — vanilla JS + CSS. No React, no build step.
-- **SQLite** — idempotent ALTER TABLE with try/except for migrations. No ORM.
-- **Static file caching** — .js and .json are max-age=3600 (for PWA). CSS has no-store.
-- **Service Worker** — bump CACHE_NAME in sw.js on deploys that change static assets.
-- **Persistent browser** — Playwright headless shell launched once, reused via dedicated event loop. Fresh context per login. Do not close the browser instance. CHROMIUM_PATH env var points to the headless shell binary.
-- **CSS** — Tailwind CSS v4 + daisyUI v5 via CDN. Custom theme via html data-theme="openSRM" with oklch variables.
+feat: add internal marks tab
+fix: captcha timing race condition
+docs: update README with new features
+ci: add PR trigger to lint workflow
+```
 
-## CI/CD
+## What to know before editing
 
-- **Lint** — ruff checks on every push to main
-- **Build** — Docker image built and pushed to ghcr.io/thenabbu/opensrm:latest
-- **Deploy** — dockhand auto-pulls every 24 hours
-- **Dependabot** — auto PRs for pip and Actions updates
+### Design system
 
-## Features Reference
+The app uses a custom dark daisyUI theme (`openSRM`). Read `DESIGN.md` before touching any template or CSS — the theme has unusual rules (e.g., `primary` is black, surfaces are inverted).
 
-- **Captcha retry** — up to 3 attempts per login, page reload between retries
-- **NetID/email login** — input strips @domain suffix server-side
-- **Password toggle** — client-side type=password/text switch
-- **Timetable editor** — per-group drag-drop with subject palette (subjects from course list scrape)
-- **Daily absences** — expand/collapse per-month, AJAX-fetched
+Key rules:
+- **Tokens only** — never use hex colors or Tailwind palette classes
+- **Status colors follow thresholds** — ≥75% success, 65–74.9% warning, <65% error
+- **`primary` is black** — use `accent` (white) for emphasis buttons
+- **Borders, not shadows** — no gradients, glows, or glassmorphism
 
-## Portal Rate Limits
+### Architecture
 
-- Per-netid: 3 scrapes per 10 minutes
-- Per-IP: 10 login attempts per hour
-- Do not hammer during testing.
+- **Flask + Jinja2** — templates in `app/templates/`, static files in `app/static/`
+- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access
+- **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
+- **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
+- **Playwright** — persistent browser instance, fresh context per login. Chromium launched once at startup.
+- **No JS frameworks** — vanilla JS only. No build step.
+- **Service worker** — bump `CACHE_NAME` in `sw.js` when deploying static asset changes.
 
-## Code Style
+### CI/CD
 
-- Python: PEP 8, enforced by ruff
-- CSS: Tailwind + daisyUI, dark theme (#111111 bg)
-- Commit messages: type: description (feat/fix/ci/docs/refactor)
+- **Lint** — ruff checks on every push to main and PRs
+- **Build** — Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest`
+- **Deploy** — dockhand auto-pulls the latest image
+
+## Portal rate limits
+
+During testing, be aware:
+- Per netid: 3 scrapes per 10 minutes
+- Per IP: 10 login attempts per hour
+
+Don't hammer the portal during testing.
+
+## Questions?
+
+Open a discussion on GitHub or reach out on Discord.

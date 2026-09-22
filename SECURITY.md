@@ -1,17 +1,41 @@
 # Security Policy
 
-## Reporting
+## Reporting vulnerabilities
 
 Report vulnerabilities via GitHub DM or email. Do not open public issues.
 
-## What We Protect
+## What we protect
 
-- **Passwords** — Fernet encryption at rest (AES-128-CBC), key in /app/data/fernet.key
-- **Sessions** — HTTP-only, Secure-flagged (behind HTTPS), 30-day expiry
-- **CSP** — script-src 'self' https://cdn.jsdelivr.net (Tailwind/daisyUI CDN), worker-src 'self', manifest-src 'self'
-- **Rate limiting** — per-netid (3/10min) + per-IP (10/hr)
-- **Input validation** — Net ID regex [a-zA-Z0-9]{2,20}, max lengths enforced
-- **Cache** — no-store on HTML, max-age=3600 on JS/JSON/icons (for PWA service worker)
+### Passwords
+- Fernet encryption at rest (AES-128-CBC)
+- Key stored in `/app/data/fernet.key`
+- Never logged or transmitted in plaintext
+
+### Sessions
+- HTTP-only cookies (not accessible via JavaScript)
+- Secure flag enabled behind HTTPS
+- 30-day expiry with automatic cleanup of expired tokens
+
+### Content Security Policy
+- `script-src 'self'` — no external scripts
+- `style-src 'self' 'unsafe-inline'` — Tailwind/daisyUI loaded at runtime
+- `frame-ancestors 'none'` — cannot be embedded in iframes
+- `connect-src 'self'` — no external API calls from the browser
+
+### Rate limiting
+- Per netid: 3 scrapes per 10 minutes
+- Per IP: 10 login attempts per hour
+- Memory exhaustion guard: rate-limit dicts capped at 10,000 entries
+
+### Input validation
+- NetID regex: `[a-z0-9]{2,20}` (after stripping email domain)
+- Password max length: 128 characters
+- Request body max: 16KB
+
+### Infrastructure
+- Cloudflare Tunnel for HTTPS termination
+- Only trusted when `cf-ray` header is present (prevents header spoofing)
+- Docker container runs with healthcheck and log rotation
 
 ## Scope
 

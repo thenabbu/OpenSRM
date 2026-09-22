@@ -94,7 +94,8 @@ def _import_legacy_timetable():
     """One-time import: timetable.json -> SQLite for existing users."""
     json_path = os.path.join(os.path.dirname(__file__), "data", "timetable.json")
     if not os.path.exists(json_path): return
-    data = json.load(open(json_path))
+    with open(json_path) as f:
+        data = json.load(f)
     # Infer group from ng2776's known data
     group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
     c = db()
@@ -999,7 +1000,7 @@ def api_login():
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
     try:
-        personal = json.loads(json.dumps(res.get("personal", {})))
+        personal = dict(res.get("personal", {}))
         gk = _group_key(personal)
         if gk and res.get("courses"):
             c2 = db()
