@@ -553,11 +553,14 @@ async def _do_login(page, ctx, netid, password):
     await page.type('input[name="password"]', password, delay=10)
 
     MAX_CAPTCHA_RETRIES = 5
+    last_err = ""
     for _ca in range(MAX_CAPTCHA_RETRIES):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
-            return False, "captcha image not found"
+            return False, "captcha image failed to load after 10s — portal may be slow"
         captcha = solve_captcha_b64(b64)
+        if not captcha:
+            return False, "captcha OCR returned empty"
         await page.click('input[name="captcha"]')
         await page.type('input[name="captcha"]', captcha, delay=10)
         await page.mouse.move(300, 200, steps=3)
@@ -566,13 +569,26 @@ async def _do_login(page, ctx, netid, password):
             await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=8000)
             return True, None
         except Exception:
+            # Extract the specific error the portal showed
+            try:
+                err_html = await page.evaluate("() => (document.body.innerText || '').slice(0, 500)")
+                if "captcha expired" in err_html.lower():
+                    last_err = "captcha expired"
+                elif "invalid captcha" in err_html.lower():
+                    last_err = f"invalid captcha (read: {captcha})"
+                elif "invalid" in err_html.lower():
+                    last_err = f"invalid credentials or captcha (read: {captcha})"
+                else:
+                    last_err = f"rejected (read: {captcha})"
+            except Exception:
+                last_err = f"rejected (read: {captcha})"
             if _ca < MAX_CAPTCHA_RETRIES - 1:
                 await page.goto(LOGIN_URL, wait_until="domcontentloaded")
                 await page.fill('input[name="username"]', netid)
                 await page.click('input[name="password"]')
                 await page.type('input[name="password"]', password, delay=10)
                 continue
-            return False, f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts"
+            return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}"
 async def _fetch_rich_optimized(netid, password):
     # Persistent context — reuse across scrapes for speed.
     page, ctx = await _get_persistent_page(netid)
@@ -1103,7 +1119,7 @@ def api_login():
     # reach Playwright, and not counting them keeps junk floods from
     # bloating the counter dict.
     if not _check_ip_rate(_client_ip()):
-        return {"ok": False, "error": "Too many attempts from your address. Try again in an hour."}, 429
+        return {"ok": False, "error": "Too many login attempts from this server. The portal may be rate-limiting us. Try again later."}, 429
 
     netid = (d.get("netid") or "").strip().lower().split("@")[0] if isinstance(d.get("netid"), str) else ""
     password = d.get("password") if isinstance(d.get("password"), str) else ""
