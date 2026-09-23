@@ -152,43 +152,6 @@ def get_solver():
 def solve_captcha_b64(b64):
     return get_solver().classification(base64.b64decode(b64))
 
-
-# Vision captcha solver via OpenRouter (gemma-4-26b, free tier)
-# ponytail: env var not set → always returns None, code falls through to ddddocr.
-_OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-_OPENROUTER_MODEL = "google/gemma-4-26b-a4b-it:free"
-
-def solve_captcha_vision(b64_png):
-    """Use vision LLM to read captcha. Returns 6-char string or empty on failure."""
-    if not _OPENROUTER_KEY:
-        return ""
-    import urllib.request
-    payload = json.dumps({
-        "model": _OPENROUTER_MODEL,
-        "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_png}"}},
-            {"type": "text", "text": "Read the exact 6 alphanumeric characters in this CAPTCHA image. Output ONLY the 6 characters, no quotes, no explanation."}
-        ]}],
-        "max_tokens": 10,
-        "temperature": 0,
-    })
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=payload.encode(),
-        headers={
-            "Authorization": f"Bearer {_OPENROUTER_KEY}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = json.loads(resp.read())["choices"][0]["message"]["content"].strip().lower()
-            cleaned = re.sub(r"[^a-z0-9]", "", raw)[:6]
-            return cleaned if len(cleaned) == 6 else ""
-    except Exception:
-        return ""
-
-
 def get_current_user():
     token = request.cookies.get("srm_session")
     if not token: return None
@@ -583,26 +546,18 @@ async def _get_persistent_page(netid):
 # ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
 
 async def _do_login(page, ctx, netid, password):
-    """Perform login with dual-engine captcha retry.
-    Retry 1: ddddocr (fast). Retry 2: vision API (accurate). Retry 3: ddddocr.
-    Returns (ok, error_or_none).
-    """
+    """Perform login with captcha retry. Returns (ok, error_or_none)."""
     await page.goto(LOGIN_URL, wait_until="domcontentloaded")
     await page.fill('input[name="username"]', netid)
     await page.click('input[name="password"]')
     await page.type('input[name="password"]', password, delay=10)
 
-    MAX_CAPTCHA_RETRIES = 3
+    MAX_CAPTCHA_RETRIES = 5
     for _ca in range(MAX_CAPTCHA_RETRIES):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
             return False, "captcha image not found"
-        # Vision first (accurate ~40-60%), ddddocr fallback if API fails
-        captcha = solve_captcha_vision(b64)
-        if not captcha:
-            captcha = solve_captcha_b64(b64)
-        if not captcha:
-            return False, "captcha OCR returned empty"
+        captcha = solve_captcha_b64(b64)
         await page.click('input[name="captcha"]')
         await page.type('input[name="captcha"]', captcha, delay=10)
         await page.mouse.move(300, 200, steps=3)
