@@ -597,12 +597,9 @@ async def _do_login(page, ctx, netid, password):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
             return False, "captcha image not found"
-        # Alternate: odd retries use vision, even use ddddocr
-        if _ca % 2 == 1:
-            captcha = solve_captcha_vision(b64)
-            if not captcha:
-                captcha = solve_captcha_b64(b64)  # fallback if vision fails
-        else:
+        # Vision first (accurate ~40-60%), ddddocr fallback if API fails
+        captcha = solve_captcha_vision(b64)
+        if not captcha:
             captcha = solve_captcha_b64(b64)
         if not captcha:
             return False, "captcha OCR returned empty"
