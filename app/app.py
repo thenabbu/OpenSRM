@@ -502,13 +502,14 @@ async def _get_browser():
 # ponytail: single global ctx, enough for one-user portal.
 _persistent_ctx = None
 _persistent_page = None
+_persistent_owner = None  # netid whose cookies live in this context
 
 
-async def _get_persistent_page():
+async def _get_persistent_page(netid):
     """Reuse one browser context across scrapes. Returns (page, ctx)."""
-    global _persistent_ctx, _persistent_page
-    # Check if existing page is still alive and on HRDSystem
-    if _persistent_page is not None:
+    global _persistent_ctx, _persistent_page, _persistent_owner
+    # Reuse only if alive AND owned by the same user
+    if _persistent_page is not None and _persistent_owner == netid:
         try:
             url = _persistent_page.url
             if "HRDSystem" in url or "youLogin" in url:
@@ -516,6 +517,17 @@ async def _get_persistent_page():
         except Exception:
             _persistent_ctx = None
             _persistent_page = None
+            _persistent_owner = None
+    else:
+        # Different user or dead context — start clean so cookies don't mix
+        if _persistent_ctx is not None:
+            try:
+                await _persistent_ctx.close()
+            except Exception:
+                pass
+        _persistent_ctx = None
+        _persistent_page = None
+        _persistent_owner = None
 
     # Create fresh context
     browser = await _get_browser()
@@ -527,6 +539,7 @@ async def _get_persistent_page():
     await _persistent_ctx.add_init_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
     _persistent_page = await _persistent_ctx.new_page()
+    _persistent_owner = netid
     return _persistent_page, _persistent_ctx
 
 
@@ -562,27 +575,31 @@ async def _do_login(page, ctx, netid, password):
             return False, f"login failed after {MAX_CAPTCHA_RETRIES} captcha attempts"
 async def _fetch_rich_optimized(netid, password):
     # Persistent context — reuse across scrapes for speed.
-    page, ctx = await _get_persistent_page()
+    page, ctx = await _get_persistent_page(netid)
     try:
 
-        # Try cached session first
-        cached = _load_session(netid)
+        # Fast path: persistent page is already logged in on HRDSystem
         logged_in = False
-        if cached:
-            try:
-                cookies = json.loads(cached)
-                await ctx.add_cookies(cookies)
-                await page.goto("https://sp.srmist.edu.in/srmiststudentportal/students/template/HRDSystem.jsp",
-                                wait_until="domcontentloaded", timeout=8000)
-                if "HRDSystem" in page.url:
-                    logged_in = True
-            except Exception:
-                _clear_session(netid)
+        if "HRDSystem" in page.url:
+            logged_in = True
+        if not logged_in:
+            # Cached cookies path (container restarted etc.)
+            cached = _load_session(netid)
+            if cached:
+                try:
+                    cookies = json.loads(cached)
+                    await ctx.add_cookies(cookies)
+                    await page.goto("https://sp.srmist.edu.in/srmiststudentportal/students/template/HRDSystem.jsp",
+                                    wait_until="domcontentloaded", timeout=8000)
+                    if "HRDSystem" in page.url:
+                        logged_in = True
+                except Exception:
+                    _clear_session(netid)
 
         if not logged_in:
             ok, err = await _do_login(page, ctx, netid, password)
             if not ok:
-                                return {"ok": False, "error": err}
+                return {"ok": False, "error": err}
             # Save session for next time
             try:
                 cookies = await ctx.cookies()
