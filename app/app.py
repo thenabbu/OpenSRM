@@ -273,6 +273,31 @@ def _check_ip_rate(ip):
         return False
     _ip_attempts[ip].append(now)
     return True
+
+# -- Portal cooldown ------------------------------------------------
+# When the SRM portal silently rejects logins (rate-limiting our IP),
+# pause ALL login attempts to avoid worsening the block.
+_portal_cooldown_until = 0   # unix timestamp; 0 = no cooldown
+_portal_consecutive_fails = 0
+
+def _portal_fail():
+    global _portal_cooldown_until, _portal_consecutive_fails
+    _portal_consecutive_fails += 1
+    if _portal_consecutive_fails >= 3:
+        minutes = min(30, 5 * (2 ** (_portal_consecutive_fails - 3)))
+        _portal_cooldown_until = time.time() + minutes * 60
+        log.warning("portal cooldown %d min after %d consecutive fails",
+                     minutes, _portal_consecutive_fails)
+
+def _portal_ok():
+    global _portal_cooldown_until, _portal_consecutive_fails
+    _portal_consecutive_fails = 0
+    _portal_cooldown_until = 0
+
+def _portal_cooldown_remaining():
+    remaining = _portal_cooldown_until - time.time()
+    return max(0, remaining)
+
 def _client_ip():
     # Only trust CF-Connecting-IP when request came through Cloudflare.
     # Direct access spoofing the header would bypass rate limiting otherwise.
@@ -547,6 +572,12 @@ async def _get_persistent_page(netid):
 
 async def _do_login(page, ctx, netid, password):
     """Perform login with captcha retry. Returns (ok, error_or_none)."""
+    # Check global portal cooldown before attempting
+    cooldown = _portal_cooldown_remaining()
+    if cooldown > 0:
+        return False, (f"SRM portal temporarily rate-limiting our server. "
+                       f"Try again in {int(cooldown / 60) + 1} minutes.")
+
     await page.goto(LOGIN_URL, wait_until="domcontentloaded")
     await page.fill('input[name="username"]', netid)
     await page.click('input[name="password"]')
@@ -557,7 +588,7 @@ async def _do_login(page, ctx, netid, password):
     for _ca in range(MAX_CAPTCHA_RETRIES):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
-            return False, "captcha image failed to load after 10s — portal may be slow"
+            return False, "captcha image failed to load — portal may be slow"
         captcha = solve_captcha_b64(b64)
         if not captcha:
             return False, "captcha OCR returned empty"
@@ -567,22 +598,35 @@ async def _do_login(page, ctx, netid, password):
         await page.click('button:has-text("Login")')
         try:
             await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=8000)
+            _portal_ok()
             return True, None
         except Exception:
             # Extract the specific error the portal showed
             try:
-                err_html = await page.evaluate("() => (document.body.innerText || '').slice(0, 500)")
-                if "captcha expired" in err_html.lower():
+                err_text = await page.evaluate("() => (document.body.innerText || '')")
+                err_lower = err_text.lower()
+                current_url = page.url
+                if "captcha expired" in err_lower:
                     last_err = "captcha expired"
-                elif "invalid captcha" in err_html.lower():
+                elif "invalid captcha" in err_lower:
                     last_err = f"invalid captcha (read: {captcha})"
-                elif "invalid" in err_html.lower():
-                    last_err = f"invalid credentials or captcha (read: {captcha})"
+                elif "invalid" in err_lower:
+                    last_err = f"invalid credentials (read: {captcha})"
+                elif "HRDSystem" not in current_url and "login" in current_url.lower():
+                    # Silent rejection: portal returned login page with no error
+                    # This means portal rate-limited us
+                    last_err = "portal rate-limited (silent rejection)"
+                    _portal_fail()
+                    if _ca < MAX_CAPTCHA_RETRIES - 1:
+                        await asyncio.sleep(5)
+                    continue
                 else:
                     last_err = f"rejected (read: {captcha})"
             except Exception:
                 last_err = f"rejected (read: {captcha})"
+            _portal_fail()
             if _ca < MAX_CAPTCHA_RETRIES - 1:
+                await asyncio.sleep(3)  # backoff between retries
                 await page.goto(LOGIN_URL, wait_until="domcontentloaded")
                 await page.fill('input[name="username"]', netid)
                 await page.click('input[name="password"]')
