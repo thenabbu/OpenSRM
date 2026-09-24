@@ -54,6 +54,9 @@ app = Flask(__name__)
 app.secret_key = SECRET
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
 
+from blobatar.flask import init_app as _init_blobatar
+_init_blobatar(app)  # GET /avatar/<name> + `blobatar` Jinja filter
+
 setup_logging()
 log = logging.getLogger("opensrm")
 log_http = logging.getLogger("opensrm.http")
@@ -951,7 +954,7 @@ def set_security_headers(resp):
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
         "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://api.dicebear.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")

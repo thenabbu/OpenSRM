@@ -11,6 +11,10 @@ dependencies = [
     "ddddocr==1.6.1",
     "gunicorn==26.2.0",
     "cryptography>=50.0.1",
+    "blobatar[flask]",
 ]
 
 [project.scripts]
+
+[tool.uv.sources]
+blobatar = { git = "https://github.com/thenabbu/blobatar", subdirectory = "packages/python", rev = "feat/python-sdk" }

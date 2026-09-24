@@ -1,0 +1,261 @@
+/**
+ * The gaze layer's geometry. `blobatar/gaze` writes the direction, this decides
+ * what it is worth on screen. §4.5 of `docs/motion-spec.md`.
+ *
+ * ## Why this is not in `motion.css`
+ *
+ * Two reasons, and the second is the real one.
+ *
+ * `motion.css` is paid once per app by everyone who animates a blobatar, and
+ * most of them have no pointer driver on the page. Gaze is the only layer with
+ * a JavaScript half, so it is the only one a consumer can genuinely decline,
+ * and a separate file is what lets them: import `blobatar/gaze.css` and you get
+ * the layer, leave it out and you pay nothing for it. Every other stylesheet
+ * decision in this package has the same shape.
+ *
+ * And `motion.css` is against its size budget with a couple of dozen bytes to
+ * spare. Folding this in would mean raising a budget that guards the file
+ * everybody pays for, in order to carry rules that only pointer-driven pages
+ * use. The budgets are per entry point precisely so that this is a separate
+ * question with a separate answer.
+ *
+ * ## The seam already existed
+ *
+ * `motion.css` reserves `.mo-eyes`'s `transform` for "the pointer-driven gaze
+ * layer (§4.5)" in two places, and keeps the idle saccade on `translate` so the
+ * two never fight over one property. The individual transform properties
+ * resolve before `transform` does, so the two compose without either knowing
+ * about the other, and the idle glances go on running underneath a blobatar
+ * that is watching you.
+ *
+ * That reservation carries one condition, and this rule meets it: a scale or a
+ * rotation here would need an explicit `transform-origin` first, because the
+ * group's box is both eyes and it shrinks as they blink. A translate is immune,
+ * and this stays a translate.
+ *
+ * ## Loading this changes nothing until a host opts in
+ *
+ * `--mo-track-travel` is registered with an initial value of `0px`, so with the
+ * stylesheet loaded and nothing else done the translate below multiplies out to
+ * the identity on every blobatar on the page. Setting that property is how a
+ * host says which blobatars gaze, and the driver reads the value back off the
+ * element rather than restating it, so retuning the excursion here retunes the
+ * driver's write threshold with it instead of quietly leaving it behind.
+ */
+
+/**
+ * The signed direction, each component in -1..1.
+ *
+ * **`inherits: true`, and the driver writes them to `.mo-eyes`.** Both halves
+ * of that matter. Writing higher, on `.mo-root` or the `<svg>`, invalidates the
+ * blobatar's whole twelve-element subtree every frame for a value three of its
+ * elements read, and `apps/demo` measured that at n=200: 31fps writing to the
+ * root against 40fps writing to the eyes. The JS was never the bill, at 0.2ms
+ * against frames of 40ms and up. It is what the writes provoke afterwards.
+ *
+ * Inheriting from there rather than being written to each element separately is
+ * what lets a host layer more cues on `.mo-eye` (foreshortening, a per-eye
+ * differential) without the driver having to know they exist or paying a write
+ * per element for them.
+ */
+@property --mo-track-x {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --mo-track-y {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/**
+ * Full-amplitude excursion, in viewBox units.
+ *
+ * `px` is a user unit inside the viewBox, the same way `motion.css` uses it for
+ * the pose's eye offsets. For scale: the idle saccade's widest stop is
+ * `1px * --mo-look-x`, a median 1.4 units, so a deliberate look wants roughly
+ * two to three times that. The interesting range is about 1.5 to 4, and the
+ * ceiling is the eyes crossing the silhouette, which `motion.css` is explicit is
+ * allowed and reads as "a face turning on a round head rather than as a
+ * mistake".
+ *
+ * Initial value 0, which is the safety property this whole file rests on. See
+ * the header.
+ */
+@property --mo-track-travel {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+/**
+ * How far the idle glance has stood down for the gaze, 0 to 1.
+ *
+ * Two systems aiming one pair of eyes at different things: the saccade roves on
+ * its own clock and the driver points at the pointer, and with both live the
+ * eyes read as unable to decide. It is worst on `animate="always"`, where the
+ * idle layer is at full amplitude the whole time the blobatar is on screen.
+ *
+ * Initial value 0, so a page that loads this and never runs a driver keeps its
+ * idle rove exactly as `motion.css` wrote it.
+ */
+@property --mo-track-hold {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+/*
+ * The eyes as marks on a sphere, per eye.
+ *
+ * ## Why this is not a translate on the group
+ *
+ * It was, and `motion.css` twice reserves `.mo-eyes`'s `transform` for it. A
+ * translate is also what let an eye leave the head: asked for more excursion
+ * than the face is wide, the group slid both eyes out over the page, where they
+ * read as two loose marks rather than as a face. Clipping them to the body is
+ * the obvious fix and it is the one §4.6 rejected, because a `clipPath` needs
+ * an id per blobatar and "emits no ids" is a guarantee with a test behind it.
+ *
+ * A projection does not need one. `project()` in `gaze.ts` turns each eye about
+ * the face's centre and lands it at the sine of where it turned to, so it
+ * cannot pass the limb, and foreshortens it by the cosine, so it arrives there
+ * at 1.4% of its width. The eye stops at the edge and vanishes into it. Nothing
+ * clips anything, no id is emitted, and the guarantee is untouched.
+ *
+ * Per eye because that is what makes it a sphere rather than a squash: the two
+ * eyes sit at different longitudes, so the one leading into a turn is nearer
+ * the limb and compresses harder. §4.7 arranges that with a tuned coefficient
+ * and a test on the inequality; here it is just where the eyes are.
+ *
+ * ## Why it lands on properties `motion.css` already uses
+ *
+ * Because there are no free ones left. `.mo-eye` spends `translate` on the
+ * expression's convergence, `rotate` on its tilt and `transform` on its scale;
+ * `.mo-eye > *` spends `transform` on the blink and `scale`/`rotate` on the
+ * idle wrap. So these three declarations restate `motion.css`'s with the gaze's
+ * terms folded in.
+ *
+ * **`.mo-root .mo-eye`, and the extra class is the whole point.** Restating a
+ * declaration at `motion.css`'s own specificity makes the cascade decide on
+ * source order, and source order here is not the import order — it is whatever
+ * order a bundler emits two stylesheets in. `apps/site` imports `motion.css`
+ * first and `gaze.css` second and the built page links them the other way
+ * round, at which point `motion.css` wins all three and the gaze is silently
+ * inert: the driver runs, the properties are written, and the eyes do not move.
+ * That is the layer's documented failure mode arriving through the one route
+ * nothing in the library could see. One extra class outranks it in either
+ * order. `.mo-root` is the group the renderer always wraps these in.
+ *
+ * The offset rides `translate` and not the child's, and that is load-bearing:
+ * the individual properties resolve `translate`, then `rotate`, then `scale`,
+ * then `transform`, so an offset here is applied in the untransformed frame. On
+ * `.mo-eye > *` it would sit inside this element's scale and shrink along with
+ * the foreshortening, which is an eye that slides back toward the middle of the
+ * face as it turns away from you.
+ *
+ * ## No transition, and that is deliberate
+ *
+ * The pursuit is filtered in the driver, one exponential per frame, and a
+ * transition on top would be a second filter on the same signal with its own
+ * time constant: the eyes would lag the pointer by the sum of two curves nobody
+ * tuned together. The driver owns the timing because the driver is the only
+ * thing that can tell a pursuit from a jump.
+ */
+.mo-root .mo-eye {
+  /*
+   * Each eye picks its own of the driver's two sets, through the 0/1 selector
+   * `motion.css` already derives from `--mo-wrap`. `a + (b - a) * sel` is a
+   * mix, and at the only two values `--mo-sel` takes it is a choice.
+   *
+   * The fallbacks are what make this file safe to load with no driver running,
+   * and they are not decoration: these are written every frame and so are
+   * deliberately *not* registered, which means an unset one with no fallback
+   * would be invalid at computed-value time and take the whole declaration
+   * with it. Every blobatar on a page with this stylesheet and no gaze would
+   * lose the expression's eye offset. With them it resolves to the identity.
+   */
+  --mo-gz-dx: calc(
+    var(--mo-gz-dx1, 0) + (var(--mo-gz-dx2, 0) - var(--mo-gz-dx1, 0)) * var(--mo-sel)
+  );
+  --mo-gz-dy: calc(
+    var(--mo-gz-dy1, 0) + (var(--mo-gz-dy2, 0) - var(--mo-gz-dy1, 0)) * var(--mo-sel)
+  );
+  --mo-gz-sx: calc(
+    var(--mo-gz-sx1, 1) + (var(--mo-gz-sx2, 1) - var(--mo-gz-sx1, 1)) * var(--mo-sel)
+  );
+  --mo-gz-sy: calc(
+    var(--mo-gz-sy1, 1) + (var(--mo-gz-sy2, 1) - var(--mo-gz-sy1, 1)) * var(--mo-sel)
+  );
+  --mo-gz-t: calc(
+    var(--mo-gz-t1, 0) + (var(--mo-gz-t2, 0) - var(--mo-gz-t1, 0)) * var(--mo-sel)
+  );
+
+  translate: calc((var(--mo-edx) * var(--mo-wrap, 1) + var(--mo-gz-dx)) * 1px)
+    calc((var(--mo-edy) + var(--mo-edy2) * var(--mo-ph) + var(--mo-gz-dy)) * 1px);
+
+  /* Composed with the pose's tilt rather than replacing it: the convergence is
+     what the turn does to an eye the expression has already leaned. */
+  rotate: calc(
+    (
+        var(--mo-t) * var(--mo-wrap, 1) - var(--mo-lean, 0) * var(--mo-lock) +
+          var(--mo-gz-t)
+      ) * 1deg
+  );
+
+  /* Inside the lean bracket, so the foreshortening is taken in the capsule's
+     own frame exactly as the pose's scale is. Multiplied into the pose rather
+     than added after it, because two scales on one axis compose by product and
+     a separate `scaleX` here would need a fourth rotation to stay in frame. */
+  transform: rotate(calc(var(--mo-lean, 0) * 1deg))
+    scaleX(calc(var(--mo-x) * var(--mo-gz-sx)))
+    scaleY(calc(var(--mo-y) * var(--mo-gz-sy)))
+    rotate(calc(var(--mo-lean, 0) * -1deg));
+}
+
+/**
+ * The idle glance stands down while the gaze is driving.
+ *
+ * Zeroing the seeds rather than pausing the loops, and that is the whole trick.
+ * Every stop of `mo-saccade` multiplies `--mo-look-x/y`, and every stop of
+ * `mo-wrap` multiplies those or the unsigned `--mo-look-m*`, so at zero both
+ * evaluate to the identity at every keyframe. The animations keep running and
+ * position nothing, which is the bargain `--mo-shake` and `--mo-rock` already
+ * make. Pausing would instead freeze a stale glance in as a constant offset for
+ * the gaze to work from, which is worse than the rove it was meant to remove.
+ *
+ * Blink, breathe and bob deliberately survive. None of them aims anything, and
+ * they are what makes this read as alive rather than as a diagram: `motion.css`
+ * calls blink "the layer to keep if only one survives". A blobatar that watches
+ * you, breathes and blinks is the thing being built. One that also glances away
+ * at random is two things.
+ *
+ * The copies are unregistered on purpose. They are never animated and never
+ * interpolated, they are substituted into the `calc()` once per change, so
+ * registering them would buy nothing and cost four more declarations the style
+ * engine type-checks on every blobatar. Their fallbacks are `motion.css`'s own,
+ * repeated for the same reason it repeats them at every use: a blobatar
+ * rendered without `animate` carries no inline seeds at all, and the copy has
+ * to resolve to something the damping can multiply rather than to nothing.
+ *
+ * On `.mo-root` rather than on the `<svg>`, where the renderer writes the seeds
+ * inline. A rule cannot outrank an inline style on the same element and does
+ * not need to: `.mo-root` is one level down and everything that reads them is
+ * below that, so the override lands on the whole subtree and the markup is left
+ * exactly as the library emitted it.
+ */
+svg:has(> .mo-root) {
+  --mo-look-seed-x: var(--mo-look-x, 1.4);
+  --mo-look-seed-y: var(--mo-look-y, 1.1);
+  --mo-look-seed-mx: var(--mo-look-mx, 1.4);
+  --mo-look-seed-my: var(--mo-look-my, 1.1);
+}
+
+.mo-root {
+  --mo-look-x: calc(var(--mo-look-seed-x, 1.4) * (1 - var(--mo-track-hold)));
+  --mo-look-y: calc(var(--mo-look-seed-y, 1.1) * (1 - var(--mo-track-hold)));
+  --mo-look-mx: calc(var(--mo-look-seed-mx, 1.4) * (1 - var(--mo-track-hold)));
+  --mo-look-my: calc(var(--mo-look-seed-my, 1.1) * (1 - var(--mo-track-hold)));
+}
