@@ -1,4 +1,4 @@
-<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8"><link rel="preconnect" href="https://api.dicebear.com" crossorigin>
+<!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
@@ -17,12 +17,14 @@
 <title>OpenSRM - {{ netid }}</title>
 {% include "partials/theme.html" %}
 <link rel="stylesheet" href="/static/timetable.css">
+<link rel="stylesheet" href="/static/motion.css">
+<link rel="stylesheet" href="/static/gaze.css">
 </head><body class="bg-base-100 text-base-content">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3" style="padding-top:calc(0.75rem + env(safe-area-inset-top))">
   <div class="navbar-start gap-3 min-w-0 flex-1">
-    <div class="avatar placeholder">
-      <div class="bg-base-300 w-9 rounded-full">
-        <img loading="lazy" decoding="async" src="https://api.dicebear.com/10.x/gaze/svg?seed={{ netid }}&animationVariant=medium" alt="{{ netid }}">
+    <div class="avatar">
+      <div class="bg-base-300 w-9 rounded-full overflow-hidden blobatar-gaze">
+        {{ netid | blobatar(size=36, animate="always") | safe }}
       </div>
     </div>
     <div class="min-w-0">
@@ -201,6 +203,7 @@
 </dialog>
 <div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert" aria-live="assertive"></div>
 <script defer src="/static/dash.js"></script>
+<script defer src="/static/gaze.js"></script>
 <script defer src="/static/timetable.js"></script>
 <script defer src="/static/marks.js?v=3"></script>
 <script defer src="/static/drag-drop-touch.js"></script>

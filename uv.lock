@@ -16,6 +16,16 @@ wheels = [
 ]
 
 [[package]]
+name = "blobatar"
+version = "2.0.0"
+source = { git = "https://github.com/thenabbu/blobatar?subdirectory=packages%2Fpython&rev=feat%2Fpython-sdk#7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb" }
+
+[package.optional-dependencies]
+flask = [
+    { name = "flask" },
+]
+
+[[package]]
 name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -634,6 +644,7 @@ name = "opensrm"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "blobatar", extra = ["flask"] },
     { name = "cryptography" },
     { name = "ddddocr" },
     { name = "flask" },
@@ -643,6 +654,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "blobatar", extras = ["flask"], git = "https://github.com/thenabbu/blobatar?subdirectory=packages%2Fpython&rev=feat%2Fpython-sdk" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "ddddocr", specifier = "==1.6.1" },
     { name = "flask", specifier = "==3.1.3" },
