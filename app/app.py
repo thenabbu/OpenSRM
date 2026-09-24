@@ -283,6 +283,7 @@ def _check_ip_rate(ip):
 # pause ALL login attempts to avoid worsening the block.
 _portal_cooldown_until = 0   # unix timestamp; 0 = no cooldown
 _portal_consecutive_fails = 0
+_request_fail_counted = False
 
 def _portal_fail():
     global _portal_cooldown_until, _portal_consecutive_fails
@@ -292,6 +293,15 @@ def _portal_fail():
         _portal_cooldown_until = time.time() + minutes * 60
         log.warning("portal cooldown %d min after %d consecutive fails",
                      minutes, _portal_consecutive_fails)
+
+def _portal_fail_once():
+    """Count ONE fail per login request, not one per captcha retry inside it.
+    ponytail: per-user isolation needs per-netid counters — add when multi-user load is real."""
+    global _portal_consecutive_fails, _request_fail_counted
+    if _request_fail_counted:
+        return
+    _request_fail_counted = True
+    _portal_fail()
 
 def _portal_ok():
     global _portal_cooldown_until, _portal_consecutive_fails
@@ -576,6 +586,8 @@ async def _get_persistent_page(netid):
 
 async def _do_login(page, ctx, netid, password):
     """Perform login with captcha retry. Returns (ok, error_or_none)."""
+    global _request_fail_counted
+    _request_fail_counted = False  # one portal-fail per request, not per retry
     # Check global portal cooldown before attempting
     cooldown = _portal_cooldown_remaining()
     if cooldown > 0:
@@ -610,17 +622,19 @@ async def _do_login(page, ctx, netid, password):
                 err_text = await page.evaluate("() => (document.body.innerText || '')")
                 err_lower = err_text.lower()
                 current_url = page.url
-                if "captcha expired" in err_lower:
+                if "invalid credentials" in err_lower:
+                    # Wrong password never becomes right by re-reading the captcha.
+                    # Don't retry, don't count toward global portal cooldown.
+                    return False, "invalid credentials — check your NetID/password"
+                elif "captcha expired" in err_lower:
                     last_err = "captcha expired"
                 elif "invalid captcha" in err_lower:
                     last_err = f"invalid captcha (read: {captcha})"
-                elif "invalid" in err_lower:
-                    last_err = f"invalid credentials (read: {captcha})"
                 elif "HRDSystem" not in current_url and "login" in current_url.lower():
                     # Silent rejection: portal returned login page with no error
                     # This means portal rate-limited us
                     last_err = "portal rate-limited (silent rejection)"
-                    _portal_fail()
+                    _portal_fail_once()
                     if _ca < MAX_CAPTCHA_RETRIES - 1:
                         await asyncio.sleep(5)
                     continue
@@ -628,7 +642,8 @@ async def _do_login(page, ctx, netid, password):
                     last_err = f"rejected (read: {captcha})"
             except Exception:
                 last_err = f"rejected (read: {captcha})"
-            _portal_fail()
+            log.warning("login attempt %d/%d failed for %s: %s",
+                        _ca + 1, MAX_CAPTCHA_RETRIES, netid, last_err)
             if _ca < MAX_CAPTCHA_RETRIES - 1:
                 await asyncio.sleep(3)  # backoff between retries
                 await page.goto(LOGIN_URL, wait_until="domcontentloaded")
@@ -873,7 +888,7 @@ def fetch_attendance(netid, password):
     try:
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password), loop)
-        return future.result(timeout=60)  # browser lives on the worker loop, survives across calls
+        return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
     except Exception as e:
         # Loop/browser may have died — force a fresh launch next time.
         global _browser, _loop_thread
