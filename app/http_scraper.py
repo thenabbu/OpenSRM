@@ -151,10 +151,18 @@ def _login(opener, netid, password, base, xheaders, helpers):
         if base != f"https://{PORTAL_HOST}":
             img_url = img_url.replace(f"https://{PORTAL_HOST}", base)
         proof = base64.b64encode(f"{nonce}:{PORTAL_HOST}".encode()).decode()
-        _u, img_bytes = _req(opener, img_url,
-                             _hdrs({**xheaders, "X-Domain-Proof": proof,
-                                    "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
-                                   referer=LOGIN_PAGE))
+        img_headers = _hdrs({**xheaders, "X-Domain-Proof": proof,
+                             "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
+                            referer=LOGIN_PAGE)
+        img_bytes = None
+        for _img_try in range(2):  # worker egress can be slow on cold start
+            try:
+                _u, img_bytes = _req(opener, img_url, img_headers, timeout=40)
+                break
+            except HttpScraperError as e:
+                log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
+                if _img_try == 1:
+                    raise
         ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
         log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
                   len(img_bytes), ocr)

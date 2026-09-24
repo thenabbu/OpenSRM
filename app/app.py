@@ -652,6 +652,9 @@ async def _do_login(page, ctx, netid, password):
                 await page.type('input[name="password"]', password, delay=10)
                 continue
             return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}"
+    # All retries exhausted via silent-rejection continues
+    return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}"
+
 async def _fetch_rich_optimized(netid, password):
     # Persistent context — reuse across scrapes for speed.
     page, ctx = await _get_persistent_page(netid)
