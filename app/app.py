@@ -55,6 +55,7 @@ app.secret_key = SECRET
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
 
 from blobatar.flask import init_app as _init_blobatar
+
 _init_blobatar(app)  # GET /avatar/<name> + `blobatar` Jinja filter
 
 setup_logging()

@@ -1,4 +1,12 @@
-import re, base64, http.cookiejar, urllib.request, urllib.parse, time, json, sys
+import base64
+import http.cookiejar
+import json
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+
 sys.path.insert(0,"/app")
 from app.app import solve_captcha_b64
 
