@@ -122,7 +122,8 @@ def _login(opener, netid, password, base, xheaders, helpers):
 
     for attempt in range(1, MAX_CAPTCHA_RETRIES + 1):
         t0 = time.monotonic()
-        _url, body = _req(opener, LOGIN_PAGE, _hdrs(xheaders))
+        page_url = f"{base}{BASE_PATH}/students/loginManager/youLogin.jsp"
+        _url, body = _req(opener, page_url, _hdrs(xheaders))
         html = body.decode("utf-8", errors="replace")
         log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
 
@@ -241,7 +242,7 @@ def fetch(netid, password, helpers):
                     secure=ck.get("secure", True), expires=ck.get("expires"),
                     discard=False, comment=None, comment_url=None,
                     rest={}))
-            _u, body = _req(opener, HRD_URL, _hdrs(xheaders))
+            _u, body = _req(opener, f"{base}{BASE_PATH}/students/template/HRDSystem.jsp", _hdrs(xheaders))
             if "HRDSystem" in _u or b"HRDSystem" in body[:4000]:
                 logged_in = True
                 log.debug("session reuse hit netid=%s", netid)
@@ -309,7 +310,9 @@ def fetch(netid, password, helpers):
         pm = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, re.I)
         if pm:
             src = pm.group(1)
-            src = f"https://{PORTAL_HOST}{src}" if src.startswith("/") else src
+            # relative URLs like ../../resources/sphotos/x.jpg resolve against the JSP path
+            jsp_dir = f"https://{PORTAL_HOST}{BASE_PATH}/students/report/"
+            src = urllib.parse.urljoin(jsp_dir, src)
             if base != f"https://{PORTAL_HOST}":
                 src = src.replace(f"https://{PORTAL_HOST}", base)
             _u, pbytes = _req(opener, src, _hdrs(xheaders, referer=HRD_URL))
