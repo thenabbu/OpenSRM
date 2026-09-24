@@ -886,6 +886,29 @@ def fetch_attendance(netid, password):
     if not _scrape_lock.acquire(blocking=False):
         return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
     try:
+        cooldown = _portal_cooldown_remaining()
+        if cooldown > 0:
+            return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
+                                           f"Try again in {int(cooldown / 60) + 1} minutes.")}
+        # ── New pipeline: pure-HTTP first ─────────────────────────────
+        helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
+                   "save_session": _save_session, "load_session": _load_session,
+                   "clear_session": _clear_session}
+        try:
+            from . import http_scraper
+        except ImportError:
+            http_scraper = None
+        log.debug("pipeline=http netid=%s", netid)
+        if http_scraper:
+            try:
+                return http_scraper.fetch(netid, password, helpers)
+            except http_scraper.HttpScraperError as e:
+                log.warning("http pipeline failed (%r) — falling back to playwright", e)
+                _portal_fail_once()
+            except Exception as e:
+                log.warning("http pipeline crashed (%r) — falling back to playwright", e)
+                _portal_fail_once()
+        # ── Fallback: Playwright ──────────────────────────────────────
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password), loop)
         return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
