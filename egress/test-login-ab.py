@@ -17,7 +17,7 @@ ROUTE = sys.argv[1] if len(sys.argv)>1 else "direct"  # direct|worker
 if ROUTE == "worker":
     DIRECT = "https://srm-egress.200871.xyz"
     BASE = DIRECT + "/srmiststudentportal"
-    TOKEN = "d1c253b9ae47f61b4dc8dd52249e2d7558cd7f21fef78aa6"
+    TOKEN = os.environ.get("SRM_PROXY_TOKEN")
 else:
     TOKEN = None
 
@@ -64,7 +64,7 @@ print(f"2. captcha img {len(imgb)}b OCR='{ocr}'")
 dtoken=base64.b64encode(HOST[::-1].encode()).decode()
 elapsed=str(max(5,int(time.time()-t0)))
 cptoken=base64.b64encode(f"{elapsed}{rdelim}3".encode()).decode()
-fields={"username":"ng2776","password":"Gunnu@2008",honeypot:"","captcha":ocr,
+fields={"username": os.environ["SRM_NETID"], "password": os.environ["SRM_PASSWORD"],honeypot:"","captcha":ocr,
  "fpPayload":"","fpToken":"",
  "telemetryPayload":base64.b64encode(json.dumps({
    "startTime":int(time.time()*1000-10000),"currentDomain":HOST,"timezoneOffset":-330,
