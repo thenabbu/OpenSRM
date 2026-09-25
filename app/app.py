@@ -225,27 +225,26 @@ _scrape_lock = threading.Lock()
 _SESSION_CACHE_TTL = 4 * 3600  # 4 hours
 
 def _save_session(netid, cookies_json):
-    """Persist Playwright cookies for session reuse."""
+    """Persist portal cookies for session reuse (portal_sessions table)."""
     c = db()
-    c.execute("INSERT OR REPLACE INTO cookies(token, netid, created) VALUES(?, ?, ?)",
-              (cookies_json, netid, int(time.time())))
+    c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
+              (netid, cookies_json, int(time.time())))
     c.commit(); c.close()
 
 def _load_session(netid):
-    """Load cached cookies if still valid (< TTL)."""
+    """Load cached portal cookies if still valid (< TTL)."""
     c = db()
-    row = c.execute("SELECT token, created FROM cookies WHERE netid=? ORDER BY created DESC LIMIT 1",
-                    (netid,)).fetchone()
+    row = c.execute("SELECT cookies_json, created FROM portal_sessions WHERE netid=?", (netid,)).fetchone()
     c.close()
     if not row: return None
     if time.time() - row["created"] > _SESSION_CACHE_TTL:
         return None  # expired
-    return row["token"]
+    return row["cookies_json"]
 
 def _clear_session(netid):
-    """Remove cached cookies (on failed session restore)."""
+    """Remove cached portal cookies (on failed session restore)."""
     c = db()
-    c.execute("DELETE FROM cookies WHERE netid=?", (netid,))
+    c.execute("DELETE FROM portal_sessions WHERE netid=?", (netid,))
     c.commit(); c.close()
 
 # ── Rate limiting ──────────────────────────────────────────────────
@@ -655,7 +654,7 @@ async def _do_login(page, ctx, netid, password):
     # All retries exhausted via silent-rejection continues
     return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}"
 
-async def _fetch_rich_optimized(netid, password):
+async def _fetch_rich_optimized(netid, password, cold=True):
     # Persistent context — reuse across scrapes for speed.
     page, ctx = await _get_persistent_page(netid)
     try:
@@ -690,16 +689,18 @@ async def _fetch_rich_optimized(netid, password):
                 pass
 
 
-        # ── Parallel fetch: all JSPs + photo simultaneously ────────────
-        parallel_html = await page.evaluate("""async () => {
+        # ── Parallel fetch (hot always; cold when requested) ─────────
+        _all_jsps = {
+            "1": "../../students/report/studentProfile.jsp",
+            "9": "../../students/report/studentAttendanceDetails.jsp",
+            "13": "../../students/report/studentInternalMarkDetails.jsp",
+            "17": "../../students/report/studentPersonalDetails.jsp",
+            "7": "../../students/report/studentSubjectLists.jsp"
+        }
+        _fetch_jsps = {f: u for f, u in _all_jsps.items()
+                       if f in ("9", "13") or cold}
+        parallel_html = await page.evaluate("""async (JSPS) => {
             const r = {};
-            const JSPS = {
-                "1": "../../students/report/studentProfile.jsp",
-                "9": "../../students/report/studentAttendanceDetails.jsp",
-                "13": "../../students/report/studentInternalMarkDetails.jsp",
-                "17": "../../students/report/studentPersonalDetails.jsp",
-                "7": "../../students/report/studentSubjectLists.jsp"
-            };
             await Promise.all(Object.entries(JSPS).map(([f, u]) =>
                 $.post(u, [
                     {name:'iden', value:parseInt(f)},
@@ -709,30 +710,9 @@ async def _fetch_rich_optimized(netid, password):
                 ], 'html').then(h => { r[f] = h; }).catch(() => { r[f] = ''; })
             ));
             return r;
-        }""")
+        }""", _fetch_jsps)
 
-        # Photo: extract from profile page (formId 1, parallel-fetched)
-        try:
-            profile_html = parallel_html.get("1", "")
-            if profile_html:
-                photo_match = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, re.I)
-                if photo_match:
-                    photo_src = photo_match.group(1)
-                    if photo_src.startswith("/"):
-                        photo_src = "https://sp.srmist.edu.in" + photo_src
-                    photo_b64 = await page.evaluate("""async (src) => {
-                        try {
-                            const resp = await fetch(src, {credentials: 'include'});
-                            const blob = await resp.blob();
-                            return new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result.split(',')[1] || '');
-                                reader.readAsDataURL(blob);
-                            });
-                        } catch(e) { return ''; }
-                    }""", photo_src)
-        except Exception:
-            pass
+        # Photo: removed Sep 25 2026 — unused in any workflow (blobatar avatars instead)
 
         content_html = parallel_html.get("9", "")
         if "youLogin" in content_html or "Login" in content_html[:2000] and "captcha" in content_html.lower():
@@ -746,15 +726,8 @@ async def _fetch_rich_optimized(netid, password):
                 _save_session(netid, json.dumps(cookies))
             except Exception:
                 pass
-            parallel_html = await page.evaluate("""async () => {
+            parallel_html = await page.evaluate("""async (JSPS) => {
                 const r = {};
-                const JSPS = {
-                    "1": "../../students/report/studentProfile.jsp",
-                    "9": "../../students/report/studentAttendanceDetails.jsp",
-                    "13": "../../students/report/studentInternalMarkDetails.jsp",
-                    "17": "../../students/report/studentPersonalDetails.jsp",
-                    "7": "../../students/report/studentSubjectLists.jsp"
-                };
                 await Promise.all(Object.entries(JSPS).map(([f, u]) =>
                     $.post(u, [
                         {name:'iden', value:parseInt(f)},
@@ -764,7 +737,7 @@ async def _fetch_rich_optimized(netid, password):
                     ], 'html').then(h => { r[f] = h; }).catch(() => { r[f] = ''; })
                 ));
                 return r;
-            }""")
+            }""", _fetch_jsps)
             content_html = parallel_html.get("9", "")
         data = parse_attendance(content_html)
 
@@ -877,7 +850,7 @@ async def _fetch_rich_optimized(netid, password):
         except Exception:
             pass
 
-        return {"ok": True, "data": data, "personal": personal, "photo": photo_b64, "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
+        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
     finally:
         # Don't close persistent context — keep alive for next request
         pass
@@ -897,6 +870,15 @@ def fetch_attendance(netid, password):
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
                    "clear_session": _clear_session}
+        # Hot/cold split: cold data (personal/courses) re-fetched only when
+        # stale >24h; hot (attendance/marks) always.
+        c = db()
+        row = c.execute("SELECT cold_fetch FROM users WHERE netid=?", (netid,)).fetchone()
+        c.close()
+        cold = True
+        if row and row["cold_fetch"] and time.time() - row["cold_fetch"] < 24 * 3600:
+            cold = False
+            log.debug("cold data fresh netid=%s — hot-only sync", netid)
         try:
             from . import http_scraper
         except ImportError:
@@ -904,7 +886,15 @@ def fetch_attendance(netid, password):
         log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
             try:
-                return http_scraper.fetch(netid, password, helpers)
+                res = http_scraper.fetch(netid, password, helpers, cold=cold)
+                if res.get("ok") and cold:
+                    try:
+                        c = db()
+                        c.execute("UPDATE users SET cold_fetch=? WHERE netid=?", (int(time.time()), netid))
+                        c.commit(); c.close()
+                    except Exception as e:
+                        log.debug("cold_fetch update failed err=%r", e)
+                return res
             except http_scraper.HttpScraperError as e:
                 log.warning("http pipeline failed (%r) — falling back to playwright", e)
                 _portal_fail_once()
@@ -913,7 +903,7 @@ def fetch_attendance(netid, password):
                 _portal_fail_once()
         # ── Fallback: Playwright ──────────────────────────────────────
         loop = _ensure_loop()
-        future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password), loop)
+        future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
         return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
     except Exception as e:
         # Loop/browser may have died — force a fresh launch next time.
@@ -1231,11 +1221,19 @@ def api_login():
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     c = db()
+    # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
+    existing = c.execute("SELECT personal_details_json, subjects_json FROM users WHERE netid=?", (netid,)).fetchone()
+    personal_json = json.dumps(res.get("personal", {}))
+    subjects_json = json.dumps(res.get("subjects", {}))
+    if not res.get("personal") and existing and existing["personal_details_json"]:
+        personal_json = existing["personal_details_json"]
+    if not res.get("subjects") and existing and existing["subjects_json"]:
+        subjects_json = existing["subjects_json"]
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               json.dumps(res.get("personal", {})), res.get("photo", ""), json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {}))))
+               personal_json, res.get("photo", ""), json.dumps(res.get("marks", [])), subjects_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -1280,8 +1278,13 @@ def api_refresh():
         code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
         return {"ok": False, "error": res["error"]}, code
     c = db()
+    # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
+    row2 = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+    personal_json = json.dumps(res.get("personal", {}))
+    if not res.get("personal") and row2 and row2["personal_details_json"]:
+        personal_json = row2["personal_details_json"]
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=? WHERE netid=?",
-              (json.dumps(res["data"]), res["fetched"], json.dumps(res.get("personal", {})), netid))
+              (json.dumps(res["data"]), res["fetched"], personal_json, netid))
     c.commit(); c.close()
     return {"ok": True}
 
