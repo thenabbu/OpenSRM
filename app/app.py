@@ -29,7 +29,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 # timetable_html is now defined locally (SQLite-backed)
@@ -1021,7 +1021,7 @@ def index():
     last = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_epoch)) if last_epoch else "never"
 
     hours_old = int((time.time() - last_epoch) / 3600) if last_epoch else None
-    courses = [_course_view(x) for x in data.get("courses", [])]
+    courses = sorted((_course_view(x) for x in data.get("courses", [])), key=lambda c: c["pct"])  # risk-first: lowest % first
     monthly = [_month_view(x) for x in data.get("monthly", [])]
     overall = _overall_view(courses)
 
@@ -1029,12 +1029,24 @@ def index():
     personal_data = json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {}
     student_name = personal_data.get("Student Name", "").title()
 
+    # Dashboard home tab: profile + today/week brief
+    group_key = _group_key(personal_data) if personal_data else None
+    dash = {
+        "email": personal_data.get("Personal Email ID", "") or netid,
+        "reg_no": personal_data.get("Register No.", ""),
+        "today": _today_brief(group_key),
+        "week": _week_updates(data.get("daily_absent", {})),
+        "absent_today": any(
+            r.get("date") == datetime.now().strftime("%d-%m-%Y")
+            for rows in (data.get("daily_absent") or {}).values() for r in rows),
+    }
+
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly, overall=overall,
         period=data.get("period"), daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
-        student_name=student_name,
-        timetable=timetable_html(_group_key(json.loads(row["personal_details_json"])) if row and row["personal_details_json"] else None),
+        student_name=student_name, dash=dash,
+        timetable=timetable_html(group_key),
         personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1071,6 +1083,70 @@ def _now_next_from_slots(day, slots):
                 "loc": s.get("location",""), "at": s["start"],
                 "in_mins": sm - now_mins}
     return {"kind": "done"} if slots else None
+
+def _day_slots(group_key):
+    """group_key -> {day: {period: slot}} or None when no timetable exists."""
+    if not group_key:
+        return None
+    c = db()
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
+    if not gid:
+        c.close()
+        return None
+    day_slots = {}
+    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid[0],)):
+        if r[0] not in day_slots: day_slots[r[0]] = {}
+        day_slots[r[0]][r[1]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
+    c.close()
+    return day_slots
+
+def _today_brief(group_key):
+    """Dashboard: today's class count + next class from the timetable."""
+    day_slots = _day_slots(group_key)
+    out = {"count": 0, "next": None, "day_done": False}
+    if not day_slots:
+        return out
+    today = datetime.now().strftime("%A")
+    todays = day_slots.get(today, {})
+    out["count"] = len(todays)
+    for s in SLOTS:
+        if s["type"] == "break" or s["period"] not in todays:
+            continue
+        sm = int(s["start"].split(":")[0]) * 60 + int(s["start"].split(":")[1])
+        em = int(s["end"].split(":")[0]) * 60 + int(s["end"].split(":")[1])
+        now_mins = datetime.now().hour * 60 + datetime.now().minute
+        if sm <= now_mins < em:
+            sl = todays[s["period"]]
+            out["next"] = {"kind": "now", "code": sl["code"], "at": s["end"]}
+            return out
+        if now_mins < sm:
+            sl = todays[s["period"]]
+            out["next"] = {"kind": "next", "code": sl["code"], "at": s["start"]}
+            return out
+    out["day_done"] = True
+    return out
+
+def _week_updates(daily_absent):
+    """Dashboard: absences in the current Mon–Sun week (IST server time)."""
+    today = datetime.now().date()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    hits, hours = [], 0.0
+    for _month, rows in (daily_absent or {}).items():
+        for r in rows:
+            try:
+                d = datetime.strptime(r.get("date", ""), "%d-%m-%Y").date()
+            except ValueError:
+                continue
+            if monday <= d <= sunday:
+                hits.append({"date": r["date"], "hours": r.get("hours", "")})
+                try:
+                    hours += float(str(r.get("hours", "0")).split("-")[0])
+                except ValueError:
+                    pass
+    hits.sort(key=lambda x: x["date"])
+    return {"days": len(hits), "hours": hours, "dates": hits,
+            "today_absent": any(h["date"] == today.strftime("%d-%m-%Y") for h in hits)}
 
 def timetable_html(group_key):
     if not group_key:
