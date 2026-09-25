@@ -1,6 +1,7 @@
 import base64
 import http.cookiejar
 import json
+import os
 import re
 import sys
 import time
