@@ -162,8 +162,8 @@
             {% endif %}
           </div>
         </div>
-        <!-- Sync + actions (mobile home for refresh/logout) -->
-        <div class="flex items-center justify-between gap-2 border-t border-base-300 pt-3">
+        <!-- Sync + actions — mobile home for refresh/logout (navbar owns them on lg+) -->
+        <div class="flex items-center justify-between gap-2 border-t border-base-300 pt-3 lg:hidden">
           <span class="sync-line text-xs text-base-content/60" data-ts="{{ last_epoch }}" data-full="{{ last }}">Synced …</span>
           <div class="flex gap-1">
             <button class="btn btn-ghost btn-sm gap-1" data-refresh>
