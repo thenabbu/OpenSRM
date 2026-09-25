@@ -247,6 +247,12 @@ def _clear_session(netid):
     c.execute("DELETE FROM portal_sessions WHERE netid=?", (netid,))
     c.commit(); c.close()
 
+# ── Login progress (in-memory; single worker) ────────────────────────
+_login_progress = {}  # netid -> {"step": str, "ts": int, "pct": int}
+
+def _set_progress(netid, step, pct):
+    _login_progress[netid] = {"step": step, "ts": int(time.time()), "pct": pct}
+
 # ── Rate limiting ──────────────────────────────────────────────────
 # Two independent limits:
 #   per-netid scrape limit — portal-friendliness (each scrape = real SRM login)
@@ -869,7 +875,7 @@ def fetch_attendance(netid, password):
         # ── New pipeline: pure-HTTP first ─────────────────────────────
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
-                   "clear_session": _clear_session}
+                   "clear_session": _clear_session, "set_progress": _set_progress}
         # Hot/cold split: cold data (personal/courses) re-fetched only when
         # stale >24h; hot (attendance/marks) always.
         c = db()
@@ -886,6 +892,7 @@ def fetch_attendance(netid, password):
         log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
             try:
+                _set_progress(netid, "Connecting to SRM portal…", 5)
                 res = http_scraper.fetch(netid, password, helpers, cold=cold)
                 if res.get("ok") and cold:
                     try:
@@ -1287,6 +1294,18 @@ def api_refresh():
               (json.dumps(res["data"]), res["fetched"], personal_json, netid))
     c.commit(); c.close()
     return {"ok": True}
+
+@app.route("/api/login/progress")
+def api_login_progress():
+    netid = request.args.get("netid", "").strip().lower()
+    if not netid or not NETID_RE.match(netid):
+        return {"step": "", "pct": 0}, 400
+    p = _login_progress.get(netid)
+    # ponytail: entries purged when >10min old; fine for a ~5-30s flow
+    if p and time.time() - p["ts"] > 600:
+        _login_progress.pop(netid, None)
+        p = None
+    return {"step": p["step"], "pct": p["pct"]} if p else {"step": "", "pct": 0}
 
 # ── Timetable API ───────────────────────────────────────────────
 @app.route("/api/timetable", methods=["GET"])

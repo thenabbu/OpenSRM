@@ -119,7 +119,7 @@ def _telemetry_b64(t0):
     }).encode()).decode()
 
 
-def _login(opener, netid, password, base, xheaders, helpers):
+def _login(opener, netid, password, base, xheaders, helpers, on_step=None):
     """Pure-HTTP login. Returns (ok, err). Raises HttpScraperError on transport fail."""
     from app.app import solve_captcha_b64  # deferred: same ddddocr solver
 
@@ -129,6 +129,7 @@ def _login(opener, netid, password, base, xheaders, helpers):
         _url, body = _req(opener, page_url, _hdrs(xheaders))
         html = body.decode("utf-8", errors="replace")
         log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
+        if on_step: on_step("Opening login page…", 15)
 
         def g(p, _html=html):
             m = re.search(p, _html)
@@ -167,6 +168,7 @@ def _login(opener, netid, password, base, xheaders, helpers):
                 if _img_try == 1:
                     raise
         ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
+        if on_step: on_step("Reading captcha…", 30)
         log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
                   len(img_bytes), ocr)
         if not ocr:
@@ -191,6 +193,7 @@ def _login(opener, netid, password, base, xheaders, helpers):
         final_url, body = _req(opener, post_url, headers, data=data)
         rhtml = body.decode("utf-8", errors="replace")
         ok = "HRDSystem" in final_url or "HRDSystem" in rhtml[:4000]
+        if on_step: on_step("Verifying credentials…", 55)
         log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
                   attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
         if ok:
@@ -238,6 +241,10 @@ def fetch(netid, password, helpers, cold=True):
     """
     t_start = time.monotonic()
     base, xheaders = _route()
+    on_step = helpers.get("set_progress")
+    def _prog(step, pct):
+        try: on_step(netid, step, pct)
+        except Exception: pass
     opener, jar = _make_opener()
 
     # Session reuse: cached cookies still valid → skip login entirely
@@ -258,6 +265,7 @@ def fetch(netid, password, helpers, cold=True):
             _u, body = _req(opener, f"{base}{BASE_PATH}/students/template/HRDSystem.jsp", _hdrs(xheaders))
             if "HRDSystem" in _u or b"HRDSystem" in body[:4000]:
                 logged_in = True
+                if on_step: on_step("Restoring your session…", 50)
                 log.debug("session reuse hit netid=%s", netid)
         except Exception as e:
             log.debug("session reuse miss err=%r", e)
@@ -265,7 +273,7 @@ def fetch(netid, password, helpers, cold=True):
             helpers["clear_session"](netid)
 
     if not logged_in:
-        ok, err = _login(opener, netid, password, base, xheaders, helpers)
+        ok, err = _login(opener, netid, password, base, xheaders, helpers, on_step=lambda st, pc: _prog(st, pc))
         if not ok:
             return {"ok": False, "error": err}
         helpers["portal_ok"]()
@@ -282,6 +290,7 @@ def fetch(netid, password, helpers, cold=True):
     # Parallel JSP fetch — hot always, cold only when requested
     fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())
     log.debug("jsp batch netid=%s formids=%s", netid, sorted(fids))
+    _prog("Fetching attendance & marks…", 65)
     with ThreadPoolExecutor(max_workers=5) as ex:
         futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
                    for fid, path in JSPS.items() if fid in fids]
@@ -413,9 +422,11 @@ def fetch(netid, password, helpers, cold=True):
                                     m["max_total"] = round(sum(x["max"] for x in comps), 2)
                                     break
             log.debug("marks drilldown subjects=%d", len(drill_subjects))
+            _prog("Reading personal details & timetable…", 80)
     except Exception as e:
         log.debug("marks parse err=%r", e)
 
+    _prog("Preparing your dashboard…", 92)
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
              "cold=%s total_ms=%d", netid, len(data["courses"]), len(marks),
              len(personal), cold, int((time.monotonic() - t_start) * 1000))
