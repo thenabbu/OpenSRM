@@ -892,8 +892,15 @@ def fetch_attendance(netid, password):
         log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
             try:
+                # Consume any warm login the browser preflighted while the
+                # user was typing their password (single-use, 150s TTL).
+                prepared = None
+                try:
+                    prepared = http_scraper.take_preflight(netid)
+                except Exception as e:
+                    log.debug("preflight take failed err=%r", e)
                 _set_progress(netid, "Connecting to SRM portal…", 5)
-                res = http_scraper.fetch(netid, password, helpers, cold=cold)
+                res = http_scraper.fetch(netid, password, helpers, cold=cold, prepared=prepared)
                 if res.get("ok") and cold:
                     try:
                         c = db()
@@ -1293,6 +1300,42 @@ def api_refresh():
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json, netid))
     c.commit(); c.close()
+    return {"ok": True}
+
+# ── Login preflight: browser fires this when the user focuses the
+#    password field — warms the portal session + solves the captcha
+#    while they finish typing. Consumed by /api/login via fetch_attendance.
+_preflight_last = {}   # netid -> ts (30s per-netid cooldown)
+_preflight_ip = {}     # ip -> [ts, ...] (10 per 10 min per IP)
+
+def _run_preflight(netid):
+    try:
+        from . import http_scraper
+        http_scraper.preflight(netid)
+    except Exception as e:
+        log.debug("preflight failed netid=%s err=%r", netid, e)
+
+@app.route("/api/login/preflight", methods=["POST"])
+def api_login_preflight():
+    d = request.get_json(silent=True)
+    netid = ((d.get("netid") or "").strip().lower().split("@")[0]
+             if isinstance(d, dict) and isinstance(d.get("netid"), str) else "")
+    if not netid or not NETID_RE.match(netid):
+        return {"ok": False}, 400
+    now = time.time()
+    ip = _client_ip()
+    hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
+    if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+        return {"ok": False, "error": "rate"}, 429
+    if now - _preflight_last.get(netid, 0) < 30:
+        return {"ok": True, "cooldown": True}
+    if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+        return {"ok": False, "error": "portal busy"}, 503
+    _preflight_ip[ip] = hits + [now]
+    _preflight_last[netid] = now
+    threading.Thread(target=_run_preflight, args=(netid,), daemon=True,
+                     name="srm-preflight").start()
+    log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
     return {"ok": True}
 
 @app.route("/api/login/progress")

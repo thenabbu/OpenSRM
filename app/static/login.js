@@ -50,6 +50,26 @@ document.getElementById("f").onsubmit = function (ev) {
   });
 };
 
+// ── Preflight: warming the portal session + captcha solver while the
+//    user is still typing the password. Server no-ops if busy/stale;
+//    submit consumes it automatically via /api/login.
+(function() {
+  var pw = document.getElementById("pw");
+  var firedFor = null;
+  function maybePreflight() {
+    var netid = (document.getElementById("netid").value || "").trim().toLowerCase().split("@")[0];
+    if (!netid || netid === firedFor) return;
+    firedFor = netid;
+    fetch("/api/login/preflight", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({netid: netid})
+    }).catch(function() {});
+  }
+  pw.addEventListener("focus", maybePreflight);
+  pw.addEventListener("input", maybePreflight);  // covers autofill that skips focus
+})();
+
 document.getElementById("pw-toggle").onclick = function() {
   var inp = document.getElementById("pw");
   var open = document.getElementById("pw-eye-open");

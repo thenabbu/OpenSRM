@@ -119,99 +119,164 @@ def _telemetry_b64(t0):
     }).encode()).decode()
 
 
-def _login(opener, netid, password, base, xheaders, helpers, on_step=None):
-    """Pure-HTTP login. Returns (ok, err). Raises HttpScraperError on transport fail."""
+# ── Login preflight: page fetch + captcha OCR done while the user is
+#    still typing their password, so submit skips straight to the POST.
+#    keyed by netid; consumed by fetch() on the next login for that netid.
+_PREFLIGHT = {}   # netid -> {"opener", "jar", "ctx", "ts"}
+_PREFLIGHT_MAX = 32
+
+
+def preflight(netid):
+    """Warm the login: GET youLogin.jsp + solve captcha, store for submit."""
+    base, xheaders = _route()
+    opener, jar = _make_opener()
+    ctx = _prepare(opener, base, xheaders)
+    if not ctx["ocr"]:
+        log.warning("preflight empty ocr netid=%s — not stored", netid)
+        return
+    now = time.time()
+    if len(_PREFLIGHT) >= _PREFLIGHT_MAX:  # opportunistic prune of stale entries
+        for k in [k for k, v in _PREFLIGHT.items() if now - v["ts"] > 180]:
+            _PREFLIGHT.pop(k, None)
+    _PREFLIGHT[netid] = {"opener": opener, "jar": jar, "ctx": ctx, "ts": now}
+    log.info("preflight ready netid=%s ocr=%s age=0ms", netid, ctx["ocr"])
+
+
+def take_preflight(netid, max_age=150):
+    """Pop the warm login for this netid (single-use). None when stale/absent."""
+    p = _PREFLIGHT.pop(netid, None)
+    if not p or time.time() - p["ts"] > max_age:
+        return None
+    log.debug("preflight consumed netid=%s age_ms=%d", netid, int((time.time() - p["ts"]) * 1000))
+    return p
+
+
+def _prepare(opener, base, xheaders, on_step=None, attempt=1):
+    """Fetch login page + parse tokens + fetch captcha + OCR.
+    Returns ctx dict for _post_login. Raises HttpScraperError."""
     from app.app import solve_captcha_b64  # deferred: same ddddocr solver
 
+    t0 = time.monotonic()
+    page_url = f"{base}{BASE_PATH}/students/loginManager/youLogin.jsp"
+    _url, body = _req(opener, page_url, _hdrs(xheaders))
+    html = body.decode("utf-8", errors="replace")
+    log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
+    if on_step: on_step("Opening login page…", 15)
+
+    def g(p, _html=html):
+        m = re.search(p, _html)
+        return m.group(1) if m else None
+
+    nonce = g(r"nonce\s*:\s*'([^']+)'")
+    dfield = g(r"domainFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
+    cfield = g(r"captchaFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
+    rdelim = g(r"randomDelimiter\s*[=:]\s*['\"]([^'\"]+)['\"]")
+    hp = re.search(r'name=\"(ph_[^\"]+)\"', html)
+    if not hp:
+        raise HttpScraperError("honeypot field missing")
+    img = re.search(r'<img[^>]*id=\"secure_captcha\"[^>]*>', html)
+    src = re.search(r'data-src=\"([^\"]+)\"', img.group(0)) if img else None
+    if not all([nonce, dfield, cfield, rdelim, src]):
+        log.warning("login page missing tokens nonce=%s dfield=%s cfield=%s",
+                    bool(nonce), bool(dfield), bool(cfield))
+        raise HttpScraperError("login page tokens missing")
+
+    # Captcha: the page's OWN image (data-src) with Domain-Proof
+    img_path = src.group(1)
+    img_url = f"https://{PORTAL_HOST}{img_path}" if img_path.startswith("/") else img_path
+    if base != f"https://{PORTAL_HOST}":
+        img_url = img_url.replace(f"https://{PORTAL_HOST}", base)
+    proof = base64.b64encode(f"{nonce}:{PORTAL_HOST}".encode()).decode()
+    img_headers = _hdrs({**xheaders, "X-Domain-Proof": proof,
+                         "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
+                        referer=LOGIN_PAGE)
+    img_bytes = None
+    for _img_try in range(2):  # worker egress can be slow on cold start
+        try:
+            _u, img_bytes = _req(opener, img_url, img_headers, timeout=40)
+            break
+        except HttpScraperError as e:
+            log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
+            if _img_try == 1:
+                raise
+    ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
+    if on_step: on_step("Reading captcha…", 30)
+    log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
+              len(img_bytes), ocr)
+    return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
+            "rdelim": rdelim, "ocr": ocr}
+
+
+def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=None, attempt=1):
+    """POST LoginServlet with a prepared ctx. Returns (action, err):
+    action: "ok" | "retry" (fresh captcha needed) | "fail" (fatal)."""
+    # POST login
+    dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
+    elapsed = str(max(5, int(time.time() - ctx["t0"])))
+    cptoken = base64.b64encode(f"{elapsed}{ctx['rdelim']}3".encode()).decode()
+    fields = {ctx["hp"]: "", "username": netid, "password": password,
+              "captcha": ctx["ocr"], "fpPayload": "", "fpToken": "",
+              "telemetryPayload": _telemetry_b64(ctx["t0"]),
+              ctx["dfield"]: dtoken, ctx["cfield"]: cptoken}
+    post_url = f"{base}{BASE_PATH}/LoginServlet"
+    data = urllib.parse.urlencode(fields).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded",
+                     "Origin": f"https://{PORTAL_HOST}"}, referer=LOGIN_PAGE)
+    final_url, body = _req(opener, post_url, headers, data=data)
+    rhtml = body.decode("utf-8", errors="replace")
+    ok = "HRDSystem" in final_url or "HRDSystem" in rhtml[:4000]
+    if on_step: on_step("Verifying credentials…", 55)
+    log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
+              attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
+    if ok:
+        return "ok", None
+    low = rhtml.lower()
+    if "invalid credentials" in low or "invalid username" in low or "invalid password" in low:
+        return "fail", "invalid credentials — check your NetID/password"
+    if "invalid captcha" in low or "captcha" in low and "invalid" in low:
+        log.info("login attempt=%d invalid_captcha ocr=%s", attempt, ctx["ocr"])
+        if attempt < MAX_CAPTCHA_RETRIES:
+            return "retry", None
+        return "fail", "login failed after 3 attempts — captcha unreadable"
+    # Silent rejection: login page again, no error text → portal rate-limiting
+    log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text)", attempt)
+    helpers["portal_fail_once"]()
+    return "fail", ("SRM portal rejected the login without an error (likely "
+                    "rate-limiting). Try again in a few minutes.")
+
+
+def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepared=None):
+    """Pure-HTTP login. Returns (ok, err). Raises HttpScraperError on transport fail."""
+    # Preflight path: warm session + solved captcha from the typing phase.
+    if prepared:
+        try:
+            if on_step: on_step("Using pre-solved captcha…", 40)
+            action, err = _post_login(prepared["opener"], prepared["ctx"], netid,
+                                      password, base, xheaders, helpers, on_step, attempt=1)
+            if action == "ok":
+                return True, None
+            if action == "fail":
+                return False, err
+            log.info("preflight captcha rejected netid=%s — fetching fresh captcha", netid)
+        except HttpScraperError as e:
+            log.warning("preflight post failed (%r) — fresh login", e)
+
     for attempt in range(1, MAX_CAPTCHA_RETRIES + 1):
-        t0 = time.monotonic()
-        page_url = f"{base}{BASE_PATH}/students/loginManager/youLogin.jsp"
-        _url, body = _req(opener, page_url, _hdrs(xheaders))
-        html = body.decode("utf-8", errors="replace")
-        log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
-        if on_step: on_step("Opening login page…", 15)
-
-        def g(p, _html=html):
-            m = re.search(p, _html)
-            return m.group(1) if m else None
-
-        nonce = g(r"nonce\s*:\s*'([^']+)'")
-        dfield = g(r"domainFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
-        cfield = g(r"captchaFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
-        rdelim = g(r"randomDelimiter\s*[=:]\s*['\"]([^'\"]+)['\"]")
-        hp = re.search(r'name="(ph_[^"]+)"', html)
-        if not hp:
-            raise HttpScraperError("honeypot field missing")
-        img = re.search(r'<img[^>]*id="secure_captcha"[^>]*>', html)
-        src = re.search(r'data-src="([^"]+)"', img.group(0)) if img else None
-        if not all([nonce, dfield, cfield, rdelim, src]):
-            log.warning("login page missing tokens nonce=%s dfield=%s cfield=%s",
-                        bool(nonce), bool(dfield), bool(cfield))
-            raise HttpScraperError("login page tokens missing")
-
-        # Captcha: the page's OWN image (data-src) with Domain-Proof
-        img_path = src.group(1)
-        img_url = f"https://{PORTAL_HOST}{img_path}" if img_path.startswith("/") else img_path
-        if base != f"https://{PORTAL_HOST}":
-            img_url = img_url.replace(f"https://{PORTAL_HOST}", base)
-        proof = base64.b64encode(f"{nonce}:{PORTAL_HOST}".encode()).decode()
-        img_headers = _hdrs({**xheaders, "X-Domain-Proof": proof,
-                             "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
-                            referer=LOGIN_PAGE)
-        img_bytes = None
-        for _img_try in range(2):  # worker egress can be slow on cold start
-            try:
-                _u, img_bytes = _req(opener, img_url, img_headers, timeout=40)
-                break
-            except HttpScraperError as e:
-                log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
-                if _img_try == 1:
-                    raise
-        ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
-        if on_step: on_step("Reading captcha…", 30)
-        log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
-                  len(img_bytes), ocr)
-        if not ocr:
+        ctx = _prepare(opener, base, xheaders, on_step, attempt)
+        if not ctx["ocr"]:
             log.warning("login attempt=%d ocr_empty", attempt)
             if attempt < MAX_CAPTCHA_RETRIES:
                 time.sleep(2)
                 continue
             return False, "captcha OCR failed — try again"
-
-        # POST login
-        dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
-        elapsed = str(max(5, int(time.time() - t0)))
-        cptoken = base64.b64encode(f"{elapsed}{rdelim}3".encode()).decode()
-        fields = {hp.group(1): "", "username": netid, "password": password,
-                  "captcha": ocr, "fpPayload": "", "fpToken": "",
-                  "telemetryPayload": _telemetry_b64(t0),
-                  dfield: dtoken, cfield: cptoken}
-        post_url = f"{base}{BASE_PATH}/LoginServlet"
-        data = urllib.parse.urlencode(fields).encode()
-        headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded",
-                         "Origin": f"https://{PORTAL_HOST}"}, referer=LOGIN_PAGE)
-        final_url, body = _req(opener, post_url, headers, data=data)
-        rhtml = body.decode("utf-8", errors="replace")
-        ok = "HRDSystem" in final_url or "HRDSystem" in rhtml[:4000]
-        if on_step: on_step("Verifying credentials…", 55)
-        log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
-                  attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
-        if ok:
+        action, err = _post_login(opener, ctx, netid, password, base, xheaders,
+                                  helpers, on_step, attempt)
+        if action == "ok":
             return True, None
-        low = rhtml.lower()
-        if "invalid credentials" in low or "invalid username" in low or "invalid password" in low:
-            return False, "invalid credentials — check your NetID/password"
-        if "invalid captcha" in low or "captcha" in low and "invalid" in low:
-            log.info("login attempt=%d invalid_captcha ocr=%s", attempt, ocr)
-            if attempt < MAX_CAPTCHA_RETRIES:
-                time.sleep(2)
-                continue
-            return False, "login failed after 3 attempts — captcha unreadable"
-        # Silent rejection: login page again, no error → portal rate-limiting
-        log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text)", attempt)
-        helpers["portal_fail_once"]()
-        return False, ("SRM portal rejected the login without an error (likely "
-                       "rate-limiting). Try again in a few minutes.")
+        if action == "retry":
+            time.sleep(2)
+            continue
+        return False, err
     return False, "login failed — captcha retries exhausted"
 
 
@@ -229,13 +294,15 @@ def _jsp_post(opener, base, xheaders, path, form_id):
         return form_id, ""
 
 
-def fetch(netid, password, helpers, cold=True):
+def fetch(netid, password, helpers, cold=True, prepared=None):
     """Full scrape via pure HTTP. Same contract as _fetch_rich_optimized.
 
     helpers: {portal_fail_once, portal_ok, save_session, load_session,
               clear_session} — injected to avoid circular imports.
     cold=True fetches slow-changing JSPs (personal/courses) too;
     cold=False fetches only hot data (attendance 9 + marks 13).
+    prepared: warm login from preflight() (page+captcha done while the
+              user typed their password) — skips the prepare phase.
     Raises HttpScraperError on transport-level failure (caller may fall back
     to the Playwright pipeline).
     """
@@ -273,7 +340,12 @@ def fetch(netid, password, helpers, cold=True):
             helpers["clear_session"](netid)
 
     if not logged_in:
-        ok, err = _login(opener, netid, password, base, xheaders, helpers, on_step=lambda st, pc: _prog(st, pc))
+        if prepared:
+            # preflight's opener holds the warm JSESSIONID + solved captcha
+            opener, jar = prepared["opener"], prepared["jar"]
+            log.debug("using preflight session netid=%s", netid)
+        ok, err = _login(opener, netid, password, base, xheaders, helpers,
+                         on_step=lambda st, pc: _prog(st, pc), prepared=prepared)
         if not ok:
             return {"ok": False, "error": err}
         helpers["portal_ok"]()
