@@ -265,7 +265,7 @@ def fetch(netid, password, helpers, cold=True):
             _u, body = _req(opener, f"{base}{BASE_PATH}/students/template/HRDSystem.jsp", _hdrs(xheaders))
             if "HRDSystem" in _u or b"HRDSystem" in body[:4000]:
                 logged_in = True
-                if on_step: on_step("Restoring your session…", 50)
+                _prog("Restoring your session…", 50)  # NOT raw on_step: it takes (netid, step, pct) and a raise here used to wipe the jar while logged_in stayed True
                 log.debug("session reuse hit netid=%s", netid)
         except Exception as e:
             log.debug("session reuse miss err=%r", e)
