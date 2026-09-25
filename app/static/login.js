@@ -12,11 +12,13 @@ document.getElementById("f").onsubmit = function (ev) {
       f = this;
   wrap.classList.remove("hidden");
   bar.value = 3;
+  var done = false;
   var progTimer = setInterval(function () {
+    if (done) return;
     fetch("/api/login/progress?netid=" + encodeURIComponent(f.netid.value.trim().toLowerCase()), {cache: "no-store"})
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.step) { status.textContent = d.step; bar.value = d.pct; }
+        if (!done && d.step) { status.textContent = d.step; bar.value = d.pct; }
       }).catch(function () {});
   }, 600);
 
@@ -25,6 +27,7 @@ document.getElementById("f").onsubmit = function (ev) {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({netid: this.netid.value, password: this.pw.value})
   }).then(function (r) { return r.json(); }).then(function (d) {
+    done = true;
     clearInterval(progTimer);
     if (d.ok) { location.href = "/"; return; }
     wrap.classList.add("hidden");
@@ -35,6 +38,7 @@ document.getElementById("f").onsubmit = function (ev) {
     document.getElementById("loginSpinner").classList.add("hidden");
     document.getElementById("btnLabel").textContent = "Sign in";
   }).catch(function () {
+    done = true;
     clearInterval(progTimer);
     wrap.classList.add("hidden");
     status.className = "text-center text-sm text-error mt-2";
