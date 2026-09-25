@@ -78,7 +78,20 @@ def migrate_db(conn: sqlite3.Connection):
 
 # ── Migrations ──────────────────────────────────────────────────────
 
-@migration(version=1, description="base tables: users, cookies")
+@migration(version=6, description="portal_sessions table (scraper session cache, separate from web-auth cookies)")
+def m006_portal_sessions(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS portal_sessions(
+        netid TEXT PRIMARY KEY,
+        cookies_json TEXT NOT NULL,
+        created INTEGER NOT NULL
+    )""")
+
+@migration(version=7, description="cold_fetch timestamp on users (hot/cold split)")
+def m007_cold_fetch(conn):
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN cold_fetch INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # already present
 def m001_base(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS users(
         netid TEXT PRIMARY KEY,

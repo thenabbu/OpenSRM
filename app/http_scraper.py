@@ -47,6 +47,9 @@ JSPS = {
     "17": "/students/report/studentPersonalDetails.jsp",
     "7": "/students/report/studentSubjectLists.jsp",
 }
+HOT_FORMIDS = {"9", "13"}  # attendance + marks: fetched every sync
+COLD_FORMIDS = {"1", "17", "7"}  # profile/personal/courses: re-fetch only when stale > COLD_TTL
+COLD_TTL = 24 * 3600  # seconds
 
 MAX_CAPTCHA_RETRIES = 3
 
@@ -223,11 +226,13 @@ def _jsp_post(opener, base, xheaders, path, form_id):
         return form_id, ""
 
 
-def fetch(netid, password, helpers):
+def fetch(netid, password, helpers, cold=True):
     """Full scrape via pure HTTP. Same contract as _fetch_rich_optimized.
 
     helpers: {portal_fail_once, portal_ok, save_session, load_session,
               clear_session} — injected to avoid circular imports.
+    cold=True fetches slow-changing JSPs (personal/courses) too;
+    cold=False fetches only hot data (attendance 9 + marks 13).
     Raises HttpScraperError on transport-level failure (caller may fall back
     to the Playwright pipeline).
     """
@@ -274,10 +279,12 @@ def fetch(netid, password, helpers):
     log.debug("login phase done netid=%s total_ms=%d", netid,
               int((time.monotonic() - t_start) * 1000))
 
-    # Parallel JSP fetch (5 posts)
+    # Parallel JSP fetch — hot always, cold only when requested
+    fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())
+    log.debug("jsp batch netid=%s formids=%s", netid, sorted(fids))
     with ThreadPoolExecutor(max_workers=5) as ex:
         futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
-                   for fid, path in JSPS.items()]
+                   for fid, path in JSPS.items() if fid in fids]
         parallel_html = {fid: html for fid, html in
                          (f.result() for f in futures)}
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
@@ -294,12 +301,12 @@ def fetch(netid, password, helpers):
         ok, err = _login(opener, netid, password, base, xheaders, helpers)
         if not ok:
             return {"ok": False, "error": err}
+        fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())  # refetch with same plan
         with ThreadPoolExecutor(max_workers=5) as ex:
             futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
-                       for fid, path in JSPS.items()]
+                       for fid, path in JSPS.items() if fid in fids]
             parallel_html = {fid: html for fid, html in
                              (f.result() for f in futures)}
-        content_html = parallel_html.get("9", "")
 
     data = parse_attendance(content_html)
     if not data.get("courses"):
@@ -311,23 +318,7 @@ def fetch(netid, password, helpers):
                                       "course table). The portal may be slow or your "
                                       "account may be restricted."}
 
-    # Photo (from profile JSP)
-    photo_b64 = ""
-    try:
-        profile_html = parallel_html.get("1", "")
-        pm = re.search(r'src="([^"]*(?:photo|sphotos|imgPhoto)[^"]*)"', profile_html, re.I)
-        if pm:
-            src = pm.group(1)
-            # relative URLs like ../../resources/sphotos/x.jpg resolve against the JSP path
-            jsp_dir = f"https://{PORTAL_HOST}{BASE_PATH}/students/report/"
-            src = urllib.parse.urljoin(jsp_dir, src)
-            if base != f"https://{PORTAL_HOST}":
-                src = src.replace(f"https://{PORTAL_HOST}", base)
-            _u, pbytes = _req(opener, src, _hdrs(xheaders, referer=HRD_URL))
-            photo_b64 = base64.b64encode(pbytes).decode()
-            log.debug("photo fetched bytes=%d", len(pbytes))
-    except HttpScraperError as e:
-        log.debug("photo fetch failed err=%r", e)
+    # Photo: removed Sep 25 2026 — portal photo unused in any workflow (blobatar avatars instead)
 
     # Daily absence drilldowns (parallel)
     targets = []
@@ -426,8 +417,8 @@ def fetch(netid, password, helpers):
         log.debug("marks parse err=%r", e)
 
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
-             "photo=%s total_ms=%d", netid, len(data["courses"]), len(marks),
-             len(personal), bool(photo_b64), int((time.monotonic() - t_start) * 1000))
-    return {"ok": True, "data": data, "personal": personal, "photo": photo_b64,
+             "cold=%s total_ms=%d", netid, len(data["courses"]), len(marks),
+             len(personal), cold, int((time.monotonic() - t_start) * 1000))
+    return {"ok": True, "data": data, "personal": personal, "photo": "",
             "courses": courses, "marks": marks, "subjects": subject_map,
             "fetched": int(time.time())}
