@@ -14,13 +14,13 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 ## What it does
 
-- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts); live step-by-step progress while logging in
-- **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator
-- **Internal Marks** — CT/FT/attendance component-wise marks per subject, with color-coded status badges
-- **Timetable** — per-group schedule from SQLite; current/next class status; drag-and-drop editor with subject palette
-- **Personal Details** — student info grouped into sections (Academic, Personal, Family, Contact)
-- **Hot/cold data** — attendance + marks refreshed on every sync; personal details/timetable reused until stale (24h)
-- **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view
+- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts); live step-by-step progress while logging in; **preflight** — the login page warms the portal session + solves the captcha while you're still typing your password
+- **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator ("can miss N more"); courses ordered by risk (lowest % first); overall shown as a compact strip
+- **Internal Marks** — component-wise marks per subject (name + entered date + score), server-rendered with the rest of the page; color-coded status; glance widget on the dashboard
+- **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks; drag-and-drop editor with subject palette
+- **Personal Details** — student info grouped into sections (Academic, Personal, Family, Contact); click any value to copy it
+- **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/timetable reused until stale (24h); opening the page shows cached data instantly with a quiet background re-sync
+- **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
 
 ---
 
@@ -100,10 +100,10 @@ flowchart TD
 
 ## How it works
 
-1. **Login** — `http_scraper` fetches the login page (nonce, honeypot, captcha), solves the captcha via ddddocr (up to 3 retries), then POSTs `LoginServlet` with the portal's anti-bot tokens
+1. **Login** — `http_scraper` fetches the login page (nonce, honeypot, captcha), solves the captcha via ddddocr (up to 3 retries), then POSTs `LoginServlet` with the portal's anti-bot tokens. The browser fires `/api/login/preflight` on password focus, so page fetch + captcha OCR happen while the user is still typing
 2. **Progress** — each step publishes to an in-memory tracker; the login screen polls `/api/login/progress` and shows the user what is happening
-3. **Hot data** — attendance (`funSetFormId(9)`) and internal marks (`funSetFormId(17)`) fetched on every sync
-4. **Cold data** — personal details re-fetched only when older than 24h; timetable rendered from SQLite
+3. **Hot data** — attendance (`funSetFormId(9)`) and internal marks (`funSetFormId(13)`, plus per-subject component drilldown) fetched on every sync and persisted
+4. **Cold data** — personal details (`funSetFormId(17)`) re-fetched only when older than 24h; timetable rendered from SQLite
 5. **Store** — parsed JSON written to SQLite; on pipeline failure the login falls back to Playwright
 
 ```mermaid
@@ -123,7 +123,7 @@ sequenceDiagram
     F-->>U: progress: solving captcha (polled)
     S->>P: POST LoginServlet (dtoken, cptoken, telemetry)
     P-->>S: HRDSystem — session established
-    S->>P: POST attendance formId 9 + marks formId 17
+    S->>P: POST attendance formId 9 + marks formId 13
     P-->>S: HTML tables
     S->>S: parse tables to JSON
     S-->>F: attendance, marks, personal, courses
@@ -145,7 +145,7 @@ flowchart LR
 
     subgraph front["frontend"]
         TPL["templates/<br/>login · dashboard · theme"]
-        ST["static/<br/>dash.js · marks.js<br/>timetable.js · login.js · sw.js"]
+        ST["static/<br/>dash.js · timetable.js<br/>login.js · sw.js"]
     end
 
     subgraph eg["egress/"]

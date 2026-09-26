@@ -30,8 +30,9 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 1. **Branch** — create a feature branch from `main`
 2. **Lint** — run `ruff check app/` before committing (CI blocks on failures)
 3. **Test** — verify against the live SRM portal (login, attendance, timetable editor)
-4. **Commit** — clear, descriptive messages. One logical change per commit.
-5. **Push** — push to main. CI runs lint → Docker build → GHCR push automatically.
+4. **Version** — bump `VERSION` (and `pyproject.toml` to match) for user-visible changes: patch = fix, minor = feature, major = breaking/user-visible redesign. The number renders on the login page and dashboard navbar.
+5. **Commit** — clear, descriptive messages. One logical change per commit.
+6. **Push** — push to main. CI runs lint → Docker build → GHCR push automatically.
 
 ### Commit format
 
