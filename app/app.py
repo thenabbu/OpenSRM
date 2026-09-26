@@ -107,6 +107,7 @@ def _import_legacy_timetable():
         c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
                   "VALUES(?,?,?,?,?)", (group_key, "B.Tech.-CSE Cloud Computing", 2025, 3, "A"))
         gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()[0]
+        c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
         # Import subjects from attendance data
         for u in c.execute("SELECT personal_details_json, attendance_json FROM users").fetchall():
             if u[0]:
@@ -120,18 +121,25 @@ def _import_legacy_timetable():
                         if code and code not in seen:
                             seen.add(code)
                             c.execute("INSERT OR IGNORE INTO timetable_subjects(group_id,code,name,credits,is_custom) "
-                                      "VALUES(?,?,?,0,0)", (gid, code, course.get("description",""), 0))
-        # Import slots from JSON
+                                      "VALUES(?,?,?,0,0)", (gid, code, course.get("description","")))
+        # Import slots from JSON. Rows include BREAK/LUNCH entries — those are
+        # rendered as dividers from SLOTS, NOT stored as class periods. Map each
+        # class row to its period by START TIME (SLOTS defines the grid); the old
+        # index→period mapping shifted classes after breaks and clamped the
+        # 8th row away (AWS/VA vanished from Thu/Tue).
+        _slot_start = {s["start"]: s["period"] for s in SLOTS if s["type"] == "class"}
         for day, slots in data.items():
-            for i, s in enumerate(slots):
-                period = i + 1
-                if period > 7: period = 7  # clamp
+            for s in slots:
+                per = _slot_start.get(s.get("start", ""))
+                if not per:
+                    continue  # break/lunch rows or unknown times
                 c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
-                          "VALUES(?,?,?,?,?,?)", (gid, day, period, s.get("code",""), s.get("name",""), s.get("location","")))
+                          "VALUES(?,?,?,?,?,?)", (gid, day, per, s.get("code",""), s.get("name",""), s.get("location","")))
         c.commit()
-    except: pass
+        os.rename(json_path, json_path + ".bak")   # only consume on success
+    except Exception:
+        log.exception("legacy timetable import failed")
     c.close()
-    os.rename(json_path, json_path + ".bak")
 
 def db():
 
