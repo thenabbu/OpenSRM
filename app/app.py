@@ -495,6 +495,7 @@ def _parse_component_inner(html):
     if re.search(r"no\s+record\s+found", html, re.I):
         return comps
     pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
+    date_re = re.compile(r"\d{1,2}[/ -]\w{3,9}[/ -]\d{2,4}")
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
         cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
                  for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
@@ -508,15 +509,21 @@ def _parse_component_inner(html):
                 break
         if maximum <= 0:
             continue
-        name = ""
-        for cell in cells:
-            t = cell.strip()
-            if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
-                name = t
-                break
+        name, entered = "", ""
+        # component JSP rows: [entered_on, component_name, score/max]
+        if len(cells) >= 3 and date_re.search(cells[0]):
+            entered = cells[0]
+            if not pair_re.search(cells[1]):
+                name = cells[1]
+        if not name:
+            for cell in cells:
+                t = cell.strip()
+                if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
+                    name = t
+                    break
         if not name:
             name = f"Assessment {len(comps)+1}"
-        comps.append({"name": name, "scored": scored, "max": maximum})
+        comps.append({"name": name, "entered": entered, "scored": scored, "max": maximum})
     return comps
 
 
@@ -1264,6 +1271,34 @@ def api_marks():
     marks = json.loads(row["marks_json"]) if row and row["marks_json"] else []
     return {"ok": True, "marks": marks}
 
+def _marks_view(marks):
+    """Marks tab view model: per-subject totals + component rows with entered dates."""
+    def pct(s, m):
+        return round(s / m * 100, 1) if m else 0.0
+    out = []
+    for s in marks:
+        comps = []
+        for cpt in s.get("components", []):
+            comps.append({"name": cpt.get("name", ""), "entered": cpt.get("entered", ""),
+                          "scored": cpt.get("scored", 0.0), "max": cpt.get("max", 0.0),
+                          "pct": pct(cpt.get("scored", 0.0), cpt.get("max", 0.0))})
+        out.append({"code": s.get("code", ""), "title": s.get("title", ""),
+                    "scored_total": s.get("scored_total", 0.0), "max_total": s.get("max_total", 0.0),
+                    "pct": pct(s.get("scored_total", 0.0), s.get("max_total", 0.0)),
+                    "components": comps})
+    return out
+
+def _marks_summary(marks):
+    """Dashboard widget: overall % + up to 3 lowest subjects."""
+    if not marks:
+        return None
+    tot_s = sum(m.get("scored_total", 0) for m in marks)
+    tot_m = sum(m.get("max_total", 0) for m in marks)
+    pct = round(tot_s / tot_m * 100, 1) if tot_m else 0.0
+    low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"]) if m.get("max_total") else 1)[:3]
+    return {"pct": pct, "scored": round(tot_s, 1), "max": round(tot_m, 1),
+            "subjects": [{"code": m.get("code", ""), "pct": round((m.get("scored_total", 0) / m["max_total"]) * 100, 1) if m.get("max_total") else 0} for m in low]}
+
 @app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
@@ -1381,8 +1416,9 @@ def api_refresh():
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=? WHERE netid=?",
-              (json.dumps(res["data"]), res["fetched"], personal_json, netid))
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=? WHERE netid=?",
+              (json.dumps(res["data"]), res["fetched"], personal_json,
+               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), netid))
     c.commit(); c.close()
     return {"ok": True}
 
