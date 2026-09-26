@@ -27,7 +27,10 @@ class _Formatter(logging.Formatter):
         extra = ""
         if hasattr(record, "kv"):
             extra = " " + " ".join(f"{k}={v}" for k, v in record.kv.items())
-        return f"{ts} {record.levelname} {record.name} {msg}{extra}"
+        out = f"{ts} {record.levelname} {record.name} {msg}{extra}"
+        if record.exc_info:
+            out += "\n" + self.formatException(record.exc_info)   # never swallow tracebacks
+        return out
 
 
 def setup_logging():
