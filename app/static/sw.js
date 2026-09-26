@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v9';
+const CACHE_NAME = 'opensrm-v10';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -23,16 +23,17 @@ self.addEventListener('fetch', e => {
   if (url.pathname === '/login' || url.pathname === '/logout' ||
       url.pathname.startsWith('/api/')) return;
 
-  // Static assets: cache-first
+  // Static assets: network-first with cache fallback.
+  // Cache-first once served pre-deploy JS with post-deploy HTML → dead navbar
+  // until a hard refresh. Network-first keeps HTML+JS from the same deploy;
+  // the cache still serves offline.
   if (url.pathname.startsWith('/static/')) {
     e.respondWith(
-      caches.match(e.request).then(r =>
-        r || fetch(e.request).then(resp => {
-          const cl = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
-          return resp;
-        })
-      )
+      fetch(e.request).then(resp => {
+        const cl = resp.clone();
+        caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
+        return resp;
+      }).catch(() => caches.match(e.request))
     );
     return;
   }

@@ -98,14 +98,17 @@
             <progress id="progressBar" class="progress w-full" max="100" value="0"></progress>
           </div>
 
+          <!-- How-it-works note — inside the card, at its bottom -->
+          <div class="text-center text-xs text-base-content/50 leading-relaxed border-t border-base-300 pt-3 mt-1">
+            Logs into the SRM portal directly (no browser), solves the captcha while you type,
+            and caches your data on this server for instant loads.
+          </div>
+
         </div>
       </div>
 
-      <!-- Footer info -->
-      <p class="text-center text-xs text-base-content/50 mt-6 leading-relaxed px-4">
-        Securely logs into the SRM student portal and syncs your attendance data.
-        <br>First login takes about 15 seconds.
-      </p>
+      <!-- Version -->
+      <p class="text-center text-[10px] text-base-content/30 font-mono mt-4 select-none">OpenSRM v{{ version }}</p>
 
     </div>
   </main>

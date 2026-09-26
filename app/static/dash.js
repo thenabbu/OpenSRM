@@ -57,7 +57,15 @@ document.querySelectorAll('[data-refresh]').forEach(function(b) {
 // ── Tabs (desktop navbar + mobile dock) ───────────────────────────
 function switchTab(name, btn) {
   document.querySelectorAll('[data-tabpanel]').forEach(function(p) {
-    p.style.display = (p.id === 'tab-' + name) ? '' : 'none';
+    var show = (p.id === 'tab-' + name);
+    if (show && p.style.display === 'none') {
+      p.style.display = '';
+      p.classList.add('tab-enter');
+      void p.offsetHeight;   // start from the invisible state, then let CSS transition in
+      p.classList.remove('tab-enter');
+    } else if (!show) {
+      p.style.display = 'none';
+    }
   });
   document.querySelectorAll('[data-tab]').forEach(function(b) {
     var on = (b === btn) || (b.dataset.tab === name && !btn);
@@ -92,20 +100,48 @@ tabButtons.forEach(function(b) {
   switchTab(valid ? h : 'dashboard');
 })();
 
-// ── Copy email ────────────────────────────────────────────────────
-var copyBtn = document.getElementById('copyEmail');
-if (copyBtn) copyBtn.addEventListener('click', function() {
-  var email = copyBtn.dataset.email || '';
-  function done() {
-    var span = copyBtn.querySelector('span');
-    var old = span.textContent;
-    span.textContent = 'Copied!';
-    setTimeout(function() { span.textContent = old; }, 1200);
+// ── Click-to-copy: any element with data-copy gets copied on click (task 10).
+//    Values only — keys/labels never carry data-copy.
+(function() {
+  function flash(el) {
+    var old = el.dataset.copyFlash || '';
+    if (el.dataset.origText === undefined) el.dataset.origText = el.textContent;
+    el.textContent = 'Copied!';
+    el.classList.add('text-success');
+    clearTimeout(el._copyTimer);
+    el._copyTimer = setTimeout(function() {
+      el.textContent = el.dataset.origText;
+      el.classList.remove('text-success');
+    }, 1200);
   }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(email).then(done).catch(function() { showError('Copy failed'); });
-  } else { showError('Clipboard unavailable'); }
-});
+  function copyText(t, el) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function() { flash(el); }).catch(function() {});
+    }
+  }
+  // Static listeners for server-rendered values
+  document.querySelectorAll('[data-copy]').forEach(function(el) {
+    el.title = el.title || 'Click to copy';
+    el.classList.add('cursor-copy');
+    el.addEventListener('click', function(ev) {
+      copyText(el.dataset.copy || el.textContent.trim(), el);
+    });
+  });
+  // Copy email button keeps its icon feedback
+  var copyBtn = document.getElementById('copyEmail');
+  if (copyBtn) copyBtn.addEventListener('click', function() {
+    var email = copyBtn.dataset.email || '';
+    function done() {
+      var span = copyBtn.querySelector('span');
+      var old = span.textContent;
+      span.textContent = 'Copied!';
+      setTimeout(function() { span.textContent = old; }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(email).then(done).catch(function() { showError('Copy failed'); });
+    } else { showError('Clipboard unavailable'); }
+  });
+})();
 
 // ── Auto-sync on open: show cached data instantly, refresh quietly in
 //    background when stale (>10min). Quiet failures stay silent.
