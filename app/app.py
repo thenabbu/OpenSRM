@@ -40,6 +40,11 @@ from .migrations import migrate_db
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
 
+# Single source of truth for the visible app version (task 16).
+# Bump policy: patch = fix, minor = feature, major = breaking/user-visible redesign.
+with open(os.path.join(os.path.dirname(__file__), "..", "VERSION")) as _vf:
+    APP_VERSION = _vf.read().strip()
+
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "srm.db")
 _secret_path = os.path.join(DATA_DIR, "secret")
@@ -95,9 +100,13 @@ def decrypt_pw(blob):
         return ""
 
 def _import_legacy_timetable():
-    """One-time import: timetable.json -> SQLite for existing users."""
-    json_path = os.path.join(os.path.dirname(__file__), "data", "timetable.json")
-    if not os.path.exists(json_path): return
+    """One-time import: timetable.json -> SQLite for existing users.
+    Re-runnable: deletes the group's slots first, so a corrected importer
+    repairs previously-shifted data on next boot."""
+    paths = [os.path.join(os.path.dirname(__file__), "data", "timetable.json"),
+             os.path.join(DATA_DIR, "timetable.json")]
+    json_path = next((p for p in paths if os.path.exists(p)), None)
+    if not json_path: return
     with open(json_path) as f:
         data = json.load(f)
     # Infer group from ng2776's known data
@@ -970,6 +979,13 @@ def _bunk_line(attended, max_hours, threshold=ATTENDANCE_TARGET):
     need = max(1, math.ceil((threshold * max_hours - attended) / (1 - threshold) - 1e-9))
     return "Attend the next %d class%s in a row to reach %.0f%%" % (need, "" if need == 1 else "es", pct_target)
 
+def _fmt_period(p):
+    """Portal period comes as {'from': '20/Jul/2026', 'to': '25/Sep/2026'} — render readable."""
+    if not p or not isinstance(p, dict):
+        return p or ""
+    f, t = p.get("from", ""), p.get("to", "")
+    return f"{f} – {t}" if f and t else (f or t or "")
+
 def _course_view(c):
     attended = _safe_int(c.get("attended"))
     max_hours = _safe_int(c.get("max_hours"))
@@ -1044,6 +1060,14 @@ def index():
     personal_data = json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {}
     student_name = personal_data.get("Student Name", "").title()
 
+    # Marks: server-rendered (tab + dashboard widget). Re-synced hot data.
+    c2 = db()
+    mrow = c2.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c2.close()
+    marks_raw = json.loads(mrow["marks_json"]) if mrow and mrow["marks_json"] else []
+    marks_view = _marks_view(marks_raw)
+    marks_summary = _marks_summary(marks_raw)
+
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
     dash = {
@@ -1058,9 +1082,10 @@ def index():
 
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly, overall=overall,
-        period=data.get("period"), daily_absent=data.get("daily_absent", {}),
+        period=_fmt_period(data.get("period")), daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
-        student_name=student_name, dash=dash,
+        student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        version=APP_VERSION,
         timetable=timetable_html(group_key),
         personal=personal_data)
 
@@ -1313,7 +1338,7 @@ def static_no_cache(filename):
 @app.route("/login")
 def login():
     if get_current_user(): return redirect("/")
-    return render_template("login.html")
+    return render_template("login.html", version=APP_VERSION)
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
