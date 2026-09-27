@@ -16,7 +16,7 @@
 
 | File | Size (measured) | md5 match with pip `ddddocr` package |
 |---|---|---|
-| `common.onnx` (beta model — **what OpenSRM uses**: `DdddOcr(beta=True)`, verified in `app/app.py:152`) | 54,088,400 B (≈47.9 MB gzipped — barely compresses) | ✅ `82dc6fb95605818a913cbe1db71c81bd` — identical to the `common.onnx` hosted in `lyc8503/ddddocr_web` and downloadable for browser use [3] |
+| `common.onnx` (beta model — **what OpenSRM uses**: `DdddOcr(beta=True)`, verified in `app/app.py` `solve_captcha_b64`) | 54,088,400 B (≈47.9 MB gzipped — barely compresses) | ✅ `82dc6fb95605818a913cbe1db71c81bd` — identical to the `common.onnx` hosted in `lyc8503/ddddocr_web` and downloadable for browser use [3] |
 | `common_q8.onnx` (uint8-quantized, community-made) | 13,602,462 B | n/a — quantization of the above; "效果对比原模型略有下降…识别率依旧较高" (slight accuracy drop vs original, still high on most captchas) per README [2][4] |
 | `common_old.onnx` | 13,606,051 B | — |
 

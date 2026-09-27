@@ -63,7 +63,7 @@ Key rules:
 - **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access
 - **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
 - **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
-- **Playwright** — persistent browser instance, fresh context per login. Chromium launched once at startup.
+- **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in).
 - **No JS frameworks** — vanilla JS only. No build step.
 - **Service worker** — bump `CACHE_NAME` in `sw.js` when deploying static asset changes.
 

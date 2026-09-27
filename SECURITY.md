@@ -2,7 +2,7 @@
 
 ## Reporting vulnerabilities
 
-Report vulnerabilities via GitHub DM or email. Do not open public issues.
+Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/thenabbu/OpenSRM/security/advisories) (github.com/thenabbu/OpenSRM → Security → Report a vulnerability). Do not open public issues.
 
 ## What we protect
 
@@ -17,8 +17,8 @@ Report vulnerabilities via GitHub DM or email. Do not open public issues.
 - 30-day expiry with automatic cleanup of expired tokens
 
 ### Content Security Policy
-- `script-src 'self'` — no external scripts
-- `style-src 'self' 'unsafe-inline'` — Tailwind/daisyUI loaded at runtime
+- `script-src 'self' https://cdn.jsdelivr.net` — no inline scripts; the only external origin is the Tailwind/daisyUI CDN (both pages load it via `partials/theme.html`)
+- `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net` — Tailwind/daisyUI loaded at runtime from jsDelivr
 - `frame-ancestors 'none'` — cannot be embedded in iframes
 - `connect-src 'self'` — no external API calls from the browser
 

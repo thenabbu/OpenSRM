@@ -19,7 +19,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), server-rendered with the rest of the page; color-coded status; glance widget on the dashboard
 - **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks; drag-and-drop editor with subject palette
 - **Personal Details** — student info grouped into sections (Academic, Personal, Family, Contact); click any value to copy it
-- **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/timetable reused until stale (24h); opening the page shows cached data instantly with a quiet background re-sync
+- **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/courses reused until stale (24h); timetable served from SQLite and only changes when you edit it; opening the page shows cached data instantly with a quiet background re-sync
 - **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
 
 ---
@@ -37,7 +37,7 @@ docker compose up -d
 uv venv .venv && source .venv/bin/activate
 uv sync --frozen
 playwright install chromium
-DATA_DIR=./data gunicorn -w 1 --threads 8 -b 0.0.0.0:8084 app.app:app
+DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
 ```
 
@@ -47,12 +47,12 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -b 0.0.0.0:8084 app.app:app
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Flask 3.0, Python 3.11, gunicorn (gthread) |
+| Backend | Flask 3.1, Python 3.11, gunicorn (gthread) |
 | Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback |
 | Captcha | ddddocr (self-contained OCR) |
 | Database | SQLite with versioned migration system |
 | Frontend | Tailwind CSS + daisyUI (CDN), vanilla JS, Jinja2 |
-| PWA | Service worker (network-first dashboard, cache-first static) |
+| PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
 | CI/CD | GitHub Actions → GHCR |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS |
 
@@ -64,7 +64,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -b 0.0.0.0:8084 app.app:app
 flowchart TD
     subgraph client["Client — PWA"]
         UI["Login + dashboard<br/>daisyUI / vanilla JS"]
-        SW["Service worker opensrm-v9<br/>cache-first shell"]
+        SW["Service worker opensrm-v11<br/>network-first shell"]
     end
 
     subgraph lab["Lab host — Docker container opensrm"]
@@ -194,7 +194,7 @@ Environment variables:
 
 - Fernet-encrypted passwords at rest
 - HTTP-only session cookies with Secure flag (behind HTTPS)
-- CSP headers (script-src 'self', no external scripts)
+- CSP headers (script-src 'self' + cdn.jsdelivr.net for the Tailwind/daisyUI CDN — no inline scripts)
 - Rate limiting per netid and per IP
 - Cloudflare Tunnel for HTTPS termination
 

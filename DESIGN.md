@@ -78,7 +78,7 @@ Anatomy of the dashboard:
 
 ### 2.1 How the theme reaches the page
 
-The theme is authored as a daisyUI 5 custom theme (Appendix A), but the app has **no Tailwind build**. It ships as plain CSS variables under `html[data-theme="openSRM"]` in an inline `<style>` block, duplicated in `app/templates/login.html` and `app/templates/dashboard.html`. Every page needs `<html data-theme="openSRM">` plus that block. Do not use `@plugin "daisyui/theme"`; it only works in a build pipeline.
+The theme is authored as a daisyUI 5 custom theme (Appendix A), but the app has **no Tailwind build**. It ships as plain CSS variables under `html[data-theme="openSRM"]` in the shared partial `app/templates/partials/theme.html`, included by both `login.html` and `dashboard.html`. Do not use `@plugin "daisyui/theme"`; it only works in a build pipeline.
 
 ### 2.2 Tokens and roles
 
@@ -352,7 +352,7 @@ The grid that holds them: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`
 
 ### 4.11 Timetable (server-rendered, `tt-*` classes)
 
-`timetable_html()` in `app.py` emits the markup and `app/static/timetable.css` styles it. That file is still on hard-coded hex; see the migration map in §12. When you touch a rule, rewrite it with variables:
+`timetable_html()` in `app.py` emits the markup and `app/static/timetable.css` styles it. That file already uses `var(--color-*)` tokens throughout. When you touch a rule, keep it token-based:
 
 ```css
 .tt-row--current  { border-color: var(--color-success);
@@ -447,9 +447,9 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 ## 10. Implementation constraints (silent-failure list)
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs float within their major version.
-2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'`, `data:`, and `api.dicebear.com`; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): cache-first for `/static/*`, network-first for HTML. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v4` → `opensrm-v5`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
-4. **The theme block exists twice** (login and dashboard). Change both, and Appendix A.
+2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v11` → `opensrm-v12`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
 7. **HTML built in Python or JS** (`timetable_html()`, `timetable.js`) uses the same tokens and classes as the templates, and must escape any interpolated data.
@@ -489,8 +489,8 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 |---|---|---|---|
 | 1 | ~~`--radius-box` mismatch~~ → **fixed**: single shared `partials/theme.html` (both pages use `0.5rem`) | — | — |
 | 2 | ~~Theme tokens duplicated~~ → **fixed**: shared `partials/theme.html` include | — | — |
-| 3 | `timetable.css` is hard-coded hex although its header says it uses tokens | `timetable.css` | Migration map below |
-| 4 | Timetable greens/ambers/reds are lighter Tailwind-400 tints; the dashboard cards use the theme tokens, so the two screens disagree | `timetable.css` | Tokens |
+| 3 | ~~`timetable.css` hard-coded hex~~ → **fixed**: file uses `var(--color-*)` tokens throughout (verified: 0 hex literals) | — | — |
+| 4 | ~~Timetable greens/ambers/reds as lighter Tailwind-400 tints~~ → **fixed**: now `var(--color-success/warning/error)` + `color-mix` tints | — | — |
 | 5 | ~~`.tt-wrap` page-colored~~ → **fixed**: `background:var(--color-base-200)` | — | — |
 | 6 | ~~daisyUI 4 classes on login~~ → **fixed** (already v5 markup) | — | — |
 | 7 | `IBM Plex Mono` is referenced but never loaded | `timetable.css` | `font-mono` |
@@ -499,21 +499,6 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 | 10 | ~~Native `prompt()` for Add Subject~~ → **fixed**: daisyUI `<dialog>` modal | — | — |
 | 11 | ~~Invalid `.tt-today::after` content~~ → **fixed** (already `content:""`) | — | — |
 | 12 | Browser chrome color `#111111` vs navbar `base-200` ≈ `#090909` | `theme-color`, `manifest.json`, `sw.js` | Leave unless asked |
-
-**`timetable.css` migration map**
-
-| Legacy value | Meaning | Replace with |
-|---|---|---|
-| `#161616` | `.tt-wrap` background | `var(--color-base-200)` |
-| `#1e1e1e` | hero, day pills, palette blocks, filled cells | `var(--color-base-300)` |
-| `#2a2a2a` | borders | `var(--color-base-300)` |
-| `#888` / `#b0b0b0` | muted / secondary text | `color-mix(in oklab, var(--color-base-content) 50%, transparent)` / `… 70% …` |
-| `#fff` fill with `#111` text | selected pill, "Soon" badge, today dot | `var(--color-accent)` with `var(--color-accent-content)` |
-| `#fff` text | codes | `var(--color-base-content)` |
-| `#4ade80`, `rgba(74,222,128,.05–.08)` | now / current / filled, and their tints | `var(--color-success)`, `color-mix(in oklab, var(--color-success) 8%, transparent)` |
-| `#fbbf24` | break | `var(--color-warning)` |
-| `#f87171` | remove ✕ | `var(--color-error)` |
-| `rgba(255,255,255,.02–.05)` | zebra / hover tint | `color-mix(in oklab, var(--color-base-content) 3%, transparent)` |
 
 ---
 
