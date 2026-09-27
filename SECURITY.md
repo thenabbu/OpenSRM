@@ -36,6 +36,10 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Cloudflare Tunnel for HTTPS termination
 - Only trusted when `cf-ray` header is present (prevents header spoofing)
 - Docker container runs with healthcheck and log rotation
+- Accepted risk (deliberate): the container runs as root with Chromium
+  `--no-sandbox` — required for headless Playwright in-container; the
+  container is single-purpose and only reachable through the Cloudflare
+  tunnel (compose publishes loopback + the cloudflared bridge gateway only)
 
 ## Scope
 

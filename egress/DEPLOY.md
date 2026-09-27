@@ -4,7 +4,9 @@ Live at `https://srm-egress.200871.xyz/srmiststudentportal/*` (zone route `srm-e
 Script name is random per deploy: read from CF API or infra notes; token-gated, so name guessability is not load-bearing.
 
 ## Deploy (curl only, no wrangler)
-Token: CF API token in `/docker/.env` on lab (`CF_FULL_TOKEN`, line 20 — value ends before the `#` comment).
+Token: a Cloudflare API token with Workers edit scope, kept in the lab's
+docker env file on lab (never in this repo — do not commit its path, line
+number, or value to public docs).
 ```bash
 ACC=6861cc3276134b677ad93f92561fa95c
 WNAME=<script name>

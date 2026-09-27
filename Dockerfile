@@ -1,6 +1,6 @@
-FROM python:3.11-slim AS builder
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 # git: needed by uv to resolve the blobatar git dependency (not present in slim image)
@@ -16,8 +16,8 @@ RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
     && mkdir -p /ms-playwright \
     && cp -a /root/.cache/ms-playwright/. /ms-playwright/
 
-# -- Stage 2: Runtime --
-FROM python:3.11-slim
+# -- Stage 2: Runtime -- (same verified digest as builder)
+FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
 
 LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \

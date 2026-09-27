@@ -17,4 +17,5 @@ dependencies = [
 [project.scripts]
 
 [tool.uv.sources]
-blobatar = { git = "https://github.com/thenabbu/blobatar", subdirectory = "packages/python", rev = "feat/python-sdk" }
+# audit: was a floating branch — pin the exact commit (feat/python-sdk @ 7fb1eed2)
+blobatar = { git = "https://github.com/thenabbu/blobatar", subdirectory = "packages/python", rev = "7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb" }

@@ -21,3 +21,6 @@ jobs:
 
       - name: Run ruff
         run: uvx ruff check app/
+
+      - name: Lockfile freshness
+        run: uv lock --check
