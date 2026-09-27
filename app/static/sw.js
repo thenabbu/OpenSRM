@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v10';
+const CACHE_NAME = 'opensrm-v11';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -19,19 +19,27 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Network-only: login, logout, API
-  if (url.pathname === '/login' || url.pathname === '/logout' ||
-      url.pathname.startsWith('/api/')) return;
+  // Network-only: login, API. Logout is intercepted ONLY to wipe the cache —
+  // cached HTML holds personal data (attendance, marks, profile) and must not
+  // stay readable on the device after logout.
+  if (url.pathname === '/logout') {
+    e.respondWith(fetch(e.request).finally(() => caches.delete(CACHE_NAME)));
+    return;
+  }
+  if (url.pathname === '/login' || url.pathname.startsWith('/api/')) return;
 
   // Static assets: network-first with cache fallback.
   // Cache-first once served pre-deploy JS with post-deploy HTML → dead navbar
   // until a hard refresh. Network-first keeps HTML+JS from the same deploy;
-  // the cache still serves offline.
+  // the cache still serves offline. Only 2xx responses are cached (audit:
+  // resp.ok guard) so error pages can never be served as the offline copy.
   if (url.pathname.startsWith('/static/')) {
     e.respondWith(
       fetch(e.request).then(resp => {
-        const cl = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
+        if (resp.ok) {
+          const cl = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
+        }
         return resp;
       }).catch(() => caches.match(e.request))
     );
@@ -42,8 +50,10 @@ self.addEventListener('fetch', e => {
   if (e.request.headers.get('accept')?.includes('text/html')) {
     e.respondWith(
       fetch(e.request).then(resp => {
-        const cl = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
+        if (resp.ok) {
+          const cl = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
+        }
         return resp;
       }).catch(() =>
         caches.match(e.request).then(r => r || new Response(

@@ -56,7 +56,11 @@ if not os.path.exists(_secret_path):
     os.chmod(_secret_path, 0o600)
 SECRET = open(_secret_path).read().strip()
 
-app = Flask(__name__)
+# audit 2026-09-27: disable Flask's built-in /static route — it registers the
+# SAME rule as static_no_cache() below and wins the match (registered first),
+# so that function never ran anywhere: no Service-Worker-Allowed header, no
+# intended cache policy. Nothing calls url_for('static'), so removal is safe.
+app = Flask(__name__, static_folder=None)
 app.secret_key = SECRET
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
 
@@ -1352,12 +1356,21 @@ def _marks_summary(marks):
 @app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
-    resp = send_from_directory("/app/app/static", filename)
+    # audit: was hardcoded "/app/app/static" — only worked inside the container
+    # (local runs 404'd). Derive from __file__ like every other path here.
+    resp = send_from_directory(os.path.join(os.path.dirname(__file__), "static"), filename)
     # Service worker and manifest need cacheable responses; CSS stays no-store
     if filename.endswith(('.js', '.json')):
         resp.headers["Cache-Control"] = "public, max-age=3600"
     else:
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    if filename == "sw.js":
+        # audit 2026-09-27: without this header a scope of "/" is rejected
+        # (default max scope = the script's directory, /static/) and
+        # registration fails — swallowed by .catch(), so the PWA silently
+        # never worked. Registration now lives in login.js/dash.js (external
+        # files pass script-src 'self').
+        resp.headers["Service-Worker-Allowed"] = "/"
     return resp
 
 def _login_error_code(err):

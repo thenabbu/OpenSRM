@@ -163,3 +163,9 @@ window.addEventListener('online', function() {
   el.className = '';
   el.textContent = '';
 });
+
+// audit: register here too — a valid session lands on / directly and never
+// loads /login, so login.js alone would never register the SW for those users.
+if ("serviceWorker" in navigator && location.pathname !== "/login") {
+  navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
+}

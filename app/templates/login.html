@@ -117,10 +117,5 @@
   <div class="h-[env(safe-area-inset-bottom)]"></div>
 
   <script src="/static/login.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
-    }
-  </script>
 </body>
 </html>

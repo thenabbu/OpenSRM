@@ -84,3 +84,11 @@ document.getElementById("pw-toggle").onclick = function() {
     closed.classList.add("hidden");
   }
 };
+
+// audit 2026-09-27: SW registration must live in an EXTERNAL file — the old
+// inline <script> in login.html was blocked by script-src 'self', so the PWA
+// never registered on any device (scope "/" also needs the
+// Service-Worker-Allowed header, set in app.py static_no_cache).
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
+}
