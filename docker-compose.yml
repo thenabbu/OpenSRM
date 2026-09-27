@@ -3,12 +3,42 @@ services:
     image: ghcr.io/thenabbu/opensrm:latest
     container_name: opensrm
     restart: unless-stopped
+    # audit 2026-09-27: stop publishing on ALL interfaces. Access is via the
+    # Cloudflare tunnel; the origin was moved to this host's cloudflared
+    # gateway (172.31.0.1, tunnel config v27) precisely so the bind can drop
+    # 0.0.0.0 — LAN hosts (192.168.29.x) can no longer bypass the CF front
+    # end. Verified no LAN consumer: Uptime Kuma has no 8083 monitor, no
+    # hermes script references it, srm-sp-auto (stale) is not running.
+    # ponytail: 172.31.0.1 = cloudflared_default bridge gateway — if the
+    # tunnel 502s after docker recreates that network, re-check the gateway IP.
     ports:
-      - "8083:8080"
+      - "127.0.0.1:8083:8080"
+      - "172.31.0.1:8083:8080"
     volumes:
       - opensrm-data:/app/data
     environment:
       - TZ=Asia/Kolkata
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
+      - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
+    # healthcheck + log rotation: SECURITY.md documents both; the live lab
+    # compose already had them — this repo copy had drifted from live.
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8080/')
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   opensrm-data:
