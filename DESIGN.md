@@ -348,7 +348,7 @@ The grid that holds them: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`
 ### 4.10 Icons and avatar
 
 - Icons are **inline SVG**, Heroicons outline style: `fill="none" stroke="currentColor"`, stroke width 1.5–2, `w-4 h-4` (in buttons) or `w-5 h-5`. Never fixed fill colors, never emoji, never an icon font or library (CSP).
-- Avatar: `avatar` → `div.bg-base-300.w-9.rounded-full` holding an `<img>` (DiceBear is the only allowed remote image host).
+- Avatar: `avatar` → `div.bg-base-300.w-9.rounded-full` holding an `<img>` (blobatar via the local `/avatar/<name>` route; CSP `img-src 'self' data:` allows no remote image hosts).
 
 ### 4.11 Timetable (server-rendered, `tt-*` classes)
 
