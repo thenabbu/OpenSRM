@@ -178,7 +178,15 @@ def get_current_user():
     token = request.cookies.get("srm_session")
     if not token: return None
     c = db()
-    row = c.execute("SELECT netid FROM cookies WHERE token=?", (token,)).fetchone()
+    row = c.execute("SELECT netid, created FROM cookies WHERE token=?", (token,)).fetchone()
+    if row and time.time() - row["created"] > SESSION_MAX_AGE:
+        # audit 2026-09-27: enforce expiry at READ time. Previously pruning
+        # happened only inside make_session_token() (i.e. when that same user
+        # logged in again), so a leaked srm_session cookie stayed valid
+        # server-side indefinitely — the 30-day client cookie was the only cap.
+        c.execute("DELETE FROM cookies WHERE token=?", (token,))
+        c.commit()
+        row = None
     c.close()
     return row["netid"] if row else None
 
