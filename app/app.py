@@ -292,6 +292,23 @@ _ip_attempts = {}      # ip -> [ts, ...]    (login POSTs, 1-hour window)
 _RATE_CAP = 10000      # ponytail: memory exhaustion guard; upgrade to LRU if throughput matters
 _rate_lock = threading.Lock()  # audit: check-and-append is atomic only under one lock shared by gthread workers
 
+# audit 2026-09-27: AGGREGATE cap on outbound portal-bound work. Per-netid and
+# per-IP limits don't bind an attacker rotating source IPs: N IPs => N*10
+# attempts/hour through OUR single egress IP — which is exactly how the portal
+# rate-limits/bans the server and takes every user down with it. Counts jobs
+# that actually reach the pipeline (sync + preflight), not rejected requests.
+_portal_attempts = []  # timestamps, 10-min window
+_PORTAL_CAP = 30       # across all clients, all netids
+
+def _check_portal_budget():
+    now = time.time()
+    with _rate_lock:
+        _portal_attempts[:] = [t for t in _portal_attempts if now - t < 600]
+        if len(_portal_attempts) >= _PORTAL_CAP:
+            return False
+        _portal_attempts.append(now)
+        return True
+
 def _check_rate(netid):
     now = time.time()
     with _rate_lock:
@@ -915,6 +932,9 @@ def fetch_attendance(netid, password):
         # forever and _portal_fail_once() became a no-op — the portal cooldown
         # could never arm and we'd keep hammering a rate-limiting portal.
         _request_fail_counted = False
+        if not _check_portal_budget():
+            return {"ok": False, "error": ("Too many portal requests from the server "
+                                           "(rate-limit protection). Try again in 10 minutes.")}
         cooldown = _portal_cooldown_remaining()
         if cooldown > 0:
             return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
@@ -1530,6 +1550,8 @@ def api_login_preflight():
         return {"ok": True, "cooldown": True}
     if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
         return {"ok": False, "error": "portal busy"}, 503
+    if not _check_portal_budget():  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does
+        return {"ok": False, "error": "rate"}, 429
     _preflight_ip[ip] = hits + [now]
     _preflight_last[netid] = now
     threading.Thread(target=_run_preflight, args=(netid,), daemon=True,
