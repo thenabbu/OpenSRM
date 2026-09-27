@@ -88,10 +88,16 @@ def m006_portal_sessions(conn):
 
 @migration(version=7, description="cold_fetch timestamp on users (hot/cold split)")
 def m007_cold_fetch(conn):
+    # audit 2026-09-27: narrow — only swallow 'duplicate column name'
+    # (re-running an applied ALTER). 'no such table' must fail loudly:
+    # swallowing it let a fresh DB record version=7 with no users/cookies.
     try:
         conn.execute("ALTER TABLE users ADD COLUMN cold_fetch INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass  # already present
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            raise
+
+@migration(version=1, description="base users/cookies tables")
 def m001_base(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS users(
         netid TEXT PRIMARY KEY,
@@ -107,14 +113,12 @@ def m001_base(conn):
 
 @migration(version=2, description="add personal_details_json, photo_b64 to users")
 def m002_personal(conn):
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN personal_details_json TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN photo_b64 TEXT")
-    except sqlite3.OperationalError:
-        pass
+    for col in ("personal_details_json TEXT", "photo_b64 TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
 
 @migration(version=3, description="add timetable tables")
 def m003_timetable(conn):
@@ -137,11 +141,9 @@ def m003_timetable(conn):
 
 @migration(version=4, description="add marks_json, subjects_json to users")
 def m004_marks(conn):
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN marks_json TEXT DEFAULT '[]'")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN subjects_json TEXT DEFAULT '{}'")
-    except sqlite3.OperationalError:
-        pass
+    for col in ("marks_json TEXT DEFAULT '[]'", "subjects_json TEXT DEFAULT '{}'"):
+        try:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
