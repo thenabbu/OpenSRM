@@ -3,7 +3,8 @@
 > **Status: ALL FIXED.** Fix batches `394c8ff` → `a8ffccf` (21 commits, pushed, CI green,
 > deployed to prod). Verification: `tests/verify76.py` 71/71 · fresh-DB boot ·
 > `tests/test_sw.py` 7/7 · `tests/test_xss.py` 9/9 · prod 12-point smoke.
-> Outstanding (user action): rotate the egress worker PROXY_TOKEN secret (runbook delivered).
+> Outstanding: none. Egress worker PROXY_TOKEN rotated + verified 2026-09-28
+> (leaked value 401s; live value stored at `lab:~/.srm_egress_proxy_token`, mode 600).
 > Tooling lives in `tests/`; record written 2026-09-27.
 
 ---
