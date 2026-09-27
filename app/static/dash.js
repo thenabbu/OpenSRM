@@ -104,7 +104,6 @@ tabButtons.forEach(function(b) {
 //    Values only — keys/labels never carry data-copy.
 (function() {
   function flash(el) {
-    var old = el.dataset.copyFlash || '';
     if (el.dataset.origText === undefined) el.dataset.origText = el.textContent;
     el.textContent = 'Copied!';
     el.classList.add('text-success');

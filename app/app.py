@@ -313,7 +313,12 @@ def _check_rate(netid):
     now = time.time()
     with _rate_lock:
         if len(_login_attempts) > _RATE_CAP:
-            _login_attempts.clear()
+            # audit: clear() wiped EVERYONE's counters (a flood resets the cap
+            # for all) — drop only stale keys instead
+            for k in [k for k, v in _login_attempts.items() if not v or now - max(v) >= 600]:
+                _login_attempts.pop(k, None)
+            if len(_login_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard; 20k live netids impossible here
+                _login_attempts.clear()
         attempts = _login_attempts.get(netid, [])
         _login_attempts[netid] = [t for t in attempts if now - t < 600]
         if len(_login_attempts[netid]) >= 3:
@@ -325,7 +330,11 @@ def _check_ip_rate(ip):
     now = time.time()
     with _rate_lock:
         if len(_ip_attempts) > _RATE_CAP:
-            _ip_attempts.clear()
+            # audit: same as _login_attempts — prune stale keys, don't reset everyone
+            for k in [k for k, v in _ip_attempts.items() if not v or now - max(v) >= 3600]:
+                _ip_attempts.pop(k, None)
+            if len(_ip_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard
+                _ip_attempts.clear()
         attempts = _ip_attempts.get(ip, [])
         _ip_attempts[ip] = [t for t in attempts if now - t < 3600]
         if len(_ip_attempts[ip]) >= 10:
@@ -379,6 +388,10 @@ def _cells(row_html):
     return [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
             for c in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)]
 
+# audit: portal dates ('12/09/2026', '12-Sep-2026') also match the score
+# pattern \d+/\d+ — parsers must recognize date cells before scanning scores
+_DATE_CELL_RE = re.compile(r"\d{1,2}[/ -](?:\w{3,9}|\d{1,2})[/ -]\d{2,4}")
+
 ROMAN = {'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
 
 def _semester_int(semester_str):
@@ -412,6 +425,12 @@ def parse_attendance(html):
             if not cells or len(cells) < 5:
                 continue
             if cells[0].lower() == "total" or len(cells) == 7:
+                continue
+            # audit: numeric columns must look numeric — a portal column change
+            # would shift text into them and silently poison attendance
+            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n) or n in ("", "-")
+                       for n in (cells[2], cells[3], cells[4])):
+                log.warning("attendance row layout shifted, skipped: %r", cells[:5])
                 continue
             out["courses"].append({
                 "code": cells[0], "description": cells[1],
@@ -496,6 +515,8 @@ def parse_marks(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
+            if _DATE_CELL_RE.search(cell):
+                continue  # audit: '12/09/2026' would match pair_re as 12/9
             m = pair_re.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
@@ -537,7 +558,7 @@ def _parse_component_inner(html):
     if re.search(r"no\s+record\s+found", html, re.I):
         return comps
     pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
-    date_re = re.compile(r"\d{1,2}[/ -]\w{3,9}[/ -]\d{2,4}")
+    date_re = _DATE_CELL_RE  # shared: broadened to numeric months too
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
         cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
                  for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
@@ -545,6 +566,8 @@ def _parse_component_inner(html):
             continue
         scored = maximum = 0.0
         for cell in cells:
+            if _DATE_CELL_RE.search(cell):
+                continue  # audit: '12/09/2026' would match pair_re as 12/9
             m = pair_re.search(cell)
             if m:
                 scored, maximum = float(m.group(1)), float(m.group(2))
@@ -699,6 +722,10 @@ async def _do_login(page, ctx, netid, password):
                     _portal_fail_once()
                     if _ca < MAX_CAPTCHA_RETRIES - 1:
                         await asyncio.sleep(5)
+                        # re-rendered form comes back empty — refill or the
+                        # retry submits blank credentials (audit L1)
+                        await page.fill('input[name="username"]', netid)
+                        await page.fill('input[name="password"]', password)
                     continue
                 else:
                     last_err = f"rejected (read: {captcha})"
@@ -920,6 +947,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
 
 def fetch_attendance(netid, password):
     global _request_fail_counted
+    loop = future = None  # except block references both; may not be reached
     if not _check_rate(netid):
         return {"ok": False, "error": "Too many sync attempts for this account. Try again in 10 minutes."}
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
@@ -986,12 +1014,25 @@ def fetch_attendance(netid, password):
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
         return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
-    except Exception as e:
-        # Loop/browser may have died — force a fresh launch next time.
+    except Exception:
+        # audit: a timeout leaves the coroutine driving the shared page after
+        # the lock is released (zombie double-drive) — cancel it. Setting
+        # _browser=None without closing leaked one Chromium per failed scrape.
+        # Raw exception internals never go to API clients.
         global _browser, _loop_thread
-        _browser = None
-        msg = str(e) or repr(e)
-        return {"ok": False, "error": "scrape worker died: %s" % msg}
+        if future is not None:
+            try:
+                future.cancel()
+            except Exception:
+                pass
+        old_browser, _browser = _browser, None
+        if old_browser is not None and loop is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(old_browser.close(), loop).result(timeout=5)
+            except Exception:
+                pass  # loop dead too — next launch replaces both anyway
+        log.warning("playwright pipeline failed", exc_info=True)
+        return {"ok": False, "error": "Scrape failed server-side — check the server log, then try again."}
     finally:
         _scrape_lock.release()
 
@@ -1088,7 +1129,7 @@ def set_security_headers(resp):
 def index():
     netid = get_current_user()
     c = db()
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, photo_b64 FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     data = json.loads(row["attendance_json"]) if row and row["attendance_json"] else {"courses": [], "monthly": [], "period": None, "daily_absent": {}}
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
@@ -1461,11 +1502,12 @@ def api_login():
         personal_json = existing["personal_details_json"]
     if not res.get("subjects") and existing and existing["subjects_json"]:
         subjects_json = existing["subjects_json"]
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,photo_b64,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?,?) "
+    # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, photo_b64=excluded.photo_b64",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               personal_json, res.get("photo", ""), json.dumps(res.get("marks", [])), subjects_json))
+               personal_json, json.dumps(res.get("marks", [])), subjects_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -1648,9 +1690,7 @@ def logout():
     return resp
 
 # Pre-warm ddddocr on import so the first real scrape isn't +3s cold.
-import threading as _tw
-
-_tw.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
 
 init_db()
 if __name__ == "__main__":
