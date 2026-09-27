@@ -887,12 +887,19 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         pass
 
 def fetch_attendance(netid, password):
+    global _request_fail_counted
     if not _check_rate(netid):
         return {"ok": False, "error": "Too many sync attempts for this account. Try again in 10 minutes."}
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
         return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
     try:
+        # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
+        # time). Previously the flag was only reset inside Playwright's _do_login,
+        # so in the normal pure-HTTP path the first counted fail latched it True
+        # forever and _portal_fail_once() became a no-op — the portal cooldown
+        # could never arm and we'd keep hammering a rate-limiting portal.
+        _request_fail_counted = False
         cooldown = _portal_cooldown_remaining()
         if cooldown > 0:
             return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
