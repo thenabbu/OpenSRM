@@ -1,4 +1,7 @@
 #!/bin/sh
+# audit: fail fast — a failed mkdir/secret-gen must abort boot, not run the
+# app with a missing data dir or unusable secret key
+set -eu
 # Ensure data dir + secret key exist
 mkdir -p /app/data
 if [ ! -f /app/data/secret ]; then
