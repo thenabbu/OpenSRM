@@ -15,7 +15,8 @@ document.getElementById("f").onsubmit = function (ev) {
   var done = false;
   var progTimer = setInterval(function () {
     if (done) return;
-    fetch("/api/login/progress?netid=" + encodeURIComponent(f.netid.value.trim().toLowerCase()), {cache: "no-store"})
+    fetch("/api/login/progress", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({netid: f.netid.value.trim().toLowerCase()}), cache: "no-store"})
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!done && d.step) { status.textContent = d.step; bar.value = d.pct; }

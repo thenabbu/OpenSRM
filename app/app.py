@@ -1601,9 +1601,12 @@ def api_login_preflight():
     log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
     return {"ok": True}
 
-@app.route("/api/login/progress")
+@app.route("/api/login/progress", methods=["POST"])
 def api_login_progress():
-    netid = request.args.get("netid", "").strip().lower()
+    # audit: GET put netid in the URL (access logs, history, referrers).
+    # Mid-login, session auth can't apply — the body keeps it out of logs.
+    data = request.get_json(silent=True) or {}
+    netid = str(data.get("netid", "")).strip().lower()
     if not netid or not NETID_RE.match(netid):
         return {"step": "", "pct": 0}, 400
     p = _login_progress.get(netid)
