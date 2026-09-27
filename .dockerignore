@@ -23,3 +23,6 @@ LICENSE
 ruff.toml
 requirements.txt
 docs/
+# audit: research PoCs (had a hardcoded proxy token) must never ship in the image
+egress/
+docker-compose.dev.yml

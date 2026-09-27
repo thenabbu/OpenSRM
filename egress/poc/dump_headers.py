@@ -2,11 +2,14 @@
 """Dump ALL Set-Cookie headers (raw) from page + captcha fetches via worker, showing what a browser/cookiejar would accept or reject."""
 import base64
 import http.cookiejar
+import os
 import re
 import urllib.request
 import urllib.error
 
-PT = "21781f952a65cc1baf09c8593ad0b8baf61842cccce7b3fa"
+# Audit 2026-09-27: token was hardcoded here (leaked in public repo + GHCR image).
+# Read from env like test-login-ab.py already did; rotate after every exposure.
+PT = os.environ["SRM_PROXY_TOKEN"]
 BASE = "https://srm-egress.200871.xyz"
 PAGE_PATH = "/srmiststudentportal/students/loginManager/youLogin.jsp"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
