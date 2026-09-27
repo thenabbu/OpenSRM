@@ -1372,9 +1372,6 @@ def api_login():
     # state. Malformed POSTs return 400 above without counting: they never
     # reach Playwright, and not counting them keeps junk floods from
     # bloating the counter dict.
-    if not _check_ip_rate(_client_ip()):
-        return {"ok": False, "error": "Too many login attempts from this server. The portal may be rate-limiting us. Try again later."}, 429
-
     netid = (d.get("netid") or "").strip().lower().split("@")[0] if isinstance(d.get("netid"), str) else ""
     password = d.get("password") if isinstance(d.get("password"), str) else ""
     if not netid or not password:
@@ -1383,6 +1380,13 @@ def api_login():
         return {"ok": False, "error": "invalid NetID format"}, 400
     if len(password) > 128:
         return {"ok": False, "error": "invalid password"}, 400
+
+    # audit 2026-09-27: count the per-IP budget AFTER validation (was before).
+    # Previously 11 trivial `{}` POSTs (valid JSON dict, no credentials) burned
+    # the 10/hour budget and 429'd the rest of the hour — a cheap self-DoS on
+    # shared campus NAT that never even reached the portal.
+    if not _check_ip_rate(_client_ip()):
+        return {"ok": False, "error": "Too many login attempts from this server. The portal may be rate-limiting us. Try again later."}, 429
 
     login_t0 = time.monotonic()
     res = fetch_attendance(netid, password)
