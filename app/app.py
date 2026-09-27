@@ -1352,6 +1352,18 @@ def static_no_cache(filename):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
 
+def _login_error_code(err):
+    """Audit: explicit status mapping — 401 auth, 429 rate/cooldown, 503 backend/portal.
+    The old check keyed on the substring 'login failed', which the most common
+    error string ('invalid credentials — check your NetID/password') never
+    contains: every wrong-password attempt came back 503 instead of 401."""
+    e = err.lower()
+    if "invalid credentials" in e or "login failed" in e:
+        return 401
+    if "too many" in e or "rate-limit" in e:  # per-netid cap, per-IP cap, portal cooldown
+        return 429
+    return 503
+
 @app.route("/login")
 def login():
     if get_current_user(): return redirect("/")
@@ -1395,7 +1407,7 @@ def api_login():
         log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
                     error=res["error"][:80], duration_ms=login_ms)
         # audit F4: auth failures are 401; busy/rate are 429/503
-        code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
+        code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
@@ -1454,7 +1466,7 @@ def api_refresh():
     res = fetch_attendance(netid, password)
     if not res["ok"]:
         # audit F4: match /api/login's status-code discipline
-        code = 401 if "login failed" in res["error"] else (429 if "Too many" in res["error"] else 503)
+        code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
