@@ -31,6 +31,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
 
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, make_response, redirect, render_template, request
@@ -1206,7 +1207,13 @@ def timetable_html(group_key):
     day_slots = {}
     for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
         if r[0] not in day_slots: day_slots[r[0]] = {}
-        day_slots[r[0]][r[1]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
+        # audit 2026-09-27: slots are written by ANY user of the group via
+        # /api/timetable and rendered with {{ timetable | safe }} — escape at
+        # this single choke point (covers hero + panels + loc) or one student's
+        # custom subject name becomes stored XSS in classmates' dashboards.
+        day_slots[r[0]][r[1]] = {"code": _hesc(str(r[2] or "")),
+                                 "name": _hesc(str(r[3] or "")),
+                                 "location": _hesc(str(r[4] or ""))}
     c.close()
     # If no slots at all, show empty state
     has_slots = any(day_slots.get(d) for d in DAY_ORDER)
