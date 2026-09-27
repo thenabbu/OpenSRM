@@ -434,7 +434,7 @@ def parse_marks(html):
     Returns (marks_list, subject_map) where subject_map maps code -> {id, status}."""
     out = []
     if not html:
-        return out
+        return out, {}   # audit: ALWAYS a 2-tuple — callers unpack (out, subject_map)
     if re.search(r"no\s+record\s+found", html, re.I):
         return out, {}
     # Extract subjectId + status from onclick="funViewComponentWiseMarks(id, code, desc, status)"
@@ -444,11 +444,11 @@ def parse_marks(html):
         subject_map[scode] = {"id": int(sid), "status": sstatus}
     table_m = re.search(r"<table[^>]*>.*?<tr[^>]*>(.*?)</tr>(.*?)</table>", html, re.S)
     if not table_m:
-        return out
+        return out, {}   # audit: 2-tuple (bare list crashed the unpack, was swallowed -> silent empty marks)
     headers = [re.sub(r"<[^>]+>", "", h).strip().lower()
                for h in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", table_m.group(1), re.S)]
     if not headers or not any("code" in h for h in headers):
-        return out
+        return out, {}   # audit: 2-tuple (see above)
     code_i = next((i for i, h in enumerate(headers) if "code" in h), 0)
     desc_i = next((i for i, h in enumerate(headers)
                     if any(k in h for k in ("desc", "course", "subject"))), 1)
