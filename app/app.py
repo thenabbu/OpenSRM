@@ -114,7 +114,7 @@ def _import_legacy_timetable():
     if not json_path: return
     with open(json_path) as f:
         data = json.load(f)
-    # Infer group from ng2776's known data
+    # Infer group from the imported timetable's known cohort data
     group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
     c = db()
     try:
@@ -1582,7 +1582,8 @@ def api_get_timetable():
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
         if r and r[0]: personal = json.loads(r[0])
-    except: pass
+    except Exception:  # corrupt/unreadable row → proceed with empty personal details
+        pass
     gk = _group_key(personal)
     if not gk: return {"ok": True, "slots": {}, "subjects": [], "group_key": None}
     c = db()
@@ -1610,7 +1611,8 @@ def api_save_timetable():
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
         if r and r[0]: personal = json.loads(r[0])
-    except: pass
+    except Exception:  # corrupt/unreadable row → proceed with empty personal details
+        pass
     gk = _group_key(personal)
     if not gk: return {"ok": False, "error": "could not determine group"}, 400
     c = db()
