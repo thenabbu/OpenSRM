@@ -28,6 +28,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 
 log = logging.getLogger("opensrm.portal")
 
@@ -294,6 +295,67 @@ def _jsp_post(opener, base, xheaders, path, form_id):
         return form_id, ""
 
 
+# End-sem schedule probe: ScribeInner.jsp (iden=1) accepts ANY hdnExamMonth/
+# hdnExamYear — the portal never validates against the official dropdown, so
+# un-released end-sem dates leak for sessions that AREN'T offered in the UI
+# (verified live Sep 27 2026: 11_2026 returned 4 subjects; the two official
+# options returned 'No subject found'). Candidates = exam windows that are
+# imminent or in progress.
+EXAM_PROBE_MONTHS = (4, 5, 6, 11, 12)  # even-sem Apr-Jun, odd-sem Nov-Dec
+
+
+def exam_candidates(now=None):
+    """(month, year) windows worth probing: end within past 45d, start within next 210d.
+    ponytail: 45d/210d bounds are a heuristic — widen if SRM seeds sessions >7 months out."""
+    now = now or datetime.now()
+    out = []
+    for y in (now.year - 1, now.year, now.year + 1):
+        for m in EXAM_PROBE_MONTHS:
+            start = datetime(y, m, 1)
+            end = datetime(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)
+            if end >= now - timedelta(days=45) and start <= now + timedelta(days=210):
+                out.append((m, y))
+    return out
+
+
+def _exam_post(opener, base, xheaders, month, year):
+    """POST ScribeInner.jsp for one exam window. Returns ((month, year), html) or None."""
+    url = f"{base}{BASE_PATH}/students/certificateRequest/ScribeInner.jsp"
+    data = urllib.parse.urlencode({"iden": "1", "hdnExamMonth": month,
+                                   "hdnExamYear": year}).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    try:
+        _u, body = _req(opener, url, headers, data=data)
+        return (month, year), body.decode("utf-8", errors="replace")
+    except HttpScraperError:
+        return None
+
+
+def _merge_exam_results(results):
+    """[(month, year), html] | None entries -> sorted rows, or None when the
+    probe is unreliable (every transport failed / a response looks like a
+    silent-rejection page) — None means 'preserve stored value' upstream."""
+    from app.app import parse_exam_schedule  # deferred: avoid circularity
+    ok = [r for r in results if r is not None]
+    if not ok:
+        return None
+    rows = []
+    for _wy, html in ok:
+        # silent-rejection guard: real answers are the table or the empty marker
+        if "No subject found" not in html and "<td" not in html:
+            return None
+        rows.extend(parse_exam_schedule(html))
+    seen, out = set(), []
+    for r in rows:  # a window can repeat across candidate overlap
+        k = (r["code"], r["date"])
+        if k not in seen:
+            seen.add(k)
+            out.append(r)
+    out.sort(key=lambda r: (r["date"][6:], r["date"][3:5], r["date"][:2]))  # dd-mm-yyyy -> ymd
+    return out
+
+
 def fetch(netid, password, helpers, cold=True, prepared=None):
     """Full scrape via pure HTTP. Same contract as _fetch_rich_optimized.
 
@@ -363,11 +425,17 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())
     log.debug("jsp batch netid=%s formids=%s", netid, sorted(fids))
     _prog("Fetching attendance & marks…", 65)
+    cands = exam_candidates()
     with ThreadPoolExecutor(max_workers=5) as ex:
         futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
                    for fid, path in JSPS.items() if fid in fids]
+        # end-sem schedule probe rides the same batch: same session, +~1.6KB
+        # responses, no wall-time cost (plan: hot cadence, catches early seeding)
+        exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
+                     for m, y in cands]
         parallel_html = {fid: html for fid, html in
                          (f.result() for f in futures)}
+        exam_results = [f.result() for f in exam_futs]
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
               {k: len(v) for k, v in parallel_html.items()})
 
@@ -386,8 +454,11 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         with ThreadPoolExecutor(max_workers=5) as ex:
             futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
                        for fid, path in JSPS.items() if fid in fids]
+            exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
+                         for m, y in cands]
             parallel_html = {fid: html for fid, html in
                              (f.result() for f in futures)}
+            exam_results = [f.result() for f in exam_futs]
 
     data = parse_attendance(content_html)
     if not data.get("courses"):
@@ -439,6 +510,12 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
                 daily[mstr] = rows
         log.debug("daily drilldown months=%s", [t["mstr"] for t in targets])
     data["daily_absent"] = daily
+
+    # End-sem schedule: None (probe unreliable) -> key omitted -> stored value
+    # preserved upstream; [] (clean probe, no seeded window) -> overwrite.
+    exams = _merge_exam_results(exam_results)
+    log.debug("exam probe netid=%s candidates=%s rows=%s", netid, cands,
+              len(exams) if exams is not None else None)
 
     # Personal details + courses
     personal = {}
@@ -502,6 +579,9 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
              "cold=%s total_ms=%d", netid, len(data["courses"]), len(marks),
              len(personal), cold, int((time.monotonic() - t_start) * 1000))
-    return {"ok": True, "data": data, "personal": personal, "photo": "",
-            "courses": courses, "marks": marks, "subjects": subject_map,
-            "fetched": int(time.time())}
+    out = {"ok": True, "data": data, "personal": personal, "photo": "",
+           "courses": courses, "marks": marks, "subjects": subject_map,
+           "fetched": int(time.time())}
+    if exams is not None:  # absent key = preserve stored exam_schedule_json
+        out["exams"] = exams
+    return out

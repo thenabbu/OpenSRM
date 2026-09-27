@@ -592,6 +592,26 @@ def _parse_component_inner(html):
     return comps
 
 
+def parse_exam_schedule(html):
+    """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
+    validate against the official dropdown) -> end-sem exam rows.
+
+    Structure verified live Sep 27 2026: checkbox td (strips to '') then
+    code / description / date / session / type / amount. Empty sessions
+    return 'No subject found'.
+    """
+    if not html or "No subject found" in html:
+        return []
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = _cells(row)
+        # td[0] is the checkbox cell -> ''; real columns shift by 1
+        if len(cells) >= 6 and re.fullmatch(r"\d{2}-\d{2}-\d{4}", cells[3] or ""):
+            out.append({"code": cells[1], "name": cells[2], "date": cells[3],
+                        "session": cells[4], "type": cells[5]})
+    return out
+
+
 def _ensure_loop():
     """Return a long-lived asyncio loop running in a daemon thread."""
     global _loop, _loop_thread
@@ -1133,7 +1153,7 @@ def set_security_headers(resp):
 def index():
     netid = get_current_user()
     c = db()
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     data = json.loads(row["attendance_json"]) if row and row["attendance_json"] else {"courses": [], "monthly": [], "period": None, "daily_absent": {}}
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
@@ -1156,6 +1176,12 @@ def index():
     marks_view = _marks_view(marks_raw)
     marks_summary = _marks_summary(marks_raw)
 
+    # End-sem schedule card (leaked ScribeInner probe; None -> card hidden)
+    try:
+        exams = _exams_view(json.loads(row["exam_schedule_json"]) if row and row["exam_schedule_json"] else [])
+    except (ValueError, TypeError):
+        exams = None
+
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
     dash = {
@@ -1173,6 +1199,7 @@ def index():
         period=_fmt_period(data.get("period")), daily_absent=data.get("daily_absent", {}),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        exams=exams,
         version=APP_VERSION,
         timetable=timetable_html(group_key),
         personal=personal_data)
@@ -1418,6 +1445,22 @@ def _marks_summary(marks):
     return {"pct": pct, "scored": round(tot_s, 1), "max": round(tot_m, 1),
             "subjects": [{"code": m.get("code", ""), "pct": round((m.get("scored_total", 0) / m["max_total"]) * 100, 1) if m.get("max_total") else 0} for m in low]}
 
+def _exams_view(rows):
+    """Dashboard card: end-sem rows sorted by real date + countdown.
+    None when empty (card hidden)."""
+    if not rows:
+        return None
+    def ts(r):
+        try:
+            return datetime.strptime(r.get("date", ""), "%d-%m-%Y")
+        except ValueError:
+            return datetime.max
+    rows = sorted(rows, key=ts)
+    first = ts(rows[0])
+    days = (first.date() - datetime.now().date()).days
+    return {"rows": rows, "label": first.strftime("%b %Y"), "days_until": days}
+
+
 @app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
@@ -1499,19 +1542,26 @@ def api_login():
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     c = db()
     # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
-    existing = c.execute("SELECT personal_details_json, subjects_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     subjects_json = json.dumps(res.get("subjects", {}))
     if not res.get("personal") and existing and existing["personal_details_json"]:
         personal_json = existing["personal_details_json"]
     if not res.get("subjects") and existing and existing["subjects_json"]:
         subjects_json = existing["subjects_json"]
+    # exams: key absent (probe unreliable / Playwright fallback) -> preserve stored
+    if "exams" in res:
+        exams_json = json.dumps(res["exams"])
+    elif existing and existing["exam_schedule_json"]:
+        exams_json = existing["exam_schedule_json"]
+    else:
+        exams_json = "[]"
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json) VALUES(?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json) VALUES(?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               personal_json, json.dumps(res.get("marks", [])), subjects_json))
+               personal_json, json.dumps(res.get("marks", [])), subjects_json, exams_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -1557,13 +1607,20 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=? WHERE netid=?",
+    # exams: absent key -> preserve stored (same contract as login upsert above)
+    if "exams" in res:
+        exams_json = json.dumps(res["exams"])
+    elif row2 and row2["exam_schedule_json"]:
+        exams_json = row2["exam_schedule_json"]
+    else:
+        exams_json = "[]"
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), netid))
+               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), exams_json, netid))
     c.commit(); c.close()
     return {"ok": True}
 

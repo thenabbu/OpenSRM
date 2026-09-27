@@ -196,6 +196,31 @@
             </div>
           </div>
           {% endif %}
+          {% if exams %}
+          <!-- End-sem schedule: leaked ScribeInner probe (provisional until officially released) -->
+          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
+              <span class="badge badge-soft badge-info badge-sm font-mono">{{ exams.label }}</span>
+            </div>
+            <ul class="space-y-1.5">
+              {% for e in exams.rows %}
+              <li class="flex items-baseline justify-between gap-2 text-sm">
+                <span class="min-w-0 truncate">
+                  <span class="font-mono text-base-content/90">{{ e.code }}</span>
+                  <span class="text-base-content/70">{{ e.name }}</span>
+                </span>
+                <span class="shrink-0 font-mono text-base-content/80 text-xs sm:text-sm">{{ e.date[:5] }} · {{ e.session }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            <div class="text-xs text-base-content/70 mt-2">
+              {% if exams.days_until > 0 %}First exam in <strong>{{ exams.days_until }}</strong> day{{ 's' if exams.days_until != 1 }}
+              {% else %}Exams under way{% endif %}
+            </div>
+            <div class="text-[10px] text-base-content/55 mt-1">Provisional — not yet officially released</div>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
