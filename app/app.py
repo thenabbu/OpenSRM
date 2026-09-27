@@ -278,28 +278,31 @@ def _set_progress(netid, step, pct):
 _login_attempts = {}   # netid -> [ts, ...]  (scrapes, 10-min window)
 _ip_attempts = {}      # ip -> [ts, ...]    (login POSTs, 1-hour window)
 _RATE_CAP = 10000      # ponytail: memory exhaustion guard; upgrade to LRU if throughput matters
+_rate_lock = threading.Lock()  # audit: check-and-append is atomic only under one lock shared by gthread workers
 
 def _check_rate(netid):
     now = time.time()
-    if len(_login_attempts) > _RATE_CAP:
-        _login_attempts.clear()
-    attempts = _login_attempts.get(netid, [])
-    _login_attempts[netid] = [t for t in attempts if now - t < 600]
-    if len(_login_attempts[netid]) >= 3:
-        return False
-    _login_attempts[netid].append(now)
-    return True
+    with _rate_lock:
+        if len(_login_attempts) > _RATE_CAP:
+            _login_attempts.clear()
+        attempts = _login_attempts.get(netid, [])
+        _login_attempts[netid] = [t for t in attempts if now - t < 600]
+        if len(_login_attempts[netid]) >= 3:
+            return False
+        _login_attempts[netid].append(now)
+        return True
 
 def _check_ip_rate(ip):
     now = time.time()
-    if len(_ip_attempts) > _RATE_CAP:
-        _ip_attempts.clear()
-    attempts = _ip_attempts.get(ip, [])
-    _ip_attempts[ip] = [t for t in attempts if now - t < 3600]
-    if len(_ip_attempts[ip]) >= 10:
-        return False
-    _ip_attempts[ip].append(now)
-    return True
+    with _rate_lock:
+        if len(_ip_attempts) > _RATE_CAP:
+            _ip_attempts.clear()
+        attempts = _ip_attempts.get(ip, [])
+        _ip_attempts[ip] = [t for t in attempts if now - t < 3600]
+        if len(_ip_attempts[ip]) >= 10:
+            return False
+        _ip_attempts[ip].append(now)
+        return True
 
 # -- Portal cooldown ------------------------------------------------
 # When the SRM portal silently rejects logins (rate-limiting our IP),
