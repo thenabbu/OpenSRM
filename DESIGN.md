@@ -22,7 +22,7 @@
 8. **Dim text with `text-base-content/60`; `/50` is the floor.** Never `opacity-*`, never `text-gray-*`, never below `/50` for text people must read (§2.5).
 9. **Borders, not shadows.** No gradients, glows, blur, glassmorphism, hover-lift, or colored shadows (§6).
 10. **Data is monospace.** Course codes, percentages, times, counts, dates, NetIDs → `font-mono`. Everything else uses the default sans (§3).
-11. **daisyUI 5 only.** `input-bordered`, `form-control`, and `label-text` do not exist in v5. Use `fieldset`, `input`, `label`.
+11. **daisyUI 5 only.** `input-bordered`, `form-control`, and `label-text` do not exist in v5. Use `fieldset`, `floating-label`, `input`, `label`.
 12. **No build step, strict CSP.** Tailwind and daisyUI load from the jsDelivr CDN at runtime. No inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
 
 ### Cheat sheet: what am I styling?
@@ -286,16 +286,31 @@ The grid that holds them: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`
 
 ### 4.6 Form field (daisyUI 5 idiom)
 
+Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
+
 ```html
-<fieldset class="fieldset">
-  <legend class="fieldset-legend">NetID / Email</legend>
-  <input type="text" class="input w-full" placeholder="NetID / SRM email id" autocomplete="username">
-</fieldset>
+<label class="floating-label w-full" for="netid">
+  <svg class="pointer-events-none absolute start-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 opacity-50" …></svg>
+  <input type="text" id="netid" class="input input-lg w-full text-base ps-10"
+         placeholder="NetID / SRM email" autocomplete="username webauthn"
+         autocapitalize="off" autocorrect="off" spellcheck="false">
+  <span>NetID / Email</span>
+</label>
 ```
 
+`fieldset` + `fieldset-legend` stays the idiom for grouped fields (the subject editor modal).
+
+- The icon needs `z-10`: `.input` is itself `position: relative` and comes after the
+  icon in DOM order, so without it the input's background paints over the icon.
+- `text-base` on inputs — anything smaller triggers mobile-Safari's focus zoom.
+- `input-lg` (48px fields) so controls clear the ~44px touch-target floor.
 - Inputs are bordered by default in v5. Focus is daisyUI's white 2px ring; do not override it.
 - Invalid: add `input-error` and a `text-sm text-error` sentence below saying what to fix.
-- Password toggle: `relative` wrapper, input gets `pr-12`, button is `absolute right-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square` with `aria-label`.
+- Password toggle: `relative` wrapper around the label, input gets `pe-12`, button is
+  `absolute end-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square h-11 w-11` with
+  `aria-label`. Keep the button OUTSIDE the `<label>` or it joins the input's accessible name.
+- The Caps Lock hint row under the password field is always reserved (`h-4`), so showing
+  it never shifts the layout.
 
 ### 4.7 Alerts and banners
 
@@ -438,7 +453,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 | Emoji, icon fonts, icon CDNs, remote images | Inline SVG |
 | Eyebrow labels above every heading, ALL CAPS everywhere, centered data | Sentence case, left aligned; uppercase only for Personal Details labels |
 | Entrance animations, scroll reveals, hover lift | Motion only in response to an action |
-| `input-bordered`, `form-control`, `label-text` (daisyUI 4) | `fieldset`, `fieldset-legend`, `input` |
+| `input-bordered`, `form-control`, `label-text` (daisyUI 4) | `fieldset`, `floating-label`, `input`, `label` |
 | `alert()` / `prompt()` in new flows | `modal` or an inline `alert` |
 | New component shapes or spacing values | The recipes in §4 and the spacing in §5 |
 
@@ -448,7 +463,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs float within their major version.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v11` → `opensrm-v12`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v12` → `opensrm-v13`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.

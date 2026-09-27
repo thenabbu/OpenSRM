@@ -109,7 +109,10 @@ chk('L35', "progress endpoint: POST, netid not in query",
     has('app/app.py', r'"/api/login/progress", methods=\["POST"\]') and has('app/static/login.js', r'method:\s*"POST"'))
 chk('L36', "static route no longer hardcodes /app/app/static (code, not comments)",
     not any('/app/app/static' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
-chk('L37', "README diagram cache name opensrm-v11", miss('README.md', r'opensrm-v9') and has('README.md', r'opensrm-v11'))
+_sw_cache = re.search(r"CACHE_NAME = '([^']+)'", rd('app/static/sw.js')).group(1)
+chk('L37', f"README diagram cache name matches sw.js ({_sw_cache}), no stale name",
+    has('README.md', re.escape(_sw_cache))
+    and not re.search(r'opensrm-v\d+', rd('README.md').replace(_sw_cache, '')))
 chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has('DESIGN.md', r'Flask 3\.0'))
 chk('L39', "HSTS header present (cf-ray gated)",
     bool(re.search(r'get\("cf-ray"\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
@@ -140,7 +143,8 @@ chk('D54', "docs2 SECURITY healthcheck claim true (compose has healthcheck+loggi
 chk('D55', "docs3 README gunicorn -t 120", '-t 120' in README_T)
 chk('D56', "docs4 DESIGN shared partial theme", ('partials/theme.html' in DESIGN_T) or ('shared partial' in DESIGN_T.lower()))
 chk('D57', "docs5 README PWA network-first", 'network-first' in README_T)
-chk('D58', "docs6 README diagram v11 (no v9/v10)", ('opensrm-v11' in README_T) and ('opensrm-v10' not in README_T) and ('opensrm-v9' not in README_T))
+chk('D58', f"docs6 README diagram cache name current ({_sw_cache}, no stale name)",
+    (_sw_cache in README_T) and not re.search(r'opensrm-v\d+', README_T.replace(_sw_cache, '')))
 chk('D59', "docs7 DESIGN network-first documented", 'network-first' in DESIGN_T)
 chk('D60', "docs8 no false remote-image-host claim (img-src matches code)",
     ('dicebear' not in DESIGN_T.lower()) and ("allows no remote image hosts" in DESIGN_T))
