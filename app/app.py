@@ -1119,6 +1119,10 @@ def set_security_headers(resp):
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    # audit: HSTS only when the request came through the CF edge (cf-ray) —
+    # plain-HTTP local dev must never receive it
+    if request.headers.get("cf-ray"):
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 # ── HTML Templates ─────────────────────────────────────────────────

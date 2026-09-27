@@ -122,8 +122,15 @@ tabButtons.forEach(function(b) {
   document.querySelectorAll('[data-copy]').forEach(function(el) {
     el.title = el.title || 'Click to copy';
     el.classList.add('cursor-copy');
-    el.addEventListener('click', function(ev) {
+    // audit a11y: div/span copy targets must be keyboard-operable
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    function trigger() {
       copyText(el.dataset.copy || el.textContent.trim(), el);
+    }
+    el.addEventListener('click', trigger);
+    el.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); trigger(); }
     });
   });
   // Copy email button keeps its icon feedback
