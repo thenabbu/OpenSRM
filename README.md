@@ -16,7 +16,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 - **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts); live step-by-step progress while logging in; **preflight** — the login page warms the portal session + solves the captcha while you're still typing your password
 - **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator ("can miss N more"); courses ordered by risk (lowest % first); overall shown as a compact strip
-- **Internal Marks** — component-wise marks per subject (name + entered date + score), server-rendered with the rest of the page; color-coded status; glance widget on the dashboard
+- **Internal Marks** — component-wise marks per subject (name + entered date + score), neutral numbers with a single muted outlier accent, IE-1/IE-2 roles derived from component maxima and confirmable per class (persisted for GPA prediction); glance widget on the dashboard
 - **End-sem exams** — provisional exam schedule *before* the portal announces it: probes the Scribe month/year endpoint (formId 49 → `ScribeInner.jsp`) for the seeded upcoming session while
 you're logged in; stamped-date dashboard card (day + weekday + countdown, `Provisional` pill); card hides itself if no session is seeded or the portal closes the gap
 - **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks; drag-and-drop editor with subject palette
@@ -66,7 +66,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — PWA"]
         UI["Login + dashboard<br/>daisyUI / vanilla JS"]
-        SW["Service worker opensrm-v12<br/>network-first shell"]
+        SW["Service worker opensrm-v13<br/>network-first shell"]
     end
 
     subgraph lab["Lab host — Docker container opensrm"]
