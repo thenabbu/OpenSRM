@@ -1349,10 +1349,18 @@ def timetable_html(group_key):
                 "<div class=\"tt-hero-sub\">Use the editor to map out your schedule.</div></div></div></div>")
     # Build today's slots for hero
     today = datetime.now().strftime("%A")
+    # index of the day's LAST filled class slot: a break at/after it is NOT
+    # part of today's schedule (otherwise the hero says "Break until 16:00"
+    # after the last class instead of "Done for today")
+    last_cls = -1
+    for i, s in enumerate(SLOTS):
+        if s["type"] == "class" and today in day_slots and s["period"] in day_slots[today]:
+            last_cls = i
     today_slots = []
-    for s in SLOTS:
+    for i, s in enumerate(SLOTS):
         if s["type"] == "break":
-            today_slots.append(s)
+            if i < last_cls:
+                today_slots.append(s)
         elif today in day_slots and s["period"] in day_slots[today]:
             m = day_slots[today][s["period"]]
             today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"]})
@@ -1383,10 +1391,16 @@ def timetable_html(group_key):
     tabs = "".join("<label for=day-{0}{1}>{2}</label>".format(d, " class=tt-today" if d == today else "", d[:3]) for d in DAY_ORDER)
     panels = []
     for d in DAY_ORDER:
+        # which class slots this day actually has — a break divider only makes
+        # sense BETWEEN two rendered classes (no trailing "Break" after the
+        # day's last class, no orphan divider above the first one)
+        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {}) for s in SLOTS]
+        last_cls = max((i for i, p in enumerate(present) if p), default=-1)
         rows = []
-        for s in SLOTS:
+        for i, s in enumerate(SLOTS):
             if s["type"] == "break":
-                rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
+                if any(present[:i]) and i < last_cls:
+                    rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
                 continue
             sl = day_slots.get(d, {}).get(s["period"])
             if not sl:
