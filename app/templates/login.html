@@ -43,8 +43,10 @@
         </figure>
         <div class="card-body p-6 sm:p-8 pt-4 sm:pt-5">
 
-          <!-- Form -->
-          <form id="f" class="flex flex-col gap-4">
+          <!-- Form. Vertical gaps are RANKED by relationship, never uniform
+               (DESIGN §5 rhythm, Gestalt proximity): attached 0 < feedback 8
+               < peers 12 < group/section 20. Horizontal gutter stays uniform. -->
+          <form id="f" class="flex flex-col">
 
             <!-- NetID / Email — floating label + leading icon (DESIGN §4.6) -->
             <label class="floating-label w-full" for="netid">
@@ -61,8 +63,9 @@
               <span>NetID / Email</span>
             </label>
 
-            <!-- Password — floating label + leading icon + show/hide toggle -->
-            <div>
+            <!-- Password — floating label + leading icon + show/hide toggle.
+                 mt-3 (12px) = peer of the NetID field, same group -->
+            <div class="mt-3">
               <div class="relative">
                 <label class="floating-label w-full" for="pw">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
@@ -96,22 +99,25 @@
               <p id="caps" class="h-4 text-right text-xs leading-4 text-warning" aria-live="polite"></p>
             </div>
 
-            <!-- Submit button -->
-            <button type="submit" id="b" class="btn btn-accent btn-lg w-full">
+            <!-- Submit button: mt-5 (20px) — the credential group ends here,
+                 the action is a different group (DESIGN §5 "mb-5 between blocks") -->
+            <button type="submit" id="b" class="btn btn-accent btn-lg w-full mt-5">
               <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
               <span id="btnLabel">Sign in</span>
             </button>
 
           </form>
 
-          <!-- Status message: natural height at rest (tightens button → footer gap) -->
+          <!-- Status/progress: card-body gap-2 (8px) hugs them to the button they
+               report on — attached feedback, tighter than peer fields. -->
           <div id="status" role="alert" aria-live="polite" class="text-center text-sm"></div>
           <div id="progressWrap" class="hidden">
             <progress id="progressBar" class="progress w-full" max="100" value="0"></progress>
           </div>
 
-          <!-- One-line what-this-is — inside the card, at its bottom -->
-          <div class="text-center text-xs text-base-content/50 leading-relaxed border-t border-base-300 pt-3">
+          <!-- Section break: mt-3 (12px) on top of the card-body gap (8px) = 20px of
+               pause before the rule, then pt-3 inside it — loosest gap in the card. -->
+          <div class="mt-3 text-center text-xs text-base-content/50 leading-relaxed border-t border-base-300 pt-3">
             SRM Student Portal login · auto-solve captcha · server-side caching
           </div>
 
