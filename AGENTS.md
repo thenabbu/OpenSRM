@@ -16,7 +16,7 @@ app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions in partials/theme.html)
-tests/                # verify76.py (71 static checks) + test_sw.py + test_xss.py (browser DUTs)
+tests/                # verify76.py (71 static) + test_sw/test_xss/test_exams* (DUTs) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/audit/           # audit record: findings + resolution
 VERSION pyproject.toml uv.lock   # release = bump all three together
@@ -51,6 +51,14 @@ export DATA_DIR=/tmp/osrm-xss
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18099 app.app:app &
 .venv/bin/python tests/test_xss.py          # 9/9  (XSS payload renders inert; positive control)
 kill %1
+
+export DATA_DIR=/tmp/osrm-guide
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18098 app.app:app &
+export DUT_BASE=http://127.0.0.1:18098
+.venv/bin/python tests/guide_static.py      # 9/9  Login Flow UX Guide (source level, no server)
+.venv/bin/python tests/guide_check.py       # 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
+.venv/bin/python tests/guide_server.py      # 7/7  7 REAL portal logins — spends the 10/hour IP cap
+kill %1
 ```
 Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the user + payload.
 
@@ -81,7 +89,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v11`) must bump when `app/static/` changes — `test_sw.py` asserts it.
+- SW cache name (`opensrm-v12`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
