@@ -326,6 +326,17 @@ def _check_rate(netid):
         _login_attempts[netid].append(now)
         return True
 
+def _ip_retry_text(ip):
+    """Guide §5: an honest lockout message names the remaining time instead of
+    "try again later". Reads the SAME window _check_ip_rate prunes against, so
+    the countdown can't drift from the actual limit."""
+    now = time.time()
+    with _rate_lock:
+        oldest = min(_ip_attempts.get(ip) or [now])
+    left = max(1, int(3600 - (now - oldest)))
+    return f"{left} seconds" if left < 90 else f"{(left + 59) // 60} minutes"
+
+
 def _check_ip_rate(ip):
     now = time.time()
     with _rate_lock:
@@ -1484,7 +1495,7 @@ def api_login():
     # the 10/hour budget and 429'd the rest of the hour — a cheap self-DoS on
     # shared campus NAT that never even reached the portal.
     if not _check_ip_rate(_client_ip()):
-        return {"ok": False, "error": "Too many login attempts from this server. The portal may be rate-limiting us. Try again later."}, 429
+        return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
     res = fetch_attendance(netid, password)
