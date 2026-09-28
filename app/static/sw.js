@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v11';
+const CACHE_NAME = 'opensrm-v12';
 
 self.addEventListener('install', e => {
   e.waitUntil(

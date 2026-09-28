@@ -32,8 +32,9 @@ document.getElementById("f").onsubmit = function (ev) {
     clearInterval(progTimer);
     if (d.ok) { location.href = "/"; return; }
     wrap.classList.add("hidden");
-    status.className = "text-center text-sm text-error mt-2";
+    status.className = "text-center text-sm text-error";
     status.textContent = d.error || "Login failed";
+    document.getElementById("pw").value = "";  // keep the identifier, clear only the password
     btn.disabled = false;
     
     document.getElementById("loginSpinner").classList.add("hidden");
@@ -42,7 +43,7 @@ document.getElementById("f").onsubmit = function (ev) {
     done = true;
     clearInterval(progTimer);
     wrap.classList.add("hidden");
-    status.className = "text-center text-sm text-error mt-2";
+    status.className = "text-center text-sm text-error";
     status.textContent = "Network error \u2014 is the server reachable?";
     btn.disabled = false;
     
@@ -85,6 +86,19 @@ document.getElementById("pw-toggle").onclick = function() {
     closed.classList.add("hidden");
   }
 };
+
+// Caps Lock: an invisible, common cause of failed logins. The hint row in
+// login.html is always reserved, so showing this never shifts the layout.
+(function () {
+  var pw = document.getElementById("pw"), caps = document.getElementById("caps");
+  function sync(e) {
+    caps.textContent = (e && e.getModifierState && e.getModifierState("CapsLock"))
+      ? "Caps Lock is on" : "";
+  }
+  pw.addEventListener("keydown", sync);
+  pw.addEventListener("keyup", sync);   // state may change without a keydown here
+  pw.addEventListener("blur", function () { caps.textContent = ""; });
+})();
 
 // audit 2026-09-27: SW registration must live in an EXTERNAL file — the old
 // inline <script> in login.html was blocked by script-src 'self', so the PWA

@@ -41,32 +41,49 @@
           <img src="/static/logo-rect.png" alt="OpenSRM" width="400" height="120"
                class="w-full h-auto">
         </figure>
-        <div class="card-body p-6 sm:p-8 pt-4 sm:pt-5">
+        <!-- Brand band group break: STEPS with the card's own padding (p-6 -> p-8),
+               never a pinned pixel. It tracks the password -> Sign in break exactly:
+               24px below sm (mt-2), 36px at sm+ (mt-5) + the 16px reserved caps row. -->
+        <div class="card-body p-6 sm:p-8 pt-6 sm:pt-9">
 
-          <!-- Form -->
-          <form id="f" class="flex flex-col gap-5">
+          <!-- Form. Vertical gaps are RANKED by relationship, never uniform
+               (DESIGN §5 rhythm, Gestalt proximity): attached 0 < feedback 8
+               < peers 12 < group/section 20. Horizontal gutter stays uniform. -->
+          <form id="f" class="flex flex-col">
 
-            <!-- Net ID field -->
-            <fieldset class="fieldset">
-              <label class="label pb-1" for="netid">
-                <span class="fieldset-legend">NetID / Email</span>
-              </label>
-              <input type="text" id="netid" name="netid" placeholder="NetID / SRM email id"
-                     required autocomplete="username" autocapitalize="off" autocorrect="off" maxlength="50"
-                     class="input w-full">
-            </fieldset>
+            <!-- NetID / Email — floating label + leading icon (DESIGN §4.6) -->
+            <label class="floating-label w-full" for="netid">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                   stroke-width="1.5" stroke="currentColor" aria-hidden="true"
+                   class="pointer-events-none absolute start-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 opacity-50">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.502 20.118a7.5 7.5 0 0 1 14.996 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.498-1.632Z"/>
+              </svg>
+              <input type="text" id="netid" name="netid" placeholder="NetID / SRM email"
+                     required autocomplete="username webauthn" inputmode="email"
+                     autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="50"
+                     class="input input-lg w-full text-base ps-10">
+              <span>NetID / Email</span>
+            </label>
 
-            <!-- Password field -->
-            <fieldset class="fieldset">
-              <label class="label pb-1" for="pw">
-                <span class="fieldset-legend">Password</span>
-              </label>
+            <!-- Password — floating label + leading icon + show/hide toggle.
+                 mt-3 (12px) = peer of the NetID field, same group -->
+            <div class="mt-3">
               <div class="relative">
-                <input type="password" id="pw" name="password" placeholder="Password"
-                       required autocomplete="current-password" maxlength="128"
-                       class="input w-full pr-12">
+                <label class="floating-label w-full" for="pw">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                       stroke-width="1.5" stroke="currentColor" aria-hidden="true"
+                       class="pointer-events-none absolute start-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 opacity-50">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                          d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                  </svg>
+                  <input type="password" id="pw" name="password" placeholder="Password"
+                         required autocomplete="current-password" maxlength="128"
+                         class="input input-lg w-full text-base ps-10 pe-12">
+                  <span>Password</span>
+                </label>
                 <button type="button" id="pw-toggle"
-                        class="absolute right-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square"
+                        class="absolute end-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-sm btn-square h-11 w-11"
                         aria-label="Toggle password visibility">
                   <svg id="pw-eye-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                        stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -81,27 +98,31 @@
                   </svg>
                 </button>
               </div>
-            </fieldset>
+              <!-- Caps Lock hint: row is always reserved so nothing shifts on show -->
+              <p id="caps" class="h-4 text-right text-xs leading-4 text-warning" aria-live="polite"></p>
+            </div>
 
-            <!-- Submit button -->
-            <button type="submit" id="b" class="btn btn-accent btn-lg w-full mt-1">
+            <!-- Submit button: mt-5 (20px) — the credential group ends here,
+                 the action is a different group (DESIGN §5 "mb-5 between blocks") -->
+            <!-- group break: 8px below sm (16 caps row + 8 = 24), 20px at sm+ (16 + 20 = 36) -->
+            <button type="submit" id="b" class="btn btn-accent btn-lg w-full mt-2 sm:mt-5">
               <span class="loading loading-spinner loading-sm hidden" id="loginSpinner"></span>
               <span id="btnLabel">Sign in</span>
             </button>
 
           </form>
 
-          <!-- Status message -->
-          <div id="status" role="alert" aria-live="polite"
-               class="text-center text-sm min-h-5 mt-2"></div>
-          <div id="progressWrap" class="hidden mt-2">
+          <!-- Status/progress: card-body gap-2 (8px) hugs them to the button they
+               report on — attached feedback, tighter than peer fields. -->
+          <div id="status" role="alert" aria-live="polite" class="text-center text-sm"></div>
+          <div id="progressWrap" class="hidden">
             <progress id="progressBar" class="progress w-full" max="100" value="0"></progress>
           </div>
 
-          <!-- How-it-works note — inside the card, at its bottom -->
-          <div class="text-center text-xs text-base-content/50 leading-relaxed border-t border-base-300 pt-3 mt-1">
-            Logs into the SRM portal directly (no browser), solves the captcha while you type,
-            and caches your data on this server for instant loads.
+          <!-- Section break: mt-3 (12px) on top of the card-body gap (8px) = 20px of
+               pause before the rule, then pt-3 inside it — loosest gap in the card. -->
+          <div class="mt-3 text-center text-xs text-base-content/50 leading-relaxed border-t border-base-300 pt-3">
+            SRM Student Portal login · auto-solve captcha · server-side caching
           </div>
 
         </div>
