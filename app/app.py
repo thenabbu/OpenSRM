@@ -1456,6 +1456,11 @@ def _exams_view(rows):
         except ValueError:
             return datetime.max
     rows = sorted(rows, key=ts)
+    for r in rows:  # display form '25 Nov'; junk dates fall back to the raw value
+        try:
+            r["short"] = datetime.strptime(r.get("date", ""), "%d-%m-%Y").strftime("%d %b")
+        except ValueError:
+            r["short"] = r.get("date", "")
     first = ts(rows[0])
     days = (first.date() - datetime.now().date()).days
     return {"rows": rows, "label": first.strftime("%b %Y"), "days_until": days}

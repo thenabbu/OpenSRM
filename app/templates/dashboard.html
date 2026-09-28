@@ -203,14 +203,19 @@
               <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
               <span class="badge badge-soft badge-info badge-sm font-mono">{{ exams.label }}</span>
             </div>
-            <ul class="space-y-1.5">
+            <ul class="divide-y divide-base-300/40">
               {% for e in exams.rows %}
-              <li class="flex items-baseline justify-between gap-2 text-sm">
-                <span class="min-w-0 flex-1">
+              <li class="flex items-start gap-3 py-2">
+                <!-- mobile: fixed-width date column keeps every row aligned -->
+                <span class="w-12 shrink-0 text-right sm:hidden">
+                  <span class="block font-mono text-xs text-base-content/90">{{ e.short }}</span>
+                  <span class="block font-mono text-[10px] text-base-content/50">{{ e.session }}</span>
+                </span>
+                <span class="min-w-0 flex-1 text-sm leading-snug">
                   <span class="font-mono text-base-content/90">{{ e.code }}</span>
                   <span class="text-base-content/70">{{ e.name }}</span>
                 </span>
-                <span class="shrink-0 font-mono text-base-content/80 text-xs sm:text-sm">{{ e.date[:5] }} · {{ e.session }}</span>
+                <span class="hidden shrink-0 font-mono text-xs text-base-content/80 sm:inline">{{ e.short }} · {{ e.session }}</span>
               </li>
               {% endfor %}
             </ul>
