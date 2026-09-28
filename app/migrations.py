@@ -159,3 +159,14 @@ def m004_marks(conn):
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e):
                 raise
+
+@migration(version=9, description="timetable_edit_log (who edited the shared timetable, when, what changed)")
+def m009_timetable_edit_log(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS timetable_edit_log (
+        id INTEGER PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
+        editor_netid TEXT NOT NULL,
+        editor_name TEXT DEFAULT '',
+        created_at INTEGER DEFAULT (strftime('%s','now')),
+        changes_json TEXT NOT NULL DEFAULT '[]')""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tt_edit_log_group ON timetable_edit_log(group_id, id)")

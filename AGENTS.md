@@ -40,6 +40,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
 .venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_tt_history.py   # 16/16 (timetable edit log + break-divider fix)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -89,7 +90,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v12`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
+- SW cache name (`opensrm-v13`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

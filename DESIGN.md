@@ -407,6 +407,13 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 - **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
 - **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
 
+### 4.13 Timetable edit history (audit log)
+
+Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`collapse collapse-arrow bg-base-200 border border-base-300 mt-4`) whose title is `text-sm font-semibold` + a `badge badge-sm` count fed by `/api/timetable/history`. Rows are `py-2 border-b border-base-300 last:border-b-0`: editor line (name + netid + timestamp) `font-medium`, change lines in a `list-disc list-inside text-base-content/60` list formatted `Day P# · action`. Empty state `text-base-content/60`.
+
+- **XSS rule (audit 2026-09-27 applies here too):** every value in the payload (peer-written subject codes/names, editor name) is student-controlled — `loadHistory()` in `timetable.js` builds it with `textContent`/`createElement` only, **never `innerHTML`**.
+- Server: `_tt_diff()` in `app.py` writes `timetable_edit_log` (migration v9) on POST `/api/timetable`; no-op saves are skipped, last 200 entries per group kept.
+
 ---
 
 ## 5. Layout and responsive
@@ -492,7 +499,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`); `verify76` L47 fails the suite if a pin drifts.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v12` → `opensrm-v13`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v13` → `opensrm-v14`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.

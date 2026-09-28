@@ -34,6 +34,66 @@
 
         var addBtn = document.getElementById('tt-add-subject-btn');
         if (addBtn) addBtn.addEventListener('click', showAddSubject);
+
+        loadHistory();
+    }
+
+    // ── Edit history (audit log) ──────────────────────────────────
+    // Every value here can be student-controlled (custom subjects, peer
+    // edits) — build DOM with textContent ONLY, never innerHTML.
+    function loadHistory() {
+        var list = document.getElementById('tt-history-list');
+        if (!list) return;
+        fetch('/api/timetable/history', {credentials: 'same-origin'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var entries = (data && data.ok && data.entries) || [];
+                document.getElementById('tt-history-count').textContent = entries.length;
+                list.textContent = '';
+                if (!entries.length) {
+                    var none = document.createElement('p');
+                    none.className = 'text-base-content/60';
+                    none.textContent = 'No edits recorded yet.';
+                    list.appendChild(none);
+                    return;
+                }
+                entries.forEach(function(e) {
+                    var item = document.createElement('div');
+                    item.className = 'py-2 border-b border-base-300 last:border-b-0';
+                    var head = document.createElement('div');
+                    head.className = 'font-medium';
+                    var who = e.name ? e.name + ' (' + e.netid + ')' : e.netid;
+                    head.textContent = who + ' — ' +
+                        new Date(e.at * 1000).toLocaleString([], {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit'});
+                    item.appendChild(head);
+                    var ul = document.createElement('ul');
+                    ul.className = 'list-disc list-inside text-base-content/60';
+                    (e.changes || []).forEach(function(ch) {
+                        var li = document.createElement('li');
+                        li.textContent = chLine(ch);
+                        ul.appendChild(li);
+                    });
+                    item.appendChild(ul);
+                    list.appendChild(item);
+                });
+            })
+            .catch(function() {
+                list.textContent = '';
+                var p = document.createElement('p');
+                p.className = 'text-base-content/60';
+                p.textContent = 'Could not load edit history.';
+                list.appendChild(p);
+            });
+    }
+
+    function chLine(ch) {
+        function lab(s) { return s ? ((s.code || '') + (s.name ? ' — ' + s.name : '')) : 'empty'; }
+        var what = ch.action === 'added' ? 'added ' + lab(ch.to)
+                 : ch.action === 'removed' ? 'removed ' + lab(ch.from)
+                 : 'changed ' + lab(ch.from) + ' → ' + lab(ch.to);
+        return (ch.day || '') + ' P' + (ch.period || '') + ' · ' + what;
     }
 
     function openEditor() {

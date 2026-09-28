@@ -66,7 +66,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v12<br/>network-first shell"]
+        SW["Service worker opensrm-v13<br/>network-first shell"]
     end
 
     subgraph edge["Cloudflare edge"]
@@ -78,7 +78,7 @@ flowchart TD
         PROG["Login progress tracker<br/>POST /api/login/progress · 600 ms poll"]
         HS["http_scraper<br/>pure-HTTP pipeline"]
         PW["Playwright fallback<br/>headless Chromium · 5 captcha tries"]
-        DB[("SQLite srm.db<br/>users · portal_sessions · timetable<br/>schema_version 8")]
+        DB[("SQLite srm.db<br/>users · portal_sessions · timetable · edit log<br/>schema_version 9")]
         FL --> PROG
         FL <--> DB
         FL --> HS
