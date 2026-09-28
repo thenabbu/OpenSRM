@@ -206,7 +206,7 @@ So for badges, buttons, and banners that carry small text:
 
 ## 3. Typography
 
-- **Families:** the system stack only. Default sans (Tailwind `font-sans`) for text, `font-mono` for data. There are no web fonts; the CSP blocks them (§10). `IBM Plex Mono` is named in `timetable.css` but is never loaded, so it silently falls back to the generic monospace.
+- **Families:** the system stack only. Default sans (Tailwind `font-sans`) for text, `font-mono` for data. There are no web fonts; the CSP blocks them (§10). `timetable.css` uses the generic `monospace` stack (an earlier `IBM Plex Mono` mention was never loaded and has been removed).
 - **Scale in use:** `text-xs` 12px (meta, captions, stat rows) · `text-sm` 14px (body, values, controls) · `text-base` 16px (section headings, card titles). Nothing larger inside the dashboard. 12px is the floor for new UI.
 - **Weights:** 400 body · 500 `font-medium` (field labels, status lines) · 600 `font-semibold` (section headings, names; `btn` is 600 by default) · 700 `font-bold` (percentages only).
 - **Mono is for data:** course codes, percentages, times, counts, dates, NetID. Never for sentences.
@@ -534,7 +534,7 @@ Rules specific to this card:
 
 ## 10. Implementation constraints (silent-failure list)
 
-1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs float within their major version.
+1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`); `verify76` L47 fails the suite if a pin drifts.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
 3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v13` → `opensrm-v14`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
@@ -584,7 +584,7 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 | 4 | ~~Timetable greens/ambers/reds as lighter Tailwind-400 tints~~ → **fixed**: now `var(--color-success/warning/error)` + `color-mix` tints | — | — |
 | 5 | ~~`.tt-wrap` page-colored~~ → **fixed**: `background:var(--color-base-200)` | — | — |
 | 6 | ~~daisyUI 4 classes on login~~ → **fixed** (already v5 markup) | — | — |
-| 7 | `IBM Plex Mono` is referenced but never loaded | `timetable.css` | `font-mono` |
+| 7 | ~~`IBM Plex Mono` referenced but never loaded~~ → **fixed**: file uses generic `monospace` | `timetable.css` | `font-mono` |
 | 8 | ~~`/40` contrast~~ → **fixed**: all bumped to `/50` minimum | — | — |
 | 9 | ~~Badge/alert contrast~~ → **already compliant**: only status badges are `badge-error` (solid, 4.4:1 ✓) and `badge-soft badge-warning` (soft ≈5.4:1 ✓), plus `alert-soft alert-warning` per §2.8 | — | — |
 | 10 | ~~Native `prompt()` for Add Subject~~ → **fixed**: daisyUI `<dialog>` modal | — | — |
@@ -665,8 +665,8 @@ html[data-theme="openSRM"] {
   <meta name="theme-color" content="#111111">
   <title>OpenSRM</title>
   <style>/* deployed theme block from Appendix A */</style>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css">
 </head>
 <body class="bg-base-100 text-base-content">
   <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3"
