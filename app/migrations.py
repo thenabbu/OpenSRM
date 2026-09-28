@@ -109,6 +109,19 @@ def m008_exam_schedule(conn):
         if "duplicate column name" not in str(e):
             raise
 
+@migration(version=9, description="component_tags (IE-1/IE-2 confirmations, class-scoped)")
+def m009_component_tags(conn):
+    # key = class_key|course|component — NO netid: one student's confirmation
+    # applies to the whole class (year/branch/section, not semester). role
+    # 'none' is a confirmed refusal of the derived guess; raw_max is then NULL.
+    conn.execute("""CREATE TABLE IF NOT EXISTS component_tags(
+        tag_key TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        raw_max REAL,
+        scaled_max REAL NOT NULL,
+        confirmed_by TEXT,
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))""")
+
 @migration(version=1, description="base users/cookies tables")
 def m001_base(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS users(

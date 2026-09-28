@@ -410,19 +410,36 @@ def _semester_int(semester_str):
     roman = semester_str.split()[0].strip()
     return ROMAN.get(roman, 0)
 
+def _program_short(program):
+    """Portal Program -> stable branch id: drop the bracketed suffix and the
+    'B.Tech.-'/'with specialization in' boilerplate, so the same programme
+    always maps to one string ('...Cloud Computing[UG - FT - ACADEMIC]' ->
+    'Computer Science and Engineering Cloud Computing')."""
+    short = re.sub(r"\[.*?\]", "", program).strip()
+    short = re.sub(r"B\.Tech\.\s*-\s*", "", short).strip()
+    short = re.sub(r"with specialization in\s*", "", short).strip()
+    return short.replace(",", "")
+
 def _group_key(personal):
     """Extract timetable group from personal details dict."""
-    program = personal.get("Program", "")
-    program = re.sub(r"\[.*?\]", "", program).strip()
+    program = re.sub(r"\[.*?\]", "", personal.get("Program", "")).strip()
     batch = personal.get("Batch", "")
     semester = _semester_int(personal.get("Semester", ""))
     section = personal.get("Section", "")
     if not all([program, batch, semester, section]):
         return None
-    short = re.sub(r"B\.Tech\.\s*-\s*", "", program).strip()
-    short = re.sub(r"with specialization in\s*", "", short).strip()
-    short = short.replace(",", "")
-    return f"{short}_{batch}_{semester}_{section}"
+    return f"{_program_short(program)}_{batch}_{semester}_{section}"
+
+def _class_key(personal, netid):
+    """Class context for component tags: year|branch|section — deliberately no
+    semester, because a teacher's components belong to the whole class every
+    term (one student's confirmation then applies to the whole class).
+    ponytail: a profile missing any field falls back to a per-student key
+    instead of a shared '?' bucket, so an incomplete profile can never leak a
+    tag into another class."""
+    ctx = [personal.get("Batch", ""), _program_short(personal.get("Program", "")),
+           personal.get("Section", "")]
+    return "|".join(ctx if all(ctx) else [f"net:{netid}"])
 
 def parse_attendance(html):
     out = {"courses": [], "monthly": [], "period": None}
@@ -1184,7 +1201,8 @@ def index():
     mrow = c2.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
     c2.close()
     marks_raw = json.loads(mrow["marks_json"]) if mrow and mrow["marks_json"] else []
-    marks_view = _marks_view(marks_raw)
+    marks_view = _marks_view(marks_raw,
+                             _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
     # End-sem schedule card (leaked ScribeInner probe; None -> card hidden)
@@ -1428,33 +1446,94 @@ def api_marks():
     marks = json.loads(row["marks_json"]) if row and row["marks_json"] else []
     return {"ok": True, "marks": marks}
 
-def _marks_view(marks):
-    """Marks tab view model: per-subject totals + component rows with entered dates."""
-    def pct(s, m):
-        return round(s / m * 100, 1) if m else 0.0
+def _fmt_score(v):
+    """Score keeps 2 decimals: 11.7 -> '11.70'."""
+    return f"{v:.2f}"
+
+def _fmt_max(v):
+    """Maxima are whole marks on the portal: 15.0 -> '15' (never '15.00')."""
+    return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
+
+def _fmt_date(s):
+    """Portal date '04/Sep/2026' -> muted display '04 Sep'; junk passes through."""
+    try:
+        return datetime.strptime(s, "%d/%b/%Y").strftime("%d %b")
+    except (ValueError, TypeError):
+        return s or ""
+
+def _derive_ie(code, maximum):
+    """IE-1/IE-2 are never labelled by the portal — guess IE-1 from the
+    component's scaled max (the /15 component; /10 for practicals like
+    21CSC203P). A confirmed tag always wins; this is the 'derived' state."""
+    if maximum == 15:
+        return "IE-1"
+    if maximum == 10 and str(code).endswith("P"):
+        return "IE-1"
+    return None
+
+def _load_component_tags(class_key, marks):
+    """Confirmed IE tags for this class's components -> {(code, name): row}.
+    Keys carry no netid on purpose: one student's confirmation applies to the
+    whole class (and is later reused by the GPA predictor)."""
+    wanted = {f"{class_key}|{s.get('code', '')}|{c.get('name', '')}":
+              (s.get("code", ""), c.get("name", ""))
+              for s in marks for c in s.get("components", [])}
+    if not wanted:
+        return {}
+    q = ",".join("?" * len(wanted))
+    c = db()
+    rows = c.execute(f"SELECT tag_key, role, raw_max, scaled_max FROM component_tags "
+                     f"WHERE tag_key IN ({q})", list(wanted)).fetchall()
+    c.close()
+    return {wanted[r[0]]: {"role": r[1], "raw_max": r[2], "scaled_max": r[3]} for r in rows}
+
+def _marks_view(marks, tags=None):
+    """Marks tab view model: title-cased subjects, components sorted by NAME
+    (the portal's order is by entry, dates jump around), '04 Sep' dates,
+    integer maxima with 2-decimal scores, and IE rows converted back to their
+    raw /50 (IE-1) or /60 (IE-2) marks. `tags` = confirmed overrides."""
+    tags = tags or {}
     out = []
     for s in marks:
+        code = s.get("code", "")
         comps = []
-        for cpt in s.get("components", []):
-            comps.append({"name": cpt.get("name", ""), "entered": cpt.get("entered", ""),
-                          "scored": cpt.get("scored", 0.0), "max": cpt.get("max", 0.0),
-                          "pct": pct(cpt.get("scored", 0.0), cpt.get("max", 0.0))})
-        out.append({"code": s.get("code", ""), "title": s.get("title", ""),
-                    "scored_total": s.get("scored_total", 0.0), "max_total": s.get("max_total", 0.0),
-                    "pct": pct(s.get("scored_total", 0.0), s.get("max_total", 0.0)),
+        for cpt in sorted(s.get("components", []), key=lambda c: str(c.get("name", ""))):
+            maximum, scored = cpt.get("max", 0.0), cpt.get("scored", 0.0)
+            tag = tags.get((code, cpt.get("name", "")))
+            derived = _derive_ie(code, maximum)
+            role = tag["role"] if tag else derived   # confirmed wins, incl. 'none'
+            ie = None
+            if role in ("IE-1", "IE-2"):
+                raw = (tag.get("raw_max") if tag and tag.get("raw_max")
+                       else (50.0 if role == "IE-1" else 60.0))
+                ie = {"role": role, "confirmed": bool(tag), "max_disp": _fmt_max(raw),
+                      "score_disp": _fmt_score(scored * raw / maximum) if maximum else _fmt_score(0)}
+            comps.append({"name": cpt.get("name", ""), "date_disp": _fmt_date(cpt.get("entered", "")),
+                          "score_disp": _fmt_score(scored), "max_disp": _fmt_max(maximum),
+                          "derived": derived or "", "confirmed": tag["role"] if tag else None,
+                          "ie": ie})
+        st, mt = s.get("scored_total", 0.0), s.get("max_total", 0.0)
+        out.append({"code": code, "title": (s.get("title") or "").title(),
+                    "scored_disp": _fmt_score(st), "max_disp": _fmt_max(mt),
+                    "pct": round(st / mt * 100, 1) if mt else 0.0, "outlier": False,
                     "components": comps})
+    # One muted accent per screen (DESIGN.md §2.7): the UNIQUE lowest subject,
+    # and only below the 75% target — everything else on this page is neutral.
+    ranked = sorted(out, key=lambda x: x["pct"])
+    if len(ranked) > 1 and ranked[0]["pct"] < ranked[1]["pct"] and ranked[0]["pct"] < 75:
+        ranked[0]["outlier"] = True
     return out
 
 def _marks_summary(marks):
-    """Dashboard widget: overall % + up to 3 lowest subjects."""
+    """Dashboard glance: the 3 lowest subjects by % (risk-first). None when
+    empty. No aggregate/overall number — the brief removed it."""
     if not marks:
         return None
-    tot_s = sum(m.get("scored_total", 0) for m in marks)
-    tot_m = sum(m.get("max_total", 0) for m in marks)
-    pct = round(tot_s / tot_m * 100, 1) if tot_m else 0.0
-    low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"]) if m.get("max_total") else 1)[:3]
-    return {"pct": pct, "scored": round(tot_s, 1), "max": round(tot_m, 1),
-            "subjects": [{"code": m.get("code", ""), "pct": round((m.get("scored_total", 0) / m["max_total"]) * 100, 1) if m.get("max_total") else 0} for m in low]}
+    low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"])
+                 if m.get("max_total") else 1)[:3]
+    return [{"code": m.get("code", ""),
+             "pct": round((m.get("scored_total", 0) / m["max_total"]) * 100, 1)
+             if m.get("max_total") else 0} for m in low]
 
 def _exams_view(rows):
     """Dashboard card: end-sem rows sorted by real date + countdown.
@@ -1772,6 +1851,48 @@ def api_save_timetable():
                           "VALUES(?,?,?,?,?)", (gid, day, int(period), val.get("code",""), val.get("name","")))
     c.commit(); c.close()
     return {"ok": True}
+
+@app.route("/marks/tag", methods=["POST"])
+def marks_tag():
+    """Confirm (or refuse) the IE-1/IE-2 tag of one component. Server-side only:
+    the scaled max comes from the live portal row, never from the form.
+    The tag key is class-scoped, so one student's confirmation applies to the
+    whole class — persisted for the future GPA predictor. Redirects back to the
+    marks tab (#marks restores it)."""
+    netid = get_current_user()
+    if not netid:
+        return redirect("/login")
+    form = request.form
+    code = (form.get("code") or "").strip()[:32]
+    name = (form.get("component") or "").strip()[:32]
+    role = form.get("role")
+    if role not in ("IE-1", "IE-2", "none") or not code or not name:
+        return redirect("/#marks")
+    c = db()
+    row = c.execute("SELECT marks_json, personal_details_json FROM users WHERE netid=?",
+                    (netid,)).fetchone()
+    try:
+        marks = json.loads(row[0]) if row and row[0] else []
+        personal = json.loads(row[1]) if row and row[1] else {}
+    except (ValueError, TypeError):
+        marks, personal = [], {}
+    scaled = next((cp.get("max", 0.0) for s in marks if s.get("code") == code
+                   for cp in s.get("components", []) if cp.get("name") == name), 0.0)
+    if not scaled:
+        c.close()
+        return redirect("/#marks")
+    # raw_max: the marks the component stands for on paper (50 / 60); 'none'
+    # keeps it NULL — the row exists either way, which is what 'confirmed' means.
+    raw = {"IE-1": 50.0, "IE-2": 60.0}.get(role)
+    key = f"{_class_key(personal, netid)}|{code}|{name}"
+    c.execute("""INSERT INTO component_tags(tag_key, role, raw_max, scaled_max, confirmed_by, updated_at)
+                 VALUES(?,?,?,?,?,?)
+                 ON CONFLICT(tag_key) DO UPDATE SET role=excluded.role, raw_max=excluded.raw_max,
+                 scaled_max=excluded.scaled_max, confirmed_by=excluded.confirmed_by,
+                 updated_at=excluded.updated_at""",
+              (key, role, raw, scaled, netid, int(time.time())))
+    c.commit(); c.close()
+    return redirect("/#marks")
 
 @app.route("/logout")
 def logout():

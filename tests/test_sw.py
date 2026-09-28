@@ -41,7 +41,7 @@ with sync_playwright() as p:
 
     # 3) caches created with v11 name
     keys = page.evaluate("() => caches.keys()")
-    check("cache opensrm-v12 present", "opensrm-v12" in keys, str(keys))
+    check("cache opensrm-v13 present", "opensrm-v13" in keys, str(keys))
 
     # 4) dashboard path: registration also present via dash.js
     ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])
