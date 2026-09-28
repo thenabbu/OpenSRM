@@ -201,9 +201,7 @@
           <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
             <div class="flex items-center gap-2 mb-2">
               <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
-              <!-- info-tinted chip; hand-rolled because daisyUI badge-info's color wins the
-               cascade over every utility (even !important) on the CDN build -->
-              <span class="inline-flex items-center rounded-full bg-info/20 px-2 font-mono text-xs leading-5 text-base-content">{{ exams.label }}</span>
+              <span class="badge badge-soft badge-sm font-mono">{{ exams.label }}</span>
             </div>
             <ul class="space-y-3 sm:space-y-2">
               {% for e in exams.rows %}
@@ -214,16 +212,16 @@
                   <span class="block mt-1 text-[11px] uppercase tracking-wider text-base-content/60">{{ e.dow }}</span>
                 </span>
                 <span class="min-w-0 flex-1 sm:hidden">
-                  <span class="block text-sm leading-snug text-base-content/90">{{ e.name_disp }}</span>
+                  <span class="block text-sm leading-snug text-base-content">{{ e.name_disp }}</span>
                   <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session }}</span>
                 </span>
                 <!-- desktop: one dense line, date right -->
                 <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
                   <span class="min-w-0 truncate text-sm">
-                    <span class="font-mono text-base-content/70">{{ e.code }}</span>
-                    <span class="text-base-content/90">{{ e.name_disp }}</span>
+                    <span class="font-mono text-base-content/60">{{ e.code }}</span>
+                    <span class="text-base-content">{{ e.name_disp }}</span>
                   </span>
-                  <span class="shrink-0 font-mono text-xs text-base-content/80">{{ e.short }} · {{ e.session }}</span>
+                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session }}</span>
                 </span>
               </li>
               {% endfor %}
