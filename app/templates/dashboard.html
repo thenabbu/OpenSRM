@@ -196,6 +196,43 @@
             </div>
           </div>
           {% endif %}
+          {% if exams %}
+          <!-- End-sem schedule: leaked ScribeInner probe (provisional until officially released) -->
+          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
+              <span class="badge badge-soft badge-sm">{{ exams.label }}</span>
+              <span class="badge badge-outline badge-sm text-base-content/60">Provisional</span>
+            </div>
+            <ul class="space-y-3 sm:space-y-2">
+              {% for e in exams.rows %}
+              <li class="flex items-start gap-3">
+                <!-- mobile: day is the landmark; month lives in the header badge -->
+                <span class="w-9 shrink-0 text-center sm:hidden">
+                  <span class="block font-mono text-[17px] font-semibold leading-none tabular-nums text-base-content">{{ e.day }}</span>
+                  <span class="block mt-1 text-[11px] uppercase tracking-wider text-base-content/60">{{ e.dow }}</span>
+                </span>
+                <span class="min-w-0 flex-1 sm:hidden">
+                  <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
+                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}</span>
+                </span>
+                <!-- desktop: one dense line, date right -->
+                <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
+                  <span class="min-w-0 truncate text-sm">
+                    <span class="font-mono text-base-content/60">{{ e.code }}</span>
+                    <span class="text-base-content">{{ e.name_disp }}</span>
+                  </span>
+                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}</span>
+                </span>
+              </li>
+              {% endfor %}
+            </ul>
+            <div class="text-xs text-base-content/70 mt-2">
+              {% if exams.days_until > 0 %}First exam in <strong>{{ exams.days_until }}</strong> day{{ 's' if exams.days_until != 1 }}
+              {% else %}Exams under way{% endif %}
+            </div>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>

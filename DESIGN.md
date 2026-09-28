@@ -364,6 +364,34 @@ The grid that holds them: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`
 
 Meaning map: current class = `success` border + 8% tint + "Now" badge · next/soon = white (`accent`) · selected day pill = `accent` fill with `accent-content` text · break = `warning` · drop target hover = `base-content` border · filled cell = `success` border.
 
+### 4.12 End-sem schedule card (dashboard)
+
+`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards).
+
+```jinja
+<!-- mobile: one landmark (day stamp) + one bright line (name) per row -->
+<li class="flex items-start gap-3">
+  <span class="w-9 shrink-0 text-center sm:hidden">
+    <span class="block font-mono text-[17px] font-semibold leading-none tabular-nums text-base-content">{{ e.day }}</span>
+    <span class="block mt-1 text-[11px] uppercase tracking-wider text-base-content/60">{{ e.dow }}</span>
+  </span>
+  <span class="min-w-0 flex-1 sm:hidden">
+    <span class="block text-sm leading-snug text-base-content">{{ e.name_disp }}</span>
+    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session }}</span>
+  </span>
+  <!-- desktop: one dense line via sm: switches, zero JS -->
+  <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
+    <span class="min-w-0 truncate text-sm"><span class="font-mono text-base-content/60">{{ e.code }}</span> <span class="text-base-content">{{ e.name_disp }}</span></span>
+    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session }}</span>
+  </span>
+</li>
+```
+
+- **Rows:** `space-y-3 sm:space-y-2`, no dividers — density comes from grouping, not rules (§ B2 / §6). The day stamp is the only 17px/600 element; name is the only `text-base-content` line; everything else `/60` (§2.5 ladder).
+- **Names** are title-cased in `_exams_view()` (`name_disp`); storage keeps the portal's ALL-CAPS `name`.
+- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
+- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
+
 ---
 
 ## 5. Layout and responsive
@@ -454,6 +482,8 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
 7. **HTML built in Python or JS** (`timetable_html()`, `timetable.js`) uses the same tokens and classes as the templates, and must escape any interpolated data.
 8. Python changes must pass `ruff` (CI lint).
+9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (cross-origin stylesheets also hide the rules from `cssRules`). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
+10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
 
 ---
 

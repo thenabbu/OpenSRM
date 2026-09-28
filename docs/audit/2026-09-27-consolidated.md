@@ -26,7 +26,7 @@ All 6 reports in, every critical/high claim verified against source by me, findi
 ## 🟠 HIGH
 
 **2. ✅ Live secret committed to the public repo — `egress/poc/dump_headers.py:9` + `referer_probe.py:11`**
-`x-proxy-token = 21781f952a…` hardcoded (grep confirmed both files) — that's the live gate on `srm-egress.200871.xyz`. Worse: `Dockerfile:47 COPY . .` with `egress` absent from `.dockerignore` (grep = 0) ships it **into the public GHCR image** too.
+`x-proxy-token = <redacted>` hardcoded (grep confirmed both files) — that's the live gate on `srm-egress.200871.xyz`. Worse: `Dockerfile:47 COPY . .` with `egress` absent from `.dockerignore` (grep = 0) ships it **into the public GHCR image** too.
 → *Fix:* rotate the Worker PROXY_TOKEN, replace literals with `os.environ[...]`, add `egress/` to `.dockerignore`.
 
 **3. ✅ Stored cross-user XSS via shared timetable — `dashboard.html:274` + `app.py:1276-1278`**

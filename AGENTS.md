@@ -38,6 +38,8 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ## Test matrix (all green before push)
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
+.venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
+.venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
