@@ -40,6 +40,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
 .venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_marks_view.py   # marks view model (fmt, IE derivation/conversion, class key)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -49,7 +50,12 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-xss
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18099 app.app:app &
-.venv/bin/python tests/test_xss.py          # 9/9  (XSS payload renders inert; positive control)
+.venv/bin/python tests/test_xss.py           # 9/9  (XSS payload renders inert; positive control)
+kill %1
+
+export DATA_DIR=/tmp/osrm-marks
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
+.venv/bin/python tests/test_marks_dut.py     # 45/45 marks tab (colours, chips, contrast, dismiss, tag round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide
@@ -89,7 +95,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v12`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
+- SW cache name (`opensrm-v13`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

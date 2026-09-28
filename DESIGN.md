@@ -181,7 +181,7 @@ Rules:
 
 ### 2.7 Secondary (pink) and info (blue)
 
-- **Pink `secondary` is not used anywhere in the shipped UI.** Treat it as the single accent-of-attention: at most one element per screen (a "New" badge, a feature dot, one chart series). Never for status, links, buttons, or container borders/backgrounds. When unsure, leave it out.
+- **Pink `secondary` is used exactly once in the shipped UI: the single outlier percentage on the Marks tab (§4.13).** Treat it as the single accent-of-attention: at most one element per screen (a "New" badge, a feature dot, one chart series). Never for status, links, buttons, or container borders/backgrounds. When unsure, leave it out.
 - **Blue `info`** is for neutral notices only (`alert-info`, `alert-soft alert-info`, tooltips). It is not a link color and not an accent.
 
 ### 2.8 Contrast facts to design around
@@ -407,6 +407,50 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 - **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
 - **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
 
+### 4.13 Internal marks card (Marks tab)
+
+`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.20/20` — maxima whole, scores 2 decimals), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns the **3 lowest** subjects for the dashboard glance — there is **no aggregate/overall number anywhere** (brief).
+
+```jinja
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">  <!-- items-start: cards pin, never stretch -->
+  <div class="bg-base-200 border border-base-300 rounded-box p-4">
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="font-mono text-xs text-base-content/60">21CSS201T</span>
+      <span class="font-mono font-bold text-lg tabular-nums">81.0%</span>  <!-- + text-secondary once, if outlier -->
+    </div>
+    <h3 class="text-sm font-semibold leading-snug">Computer Organization And Architecture</h3>
+    <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">16.20/20</div>
+    <div class="border-t border-base-300 pt-2">
+      <div class="py-1">
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">FT-II</span>
+          <span class="text-xs font-mono text-base-content/50">09 Sep</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">11.70/15</span>
+          <details class="relative shrink-0"><summary>{/* pencil, 24px target */}</summary>
+            <form method="post" action="/marks/tag" class="absolute end-0 top-full mt-1 z-10 w-60 bg-base-200 border border-base-300 rounded-box p-3 flex flex-col gap-2">…</form>
+          </details>
+        </div>
+        <div class="flex items-center gap-2 ps-6 mt-0.5">   <!-- nested IE row: 24px indent -->
+          <span class="…chip…">IE-1</span>
+          <span class="text-xs text-base-content/50">derived</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">39.00/50</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+Rules specific to this card:
+
+- **Numbers are neutral.** No status hue on any number — at most ONE `text-secondary`, on the unique lowest subject and only below the 75 target (§2.7). Green/amber/red stay attendance-only (§2.6).
+- **No overall %, no per-component %.** Per-subject `%` + `scored/max` only. Maxima print whole (`/15`, never `/15.00`); scores keep 2 decimals; every figure is `font-mono tabular-nums`. Subject names are title-cased in Python (CSS `capitalize` cannot downcase ALL-CAPS portal data).
+- **The component chip is a hand-rolled span, not a `.badge`:** daisyUI badges cannot lose their 1px border (§10.9) and this chip must be solid-fill, borderless. Fixed `w-14` (56px = the widest name, `FML-I`) so `FT-II` can never shift the date column. Fill `bg-base-300`, label `text-base-content/70`.
+- **Dates** are `04 Sep`, muted `/50`, `text-xs` (12px floor).
+- **IE rows** nest under the component they derive from (`ps-6` indent), labelled `derived` or `confirmed`, with marks converted to the paper total (IE-1 → `/50`, IE-2 → `/60`). The portal never labels IEs; `_derive_ie()` guesses `/15` (theory) or `/10` (practical code), and a stored tag always wins.
+- **Tag form = `<details>` + `<form method="post" action="/marks/tag">`** — the form itself needs no JS; the only script involved is the outside-click light-dismiss handler in `dash.js` (one `details[open]` guard — and the reason this release bumps the SW cache). The server keys the tag `year|branch|section|course|component` (no semester, no netid): one student's confirmation applies to the whole class and is persisted for the GPA predictor.
+- **Verify with** `tests/test_marks_dut.py` (45 checks at 393×851 + 1280×900: uniform chips, date x-alignment, one accent, contrast, top-pinned cards, outside-click dismiss, tag round-trip).
+
 ---
 
 ## 5. Layout and responsive
@@ -492,7 +536,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs float within their major version.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v12` → `opensrm-v13`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v13` → `opensrm-v14`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
@@ -500,6 +544,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 8. Python changes must pass `ruff` (CI lint).
 9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (cross-origin stylesheets also hide the rules from `cssRules`). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
+11. **A closed `<details>` still reports a layout rect for its hidden children** (Chrome lays them out via `content-visibility`), so a geometry audit that measures "card height vs deepest descendant" counts the hidden tag form (§4.13) and reports phantom negative slack. Filter measurement sweeps with `!el.closest('details:not([open])')`.
 
 ---
 
