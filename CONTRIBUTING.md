@@ -28,11 +28,11 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 ## Submitting changes
 
 1. **Branch** — create a feature branch from `main`
-2. **Lint** — run `ruff check app/` before committing (CI blocks on failures)
-3. **Test** — verify against the live SRM portal (login, attendance, timetable editor)
-4. **Version** — bump `VERSION` (and `pyproject.toml` to match) for user-visible changes: patch = fix, minor = feature, major = breaking/user-visible redesign. The number renders on the login page and dashboard navbar.
-5. **Commit** — clear, descriptive messages. One logical change per commit.
-6. **Push** — push to main. CI runs lint → Docker build → GHCR push automatically.
+2. **Lint** — `uvx ruff check app/` and `uv lock --check` before pushing (both are exactly what CI runs; the lock check fails if `pyproject.toml` changed without `uv lock`)
+3. **Test** — run the suites your change touches (see the test matrix below); everything green before you push
+4. **Version** — for user-visible changes bump all three together: `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches (patch = fix, minor = feature, major = breaking/user-visible redesign; docs/tests-only changes get no bump). The number renders on the login page and dashboard navbar, and `tests/verify76.py` + CI both enforce the trio
+5. **Commit** — clear, descriptive messages. One logical change per commit
+6. **Push + PR** — open a PR against `main`. PR CI runs lint only (ruff + `uv lock --check`); the Docker image is built and pushed to `ghcr.io/thenabbu/opensrm:latest` only after the merge lands on `main`, from where the self-hosted deployment picks it up automatically. Merges use merge commits with a `merge: <summary>` subject (no squash), keeping the atomic commits intact
 
 ### Commit format
 
@@ -44,6 +44,21 @@ fix: captcha timing race condition
 docs: update README with new features
 ci: add PR trigger to lint workflow
 ```
+
+## Test matrix
+
+All plain scripts (no pytest), from the repo root with the repo venv:
+
+```bash
+.venv/bin/python tests/verify76.py          # 71/71 static checks (incl. doc claims)
+.venv/bin/python tests/test_exams.py        # 24/24 end-sem probe parser
+.venv/bin/python tests/test_exams_view.py   # exam card view model
+# Playwright DUTs need a dev server + PLAYWRIGHT_BROWSERS_PATH set:
+#   tests/test_sw.py (7/7) · tests/test_xss.py (9/9) — see AGENTS.md for the exact commands
+# Login UX guide suites: guide_static.py / guide_check.py / guide_server.py
+```
+
+**Careful with live-portal tests:** `guide_server.py` performs 7 real SRM logins per run and the portal rate-limits 10/hour per IP. Tests mint session cookies and never hardcode credentials — keep it that way, and don't loop the live suites.
 
 ## What to know before editing
 
@@ -69,15 +84,16 @@ Key rules:
 
 ### CI/CD
 
-- **Lint** — ruff checks on every push to main and PRs
-- **Build** — Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest`
-- **Deploy** — dockhand auto-pulls the latest image
+- **Lint** — ruff (`app/` only) + `uv lock --check` on every push and PR
+- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest`
+- **Deploy** — the self-hosted watcher pulls the new image from GHCR, snapshots the DB, and recreates the container
 
 ## Portal rate limits
 
 During testing, be aware:
 - Per netid: 3 scrapes per 10 minutes
 - Per IP: 10 login attempts per hour
+- Aggregate server→portal budget: 30 requests per 10 minutes
 
 Don't hammer the portal during testing.
 
