@@ -389,8 +389,8 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 - **Rows:** `space-y-3 sm:space-y-2`, no dividers — density comes from grouping, not rules (§ B2 / §6). The day stamp is the only 17px/600 element; name is the only `text-base-content` line; everything else `/60` (§2.5 ladder).
 - **Names** are title-cased in `_exams_view()` (`name_disp`); storage keeps the portal's ALL-CAPS `name`.
-- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap.
-- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, footnote above the fixed dock).
+- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
+- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
 
 ---
 

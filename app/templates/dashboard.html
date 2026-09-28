@@ -202,6 +202,7 @@
             <div class="flex items-center gap-2 mb-2">
               <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
               <span class="badge badge-soft badge-sm">{{ exams.label }}</span>
+              <span class="badge badge-outline badge-sm text-base-content/60">Provisional</span>
             </div>
             <ul class="space-y-3 sm:space-y-2">
               {% for e in exams.rows %}
@@ -230,7 +231,6 @@
               {% if exams.days_until > 0 %}First exam in <strong>{{ exams.days_until }}</strong> day{{ 's' if exams.days_until != 1 }}
               {% else %}Exams under way{% endif %}
             </div>
-            <div class="text-[11px] text-base-content/60 mt-1.5">Provisional — not yet officially released</div>
           </div>
           {% endif %}
         </div>
