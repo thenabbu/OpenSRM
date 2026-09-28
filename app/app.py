@@ -1466,6 +1466,9 @@ def _exams_view(rows):
         r["dow"] = d.strftime("%a") if d else ""
         # portal returns ALL-CAPS names; shouty when wrapped on a narrow screen
         r["name_disp"] = " ".join(w.capitalize() for w in r.get("name", "").split())
+        # portal codes: AN/FN are exam-cell jargon; expand (no clock times exist in the leak)
+        r["session_disp"] = {"AN": "Afternoon", "FN": "Forenoon"}.get(
+            r.get("session", ""), r.get("session", ""))
     first = ts(rows[0])
     last = ts(rows[-1])
     days = (first.date() - datetime.now().date()).days

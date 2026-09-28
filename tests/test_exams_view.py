@@ -23,6 +23,9 @@ assert [r["day"] for r in v["rows"]] == ["25", "27"]
 assert v["rows"][0]["dow"] in ("Tue", "Wed"), v["rows"][0]["dow"]   # 25 Nov 2026 = Wednesday
 assert v["rows"][0]["name_disp"] == "Numerical Methods And Analysis"
 assert v["label"] == "Nov 2026" and v["days_until"] > 0
+assert v["rows"][0]["session_disp"] == "Afternoon"          # AN/FN expanded
+assert _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
+                    "session": "ZZ"}])["rows"][0]["session_disp"] == "ZZ"
 # junk date falls back to the raw value, never crashes
 v2 = _exams_view([{"code": "X", "name": "A B", "date": "junk", "session": "FN"}])
 assert v2["rows"][0]["short"] == "junk" and v2["rows"][0]["dow"] == ""
