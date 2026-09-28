@@ -27,6 +27,10 @@ html[data-theme="openSRM"] {
 .navbar [role="tab"][aria-selected="true"]::after {
   content: "";
   position: absolute;
+  width: auto;          /* daisyUI .dock-active:after sets width:2.5rem and dash.js
+                           toggles that class on every [data-tab] — without this the
+                           bar renders 40px (left 8 / right 41) instead of the
+                           left/right-derived width. Measured: 73px in, 40px leaked. */
   left: 0.5rem;
   right: 0.5rem;
   bottom: 2px;

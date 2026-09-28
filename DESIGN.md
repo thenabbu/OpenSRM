@@ -366,7 +366,12 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
 
   ```css
   .navbar [role="tab"][aria-selected="true"] {
+    position: relative;
     background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  }
+  .navbar [role="tab"][aria-selected="true"]::after {
+    content: ""; position: absolute; width: auto;   /* width is load-bearing, see §10.11 */
+    left: 0.5rem; right: 0.5rem; bottom: 2px; height: 2px; background: currentColor;
   }
   ```
 
@@ -515,7 +520,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 8. Python changes must pass `ruff` (CI lint).
 9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (cross-origin stylesheets also hide the rules from `cssRules`). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
-11. **daisyUI's "active" fill is invisible on this surface.** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state.
+11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
 
 ---
 

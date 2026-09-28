@@ -163,15 +163,26 @@ with sync_playwright() as p:
     ind = page.evaluate("""() => {
       const tabs = [...document.querySelectorAll('.navbar.hidden [role="tab"]')];
       const style = t => { const cs = getComputedStyle(t, '::after');
-        return {h: cs.height, bg: cs.backgroundColor, pos: cs.position}; };
+        return {h: cs.height, bg: cs.backgroundColor, pos: cs.position,
+                w: cs.width, left: cs.left, right: cs.right}; };
       const on = tabs.find(t => t.getAttribute('aria-selected') === 'true');
       const off = tabs.find(t => t.getAttribute('aria-selected') === 'false');
-      return {on: style(on), off: style(off)};
+      return {on: style(on), off: style(off),
+              pillW: Math.round(on.getBoundingClientRect().width),
+              padW: on.clientWidth};   /* ::after offsets resolve against the PADDING box */
     }""")
     check('desktop: selected tab carries a non-color state bar (WCAG 1.4.1)',
           ind['on']['h'] == '2px' and ind['on']['bg'] not in ('rgba(0, 0, 0, 0)', 'transparent')
           and ind['off']['h'] in ('0px', 'auto', '') and ind['off']['bg'] in ('rgba(0, 0, 0, 0)', 'transparent'),
           json.dumps(ind))
+    # the bar must span the pill minus its 8px insets: an undeclared width lets
+    # daisyUI .dock-active:after{width:2.5rem} leak in (40px, lopsided 8/41)
+    bar_w = float(ind['on']['w'].replace('px', ''))
+    check('desktop: bar spans pill minus 8px insets (no dock-active width leak)',
+          abs(bar_w - (ind['padW'] - 16)) <= 1
+          and ind['on']['left'] == '8px' and ind['on']['right'] == '8px',
+          f"bar={bar_w}px paddingBox={ind['padW']}px pill={ind['pillW']}px "
+          f"left={ind['on']['left']} right={ind['on']['right']}")
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
     ctx.close()
 

@@ -54,7 +54,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
-.venv/bin/python tests/test_navbar.py       # 14/14 (netid echo, selected-tab tint, sync caption, mobile badge, logo radius)
+.venv/bin/python tests/test_navbar.py       # 16/16 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide
