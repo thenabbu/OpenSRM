@@ -1456,14 +1456,26 @@ def _exams_view(rows):
         except ValueError:
             return datetime.max
     rows = sorted(rows, key=ts)
-    for r in rows:  # display form '25 Nov'; junk dates fall back to the raw value
+    for r in rows:  # display fields; junk dates fall back to the raw value
         try:
-            r["short"] = datetime.strptime(r.get("date", ""), "%d-%m-%Y").strftime("%d %b")
+            d = datetime.strptime(r.get("date", ""), "%d-%m-%Y")
         except ValueError:
-            r["short"] = r.get("date", "")
+            d = None
+        r["short"] = d.strftime("%d %b") if d else r.get("date", "")
+        r["day"] = str(d.day) if d else r.get("date", "")[:2]
+        r["dow"] = d.strftime("%a") if d else ""
+        # portal returns ALL-CAPS names; shouty when wrapped on a narrow screen
+        r["name_disp"] = " ".join(w.capitalize() for w in r.get("name", "").split())
     first = ts(rows[0])
+    last = ts(rows[-1])
     days = (first.date() - datetime.now().date()).days
-    return {"rows": rows, "label": first.strftime("%b %Y"), "days_until": days}
+    if (first.year, first.month) == (last.year, last.month):
+        label = first.strftime("%b %Y")
+    elif first.year == last.year:
+        label = first.strftime("%b") + "\u2013" + last.strftime("%b %Y")
+    else:
+        label = first.strftime("%b %Y") + "\u2013" + last.strftime("%b %Y")
+    return {"rows": rows, "label": label, "days_until": days}
 
 
 @app.route("/static/<path:filename>")
