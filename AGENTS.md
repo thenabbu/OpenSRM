@@ -38,6 +38,8 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ## Test matrix (all green before push)
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
+.venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
+.venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -70,7 +72,7 @@ Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-man
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 
 ## Safety rules (non-negotiable)
-- No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN` (rotation PENDING — runbook with owner).
+- No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the literal string).
 - No portal credentials hardcoded; tests mint session cookies, never log in.
 - Trust CF headers only with `cf-ray`; HSTS is cf-ray-gated on purpose (plain-HTTP dev).
 - Rate limits: 3 syncs/10min/netid · 10/hour IP login · preflight 30s/netid · 1800s cooldown after 3 portal fails.

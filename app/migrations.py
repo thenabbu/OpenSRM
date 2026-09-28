@@ -97,6 +97,18 @@ def m007_cold_fetch(conn):
         if "duplicate column name" not in str(e):
             raise
 
+@migration(version=8, description="exam_schedule_json on users (leaked end-sem schedule probe)")
+def m008_exam_schedule(conn):
+    # probe: ScribeInner iden=1 accepts ANY hdnExamMonth/Year -> end-sem dates
+    # before official release. ALTER-only like m002/m004/m007 — the versioned
+    # registry runs every pending migration on fresh DBs too (verified: probe run
+    # applied 1,2,3,4,6,7 on an empty DATA_DIR).
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN exam_schedule_json TEXT DEFAULT '[]'")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            raise
+
 @migration(version=1, description="base users/cookies tables")
 def m001_base(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS users(
