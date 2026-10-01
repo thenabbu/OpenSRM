@@ -39,7 +39,8 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
-.venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -93,3 +94,4 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
+- The portal login page markup itself contains `captcha` (x17) and `invalid` (Bootstrap `.invalid-feedback`) — never classify a rejection on those tokens or EVERY failure reads as "invalid captcha" (this hid a wrong password behind 3 captcha retries and burned the portal's own 3-attempts-per-NetID lockout). Classify on the portal's `<h6 class="alert-heading">Alert</h6>` text; `tests/test_login_reject.py` holds the verbatim strings.
