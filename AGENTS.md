@@ -56,7 +56,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
-.venv/bin/python tests/test_marks_dut.py     # 45/45 marks tab (colours, chips, contrast, dismiss, tag round-trip)
+.venv/bin/python tests/test_marks_dut.py     # 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test

@@ -429,10 +429,10 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 ### 4.13 Internal marks card (Marks tab)
 
-`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.20/20` — maxima whole, scores 2 decimals), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns the **3 lowest** subjects for the dashboard glance — there is **no aggregate/overall number anywhere** (brief).
+`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.20/20` — maxima whole, scores 2 decimals), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns the **3 lowest** subjects for the dashboard glance as `code scored/max` chips (e.g. `21MAB206T 13.40/20` — the values as last synced; **no `%`** on the glance, ordering still risk-first) — there is **no aggregate/overall number anywhere** (brief).
 
 ```jinja
-<div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">  <!-- items-start: cards pin, never stretch -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">  <!-- default stretch: side-by-side cards share one height; content stays top-pinned (block flow) -->
   <div class="bg-base-200 border border-base-300 rounded-box p-4">
     <div class="flex items-baseline justify-between gap-2">
       <span class="font-mono text-xs text-base-content/60">21CSS201T</span>
@@ -469,7 +469,7 @@ Rules specific to this card:
 - **Dates** are `04 Sep`, muted `/50`, `text-xs` (12px floor).
 - **IE rows** nest under the component they derive from (`ps-6` indent), labelled `derived` or `confirmed`, with marks converted to the paper total (IE-1 → `/50`, IE-2 → `/60`). The portal never labels IEs; `_derive_ie()` guesses `/15` (theory) or `/10` (practical code), and a stored tag always wins.
 - **Tag form = `<details>` + `<form method="post" action="/marks/tag">`** — the form itself needs no JS; the only script involved is the outside-click light-dismiss handler in `dash.js` (one `details[open]` guard — and the reason this release bumps the SW cache). The server keys the tag `year|branch|section|course|component` (no semester, no netid): one student's confirmation applies to the whole class and is persisted for the GPA predictor.
-- **Verify with** `tests/test_marks_dut.py` (45 checks at 393×851 + 1280×900: uniform chips, date x-alignment, one accent, contrast, top-pinned cards, outside-click dismiss, tag round-trip).
+- **Verify with** `tests/test_marks_dut.py` (53 checks at 393×851 + 1280×900: uniform chips, date x-alignment, one accent, contrast, uniform row heights + top-pinned content, tooltip on hover, glance marks/max chips, outside-click dismiss, tag round-trip).
 
 ---
 
