@@ -107,5 +107,28 @@ check("all None -> None", _merge_exam_results([None, None]) is None)
 check("garbage -> None", _merge_exam_results([((11, 2026), "<html>blocked</html>")]) is None)
 check("clean empty -> []", _merge_exam_results([((11, 2026), EMPTY_PAGE)]) == [])
 
+# 9. Oct 2026 incident: portal lists subjects but blanked Date/Session cells.
+#    That is NOT a clean empty — treating it as one wiped stored schedules.
+BLANK_ROW = """<tr>
+    <td><div class="form-check"><input type="checkbox" class="form-check-input clsScribeCheck"
+        id="rdnSubjectList{n}" onchange="funCalculateAmount()" value="{sid}" data-amount="300.00"></div></td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">{code}</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">{name}</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})"></td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})"></td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">T-EXT</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">300.00</td>
+</tr>"""
+BLANKED_PAGE = ('<div class="table-responsive"><table class="table"><tbody>'
+                + BLANK_ROW.format(n=1, sid="39033", code="21CSC201J", name="DATA STRUCTURES AND ALGORITHMS")
+                + BLANK_ROW.format(n=2, sid="39034", code="21CSC202J", name="OPERATING SYSTEMS")
+                + "</tbody></table></div>")
+check("blanked dates -> None (preserve)",
+      _merge_exam_results([((11, 2026), BLANKED_PAGE)]) is None)
+check("blanked + clean-empty window -> None (preserve)",
+      _merge_exam_results([((11, 2026), BLANKED_PAGE), ((12, 2026), EMPTY_PAGE)]) is None)
+check("blanked alongside real rows -> real rows win",
+      _merge_exam_results([((11, 2026), FULL_PAGE), ((12, 2026), BLANKED_PAGE)]) is not None)
+
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)
