@@ -60,22 +60,51 @@
                 entries.forEach(function(e) {
                     var item = document.createElement('div');
                     item.className = 'py-2 border-b border-base-300 last:border-b-0';
+                    // one compact head: Name netid ····· rel time (title = absolute)
                     var head = document.createElement('div');
-                    head.className = 'font-medium';
-                    var who = e.name ? e.name + ' (' + e.netid + ')' : e.netid;
-                    head.textContent = who + ' — ' +
-                        new Date(e.at * 1000).toLocaleString([], {
-                            day: '2-digit', month: 'short', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit'});
+                    head.className = 'flex justify-between items-baseline gap-2';
+                    var who = document.createElement('span');
+                    who.className = 'text-sm font-medium';
+                    who.textContent = e.name || e.netid;
+                    if (e.name) {
+                        var idEl = document.createElement('span');
+                        idEl.className = 'font-mono text-xs text-base-content/60 ml-1';
+                        idEl.textContent = e.netid;
+                        who.appendChild(idEl);
+                    }
+                    var when = document.createElement('span');
+                    when.className = 'text-xs text-base-content/60 shrink-0';
+                    when.textContent = relTime(e.at);
+                    when.title = new Date(e.at * 1000).toLocaleString();
+                    head.appendChild(who);
+                    head.appendChild(when);
                     item.appendChild(head);
-                    var ul = document.createElement('ul');
-                    ul.className = 'list-disc list-inside text-base-content/60';
-                    (e.changes || []).forEach(function(ch) {
-                        var li = document.createElement('li');
-                        li.textContent = chLine(ch);
-                        ul.appendChild(li);
+                    // changes as terse symbol lines; full subject names in title=
+                    var box = document.createElement('div');
+                    box.className = 'text-xs text-base-content/60 mt-0.5 space-y-0.5';
+                    var chs = e.changes || [];
+                    chs.forEach(function(ch, i) {
+                        var line = document.createElement('div');
+                        line.textContent = chLine(ch);
+                        line.title = chFull(ch);
+                        if (i >= 3) line.className = 'tt-h hidden';  // bulk saves stay terse
+                        box.appendChild(line);
                     });
-                    item.appendChild(ul);
+                    if (chs.length > 3) {
+                        var tog = document.createElement('div');
+                        tog.className = 'cursor-pointer';
+                        tog.title = 'show all changes';
+                        var rest = chs.length - 3;
+                        tog.textContent = '+' + rest + ' more';
+                        tog.onclick = function() {
+                            var hid = box.querySelectorAll('.tt-h');
+                            var wasCollapsed = hid[0].classList.contains('hidden');
+                            for (var k = 0; k < hid.length; k++) hid[k].classList.toggle('hidden', !wasCollapsed);
+                            tog.textContent = wasCollapsed ? 'show less' : '+' + rest + ' more';
+                        };
+                        box.appendChild(tog);
+                    }
+                    item.appendChild(box);
                     list.appendChild(item);
                 });
             })
@@ -88,12 +117,29 @@
             });
     }
 
+    var DAY_ABBR = {Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
+                    Thursday: 'Thu', Friday: 'Fri'};
     function chLine(ch) {
-        function lab(s) { return s ? ((s.code || '') + (s.name ? ' — ' + s.name : '')) : 'empty'; }
-        var what = ch.action === 'added' ? 'added ' + lab(ch.to)
-                 : ch.action === 'removed' ? 'removed ' + lab(ch.from)
-                 : 'changed ' + lab(ch.from) + ' → ' + lab(ch.to);
-        return (ch.day || '') + ' P' + (ch.period || '') + ' · ' + what;
+        var where = (DAY_ABBR[ch.day] || ch.day || '') + ' P' + (ch.period || '');
+        var code = function(s) { return s ? (s.code || '?') : ''; };
+        if (ch.action === 'added')   return where + ': +' + code(ch.to);
+        if (ch.action === 'removed') return where + ': -' + code(ch.from);
+        return where + ': ' + code(ch.from) + ' → ' + code(ch.to);
+    }
+    function chFull(ch) {
+        var lab = function(s) { return s ? ((s.code || '') + (s.name ? ' ' + s.name : '')) : 'empty'; };
+        var where = (ch.day || '') + ' P' + (ch.period || '');
+        if (ch.action === 'added')   return where + ' · added ' + lab(ch.to);
+        if (ch.action === 'removed') return where + ' · removed ' + lab(ch.from);
+        return where + ' · changed ' + lab(ch.from) + ' → ' + lab(ch.to);
+    }
+    function relTime(ts) {
+        var s = Math.floor(Date.now() / 1000) - ts;
+        if (s < 60)     return 'just now';
+        if (s < 3600)   return Math.floor(s / 60) + 'm ago';
+        if (s < 86400)  return Math.floor(s / 3600) + 'h ago';
+        if (s < 604800) return Math.floor(s / 86400) + 'd ago';
+        return new Date(ts * 1000).toLocaleDateString([], {day: '2-digit', month: 'short'});
     }
 
     function openEditor() {

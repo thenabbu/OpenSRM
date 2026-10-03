@@ -429,7 +429,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 ### 4.13 Timetable edit history (audit log)
 
-Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`collapse collapse-arrow bg-base-200 border border-base-300 mt-4`) whose title is `text-sm font-semibold` + a `badge badge-sm` count fed by `/api/timetable/history`. Rows are `py-2 border-b border-base-300 last:border-b-0`: editor line (name + netid + timestamp) `font-medium`, change lines in a `list-disc list-inside text-base-content/60` list formatted `Day P# · action`. Empty state `text-base-content/60`.
+Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`collapse collapse-arrow bg-base-200 border border-base-300 mt-4`) whose title is `text-sm font-semibold` + a `badge badge-sm` count fed by `/api/timetable/history`. Rows are `py-2 border-b border-base-300 last:border-b-0`, kept terse on purpose: a flex head — name `text-sm font-medium` + mono netid `/60` left, **relative** time `text-xs /60` right (`title=` carries the absolute timestamp) — over change lines `text-xs /60 space-y-0.5` formatted `Mon P3: CS2011 → CS3005` (`+CODE` added, `-CODE` removed; full subject names live in `title=`, never inline). Empty state `text-base-content/60`.
 
 - **XSS rule (audit 2026-09-27 applies here too):** every value in the payload (peer-written subject codes/names, editor name) is student-controlled — `loadHistory()` in `timetable.js` builds it with `textContent`/`createElement` only, **never `innerHTML`**.
 - Server: `_tt_diff()` in `app.py` writes `timetable_edit_log` (migration v9) on POST `/api/timetable`; no-op saves are skipped, last 200 entries per group kept.
