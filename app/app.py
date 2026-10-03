@@ -1380,10 +1380,18 @@ def timetable_html(group_key):
                 "<div class=\"tt-hero-sub\">Use the editor to map out your schedule.</div></div></div></div>")
     # Build today's slots for hero
     today = datetime.now().strftime("%A")
+    # index of the day's LAST filled class slot: a break at/after it is NOT
+    # part of today's schedule (otherwise the hero says "Break until 16:00"
+    # after the last class instead of "Done for today")
+    last_cls = -1
+    for i, s in enumerate(SLOTS):
+        if s["type"] == "class" and today in day_slots and s["period"] in day_slots[today]:
+            last_cls = i
     today_slots = []
-    for s in SLOTS:
+    for i, s in enumerate(SLOTS):
         if s["type"] == "break":
-            today_slots.append(s)
+            if i < last_cls:
+                today_slots.append(s)
         elif today in day_slots and s["period"] in day_slots[today]:
             m = day_slots[today][s["period"]]
             today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"]})
@@ -1414,10 +1422,16 @@ def timetable_html(group_key):
     tabs = "".join("<label for=day-{0}{1}>{2}</label>".format(d, " class=tt-today" if d == today else "", d[:3]) for d in DAY_ORDER)
     panels = []
     for d in DAY_ORDER:
+        # which class slots this day actually has — a break divider only makes
+        # sense BETWEEN two rendered classes (no trailing "Break" after the
+        # day's last class, no orphan divider above the first one)
+        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {}) for s in SLOTS]
+        last_cls = max((i for i, p in enumerate(present) if p), default=-1)
         rows = []
-        for s in SLOTS:
+        for i, s in enumerate(SLOTS):
             if s["type"] == "break":
-                rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
+                if any(present[:i]) and i < last_cls:
+                    rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
                 continue
             sl = day_slots.get(d, {}).get(s["period"])
             if not sl:
@@ -1771,6 +1785,60 @@ def api_get_timetable():
     c.close()
     return {"ok": True, "slots": slots, "subjects": subjects, "group_key": gk}
 
+def _tt_sort_key(key):
+    """'Monday-3' -> (day index, period); unknown days sort last."""
+    day, _, period = key.rpartition("-")
+    try:
+        di = DAY_ORDER.index(day)
+    except ValueError:
+        di = 99
+    return (di, int(period) if period.isdigit() else 99)
+
+def _tt_diff(old, new):
+    """Slot-level diff for the edit log: added/removed/changed entries."""
+    out = []
+    for key in sorted(set(old) | set(new), key=_tt_sort_key):
+        o, n = old.get(key), new.get(key)
+        day, period = key.rsplit("-", 1)
+        base = {"day": day, "period": int(period) if period.isdigit() else 0}
+        if o and not n:
+            out.append({**base, "action": "removed", "from": o})
+        elif n and not o:
+            out.append({**base, "action": "added", "to": n})
+        elif o != n:
+            out.append({**base, "action": "changed", "from": o, "to": n})
+    return out
+
+@app.route("/api/timetable/history", methods=["GET"])
+def api_timetable_history():
+    """Edit log for the caller's own group (classmates share group_key)."""
+    netid = get_current_user()
+    if not netid: return {"ok": False, "error": "not logged in"}, 401
+    personal = {}
+    try:
+        c = db()
+        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+        c.close()
+        if r and r[0]: personal = json.loads(r[0])
+    except Exception:  # corrupt/unreadable row → proceed with empty personal details
+        pass
+    gk = _group_key(personal)
+    if not gk: return {"ok": True, "entries": []}
+    c = db()
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()
+    if not gid: c.close(); return {"ok": True, "entries": []}
+    entries = []
+    for r in c.execute("SELECT editor_netid,editor_name,created_at,changes_json "
+                       "FROM timetable_edit_log WHERE group_id=? ORDER BY id DESC LIMIT 50",
+                       (gid[0],)):
+        try:
+            changes = json.loads(r[3] or "[]")
+        except Exception:
+            changes = []
+        entries.append({"netid": r[0], "name": r[1] or "", "at": r[2], "changes": changes})
+    c.close()
+    return {"ok": True, "entries": entries}
+
 @app.route("/api/timetable", methods=["POST"])
 def api_save_timetable():
     netid = get_current_user()
@@ -1798,14 +1866,30 @@ def api_save_timetable():
         c.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
                   "VALUES(?,?,?,0,1) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
                   (gid, sub["code"], sub["name"]))
-    c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
+    # audit feature: diff old vs new BEFORE the delete-and-replace so the
+    # shared timetable's edit log records exactly who changed what.
+    old_slots = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or ""}
+                 for r in c.execute("SELECT day,period,subject_code,subject_name "
+                                    "FROM timetable_slots WHERE group_id=?", (gid,))}
+    new_slots = {}
     for key, val in slots.items():
-        if val:
-            parts = key.rsplit("-", 1)
-            if len(parts) == 2:
-                day, period = parts
-                c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name) "
-                          "VALUES(?,?,?,?,?)", (gid, day, int(period), val.get("code",""), val.get("name","")))
+        if val and len(key.rsplit("-", 1)) == 2:
+            new_slots[key] = {"code": str(val.get("code", "")), "name": str(val.get("name", ""))}
+    changes = _tt_diff(old_slots, new_slots)
+    c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
+    for key, val in new_slots.items():
+        day, period = key.rsplit("-", 1)
+        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name) "
+                  "VALUES(?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"]))
+    if changes:  # no-op saves stay out of the log
+        c.execute("INSERT INTO timetable_edit_log(group_id,editor_netid,editor_name,changes_json) "
+                  "VALUES(?,?,?,?)",
+                  (gid, netid, str(personal.get("Student Name", "")), json.dumps(changes, ensure_ascii=False)))
+        # ponytail: keep the last 200 entries per group (spam ceiling);
+        # raise the LIMIT if sections start legitimately editing that often
+        c.execute("DELETE FROM timetable_edit_log WHERE group_id=? AND id NOT IN "
+                  "(SELECT id FROM timetable_edit_log WHERE group_id=? ORDER BY id DESC LIMIT 200)",
+                  (gid, gid))
     c.commit(); c.close()
     return {"ok": True}
 

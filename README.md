@@ -18,7 +18,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator ("can miss N more"); courses ordered by risk (lowest % first); overall shown as a compact strip
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), server-rendered with the rest of the page; color-coded status; glance widget on the dashboard
 - **End-sem exams** — provisional exam schedule *before* the portal announces it: while you're logged in, the sync probes `ScribeInner.jsp` (`iden=1` + any month/year — the portal doesn't validate against its own dropdown) for upcoming exam windows; stamped-date dashboard card (day + weekday + countdown, `Provisional` pill); card hides itself if no session is seeded or the portal closes the gap
-- **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks; drag-and-drop editor with subject palette
+- **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks (and only *between* classes — no stray break after the day's last one); drag-and-drop editor with subject palette; **section-visible edit history** — every save logs who changed which slot and when, so fixes and vandalism are both on the record (bulk saves collapse to 3 lines + a `+N more` toggle)
 - **Personal Details** — student info grouped into sections (Academic, Personal, Family, Contact); click any value to copy it
 - **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/courses reused until stale (24h); timetable served from SQLite and only changes when you edit it; opening the page shows cached data instantly with a quiet background re-sync
 - **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
@@ -78,7 +78,7 @@ flowchart TD
         PROG["Login progress tracker<br/>POST /api/login/progress · 600 ms poll"]
         HS["http_scraper<br/>pure-HTTP pipeline"]
         PW["Playwright fallback<br/>headless Chromium · 5 captcha tries"]
-        DB[("SQLite srm.db<br/>users · portal_sessions · timetable<br/>schema_version 8")]
+        DB[("SQLite srm.db<br/>users · portal_sessions · timetable · edit log<br/>schema_version 9")]
         FL --> PROG
         FL <--> DB
         FL --> HS
