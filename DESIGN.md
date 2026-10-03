@@ -348,17 +348,34 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
   </table>
 </div>
 
-<!-- key/value list inside a p-0 card -->
-<ul class="list">
-  <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/50 py-2 px-4">Academic</li>
-  <li class="list-row items-center">
-    <span class="text-xs text-base-content/50 uppercase tracking-wide w-28 shrink-0">Program</span>
-    <span class="text-sm font-mono break-words">B.Tech CSE</span>
-  </li>
-</ul>
+<!-- identity card + grouped detail list (Personal tab) -->
+<div class="flex flex-col gap-3">
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body p-4">
+      <div class="text-lg font-semibold" data-copy="…">Student Name</div>
+      <div class="text-sm font-mono text-base-content/60 break-words mt-1" data-copy="…">Program…</div>
+    </div>
+  </div>
+  <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+    <input type="checkbox" />
+    <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+      <span>Academic</span><span class="badge badge-sm">6</span>  <!-- count = fields present -->
+    </div>
+    <div class="collapse-content">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-2">
+        <div class="sm:col-span-2">   <!-- full-width for long values (Address, Institution) -->
+          <div class="text-xs uppercase tracking-wide text-base-content/50">Label</div>
+          <div class="text-sm font-mono break-words" data-copy="…">value</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 ```
 
-- **Accordion:** `collapse collapse-arrow bg-base-200 border border-base-300` with `<input type="radio" name="…">` for one-open-at-a-time; title `text-sm font-semibold`, count as a badge on the right.
+- **Detail panel spacing ladder:** label→value `0` (attached) < row gap `gap-2` 8px < card stack `gap-3` 12px — asserted by `tests/test_personal.py`.
+- **Responsive default state:** `dash.js` checks every group at ≥640px (dense fact-sheet scan) and opens only the first group below (compact lookup). `checkbox`, not `radio`, so groups toggle independently; `radio name=…` remains the one-open-at-a-time recipe.
+- **Accordion:** `collapse collapse-arrow bg-base-200 border border-base-300` — title `text-sm font-semibold`, count as a badge on the right.
 - **Tabs:** `tabs tabs-border mb-5` containing `tab` buttons with `role="tab"`; the active one adds `tab-active`.
 - **Navbar tabs (the dashboard's real navigation):** plain `btn btn-ghost btn-sm` buttons in the
   navbar's `role="tablist"`; `dash.js` moves `aria-selected` on click. The *selected* fill is a rule
@@ -563,7 +580,7 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`); `verify76` L47 fails the suite if a pin drifts.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v13` → `opensrm-v14`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v14` → `opensrm-v15`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
