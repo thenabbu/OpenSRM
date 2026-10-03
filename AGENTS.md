@@ -80,7 +80,9 @@ Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the u
 ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
-# POST /api/login/progress {"netid":"x"} → 200, GET → 405.
+# POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
+# ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
+#  smoke recipe used "x" and read as a failure until this line was fixed.)
 ```
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
