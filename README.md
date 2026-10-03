@@ -109,7 +109,7 @@ flowchart TD
 
 ## How it works
 
-1. **Preflight** — the login page fires `POST /api/login/preflight` on password focus: the server fetches `youLogin.jsp` (nonce, honeypot, captcha field), fetches the captcha image with an `X-Domain-Proof` header, solves it via ddddocr, and keeps it warm for 180 s — all while the user is still typing
+1. **Preflight** — the login page fires `POST /api/login/preflight` on password focus: the server fetches `youLogin.jsp` (nonce, honeypot, captcha field), fetches the captcha image with an `X-Domain-Proof` header, solves it via ddddocr, and keeps it warm for 150 s — all while the user is still typing
 2. **Login** — `http_scraper` POSTs `LoginServlet` with the portal's anti-bot tokens (`dtoken`, `cptoken`, telemetry payload), retrying the captcha up to 3 times; progress steps (5% → 92%) are published to an in-memory tracker that the login screen polls every 600 ms
 3. **Hot data** — attendance (`funSetFormId(9)`) and internal marks (`funSetFormId(13)`, plus per-subject component drilldown) fetched on every sync and persisted
 4. **Cold data** — profile/personal details/subject lists (`funSetFormId(1), 17, 7`) re-fetched only when older than 24h; timetable rendered from SQLite
@@ -208,7 +208,7 @@ flowchart LR
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Port | 8083 | Web interface port (compose maps loopback + cloudflared gateway → container 8080) |
-| Rate limit (netid) | 3 per 10 min | Scrapes per account |
+| Rate limit (netid) | 3 per 10 min | Scrapes per account — counted only once the sync actually runs (a busy/cooldown/budget rejection costs nothing) |
 | Rate limit (IP) | 10 per hour | Login attempts per IP |
 | Portal budget | 30 per 10 min | Aggregate server→portal requests |
 | Portal cooldown | 5 → 30 min | After 3 consecutive portal failures: 5 min, doubling, capped at 30 |

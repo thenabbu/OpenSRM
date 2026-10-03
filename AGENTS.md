@@ -91,7 +91,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the literal string).
 - No portal credentials hardcoded; tests mint session cookies, never log in.
 - Trust CF headers only with `cf-ray`; HSTS is cf-ray-gated on purpose (plain-HTTP dev).
-- Rate limits: 3 syncs/10min/netid · 10/hour IP login · aggregate portal budget 30/10min · preflight 30s/netid · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
+- Rate limits: 3 syncs/10min/netid (counted only when the sync actually runs — busy/cooldown/budget rejections are free) · 10/hour IP login · aggregate portal budget 30/10min · preflight 30s/netid · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
 
 ## Gotchas (bitten at least once)
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.

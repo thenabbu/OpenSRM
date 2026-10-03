@@ -27,7 +27,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and HSTS (`max-age=31536000; includeSubDomains`) on `cf-ray` responses only
 
 ### Rate limiting
-- Per netid: 3 scrapes per 10 minutes
+- Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (scrape lock held, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed
 - Per IP: 10 login attempts per hour (counted only after credentials pass format validation)
 - Aggregate server→portal budget: 30 requests per 10 minutes
 - Portal cooldown: 3 consecutive portal failures arm a cooldown (5 min, doubling, capped at 30 min)
