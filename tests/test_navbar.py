@@ -2,7 +2,7 @@
 has a perceivable tint (daisyUI .btn-active is a no-op on this dark surface),
 the sync caption is a relative age to the right of the refresh button and
 disappears when fresh, the mobile bar shows no version badge, and the wordmark
-carries the 0.5rem box radius. Server under test: AGENTS.md."""
+carries a 4px minor radius. Server under test: AGENTS.md."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-navbar')
@@ -110,7 +110,7 @@ with sync_playwright() as p:
     nav_bg = rgb(page.evaluate("() => getComputedStyle(document.querySelector('.navbar.hidden')).backgroundColor"))
     # NOTE: translucent fills must composite over the surface they sit on (nav_bg),
     check('desktop: navbar has no (netid) echo', f'({NETID})' not in d['start'], d['start'].replace('\n', ' '))
-    check('desktop: wordmark radius = 0.5rem box radius', d['logoRadius'] == '8px', d['logoRadius'])
+    check('desktop: wordmark radius = 4px (minor, not the 8px box token)', d['logoRadius'] == '4px', d['logoRadius'])
     r_on, r_off = contrast(rgb(d['onBg'], nav_bg), nav_bg), contrast(rgb(d['offBg'], nav_bg), nav_bg)
     check('desktop: selected tab tint vs navbar >= 1.15:1', r_on >= 1.15, f"{d['onTab']} = {d['onBg']} -> {r_on:.3f}:1")
     check('desktop: unselected tab stays flush with navbar', d['offBg'] in ('rgba(0, 0, 0, 0)', 'transparent'), f"{d['offBg']} -> {r_off:.3f}:1")
@@ -208,7 +208,7 @@ with sync_playwright() as p:
     check('mobile: no version badge in the navbar',
           m['versionBadges'] == 0 and f'v{VERSION}' not in m['navText'] and VERSION not in m['navText'],
           f"badges={m['versionBadges']} text={m['navText']!r}")
-    check('mobile: wordmark radius = 0.5rem box radius', m['logoRadius'] == '8px', m['logoRadius'])
+    check('mobile: wordmark radius = 4px (minor, not the 8px box token)', m['logoRadius'] == '4px', m['logoRadius'])
     check('mobile: caption follows refresh in the DOM and is hidden when fresh',
           m['endOrder'] == ['BUTTON', 'SPAN', 'A'] and m['syncDisplay'] == 'none',
           f"{m['endOrder']} display={m['syncDisplay']}")

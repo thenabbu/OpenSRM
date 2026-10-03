@@ -383,7 +383,7 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
 
 - Icons are **inline SVG**, Heroicons outline style: `fill="none" stroke="currentColor"`, stroke width 1.5–2, `w-4 h-4` (in buttons) or `w-5 h-5`. Never fixed fill colors, never emoji, never an icon font or library (CSP).
 - Avatar: `avatar` → `div.bg-base-300.w-9.rounded-full` holding an `<img>` (blobatar via the local `/avatar/<name>` route; CSP `img-src 'self' data:` allows no remote image hosts).
-- Wordmark (`logo-rect.png`, a hard-cornered 1500×500 bitmap): the navbar copies take `rounded-box` (0.5rem) so the corners don't read as a cut-out against the bar — that radius is the ceiling at `h-8`/`h-6`, not a starting point.
+- Wordmark (`logo-rect.png`, a hard-cornered 1500×500 bitmap): the navbar copies take `rounded-sm` (4px) so the corners don't read as a cut-out against the bar. Measured: 4px on an `h-8` logo is 12.5% of its height — visible, still a corner. `rounded-box` (0.5rem = 8px) was tried first and reads as **over-curled** at `h-8`/`h-6` (25% of the height), so the box token is NOT the logo's radius; keep the wordmark at 4px.
 
 ### 4.11 Timetable (server-rendered, `tt-*` classes)
 
