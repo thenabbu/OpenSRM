@@ -86,7 +86,7 @@ Key rules:
 
 - **Lint** — ruff (`app/` only) + `uv lock --check` on every push and PR
 - **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest`
-- **Deploy** — the self-hosted watcher pulls the new image from GHCR, snapshots the DB, and recreates the container
+- **Deploy** — **manual**, there is no watcher: once CI is green on `main`, `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'` (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
 
 ## Portal rate limits
 
