@@ -40,6 +40,7 @@
 | Hero button (one per screen) | `btn btn-accent` |
 | Standard button | `btn btn-primary hover:bg-base-300 focus-visible:outline-accent` |
 | Selected pill | `bg-accent text-accent-content` |
+| Selected navbar tab | `theme.html` rule `.navbar [role=tab][aria-selected=true]` tint (§4.9) |
 | Neutral notice | `alert alert-soft alert-info` |
 | The one rare highlight | `badge badge-secondary` (pink) |
 | Code, %, time, count, date | add `font-mono` |
@@ -59,11 +60,11 @@ Anatomy of the dashboard:
 ```text
 ┌────────────────────────────────────────────────────┐
 │ navbar   bg-base-200 · border-b border-base-300 · sticky
-│ avatar · name / netid / "Synced 5m ago"   [Refresh] [Log out]
+│ logo | name     [Dashboard][Attendance]…[Personal]  [Refresh] (5m ago) [Log out]
+│                ← role=tab, selected = §4.9 tint     ← caption only once ≥5m old
 ├────────────────────────────────────────────────────┤   page: bg-base-100
-│  Attendance │ Timetable │ Personal Details            ←  max-w-3xl mx-auto px-4 py-5
-│  ┌──────────────────────────────────────────────┐      tabs tabs-border
-│  │ (82%)  Overall attendance                    │   ←  card bg-base-200 border-base-300
+│  ┌──────────────────────────────────────────────┐      max-w-3xl mx-auto px-4 py-5
+│  │ (82%)  Overall attendance                    │   ←  card bg-base-200 border border-base-300
 │  │        Can miss 3 more classes and stay …    │
 │  └──────────────────────────────────────────────┘
 │  Courses                                            ←  text-base font-semibold
@@ -124,7 +125,7 @@ daisyUI's docs and the theme-generator preview put cards on `base-100` over a `b
 | Standard solid button | `btn btn-primary` + hover/focus fixes (§4.2) | |
 | The one hero action | `btn btn-accent` | `btn-primary` |
 | Selected / active pill | `bg-accent text-accent-content` | `bg-primary`, `border-primary` |
-| Active tab | `tab tab-active` inside `tabs tabs-border` (underline is `currentColor`, so white) | `text-primary`, `border-primary` on a tab |
+| Active tab | `.navbar [role=tab][aria-selected=true]` tint in `theme.html` (§4.9) | daisyUI `.btn-active` (see §10.11 — a 5% black fill is a no-op here), `text-primary`, `border-primary` on a tab |
 | Input focus ring | daisyUI default (2px `base-content` outline). **Add nothing.** | `input-primary`, `focus:input-primary`, `focus:ring-primary` |
 | Checked checkbox / radio / toggle | `checkbox-accent`, `radio-accent`, `toggle-accent` | `*-primary` |
 | Link | `link` (inherits color), `link-hover`, or `link-accent` | `link-primary`, `text-primary` |
@@ -359,11 +360,30 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
 
 - **Accordion:** `collapse collapse-arrow bg-base-200 border border-base-300` with `<input type="radio" name="…">` for one-open-at-a-time; title `text-sm font-semibold`, count as a badge on the right.
 - **Tabs:** `tabs tabs-border mb-5` containing `tab` buttons with `role="tab"`; the active one adds `tab-active`.
+- **Navbar tabs (the dashboard's real navigation):** plain `btn btn-ghost btn-sm` buttons in the
+  navbar's `role="tablist"`; `dash.js` moves `aria-selected` on click. The *selected* fill is a rule
+  in `partials/theme.html`, not a class:
+
+  ```css
+  .navbar [role="tab"][aria-selected="true"] {
+    position: relative;
+    background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  }
+  .navbar [role="tab"][aria-selected="true"]::after {
+    content: ""; position: absolute; width: auto;   /* width is load-bearing, see §10.11 */
+    left: 0.5rem; right: 0.5rem; bottom: 2px; height: 2px; background: currentColor;
+  }
+  ```
+
+  It has to be a rule because daisyUI's own active state is a no-op here — see §10.11. Measured:
+  selected vs navbar = **1.25:1** (the same step as `base-300` over `base-200`, §2.3), unselected =
+  **1.00:1**. The mobile dock does not need it: `.dock-active` draws a `currentColor` underline bar.
 
 ### 4.10 Icons and avatar
 
 - Icons are **inline SVG**, Heroicons outline style: `fill="none" stroke="currentColor"`, stroke width 1.5–2, `w-4 h-4` (in buttons) or `w-5 h-5`. Never fixed fill colors, never emoji, never an icon font or library (CSP).
 - Avatar: `avatar` → `div.bg-base-300.w-9.rounded-full` holding an `<img>` (blobatar via the local `/avatar/<name>` route; CSP `img-src 'self' data:` allows no remote image hosts).
+- Wordmark (`logo-rect.png`, a hard-cornered 1500×500 bitmap): the navbar copies take `rounded-sm` (4px) so the corners don't read as a cut-out against the bar. Measured: 4px on an `h-8` logo is 12.5% of its height — visible, still a corner. `rounded-box` (0.5rem = 8px) was tried first and reads as **over-curled** at `h-8`/`h-6` (25% of the height), so the box token is NOT the logo's radius; keep the wordmark at 4px.
 
 ### 4.11 Timetable (server-rendered, `tt-*` classes)
 
@@ -456,7 +476,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 ## 8. Copy
 
-- Plain, direct, second person, sentence case. Say what will happen. One verb per action across the whole flow: **Refresh** → "Refreshing attendance…" → "Synced just now".
+- Plain, direct, second person, sentence case. Say what will happen. One verb per action across the whole flow: **Refresh** → "Refreshing attendance…" → the caption `(5m ago)` beside the button, and nothing at all while the data is younger than 5 minutes.
 - Data lines are actionable, not decorative: "Can miss 3 more classes and stay above 75%", "Attend the next 2 classes in a row to reach 75%". The UI says "miss", never "bunk".
 - Errors name what happened and what to try: "Network error — is the server reachable?". No apologies, no exclamation marks, no emoji, no blame.
 - Empty states: one sentence plus the next step ("Your group has no timetable. Use the editor to build one.").
@@ -492,7 +512,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 
 1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`); `verify76` L47 fails the suite if a pin drifts.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
-3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v12` → `opensrm-v13`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
+3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v13` → `opensrm-v14`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
@@ -500,6 +520,7 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 8. Python changes must pass `ruff` (CI lint).
 9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (cross-origin stylesheets also hide the rules from `cssRules`). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
+11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
 
 ---
 
