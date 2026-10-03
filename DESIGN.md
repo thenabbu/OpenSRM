@@ -471,6 +471,13 @@ Rules specific to this card:
 - **Tag form = `<details>` + `<form method="post" action="/marks/tag">`** — the form itself needs no JS; the only script involved is the outside-click light-dismiss handler in `dash.js` (one `details[open]` guard — and the reason this release bumps the SW cache). The server keys the tag `year|branch|section|course|component` (no semester, no netid): one student's confirmation applies to the whole class and is persisted for the GPA predictor.
 - **Verify with** `tests/test_marks_dut.py` (53 checks at 393×851 + 1280×900: uniform chips, date x-alignment, one accent, contrast, uniform row heights + top-pinned content, tooltip on hover, glance marks/max chips, outside-click dismiss, tag round-trip).
 
+### 4.14 Timetable edit history (audit log)
+
+Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`collapse collapse-arrow bg-base-200 border border-base-300 mt-4`) whose title is `text-sm font-semibold` + a `badge badge-sm` count fed by `/api/timetable/history`. Rows are `py-2 border-b border-base-300 last:border-b-0`, kept terse on purpose: a flex head — name `text-sm font-medium` + mono netid `/60` left, **relative** time `text-xs /60` right (`title=` carries the absolute timestamp) — over change lines `text-xs /60 space-y-0.5` formatted `Mon P3: CS2011 → CS3005` (`+CODE` added, `-CODE` removed; full subject names live in `title=`, never inline). Empty state `text-base-content/60`.
+
+- **XSS rule (audit 2026-09-27 applies here too):** every value in the payload (peer-written subject codes/names, editor name) is student-controlled — `loadHistory()` in `timetable.js` builds it with `textContent`/`createElement` only, **never `innerHTML`**.
+- Server: `_tt_diff()` in `app.py` writes `timetable_edit_log` (migration v9) on POST `/api/timetable`; no-op saves are skipped, last 200 entries per group kept.
+
 ---
 
 ## 5. Layout and responsive

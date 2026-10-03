@@ -304,6 +304,14 @@
   <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
+      <!-- audit feature: who edited the shared timetable, when, what changed -->
+      <details class="collapse collapse-arrow bg-base-200 border border-base-300 mt-4" id="tt-history">
+        <summary class="collapse-title text-sm font-semibold min-h-0">Edit history
+          <span class="badge badge-sm" id="tt-history-count">0</span></summary>
+        <div class="collapse-content text-sm" id="tt-history-list">
+          <p class="text-base-content/60">Loading…</p>
+        </div>
+      </details>
     </div>
     <div id="tt-editor" style="display:none">
       <div class="flex justify-between items-center flex-wrap gap-2 mb-3">

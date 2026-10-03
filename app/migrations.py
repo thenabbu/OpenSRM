@@ -109,8 +109,8 @@ def m008_exam_schedule(conn):
         if "duplicate column name" not in str(e):
             raise
 
-@migration(version=9, description="component_tags (IE-1/IE-2 confirmations, class-scoped)")
-def m009_component_tags(conn):
+@migration(version=10, description="component_tags (IE-1/IE-2 confirmations, class-scoped)")
+def m010_component_tags(conn):
     # key = class_key|course|component — NO netid: one student's confirmation
     # applies to the whole class (year/branch/section, not semester). role
     # 'none' is a confirmed refusal of the derived guess; raw_max is then NULL.
@@ -172,3 +172,14 @@ def m004_marks(conn):
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e):
                 raise
+
+@migration(version=9, description="timetable_edit_log (who edited the shared timetable, when, what changed)")
+def m009_timetable_edit_log(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS timetable_edit_log (
+        id INTEGER PRIMARY KEY,
+        group_id INTEGER NOT NULL REFERENCES timetable_groups(id) ON DELETE CASCADE,
+        editor_netid TEXT NOT NULL,
+        editor_name TEXT DEFAULT '',
+        created_at INTEGER DEFAULT (strftime('%s','now')),
+        changes_json TEXT NOT NULL DEFAULT '[]')""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tt_edit_log_group ON timetable_edit_log(group_id, id)")

@@ -34,6 +34,112 @@
 
         var addBtn = document.getElementById('tt-add-subject-btn');
         if (addBtn) addBtn.addEventListener('click', showAddSubject);
+
+        loadHistory();
+    }
+
+    // ── Edit history (audit log) ──────────────────────────────────
+    // Every value here can be student-controlled (custom subjects, peer
+    // edits) — build DOM with textContent ONLY, never innerHTML.
+    function loadHistory() {
+        var list = document.getElementById('tt-history-list');
+        if (!list) return;
+        fetch('/api/timetable/history', {credentials: 'same-origin'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var entries = (data && data.ok && data.entries) || [];
+                document.getElementById('tt-history-count').textContent = entries.length;
+                list.textContent = '';
+                if (!entries.length) {
+                    var none = document.createElement('p');
+                    none.className = 'text-base-content/60';
+                    none.textContent = 'No edits recorded yet.';
+                    list.appendChild(none);
+                    return;
+                }
+                entries.forEach(function(e) {
+                    var item = document.createElement('div');
+                    item.className = 'py-2 border-b border-base-300 last:border-b-0';
+                    // one compact head: Name netid ····· rel time (title = absolute)
+                    var head = document.createElement('div');
+                    head.className = 'flex justify-between items-baseline gap-2';
+                    var who = document.createElement('span');
+                    who.className = 'text-sm font-medium';
+                    who.textContent = e.name || e.netid;
+                    if (e.name) {
+                        var idEl = document.createElement('span');
+                        idEl.className = 'font-mono text-xs text-base-content/60 ml-1';
+                        idEl.textContent = e.netid;
+                        who.appendChild(idEl);
+                    }
+                    var when = document.createElement('span');
+                    when.className = 'text-xs text-base-content/60 shrink-0';
+                    when.textContent = relTime(e.at);
+                    when.title = new Date(e.at * 1000).toLocaleString();
+                    head.appendChild(who);
+                    head.appendChild(when);
+                    item.appendChild(head);
+                    // changes as terse symbol lines; full subject names in title=
+                    var box = document.createElement('div');
+                    box.className = 'text-xs text-base-content/60 mt-0.5 space-y-0.5';
+                    var chs = e.changes || [];
+                    chs.forEach(function(ch, i) {
+                        var line = document.createElement('div');
+                        line.textContent = chLine(ch);
+                        line.title = chFull(ch);
+                        if (i >= 3) line.className = 'tt-h hidden';  // bulk saves stay terse
+                        box.appendChild(line);
+                    });
+                    if (chs.length > 3) {
+                        var tog = document.createElement('div');
+                        tog.className = 'cursor-pointer';
+                        tog.title = 'show all changes';
+                        var rest = chs.length - 3;
+                        tog.textContent = '+' + rest + ' more';
+                        tog.onclick = function() {
+                            var hid = box.querySelectorAll('.tt-h');
+                            var wasCollapsed = hid[0].classList.contains('hidden');
+                            for (var k = 0; k < hid.length; k++) hid[k].classList.toggle('hidden', !wasCollapsed);
+                            tog.textContent = wasCollapsed ? 'show less' : '+' + rest + ' more';
+                        };
+                        box.appendChild(tog);
+                    }
+                    item.appendChild(box);
+                    list.appendChild(item);
+                });
+            })
+            .catch(function() {
+                list.textContent = '';
+                var p = document.createElement('p');
+                p.className = 'text-base-content/60';
+                p.textContent = 'Could not load edit history.';
+                list.appendChild(p);
+            });
+    }
+
+    var DAY_ABBR = {Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed',
+                    Thursday: 'Thu', Friday: 'Fri'};
+    function chLine(ch) {
+        var where = (DAY_ABBR[ch.day] || ch.day || '') + ' P' + (ch.period || '');
+        var code = function(s) { return s ? (s.code || '?') : ''; };
+        if (ch.action === 'added')   return where + ': +' + code(ch.to);
+        if (ch.action === 'removed') return where + ': -' + code(ch.from);
+        return where + ': ' + code(ch.from) + ' → ' + code(ch.to);
+    }
+    function chFull(ch) {
+        var lab = function(s) { return s ? ((s.code || '') + (s.name ? ' ' + s.name : '')) : 'empty'; };
+        var where = (ch.day || '') + ' P' + (ch.period || '');
+        if (ch.action === 'added')   return where + ' · added ' + lab(ch.to);
+        if (ch.action === 'removed') return where + ' · removed ' + lab(ch.from);
+        return where + ' · changed ' + lab(ch.from) + ' → ' + lab(ch.to);
+    }
+    function relTime(ts) {
+        var s = Math.floor(Date.now() / 1000) - ts;
+        if (s < 60)     return 'just now';
+        if (s < 3600)   return Math.floor(s / 60) + 'm ago';
+        if (s < 86400)  return Math.floor(s / 3600) + 'h ago';
+        if (s < 604800) return Math.floor(s / 86400) + 'd ago';
+        return new Date(ts * 1000).toLocaleDateString([], {day: '2-digit', month: 'short'});
     }
 
     function openEditor() {
