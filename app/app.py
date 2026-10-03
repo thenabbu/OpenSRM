@@ -1556,15 +1556,16 @@ def _marks_view(marks, tags=None):
     return out
 
 def _marks_summary(marks):
-    """Dashboard glance: the 3 lowest subjects by % (risk-first). None when
-    empty. No aggregate/overall number — the brief removed it."""
+    """Dashboard glance: the 3 lowest subjects (risk-first order — the chip
+    shows marks/max, no %, per brief; ordering still surfaces weakest first).
+    None when empty. No aggregate/overall number."""
     if not marks:
         return None
     low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"])
                  if m.get("max_total") else 1)[:3]
     return [{"code": m.get("code", ""),
-             "pct": round((m.get("scored_total", 0) / m["max_total"]) * 100, 1)
-             if m.get("max_total") else 0} for m in low]
+             "scored": _fmt_score(m.get("scored_total", 0)),
+             "max": _fmt_max(m.get("max_total", 0))} for m in low]
 
 def _exams_view(rows):
     """Dashboard card: end-sem rows sorted by real date + countdown.

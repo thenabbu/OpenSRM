@@ -1,7 +1,7 @@
 """Internal-marks tab DUT (server under test: AGENTS.md; default port 18180).
 
 Layers, in order: neutral-colour rules (exactly ONE accent), uniform chips +
-aligned dates, top-pinned cards, WCAG contrast (marks AND dashboard tabs),
+aligned dates, uniform row heights with top-pinned content, WCAG contrast (marks AND dashboard tabs),
 then the tag round-trip (derived -> confirmed IE-2 -> persisted -> reset).
 """
 import json, os, sys
@@ -59,11 +59,9 @@ JS_AUDIT = r"""() => {
       /^\d{2} [A-Z][a-z]{2}$/.test((s.textContent || '').trim()) && s.getBoundingClientRect().width);
     if (dates.length) out.dateGroups[cr.left] = [...new Set(dates.map(d =>
       +(d.getBoundingClientRect().left - cr.left).toFixed(1)))];
-    // top-pinned: card bottom == deepest content bottom + p-4 (16px), never stretched
-    const kids = [...card.querySelectorAll('*')].filter(k => k.getBoundingClientRect().width &&
-      !k.closest('details:not([open])'));   // closed <details> still reports a rect (content-visibility)
-    const deep = Math.max(...kids.map(k => k.getBoundingClientRect().bottom));
-    out.cards.push(+(cr.bottom - deep).toFixed(1));
+    // uniform grid rows + top-pinned content: row geometry per card
+    out.cards.push({t: +cr.top.toFixed(1), b: +cr.bottom.toFixed(1),
+                    gap: +(card.firstElementChild.getBoundingClientRect().top - cr.top).toFixed(1)});
     // row overlap: chip < date < score < summary (and inside the nested IE row)
     card.querySelectorAll('.py-1 > .flex').forEach(row => {
       const parts = [...row.children].map(ch => {
@@ -176,9 +174,30 @@ with sync_playwright() as p:
               a["dateGroups"] and not bad, str(bad or a["dateGroups"]))
         check(tag + "no overlapping elements inside rows", not a["overlaps"],
               str(a["overlaps"][:4]))
-        slack = [s for s in a["cards"] if abs(s - 16) > 1.5]
-        check(tag + "cards pin to content (bottom = content + p-4, no stretch)",
-              a["cards"] and not slack, str(a["cards"]))
+        rows = {}
+        for c in a["cards"]:
+            rows.setdefault(c["t"], []).append(c["b"])
+        ragged = {t: bs for t, bs in rows.items() if len(set(bs)) > 1}
+        check(tag + "same-row cards share one height (uniform)",
+              a["cards"] and not ragged, str(ragged or a["cards"]))
+        gaps = [c["gap"] for c in a["cards"]]
+        check(tag + "content pinned to card top (gap == p-4)",
+              gaps and all(abs(g - 16) <= 1.5 for g in gaps), str(gaps))
+        tips = page.evaluate("""() => [...document.querySelectorAll('#tab-marks summary')].map(s =>
+            ({tip: s.dataset.tip || '', cls: /tooltip/.test(s.className)}))""")
+        check(tag + "every edit button carries a daisyUI tooltip",
+              tips and all(x["tip"] and x["cls"] for x in tips), str(tips[:2]))
+        page.hover("#tab-marks .py-1 summary >> nth=0")
+        page.wait_for_timeout(350)
+        t = page.evaluate("""() => { const s = document.querySelector('#tab-marks .py-1 summary');
+            const b = getComputedStyle(s, '::before'), a = getComputedStyle(s, '::after');
+            return {text: b.content, textOpacity: b.opacity, tailOpacity: a.opacity,
+                    display: getComputedStyle(s).display}; }""")
+        # daisyUI 5.7: text lives in ::before (attr(data-tip)), ::after is only the tail
+        check(tag + "tooltip reveals on hover (before-text + opacity)",
+              "IE-1/IE-2" in t["text"] and float(t["textOpacity"]) > 0.5
+              and float(t["tailOpacity"]) > 0.5, str(t))
+        page.mouse.move(0, 0)
         check(tag + "marks tab contrast: 0 fails (AA 4.5 / 3 large)",
               not a["contrast"], json.dumps(a["contrast"][:4]))
         ie = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .py-1')]
@@ -209,6 +228,16 @@ with sync_playwright() as p:
               not d["overall"] and d["accent"] == 0 and not d["contrast"],
               json.dumps({"overall": d["overall"], "accent": d["accent"],
                           "contrast": d["contrast"][:3]}))
+        g = page.evaluate("""() => {
+          const panels = [...document.querySelectorAll('[role=tabpanel]')].filter(p => p.getBoundingClientRect().width);
+          const hdr = panels.flatMap(p => [...p.querySelectorAll('div')])
+            .find(d => !d.children.length && d.textContent.trim().toLowerCase() === 'internal marks');
+          if (!hdr) return null;
+          const chips = [...hdr.parentElement.querySelectorAll('.badge')].map(b => b.textContent.trim());
+          return {chips: chips, pct: chips.filter(c => /%/.test(c))}; }""")
+        check(tag + "glance chips = marks/max as synced, no %",
+              g and g["chips"] and not g["pct"] and all("/" in c for c in g["chips"]),
+              json.dumps(g))
         # ── tag round-trip (marks tab) ─────────────────────────────────
         page.click('[data-tab="marks"]:visible')
         page.wait_for_timeout(400)

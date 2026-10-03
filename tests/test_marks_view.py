@@ -83,11 +83,11 @@ tags_none = {("21CSS201T", "FT-II"): {"role": "none", "raw_max": None, "scaled_m
 c3 = {c["name"]: c for c in _marks_view(MARKS, tags_none)[0]["components"]}["FT-II"]
 assert c3["ie"] is None and c3["confirmed"] == "none"   # confirmed refusal hides the guess
 
-# ── dashboard glance: 3 lowest, risk-first, no aggregate ─────────────
+# ── dashboard glance: 3 lowest (risk-first), marks/max chips, no % ───
 s = _marks_summary(MARKS)
 assert [x["code"] for x in s] == ["21MAB206T", "21CSC203P", "21CSS201T"], s
-assert [x["pct"] for x in s] == [67.0, 72.0, 81.0]
-assert isinstance(s, list) and "scored" not in s[0] and "max" not in s[0]  # no aggregate
+assert [(x["scored"], x["max"]) for x in s] == [("13.40", "20"), ("7.20", "10"), ("16.20", "20")], s
+assert all("pct" not in x for x in s)                      # % dropped from the glance
 assert _marks_summary([]) is None
 
 # ── class key: year|branch|section (no semester) + per-student fallback ─
