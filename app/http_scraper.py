@@ -369,18 +369,30 @@ def _exam_post(opener, base, xheaders, month, year):
 
 def _merge_exam_results(results):
     """[(month, year), html] | None entries -> sorted rows, or None when the
-    probe is unreliable (every transport failed / a response looks like a
-    silent-rejection page) — None means 'preserve stored value' upstream."""
+    probe is unreliable — None means 'preserve stored value' upstream.
+
+    Unreliable = every transport failed, a silent-rejection page (no empty
+    marker, no table), OR a subject table with zero dated rows: the portal
+    blanked Date/Session for a window it still lists (seen Oct 4 2026 — an
+    empty result there wiped stored schedules; it is not proof the stored
+    rows are wrong)."""
     from app.app import parse_exam_schedule  # deferred: avoid circularity
     ok = [r for r in results if r is not None]
     if not ok:
         return None
-    rows = []
+    rows, blanked = [], False
     for _wy, html in ok:
-        # silent-rejection guard: real answers are the table or the empty marker
-        if "No subject found" not in html and "<td" not in html:
-            return None
-        rows.extend(parse_exam_schedule(html))
+        if "No subject found" in html:
+            continue  # clean empty window
+        wrows = parse_exam_schedule(html)
+        if wrows:
+            rows.extend(wrows)
+        else:
+            blanked = True
+    if not rows and blanked:
+        log.debug("exam probe: subject table(s) with no dated rows — "
+                  "unreliable, preserving stored value")
+        return None
     seen, out = set(), []
     for r in rows:  # a window can repeat across candidate overlap
         k = (r["code"], r["date"])
