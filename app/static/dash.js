@@ -178,3 +178,13 @@ window.addEventListener('online', function() {
 if ("serviceWorker" in navigator && location.pathname !== "/login") {
   navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
 }
+
+// ── Outside-click dismiss for popover <details> (marks tag panel) ────
+// Tap-away is the expected dismiss gesture; without it the panel covers the
+// next card until Save or a re-tap of the pencil — Save must never be the
+// only way out of a panel the user opened by accident. Clicks inside the
+// details (summary included) are ignored, so the pencil toggle still works.
+document.addEventListener('click', function(e) {
+  var open = document.querySelector('details[open]');
+  if (open && !open.contains(e.target)) open.open = false;
+});

@@ -53,8 +53,9 @@ All plain scripts (no pytest), from the repo root with the repo venv:
 .venv/bin/python tests/verify76.py          # 71/71 static checks (incl. doc claims)
 .venv/bin/python tests/test_exams.py        # 24/24 end-sem probe parser
 .venv/bin/python tests/test_exams_view.py   # exam card view model
+.venv/bin/python tests/test_marks_view.py   # internal-marks view model (fmt, IE derivation)
 # Playwright DUTs need a dev server + PLAYWRIGHT_BROWSERS_PATH set:
-#   tests/test_sw.py (7/7) · tests/test_xss.py (9/9) — see AGENTS.md for the exact commands
+#   tests/test_sw.py (7/7) · tests/test_xss.py (9/9) · tests/test_marks_dut.py (53/53) — see AGENTS.md for the exact commands
 # Login UX guide suites: guide_static.py / guide_check.py / guide_server.py
 ```
 

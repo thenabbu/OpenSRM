@@ -42,6 +42,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 16/16 (timetable edit log + break-divider fix)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
+.venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -51,7 +52,12 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-xss
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18099 app.app:app &
-.venv/bin/python tests/test_xss.py          # 9/9  (XSS payload renders inert; positive control)
+.venv/bin/python tests/test_xss.py           # 9/9  (XSS payload renders inert; positive control)
+kill %1
+
+export DATA_DIR=/tmp/osrm-marks
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
+.venv/bin/python tests/test_marks_dut.py     # 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test

@@ -179,17 +179,12 @@
             {% endif %}
           </div>
           {% if marks_summary %}
-          <!-- Internal marks glance -->
+          <!-- Internal marks glance: per-subject marks/max as last synced (no %, no overall) -->
           <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
             <div class="text-[11px] uppercase tracking-wider text-base-content/50 mb-2">Internal marks</div>
-            <div class="flex items-baseline gap-2 flex-wrap">
-              <span class="radial-progress text-{{ 'success' if marks_summary.pct >= 75 else 'warning' if marks_summary.pct >= 65 else 'error' }} font-bold text-sm"
-                    style="--value:{{ marks_summary.pct }}; --size:2.8rem; --thickness:3px;" role="progressbar" aria-label="Internal marks">{{ marks_summary.pct }}%</span>
-              <span class="text-sm text-base-content/70">{{ marks_summary.scored }} / {{ marks_summary.max }} across subjects</span>
-            </div>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              {% for s in marks_summary.subjects %}
-              <span class="badge badge-soft badge-sm font-mono">{{ s.code }} {{ s.pct }}%</span>
+            <div class="flex flex-wrap gap-1.5">
+              {% for s in marks_summary %}
+              <span class="badge badge-soft badge-sm font-mono tabular-nums">{{ s.code }} {{ s.scored }}/{{ s.max }}</span>
               {% endfor %}
             </div>
           </div>
@@ -364,38 +359,63 @@
   </div>
   <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel style="display:none">
     {% if marks %}
-    {% set ms = marks | map(attribute='scored_total') | sum %}
-    {% set mm = marks | map(attribute='max_total') | sum %}
-    {% set mp = ((ms / mm) * 100) | round(1) if mm else 0 %}
-    <div class="flex items-center gap-4 mb-5 p-4 bg-base-200 border border-base-300 rounded-box">
-      <div class="radial-progress text-{{ 'success' if mp >= 75 else 'warning' if mp >= 65 else 'error' }} font-bold text-sm"
-           style="--value:{{ mp }}; --size:4rem; --thickness:4px;" role="progressbar" aria-label="Overall internal marks">{{ mp }}%</div>
-      <div class="min-w-0">
-        <h2 class="text-sm font-semibold text-base-content">Overall internal marks</h2>
-        <p class="text-xs text-base-content/50">{{ '%.2f' % ms }} / {{ '%.2f' % mm }} across {{ marks | length }} subject{{ 's' if marks | length != 1 }}</p>
-      </div>
-    </div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       {% for s in marks %}
       <div class="bg-base-200 border border-base-300 rounded-box p-4">
-        <div class="flex items-baseline gap-2 mb-0.5">
-          <span class="font-mono font-bold text-{{ 'success' if s.pct >= 75 else 'warning' if s.pct >= 65 else 'error' }} text-lg">{{ s.pct }}%</span>
-          <span class="font-mono text-xs text-base-content/50">{{ '%.2f' % s.scored_total }}/{{ '%.2f' % s.max_total }}</span>
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="font-mono text-xs text-base-content/60">{{ s.code }}</span>
+          <!-- neutral number; exactly one outlier on the page may take the accent (§2.7) -->
+          <span class="font-mono font-bold text-lg tabular-nums{% if s.outlier %} text-secondary{% endif %}">{{ s.pct }}%</span>
         </div>
-        <h3 class="text-sm font-semibold text-base-content/60 capitalize mb-0.5">{{ s.title or s.code }}</h3>
-        <span class="font-mono text-xs text-base-content/40 mb-2 block">{{ s.code }}</span>
+        <h3 class="text-sm font-semibold leading-snug">{{ s.title or s.code }}</h3>
+        <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">{{ s.scored_disp }}/{{ s.max_disp }}</div>
         <div class="border-t border-base-300 pt-2">
           {% if s.components %}
           {% for cpt in s.components %}
-          <div class="flex items-center gap-2 py-1 flex-wrap">
-            <span class="badge badge-sm badge-outline font-mono">{{ cpt.name }}</span>
-            {% if cpt.entered %}<span class="text-[10px] font-mono text-base-content/40">{{ cpt.entered }}</span>{% endif %}
-            <span class="font-mono text-xs text-base-content/60 ml-auto">{{ '%.2f' % cpt.scored }}/{{ '%.2f' % cpt.max }}</span>
-            <span class="font-mono text-xs font-bold text-{{ 'success' if cpt.pct >= 75 else 'warning' if cpt.pct >= 65 else 'error' }}">{{ cpt.pct }}%</span>
+          <div class="py-1">
+            <div class="flex items-center gap-2">
+              <!-- chip: solid theme fill, no border, fixed w-14 so FT-II never shifts the date (§4.13) -->
+              <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">{{ cpt.name }}</span>
+              {% if cpt.date_disp %}<span class="text-xs font-mono text-base-content/50">{{ cpt.date_disp }}</span>{% endif %}
+              <span class="font-mono text-xs tabular-nums ml-auto">{{ cpt.score_disp }}/{{ cpt.max_disp }}</span>
+              <details class="relative shrink-0">
+                <summary class="tooltip tooltip-left flex items-center justify-center w-6 h-6 rounded-full cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden text-base-content/50 hover:text-base-content/70"
+                         data-tip="Mark {{ cpt.name }} as the IE-1/IE-2 exam">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.862 4.487z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-3.75-3.75" />
+                  </svg>
+                  <span class="sr-only">Tag {{ cpt.name }}</span>
+                </summary>
+                <form method="post" action="/marks/tag"
+                      class="absolute end-0 top-full mt-1 z-10 w-60 bg-base-200 border border-base-300 rounded-box p-3 flex flex-col gap-2">
+                  <input type="hidden" name="code" value="{{ s.code }}">
+                  <input type="hidden" name="component" value="{{ cpt.name }}">
+                  <p class="text-xs text-base-content/60">Derived {{ cpt.derived or 'none' }}{% if cpt.confirmed %} · confirmed {{ 'neither' if cpt.confirmed == 'none' else cpt.confirmed }}{% else %} · not confirmed yet{% endif %}</p>
+                  <fieldset class="fieldset p-0">
+                    <legend class="fieldset-legend text-xs">Role</legend>
+                    <select name="role" class="select select-sm w-full">
+                      <option value="IE-1"{% if (cpt.confirmed or cpt.derived) == 'IE-1' %} selected{% endif %}>IE-1</option>
+                      <option value="IE-2"{% if (cpt.confirmed or cpt.derived) == 'IE-2' %} selected{% endif %}>IE-2</option>
+                      <option value="none"{% if (cpt.confirmed or cpt.derived) not in ('IE-1', 'IE-2') %} selected{% endif %}>Neither</option>
+                    </select>
+                  </fieldset>
+                  <button class="btn btn-sm btn-primary hover:bg-base-300 focus-visible:outline-accent w-full">Save</button>
+                </form>
+              </details>
+            </div>
+            {% if cpt.ie %}
+            <!-- nested IE row: same chip, marks converted back to the paper total (/50, /60) -->
+            <div class="flex items-center gap-2 ps-6 mt-0.5">
+              <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">{{ cpt.ie.role }}</span>
+              <span class="text-xs text-base-content/50">{{ 'confirmed' if cpt.ie.confirmed else 'derived' }}</span>
+              <span class="font-mono text-xs tabular-nums ml-auto">{{ cpt.ie.score_disp }}/{{ cpt.ie.max_disp }}</span>
+            </div>
+            {% endif %}
           </div>
           {% endfor %}
           {% else %}
-          <p class="text-xs text-base-content/40 italic">No assessment data</p>
+          <p class="text-xs text-base-content/50 italic">No assessment data</p>
           {% endif %}
         </div>
       </div>
@@ -403,7 +423,6 @@
     </div>
     {% else %}
     <div class="flex flex-col items-center justify-center py-12 text-center">
-      <div class="text-4xl mb-3 opacity-30">📊</div>
       <h3 class="text-base font-semibold text-base-content/60">No internal marks published yet</h3>
       <p class="text-sm text-base-content/50 mt-1 max-w-sm">They appear here once your faculty publishes FT/CT marks on the portal.</p>
     </div>

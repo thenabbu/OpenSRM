@@ -182,7 +182,7 @@ Rules:
 
 ### 2.7 Secondary (pink) and info (blue)
 
-- **Pink `secondary` is not used anywhere in the shipped UI.** Treat it as the single accent-of-attention: at most one element per screen (a "New" badge, a feature dot, one chart series). Never for status, links, buttons, or container borders/backgrounds. When unsure, leave it out.
+- **Pink `secondary` is used exactly once in the shipped UI: the single outlier percentage on the Marks tab (§4.13).** Treat it as the single accent-of-attention: at most one element per screen (a "New" badge, a feature dot, one chart series). Never for status, links, buttons, or container borders/backgrounds. When unsure, leave it out.
 - **Blue `info`** is for neutral notices only (`alert-info`, `alert-soft alert-info`, tooltips). It is not a link color and not an accent.
 
 ### 2.8 Contrast facts to design around
@@ -427,7 +427,51 @@ Meaning map: current class = `success` border + 8% tint + "Now" badge · next/so
 - **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
 - **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
 
-### 4.13 Timetable edit history (audit log)
+### 4.13 Internal marks card (Marks tab)
+
+`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.20/20` — maxima whole, scores 2 decimals), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns the **3 lowest** subjects for the dashboard glance as `code scored/max` chips (e.g. `21MAB206T 13.40/20` — the values as last synced; **no `%`** on the glance, ordering still risk-first) — there is **no aggregate/overall number anywhere** (brief).
+
+```jinja
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">  <!-- default stretch: side-by-side cards share one height; content stays top-pinned (block flow) -->
+  <div class="bg-base-200 border border-base-300 rounded-box p-4">
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="font-mono text-xs text-base-content/60">21CSS201T</span>
+      <span class="font-mono font-bold text-lg tabular-nums">81.0%</span>  <!-- + text-secondary once, if outlier -->
+    </div>
+    <h3 class="text-sm font-semibold leading-snug">Computer Organization And Architecture</h3>
+    <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">16.20/20</div>
+    <div class="border-t border-base-300 pt-2">
+      <div class="py-1">
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">FT-II</span>
+          <span class="text-xs font-mono text-base-content/50">09 Sep</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">11.70/15</span>
+          <details class="relative shrink-0"><summary>{/* pencil, 24px target */}</summary>
+            <form method="post" action="/marks/tag" class="absolute end-0 top-full mt-1 z-10 w-60 bg-base-200 border border-base-300 rounded-box p-3 flex flex-col gap-2">…</form>
+          </details>
+        </div>
+        <div class="flex items-center gap-2 ps-6 mt-0.5">   <!-- nested IE row: 24px indent -->
+          <span class="…chip…">IE-1</span>
+          <span class="text-xs text-base-content/50">derived</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">39.00/50</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+Rules specific to this card:
+
+- **Numbers are neutral.** No status hue on any number — at most ONE `text-secondary`, on the unique lowest subject and only below the 75 target (§2.7). Green/amber/red stay attendance-only (§2.6).
+- **No overall %, no per-component %.** Per-subject `%` + `scored/max` only. Maxima print whole (`/15`, never `/15.00`); scores keep 2 decimals; every figure is `font-mono tabular-nums`. Subject names are title-cased in Python (CSS `capitalize` cannot downcase ALL-CAPS portal data).
+- **The component chip is a hand-rolled span, not a `.badge`:** daisyUI badges cannot lose their 1px border (§10.9) and this chip must be solid-fill, borderless. Fixed `w-14` (56px = the widest name, `FML-I`) so `FT-II` can never shift the date column. Fill `bg-base-300`, label `text-base-content/70`.
+- **Dates** are `04 Sep`, muted `/50`, `text-xs` (12px floor).
+- **IE rows** nest under the component they derive from (`ps-6` indent), labelled `derived` or `confirmed`, with marks converted to the paper total (IE-1 → `/50`, IE-2 → `/60`). The portal never labels IEs; `_derive_ie()` guesses `/15` (theory) or `/10` (practical code), and a stored tag always wins.
+- **Tag form = `<details>` + `<form method="post" action="/marks/tag">`** — the form itself needs no JS; the only script involved is the outside-click light-dismiss handler in `dash.js` (one `details[open]` guard — and the reason this release bumps the SW cache). The server keys the tag `year|branch|section|course|component` (no semester, no netid): one student's confirmation applies to the whole class and is persisted for the GPA predictor.
+- **Verify with** `tests/test_marks_dut.py` (53 checks at 393×851 + 1280×900: uniform chips, date x-alignment, one accent, contrast, uniform row heights + top-pinned content, tooltip on hover, glance marks/max chips, outside-click dismiss, tag round-trip).
+
+### 4.14 Timetable edit history (audit log)
 
 Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`collapse collapse-arrow bg-base-200 border border-base-300 mt-4`) whose title is `text-sm font-semibold` + a `badge badge-sm` count fed by `/api/timetable/history`. Rows are `py-2 border-b border-base-300 last:border-b-0`, kept terse on purpose: a flex head — name `text-sm font-medium` + mono netid `/60` left, **relative** time `text-xs /60` right (`title=` carries the absolute timestamp) — over change lines `text-xs /60 space-y-0.5` formatted `Mon P3: CS2011 → CS3005` (`+CODE` added, `-CODE` removed; full subject names live in `title=`, never inline). Empty state `text-base-content/60`.
 
@@ -528,6 +572,7 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (cross-origin stylesheets also hide the rules from `cssRules`). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
 11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
+12. **A closed `<details>` still reports a layout rect for its hidden children** (Chrome lays them out via `content-visibility`), so a geometry audit that measures "card height vs deepest descendant" counts the hidden tag form (§4.13) and reports phantom negative slack. Filter measurement sweeps with `!el.closest('details:not([open])')`.
 
 ---
 
