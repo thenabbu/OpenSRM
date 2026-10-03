@@ -191,21 +191,41 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     img_headers = _hdrs({**xheaders, "X-Domain-Proof": proof,
                          "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
                         referer=LOGIN_PAGE)
-    img_bytes = None
+    img_bytes = b""
     for _img_try in range(2):  # worker egress can be slow on cold start
         try:
             _u, img_bytes = _req(opener, img_url, img_headers, timeout=40)
+            if not img_bytes:
+                # prod 2026-09-30 07:43: SCaptchaServlet answered 200 with 0B,
+                # which used to reach ddddocr as "cannot identify image file"
+                # and crash the whole http pipeline into the Playwright fallback.
+                raise HttpScraperError("captcha image empty (200, 0 bytes)")
             break
         except HttpScraperError as e:
             log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
             if _img_try == 1:
                 raise
-    ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
+    try:
+        ocr = solve_captcha_b64(base64.b64encode(img_bytes).decode())
+    except Exception as e:  # ddddocr raises ImageProcessError on a non-image body
+        raise HttpScraperError(f"captcha OCR rejected the image: {e}") from e
     if on_step: on_step("Reading captcha…", 30)
     log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
               len(img_bytes), ocr)
     return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
             "rdelim": rdelim, "ocr": ocr}
+
+
+def _portal_alert(rhtml):
+    """The portal's own rejection message, rendered as
+    `<h6 class="alert-heading">Alert</h6> … </div>` in the response.
+    Logged for diagnosis ONLY — clients get fixed generic strings
+    (Login Flow UX Guide §5: portal text is never relayed, and no
+    account-existence wording may leak)."""
+    m = re.search(r'alert-heading">Alert</h6>(.*?)</div>', rhtml, re.S)
+    if not m:
+        return ""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1))).strip()
 
 
 def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=None, attempt=1):
@@ -232,15 +252,30 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     if ok:
         return "ok", None
     low = rhtml.lower()
-    if "invalid credentials" in low or "invalid username" in low or "invalid password" in low:
+    alert = _portal_alert(rhtml)
+    # Classify on the portal's OWN alert text, captured live 2026-09-30:
+    #   bad password -> "Invalid login credentials The user ID or password …
+    #                   You have N out of 3 login attempts remaining."
+    #   bad captcha  -> "Invalid captcha."
+    # Both come back inside the same re-rendered login page, whose markup
+    # already contains 'captcha' (x17) and 'invalid' (Bootstrap
+    # .invalid-feedback) — so the old loose "captcha AND invalid" match fired
+    # on EVERY rejection, reported a wrong password as "captcha unreadable"
+    # and retried it 3x, burning the portal's own 3-attempts-per-NetID
+    # lockout. Exact alert phrases only; anything else is a silent rejection.
+    if ("invalid login credentials" in low or "invalid credentials" in low
+            or "invalid username" in low or "invalid password" in low):
+        log.warning("login attempt=%d reject=credentials portal_alert=%r", attempt, alert)
         return "fail", "invalid credentials — check your NetID/password"
-    if "invalid captcha" in low or "captcha" in low and "invalid" in low:
-        log.info("login attempt=%d invalid_captcha ocr=%s", attempt, ctx["ocr"])
+    if "invalid captcha" in low:
+        log.info("login attempt=%d invalid_captcha ocr=%s portal_alert=%r",
+                 attempt, ctx["ocr"], alert)
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", "login failed after 3 attempts — captcha unreadable"
     # Silent rejection: login page again, no error text → portal rate-limiting
-    log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text)", attempt)
+    log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text) "
+                "portal_alert=%r bytes=%d", attempt, alert, len(rhtml))
     helpers["portal_fail_once"]()
     return "fail", ("SRM portal rejected the login without an error (likely "
                     "rate-limiting). Try again in a few minutes.")

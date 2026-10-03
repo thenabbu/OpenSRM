@@ -14,6 +14,29 @@ html[data-theme="openSRM"] {
   --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
   color-scheme: dark;
 }
+/* Selected navbar tab — two cues on purpose. The tint is the subtle background
+   the bar needs; the 2px currentColor bar is the non-color state signal
+   (WCAG 1.4.1 — same bar the mobile dock's .dock-active draws). daisyUI's own
+   .btn-active fills base-200 with 5% black = #090909, byte-identical to this
+   bar, so it could never show (DESIGN §10.11). Tint = 1.25:1 vs the navbar
+   (the base-300 over base-200 step, §2.3); bar = 19.9:1. */
+.navbar [role="tab"][aria-selected="true"] {
+  position: relative;
+  background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+.navbar [role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  width: auto;          /* daisyUI .dock-active:after sets width:2.5rem and dash.js
+                           toggles that class on every [data-tab] — without this the
+                           bar renders 40px (left 8 / right 41) instead of the
+                           left/right-derived width. Measured: 73px in, 40px leaked. */
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 2px;
+  height: 2px;
+  background: currentColor;
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css" />
