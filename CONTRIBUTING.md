@@ -91,7 +91,7 @@ Key rules:
 ## Portal rate limits
 
 During testing, be aware:
-- Per netid: 3 scrapes per 10 minutes
+- Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a `Sync in progress` / budget / cooldown rejection is free)
 - Per IP: 10 login attempts per hour
 - Aggregate server→portal budget: 30 requests per 10 minutes
 
