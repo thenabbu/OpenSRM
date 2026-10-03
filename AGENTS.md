@@ -39,8 +39,9 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 24/24 (end-sem probe parser + candidates)
-.venv/bin/python tests/test_exams_view.py   # dashboard card view model (stamps, labels)
-.venv/bin/python tests/test_marks_view.py   # marks view model (fmt, IE derivation/conversion, class key)
+.venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
+.venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -56,6 +57,11 @@ kill %1
 export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
 .venv/bin/python tests/test_marks_dut.py     # 45/45 marks tab (colours, chips, contrast, dismiss, tag round-trip)
+kill %1
+
+export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
+.venv/bin/python tests/test_navbar.py       # 16/16 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide
@@ -80,7 +86,9 @@ Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the u
 ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
-# POST /api/login/progress {"netid":"x"} → 200, GET → 405.
+# POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
+# ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
+#  smoke recipe used "x" and read as a failure until this line was fixed.)
 ```
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
@@ -89,7 +97,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the literal string).
 - No portal credentials hardcoded; tests mint session cookies, never log in.
 - Trust CF headers only with `cf-ray`; HSTS is cf-ray-gated on purpose (plain-HTTP dev).
-- Rate limits: 3 syncs/10min/netid · 10/hour IP login · aggregate portal budget 30/10min · preflight 30s/netid · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
+- Rate limits: 3 syncs/10min/netid (counted only when the sync actually runs — busy/cooldown/budget rejections are free) · 10/hour IP login · aggregate portal budget 30/10min · preflight 30s/netid · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
 
 ## Gotchas (bitten at least once)
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
@@ -99,3 +107,4 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
+- The portal login page markup itself contains `captcha` (x17) and `invalid` (Bootstrap `.invalid-feedback`) — never classify a rejection on those tokens or EVERY failure reads as "invalid captcha" (this hid a wrong password behind 3 captcha retries and burned the portal's own 3-attempts-per-NetID lockout). Classify on the portal's `<h6 class="alert-heading">Alert</h6>` text; `tests/test_login_reject.py` holds the verbatim strings.

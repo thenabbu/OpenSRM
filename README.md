@@ -14,7 +14,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 ## What it does
 
-- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift)
+- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift); rejections are classified on the portal's own alert text, so a wrong password says "invalid credentials" on the first attempt instead of burning 3 captcha retries (and the portal's 3-attempts-per-NetID lockout), and every sync lockout names its real remaining time
 - **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator ("can miss N more"); courses ordered by risk (lowest % first); overall shown as a compact strip
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), neutral numbers with a single muted outlier accent, IE-1/IE-2 roles derived from component maxima and confirmable per class (persisted for GPA prediction); glance widget on the dashboard
 - **End-sem exams** — provisional exam schedule *before* the portal announces it: while you're logged in, the sync probes `ScribeInner.jsp` (`iden=1` + any month/year — the portal doesn't validate against its own dropdown) for upcoming exam windows; stamped-date dashboard card (day + weekday + countdown, `Provisional` pill); card hides itself if no session is seeded or the portal closes the gap
@@ -109,7 +109,7 @@ flowchart TD
 
 ## How it works
 
-1. **Preflight** — the login page fires `POST /api/login/preflight` on password focus: the server fetches `youLogin.jsp` (nonce, honeypot, captcha field), fetches the captcha image with an `X-Domain-Proof` header, solves it via ddddocr, and keeps it warm for 180 s — all while the user is still typing
+1. **Preflight** — the login page fires `POST /api/login/preflight` on password focus: the server fetches `youLogin.jsp` (nonce, honeypot, captcha field), fetches the captcha image with an `X-Domain-Proof` header, solves it via ddddocr, and keeps it warm for 150 s — all while the user is still typing
 2. **Login** — `http_scraper` POSTs `LoginServlet` with the portal's anti-bot tokens (`dtoken`, `cptoken`, telemetry payload), retrying the captcha up to 3 times; progress steps (5% → 92%) are published to an in-memory tracker that the login screen polls every 600 ms
 3. **Hot data** — attendance (`funSetFormId(9)`) and internal marks (`funSetFormId(13)`, plus per-subject component drilldown) fetched on every sync and persisted
 4. **Cold data** — profile/personal details/subject lists (`funSetFormId(1), 17, 7`) re-fetched only when older than 24h; timetable rendered from SQLite
@@ -208,7 +208,7 @@ flowchart LR
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Port | 8083 | Web interface port (compose maps loopback + cloudflared gateway → container 8080) |
-| Rate limit (netid) | 3 per 10 min | Scrapes per account |
+| Rate limit (netid) | 3 per 10 min | Scrapes per account — counted only once the sync actually runs (a busy/cooldown/budget rejection costs nothing) |
 | Rate limit (IP) | 10 per hour | Login attempts per IP |
 | Portal budget | 30 per 10 min | Aggregate server→portal requests |
 | Portal cooldown | 5 → 30 min | After 3 consecutive portal failures: 5 min, doubling, capped at 30 |

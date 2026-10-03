@@ -7,22 +7,25 @@ function showError(msg) {
   setTimeout(function() { t.classList.add('hidden'); }, 5000);
 }
 
-// ── Sync lines (navbar + dashboard card) ──────────────────────────
+// ── Sync lines (navbar): relative age, caption to the right of the sync
+//    button. Fresh (<5min) reads as nothing — the button itself is the status. ──
 function renderSyncLines() {
   document.querySelectorAll('.sync-line').forEach(function(el) {
     var ts = parseInt(el.dataset.ts || '0', 10);
-    if (!ts) { el.textContent = 'Never synced'; return; }
-    var diff = Math.floor(Date.now() / 1000) - ts;
+    var diff = ts ? Math.floor(Date.now() / 1000) - ts : 0;
     var text;
-    if (diff < 60) text = 'just now';
-    else if (diff < 3600) text = Math.floor(diff / 60) + 'm ago';
-    else if (diff < 86400) text = Math.floor(diff / 3600) + 'h ago';
-    else text = Math.floor(diff / 86400) + 'd ago';
-    el.textContent = 'Synced ' + text;
+    if (!ts) text = 'Never synced';
+    else if (diff < 300) text = '';
+    else if (diff < 3600) text = '(' + Math.floor(diff / 60) + 'm ago)';
+    else if (diff < 86400) text = '(' + Math.floor(diff / 3600) + 'h ago)';
+    else text = '(' + Math.floor(diff / 86400) + 'd ago)';
+    el.textContent = text;
+    el.classList.toggle('hidden', !text);   // empty caption drops out of the flex gap
     el.title = el.dataset.full;
   });
 }
 renderSyncLines();
+setInterval(renderSyncLines, 60000);   // "(15m ago)" must keep ageing, and reappear once fresh
 
 // ── Refresh (all data-refresh buttons) ────────────────────────────
 function ref(quiet) {
@@ -30,7 +33,7 @@ function ref(quiet) {
   var icons = document.querySelectorAll('.refresh-icon');
   btns.forEach(function(b) { b.disabled = true; });
   icons.forEach(function(i) { i.classList.add('animate-spin'); });
-  document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; });
+  document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); });
   if (!quiet) document.getElementById('overlay').showModal();
   fetch('/api/refresh', {method: 'POST'})
     .then(function (r) { return r.json(); })

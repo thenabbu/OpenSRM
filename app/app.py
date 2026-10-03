@@ -326,15 +326,29 @@ def _check_rate(netid):
         _login_attempts[netid].append(now)
         return True
 
+def _retry_text(oldest, window):
+    """Guide §5 core: honest countdown from a window's oldest entry, so the
+    promise can't drift from what the matching checker will actually allow."""
+    left = max(1, int(window - (time.time() - oldest)))
+    return f"{left} seconds" if left < 90 else f"{(left + 59) // 60} minutes"
+
+
 def _ip_retry_text(ip):
     """Guide §5: an honest lockout message names the remaining time instead of
     "try again later". Reads the SAME window _check_ip_rate prunes against, so
     the countdown can't drift from the actual limit."""
-    now = time.time()
     with _rate_lock:
-        oldest = min(_ip_attempts.get(ip) or [now])
-    left = max(1, int(3600 - (now - oldest)))
-    return f"{left} seconds" if left < 90 else f"{(left + 59) // 60} minutes"
+        oldest = min(_ip_attempts.get(ip) or [time.time()])
+    return _retry_text(oldest, 3600)
+
+
+def _netid_retry_text(netid):
+    """Per-netid sync cap countdown. The old message promised a flat
+    "10 minutes" while the sliding window could have <2 minutes left — users
+    were told to wait five times longer than the actual lockout."""
+    with _rate_lock:
+        oldest = min(_login_attempts.get(netid) or [time.time()])
+    return _retry_text(oldest, 600)
 
 
 def _check_ip_rate(ip):
@@ -737,9 +751,11 @@ async def _do_login(page, ctx, netid, password):
     for _ca in range(MAX_CAPTCHA_RETRIES):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
+            log.warning("playwright login netid=%s abort=captcha_image_empty (portal served no image)", netid)
             return False, "captcha image failed to load — portal may be slow"
         captcha = solve_captcha_b64(b64)
         if not captcha:
+            log.warning("playwright login netid=%s abort=ocr_empty", netid)
             return False, "captcha OCR returned empty"
         await page.click('input[name="captcha"]')
         await page.type('input[name="captcha"]', captcha, delay=10)
@@ -755,9 +771,18 @@ async def _do_login(page, ctx, netid, password):
                 err_text = await page.evaluate("() => (document.body.innerText || '')")
                 err_lower = err_text.lower()
                 current_url = page.url
-                if "invalid credentials" in err_lower:
+                if ("invalid credentials" in err_lower
+                        or "invalid login credentials" in err_lower):
                     # Wrong password never becomes right by re-reading the captcha.
                     # Don't retry, don't count toward global portal cooldown.
+                    # Portal alert verbatim is "Invalid login credentials …" —
+                    # the word 'login' sits in the middle, so the old exact
+                    # substring missed it and the fallback path retried a wrong
+                    # password as if the captcha were unreadable.
+                    log.warning("playwright login attempt %d/%d reject=credentials "
+                                "portal_alert=%r", _ca + 1, MAX_CAPTCHA_RETRIES,
+                                next((ln.strip()[:160] for ln in err_text.splitlines()
+                                      if "invalid" in ln.lower()), ""))
                     return False, "invalid credentials — check your NetID/password"
                 elif "captcha expired" in err_lower:
                     last_err = "captcha expired"
@@ -996,8 +1021,12 @@ async def _fetch_rich_optimized(netid, password, cold=True):
 def fetch_attendance(netid, password):
     global _request_fail_counted
     loop = future = None  # except block references both; may not be reached
-    if not _check_rate(netid):
-        return {"ok": False, "error": "Too many sync attempts for this account. Try again in 10 minutes."}
+    # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
+    # it, so a busy/cooldown/budget rejection still consumed one of the
+    # account's 3 syncs per 10 minutes while reaching the portal zero times —
+    # three "Sync in progress" clicks locked an account that never synced out
+    # for 10 minutes (prod 2026-09-30 16:45–16:53). Only count a sync once we
+    # know it can actually run.
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
         return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
@@ -1015,6 +1044,8 @@ def fetch_attendance(netid, password):
         if cooldown > 0:
             return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
                                            f"Try again in {int(cooldown / 60) + 1} minutes.")}
+        if not _check_rate(netid):
+            return {"ok": False, "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}
         # ── New pipeline: pure-HTTP first ─────────────────────────────
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
@@ -1712,6 +1743,11 @@ def api_refresh():
         return {"ok": False, "error": "stored credentials unreadable \u2014 log in again"}
     res = fetch_attendance(netid, password)
     if not res["ok"]:
+        # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
+        # only "status=503" with no reason anywhere, so the failure class could
+        # not be diagnosed after the fact. Same KV line as /api/login.
+        log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
+                    error=res["error"][:80])
         # audit F4: match /api/login's status-code discipline
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code

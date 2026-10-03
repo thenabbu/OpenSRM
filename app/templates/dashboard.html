@@ -25,10 +25,9 @@
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 hidden lg:flex px-4"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start items-center gap-2 min-w-0">
-    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0" width="150" height="40">
+    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
     <span class="text-base-content/30 mx-1">|</span>
     <span class="text-sm truncate">{{ student_name or netid }}</span>
-    <span class="text-sm text-base-content/50 font-mono ml-1">({{ netid }})</span>
   </div>
   <div class="navbar-center" role="tablist" aria-label="Dashboard sections">
     <div class="flex gap-1">
@@ -45,12 +44,12 @@
     </div>
   </div>
   <div class="navbar-end gap-2">
-    <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}">Synced …</span>
     <button class="btn btn-ghost btn-sm btn-square" data-refresh aria-label="Refresh">
       <svg class="w-4 h-4 refresh-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
     </button>
+    <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}"></span>
     <a class="btn btn-ghost btn-sm btn-square text-base-content/60" href="/logout" aria-label="Log out">
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
@@ -63,22 +62,21 @@
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start flex-1"></div>
   <div class="navbar-center justify-center">
-    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-6 w-auto" width="120" height="32">
+    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-6 w-auto rounded-sm" width="120" height="32">
   </div>
   <div class="navbar-end flex-1 gap-1 items-center">
-    <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}">Synced …</span>
     <button class="btn btn-ghost btn-xs btn-square" data-refresh aria-label="Refresh">
       <svg class="w-3.5 h-3.5 refresh-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.364 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
     </button>
+    <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}"></span>
     <a class="btn btn-ghost btn-xs btn-square text-base-content/60" href="/logout" aria-label="Log out">
       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
       </svg>
     </a>
   </div>
-  <span class="version-badge text-[10px] text-base-content/30 font-mono select-none absolute bottom-0.5 right-2" aria-hidden="true">v{{ version }}</span>
 </div>
 <!-- Mobile: dock with all tabs -->
 <div class="dock fixed bottom-0 left-0 right-0 z-30 bg-base-200 border-t border-base-300 lg:hidden"
