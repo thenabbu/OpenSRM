@@ -330,28 +330,48 @@
   </div>
   <div id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-tab" data-tabpanel style="display:none">
     {% if personal %}
-    <div class="card bg-base-200 border border-base-300">
-      <div class="card-body p-0">
-        <ul class="list">
-          {% set sections = {"Academic": ["Student Name", "Register No.", "Institution", "Program", "Batch", "Semester", "Section", "ABC NUMBER"], "Personal": ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"], "Family": ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"], "Contact": ["Address", "Pincode", "District", "State", "Personal Email ID", "Student Mobile No.", "Alternative Student Mobile No."]} %}
-          {% for section_name, keys in sections.items() %}
-            {% set ns = namespace(shown=false) %}
-            {% for key in keys %}
-              {% if key in personal %}
-                {% if not ns.shown %}
-                <li class="list-row bg-base-300/50 text-xs font-semibold uppercase tracking-wider text-base-content/50 py-2 px-4">{{ section_name }}</li>
-                {% set ns.shown = true %}
-                {% endif %}
-                <li class="list-row items-center">
-                  <span class="text-xs text-base-content/50 uppercase tracking-wide w-28 shrink-0">{{ key }}</span>
-                  <span class="text-sm font-mono cursor-copy" data-copy="{{ personal[key] }}"
-                        style="word-break:break-word;overflow-wrap:break-word" title="Click to copy">{{ personal[key] }}</span>
-                </li>
-              {% endif %}
-            {% endfor %}
-          {% endfor %}
-        </ul>
+    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER"]),
+                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"]),
+                     ("Family", ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"]),
+                     ("Contact", ["Address", "Pincode", "District", "State", "Personal Email ID",
+                                  "Student Mobile No.", "Alternative Student Mobile No."])] %}
+    <div class="flex flex-col gap-3">
+      {% if personal.get('Student Name') or personal.get('Program') %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body p-4">
+          {% if personal.get('Student Name') %}
+          <div class="text-lg font-semibold" data-copy="{{ personal['Student Name'] }}">{{ personal['Student Name'] }}</div>
+          {% endif %}
+          {% if personal.get('Program') %}
+          <div class="text-sm font-mono text-base-content/60 break-words mt-1" data-copy="{{ personal['Program'] }}">{{ personal['Program'] }}</div>
+          {% endif %}
+        </div>
       </div>
+      {% endif %}
+      {% for title, keys in groups %}
+        {% set ns = namespace(n=0) %}
+        {% for key in keys %}{% if key in personal %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+        {% if ns.n %}
+        <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+          <input type="checkbox" />
+          <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+            <span>{{ title }}</span><span class="badge badge-sm">{{ ns.n }}</span>
+          </div>
+          <div class="collapse-content">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-2">
+              {% for key in keys %}
+                {% if key in personal %}
+                <div{% if key in ['Institution', 'Address'] %} class="sm:col-span-2"{% endif %}>
+                  <div class="text-xs uppercase tracking-wide text-base-content/50">{{ key }}</div>
+                  <div class="text-sm font-mono break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
+                </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      {% endfor %}
     </div>
     {% else %}
     <div class="alert alert-soft alert-info">No personal details available.</div>

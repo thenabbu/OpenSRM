@@ -152,6 +152,17 @@ tabButtons.forEach(function(b) {
   });
 })();
 
+// ── Personal groups: all open on desktop (dense fact-sheet scan), first
+//    group only on mobile (compact lookup — matches the design mockup).
+//    ponytail: evaluated once at load; rotating across the sm breakpoint
+//    keeps whatever state the user has toggled (still fully toggleable).
+(function() {
+  var groups = document.querySelectorAll('#tab-personal .collapse input');
+  if (!groups.length) return;
+  var wide = window.matchMedia('(min-width: 640px)').matches;
+  groups.forEach(function(g, i) { g.checked = wide || i === 0; });
+})();
+
 // ── Auto-sync on open: show cached data instantly, refresh quietly in
 //    background when stale (>10min). Quiet failures stay silent.
 (function() {
