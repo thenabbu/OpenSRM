@@ -65,6 +65,11 @@ export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside
 .venv/bin/python tests/test_navbar.py       # 16/16 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius)
 kill %1
 
+export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18179 app.app:app &
+DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # 18/18 personal tab (identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
+kill %1
+
 export DATA_DIR=/tmp/osrm-guide
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18098 app.app:app &
 export DUT_BASE=http://127.0.0.1:18098
@@ -104,7 +109,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v13`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
+- SW cache name (`opensrm-v14`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
