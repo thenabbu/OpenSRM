@@ -70,6 +70,11 @@ export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside
 DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # 18/18 personal tab (identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
 kill %1
 
+export DATA_DIR=/tmp/osrm-scrollbar
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18183 app.app:app &
+.venv/bin/python tests/test_scrollbar.py    # 9/9 universal scrollbar (ships both pages, gate, 8px geometry, token thumb, 3:1 contrasts)
+kill %1
+
 export DATA_DIR=/tmp/osrm-guide
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18098 app.app:app &
 export DUT_BASE=http://127.0.0.1:18098

@@ -37,6 +37,32 @@ html[data-theme="openSRM"] {
   height: 2px;
   background: currentColor;
 }
+/* Universal scrollbar — thin, minimal, themed. Ships inline with the HTML
+   (shared partial), so no service-worker bump. NOT inherited -> universal
+   selector. Thumb = base-content 40%: 3.82:1 on base-100, 3.74:1 on base-200
+   (WCAG 1.4.11 needs 3:1); transparent track so one rule covers page + cards.
+   MEASURED: while scrollbar-width is non-auto, Chromium ignores the
+   ::-webkit-scrollbar width (renders its 10px thin gutter, no hover) — so the
+   standard props are the Firefox base and the @supports gate hands Chromium/
+   Safari back to the pseudo-elements (8px + hover). See DESIGN.md 4.15. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-base-content) 40%, transparent)
+                   transparent;
+}
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  }
+  ::-webkit-scrollbar-corner { background: transparent; }
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
 <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css" />

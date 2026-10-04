@@ -44,6 +44,7 @@
 | Neutral notice | `alert alert-soft alert-info` |
 | The one rare highlight | `badge badge-secondary` (pink) |
 | Code, %, time, count, date | add `font-mono` |
+| Scrollbar | `partials/theme.html` universal rule (§4.15) — never hand-roll per element |
 
 ---
 
@@ -495,6 +496,18 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 - **XSS rule (audit 2026-09-27 applies here too):** every value in the payload (peer-written subject codes/names, editor name) is student-controlled — `loadHistory()` in `timetable.js` builds it with `textContent`/`createElement` only, **never `innerHTML`**.
 - Server: `_tt_diff()` in `app.py` writes `timetable_edit_log` (migration v9) on POST `/api/timetable`; no-op saves are skipped, last 200 entries per group kept.
 
+### 4.15 Universal scrollbar
+
+One rule set in the shared `partials/theme.html` `<style>` (both pages; ships inline with the HTML, so no `sw.js` cache bump). Three layers, each with one job:
+
+1. **Base (Firefox / engines without the webkit pseudos):** `* { scrollbar-width: thin; scrollbar-color: <thumb> transparent }` — the properties are *not inherited*, hence the universal selector.
+2. **Gate:** `@supports selector(::-webkit-scrollbar)` resets those to `auto` and hands Chromium/Safari to layer 3 (§10.13 explains why the reset is mandatory, not stylistic).
+3. **WebKit pseudos:** `::-webkit-scrollbar { width/height: 8px }`, thumb = `color-mix(in oklab, var(--color-base-content) 40%, transparent)` with `border-radius: 9999px`, hover step 60%, transparent track + corner.
+
+- **Thumb = `base-content` at 40%**: 3.83:1 on `base-100`, 3.76:1 on `base-200` (WCAG 1.4.11 needs 3:1). Transparent track means one rule covers the page *and* cards — no per-surface variants.
+- The `/40` and `/60` here are raw `color-mix` percentages in hand-written CSS, **not** Tailwind opacity modifiers — §2.5's render ladder doesn't constrain them.
+- Verified by `tests/test_scrollbar.py` (9 checks: ships on both pages, gate fires, 8px vertical/horizontal/root geometry, token thumb, transparent track, both contrasts).
+
 ---
 
 ## 5. Layout and responsive
@@ -590,6 +603,7 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
 11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
 12. **A closed `<details>` still reports a layout rect for its hidden children** (Chrome lays them out via `content-visibility`), so a geometry audit that measures "card height vs deepest descendant" counts the hidden tag form (§4.13) and reports phantom negative slack. Filter measurement sweeps with `!el.closest('details:not([open])')`.
+13. **Scrollbar styling has two silent traps (both measured on Chromium 153):** (a) while `scrollbar-width` is anything but `auto`, the engine **ignores `::-webkit-scrollbar` geometry** — a lone webkit block next to `scrollbar-width: thin` silently renders Chromium's own 10px gutter with no hover; the `@supports` gate in §4.15 resets the standard props first, and dropping that reset "for tidiness" silently reverts to the 10px bar. (b) On an element with **no overflow there is no scrollbar box**, and `getComputedStyle(el, '::-webkit-scrollbar')` then returns garbage (measured `width: 1280px`, thumb `oklch(0.2 0 0)`) — any probe or DUT must force overflow (`overflow: scroll` on a throwaway div) before reading these pseudos, or it tests nothing while reporting plausible numbers.
 
 ---
 
