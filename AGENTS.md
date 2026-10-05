@@ -16,9 +16,10 @@ app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions in partials/theme.html)
-tests/                # verify76.py (71 static) + test_sw/test_xss/test_exams* (DUTs) + guide_* (login UX guide suites)
+tests/                # verify76.py (71 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
-docs/                 # audit/ record (findings + resolution) · screenshots/ + pr/ (PR evidence) · logos
+docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
+scripts/               # generate_push_keys.py (one-time VAPID/tick-secret generator)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # build.yml (image) + lint.yml; SHA-pinned actions; `uv lock --check`
 ```
@@ -40,9 +41,16 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 27/27 (end-sem probe parser + candidates + blanked-dates preserve)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
-.venv/bin/python tests/test_tt_history.py    # 16/16 (timetable edit log + break-divider fix)
+.venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
+
+# push unit suites (no server, no network)
+.venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
+.venv/bin/python tests/test_push_store.py    # 25/25 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
+.venv/bin/python tests/test_push_send.py     # 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
+.venv/bin/python tests/test_push_tick.py     # 19/19 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
+.venv/bin/python tests/test_push_api.py      # 37/37 (401 style, validation, DB rate caps, test/receipt flows)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -77,6 +85,9 @@ export DUT_BASE=http://127.0.0.1:18098
 .venv/bin/python tests/guide_check.py       # 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
 .venv/bin/python tests/guide_server.py      # 7/7  7 REAL portal logins — spends the 10/hour IP cap
 kill %1
+
+# push DUTs boot their own three gunicorn instances (see header)
+.venv/bin/bash tests/run_push_duts.sh        # test_push_sw 8/8 + test_push_ui 15/15 (staggered boots: fresh-DB migrations race)
 ```
 Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the user + payload.
 
@@ -109,7 +120,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v14`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it.
+- SW cache name (`opensrm-v15`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

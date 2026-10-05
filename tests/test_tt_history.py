@@ -93,6 +93,22 @@ cl.set_cookie("srm_session", tok["bb2222"])
 e4 = cl.get("/api/timetable/history").get_json()
 check("other section isolated", e4.get("ok") is True and e4.get("entries") == [], str(e4))
 
+# 6b) location preservation (fix 2026-10-05): the editor has no location
+# field, so every save used to wipe `location` for the whole group.
+cl.set_cookie("srm_session", tok["ng2776"])
+c = A.db()
+c.execute("UPDATE timetable_slots SET location='Lab C-4/5' "
+          "WHERE group_id=(SELECT id FROM timetable_groups WHERE group_key=?) "
+          "AND day='Monday' AND period=1", (gk,))
+c.commit(); c.close()
+r = cl.post("/api/timetable", json={"slots": SLOTS2, "custom_subjects": []})  # no-op re-save
+loc = cl.get("/api/timetable").get_json()["slots"].get("Monday-1", {}).get("location")
+check("room survives no-op re-save", r.get_json().get("ok") is True and loc == "Lab C-4/5", str(loc))
+SLOTS3 = dict(SLOTS2, **{"Monday-1": {"code": "21CSC301T", "name": "DBMS"}})
+cl.post("/api/timetable", json={"slots": SLOTS3, "custom_subjects": []})
+loc2 = cl.get("/api/timetable").get_json()["slots"].get("Monday-1", {}).get("location")
+check("room dropped when subject swapped", loc2 == "", str(loc2))
+
 # 7) break dividers: Monday P1..P7 -> 3, Tuesday P1,P2 -> 0, Wednesday P3 only -> 0
 c = A.db()
 gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]

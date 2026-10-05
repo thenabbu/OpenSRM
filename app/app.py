@@ -20,6 +20,8 @@ Kept from prior work:
 """
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import math
@@ -32,10 +34,13 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, make_response, redirect, render_template, request
 
+from . import push_calc, push_send, push_store
 from .logging_setup import log_with_kv, setup_logging
 from .migrations import migrate_db
 
@@ -1948,9 +1953,11 @@ def api_save_timetable():
                   (gid, sub["code"], sub["name"]))
     # audit feature: diff old vs new BEFORE the delete-and-replace so the
     # shared timetable's edit log records exactly who changed what.
-    old_slots = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or ""}
-                 for r in c.execute("SELECT day,period,subject_code,subject_name "
-                                    "FROM timetable_slots WHERE group_id=?", (gid,))}
+    old_rows = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or "",
+                                   "location": r[4] or ""}
+                for r in c.execute("SELECT day,period,subject_code,subject_name,location "
+                                   "FROM timetable_slots WHERE group_id=?", (gid,))}
+    old_slots = {k: {"code": v["code"], "name": v["name"]} for k, v in old_rows.items()}
     new_slots = {}
     for key, val in slots.items():
         if val and len(key.rsplit("-", 1)) == 2:
@@ -1959,8 +1966,15 @@ def api_save_timetable():
     c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
     for key, val in new_slots.items():
         day, period = key.rsplit("-", 1)
-        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name) "
-                  "VALUES(?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"]))
+        # fix 2026-10-05: the editor has no location field, so a blind
+        # delete+re-insert used to wipe `location` for the WHOLE group on
+        # every save (proved: 'Test Hall' -> ''). Carry the room forward
+        # while the slot's subject CODE is unchanged; a swapped subject
+        # drops the old room (it belonged to the old class).
+        prev = old_rows.get(key)
+        loc = prev["location"] if prev and prev["code"] == val["code"] else ""
+        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
+                  "VALUES(?,?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"], loc))
     if changes:  # no-op saves stay out of the log
         c.execute("INSERT INTO timetable_edit_log(group_id,editor_netid,editor_name,changes_json) "
                   "VALUES(?,?,?,?)",
@@ -2014,6 +2028,326 @@ def marks_tag():
               (key, role, raw, scaled, netid, int(time.time())))
     c.commit(); c.close()
     return redirect("/#marks")
+
+# ── Web push: config, tick endpoint ───────────────────────────────────
+# All secrets come from env (identical on every host / Vercel). The app
+# NEVER generates or falls back to generated keys: missing keys => the
+# feature reports "not configured" and sends nothing.
+PUSH_TICK_HEADER = "X-Push-Tick"
+TICK_DEADLINE_S = 20.0       # cron-job.org's hard budget is ~30s; keep 10s margin
+STALE_CLAIM_S = 120          # claims older than this with no outcome -> orphaned
+log_push = logging.getLogger("opensrm.push")
+
+
+def _push_conf():
+    env_b = lambda k: os.environ.get(k, "").strip().lower() in ("1", "true", "yes")
+    priv = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    pub = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    sub = os.environ.get("VAPID_SUBJECT", "").strip()
+    return {
+        "enabled": env_b("PUSH_ENABLED"),
+        "dry_run": env_b("PUSH_DRY_RUN"),
+        "allow": {n.strip().lower() for n in os.environ.get("PUSH_ALLOW_NETIDS", "").split(",") if n.strip()},
+        "tick_secret": os.environ.get("PUSH_TICK_SECRET", ""),
+        "private": priv, "public": pub, "subject": sub,
+        "configured": bool(priv and pub and sub),
+    }
+
+
+def _endpoint_hash(endpoint):
+    """Capability URL must never be logged in full — short hash prefix only."""
+    return hashlib.sha256(endpoint.encode()).hexdigest()[:12]
+
+
+def _push_groups(netids):
+    """netid -> group_key from stored personal details (one query)."""
+    if not netids:
+        return {}
+    c = db()
+    q = ",".join("?" * len(netids))
+    out = {}
+    for r in c.execute(f"SELECT netid, personal_details_json FROM users WHERE netid IN ({q})", list(netids)):
+        try:
+            pd = json.loads(r[1]) if r[1] else {}
+        except (ValueError, TypeError):
+            pd = {}
+        out[r[0]] = _group_key(pd)
+    c.close()
+    return out
+
+
+def _push_timetable(group_keys):
+    """{group_key: {day: {period: {code,name,location}}}} for the given groups."""
+    group_keys = [g for g in group_keys if g]
+    if not group_keys:
+        return {}
+    c = db()
+    q = ",".join("?" * len(group_keys))
+    gids = {r[0]: r[1] for r in c.execute(f"SELECT id, group_key FROM timetable_groups WHERE group_key IN ({q})", group_keys)}
+    out = {}
+    if gids:
+        qi = ",".join("?" * len(gids))
+        for r in c.execute(f"SELECT group_id, day, period, subject_code, subject_name, location FROM timetable_slots WHERE group_id IN ({qi})", list(gids)):
+            day = out.setdefault(gids[r[0]], {}).setdefault(r[1], {})
+            day[r[2]] = {"code": r[3] or "", "name": r[4] or "", "location": r[5] or ""}
+    c.close()
+    return out
+
+
+def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
+    """One tick: compute due from LIVE data, claim, send, record.
+
+    Stateless and idempotent: overlapping ticks race only on the sent-log
+    claim (one winner), a skipped tick just widens the catch-up window
+    (due stays open until the class starts). Injectables (now/conf/
+    send_batch/deadline_s) exist so tests can drive the clock and the
+    network without touching either.
+    """
+    conf = conf if conf is not None else _push_conf()
+    send_batch = send_batch or push_send.send_batch
+    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    t0 = time.monotonic()
+    deadline = t0 + deadline_s
+    local_date = now.strftime("%Y-%m-%d")
+    mode = "off" if not conf["enabled"] else ("dry-run" if conf["dry_run"] else "live")
+    stats = {"mode": mode, "due": 0, "claimed": 0, "sent": 0, "failed": 0,
+             "dead": 0, "held": 0, "audited": 0, "skipped_deadline": 0, "orphaned": 0}
+    # Crash recovery: a claim stuck without an outcome is finalized (never
+    # retried — at-most-once). Fresh claims are inside their send window.
+    stats["orphaned"] = push_store.finalize_stale_claims(int(time.time()) - STALE_CLAIM_S)
+
+    subs_rows = push_store.list_subscriptions(enabled_only=True)
+    groups = _push_groups({s["netid"] for s in subs_rows})
+    subs = [push_calc.Sub(id=s["id"], netid=s["netid"], group_key=groups.get(s["netid"]),
+                          lead_minutes=s["lead_minutes"]) for s in subs_rows]
+    tt = _push_timetable(groups.values())
+    sent = push_store.sent_state_for(local_date)
+    due = push_calc.due_reminders(now, subs, tt, sent)
+    stats["due"] = len(due)
+
+    can_send = mode == "live" and conf["configured"]
+    jobs = []
+    for rem in due:
+        sub_row = next(s for s in subs_rows if s["id"] == rem.sub.id)
+        allowed = not conf["allow"] or rem.sub.netid.lower() in conf["allow"]
+        if not can_send:
+            # audit only: never claim (a dry-run/off tick must not consume
+            # the reminder the real send is still going to make)
+            stats["audited"] += 1
+            log_with_kv(log_push, logging.INFO, "push audit",
+                        mode=mode, netid=rem.sub.netid, code=rem.block.code,
+                        starts=rem.block.start.strftime("%H:%M"), retry=rem.retry)
+            continue
+        if not allowed:
+            stats["held"] += 1   # allowlist holds it; send happens on a later tick
+            continue
+        if time.monotonic() > deadline:
+            stats["skipped_deadline"] += 1
+            continue
+        if rem.retry:
+            if not push_store.claim_retry(rem.row_id, push_calc.MAX_ATTEMPTS):
+                continue  # another tick took the retry
+            row_id = rem.row_id
+        else:
+            if not push_store.claim_send(rem.sub.id, local_date, rem.block.start_epoch, rem.block.code):
+                continue  # concurrent tick claimed first
+            row_id = push_store.sent_row_id(rem.sub.id, local_date, rem.block.start_epoch, rem.block.code)
+            if row_id is None:  # theoretical race with deletion
+                continue
+        stats["claimed"] += 1
+        jobs.append({"rem": rem, "sub": sub_row, "row_id": row_id,
+                     "payload": rem.message(now), "ttl": rem.ttl})
+
+    for job in (send_batch(jobs, deadline) if jobs else []):
+        oc = job.get("outcome") or {}
+        row_id, sub_row, rem = job["row_id"], job["sub"], job["rem"]
+        host = urlparse(sub_row["endpoint"]).netloc
+        if oc.get("reason") == "deadline":
+            push_store.record_send_result(row_id, push_store.STATUS_SKIPPED)
+            stats["skipped_deadline"] += 1
+            continue
+        if oc.get("ok"):
+            push_store.record_send_result(row_id, push_store.STATUS_SENT, oc.get("http_status"))
+            push_store.record_subscription_result(sub_row["id"], True, oc.get("http_status"))
+            stats["sent"] += 1
+            status = "sent"
+        elif oc.get("dead"):
+            push_store.record_send_result(row_id, push_store.STATUS_FAILED, oc.get("http_status"))
+            push_store.delete_subscription_by_id(sub_row["id"])
+            stats["dead"] += 1
+            status = "dead_cleanup"
+        else:
+            final = push_store.STATUS_FAILED if oc.get("retryable") else push_store.STATUS_SKIPPED
+            push_store.record_send_result(row_id, final, oc.get("http_status"))
+            push_store.record_subscription_result(sub_row["id"], False, oc.get("http_status"))
+            stats["failed"] += 1
+            status = final
+        log_with_kv(log_push, logging.INFO, "push send", netid=sub_row["netid"], host=host,
+                    endpoint=_endpoint_hash(sub_row["endpoint"]), http=oc.get("http_status"),
+                    status=status, code=rem.block.code, ttl=job["ttl"])
+    stats.pop("due_pass", None)
+    push_store.prune_events(int(time.time()) - 3 * 3600)   # keep the rate table tiny
+    stats["took_ms"] = int((time.monotonic() - t0) * 1000)
+    log_with_kv(log_push, logging.INFO, "push tick", **stats)
+    return {"ok": True, **stats}
+
+
+@app.route("/internal/push/tick", methods=["POST"])
+def push_tick():
+    """cron-job.org fires this every minute. Secret header, no session;
+    wrong/missing secret => bare 401 with no detail (nothing to probe)."""
+    conf = _push_conf()
+    got = request.headers.get(PUSH_TICK_HEADER, "")
+    if not conf["tick_secret"] or not hmac.compare_digest(got, conf["tick_secret"]):
+        return "", 401
+    return _run_tick(conf=conf)
+
+
+# ── Web push: user endpoints (JSON, session auth, 401 style) ──────────
+# DB-backed rate limits only (process-local dicts die on serverless):
+# subscribe 10/hour/netid, test push 3/hour/netid, receipts 30/hour/netid.
+
+def _push_401():
+    return {"ok": False, "error": "not logged in"}, 401
+
+
+def _push_bad(msg, code=400):
+    return {"ok": False, "error": msg}, code
+
+
+@app.route("/api/push/status")
+def push_status():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    subs = push_store.list_subscriptions(netid=netid, enabled_only=False)
+    row = subs[0] if subs else None
+    return {"ok": True,
+            "configured": conf["configured"],
+            "enabled": conf["enabled"],
+            "dry_run": conf["dry_run"],
+            "allowlisted": not conf["allow"] or netid.lower() in conf["allow"],
+            "vapid_public_key": conf["public"] if conf["configured"] else "",
+            "endpoint_hash": _endpoint_hash(row["endpoint"]) if row else None,
+            "subscription": ({"lead_minutes": row["lead_minutes"],
+                              "enabled": bool(row["enabled"]),
+                              "created_at": row["created_at"]} if row else None),
+            "lead_choices": list(push_calc.LEAD_CHOICES)}
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def push_subscribe():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    if not conf["configured"]:
+        return _push_bad("push not configured", 409)
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return _push_bad("invalid request — Content-Type must be application/json")
+    endpoint, keys = d.get("endpoint"), d.get("keys")
+    p256dh = keys.get("p256dh") if isinstance(keys, dict) else None
+    auth = keys.get("auth") if isinstance(keys, dict) else None
+    if (not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 4096
+            or not isinstance(p256dh, str) or not p256dh or len(p256dh) > 512
+            or not isinstance(auth, str) or not auth or len(auth) > 512):
+        return _push_bad("invalid subscription")
+    if push_store.count_events(netid, "subscribe", int(time.time()) - 3600) >= 10:
+        return _push_bad("too many subscription updates (10/hour)", 429)
+    row = push_store.upsert_subscription(netid, endpoint, p256dh, auth,
+                                         str(d.get("ua_label", ""))[:64])
+    push_store.record_event(netid, "subscribe", _endpoint_hash(endpoint))
+    return {"ok": True, "lead_minutes": row["lead_minutes"],
+            "endpoint_hash": _endpoint_hash(endpoint)}
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    endpoint = d.get("endpoint") if isinstance(d, dict) else None
+    if not isinstance(endpoint, str) or not endpoint:
+        return _push_bad("endpoint required")
+    removed = push_store.remove_subscription(netid, endpoint)
+    return {"ok": True, "removed": removed}
+
+
+@app.route("/api/push/settings", methods=["POST"])
+def push_settings():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return _push_bad("invalid request — Content-Type must be application/json")
+    lead, enabled = d.get("lead_minutes"), d.get("enabled")
+    if lead is None and enabled is None:
+        return _push_bad("nothing to update")
+    if lead is not None and lead not in push_calc.LEAD_CHOICES:
+        return _push_bad(f"lead_minutes must be one of {', '.join(map(str, push_calc.LEAD_CHOICES))}")
+    if enabled is not None and not isinstance(enabled, bool):
+        return _push_bad("enabled must be true or false")
+    n = push_store.set_settings(netid, lead_minutes=lead, enabled=enabled)
+    if n == 0:
+        return _push_bad("no subscription for this account", 404)
+    return {"ok": True, "updated": n}
+
+
+@app.route("/api/push/test", methods=["POST"])
+def push_test():
+    """Send one real notification to this account's device (receipts prove
+    arrival server-side). Rate-limited; works only when the feature is on."""
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    if not conf["configured"]:
+        return _push_bad("push not configured", 409)
+    if not conf["enabled"]:
+        return _push_bad("reminders are disabled", 403)
+    if conf["allow"] and netid.lower() not in conf["allow"]:
+        return _push_bad("reminders are not enabled for your account yet", 403)
+    if push_store.count_events(netid, "test_push", int(time.time()) - 3600) >= 3:
+        return _push_bad("test notifications are limited to 3 per hour", 429)
+    subs = push_store.list_subscriptions(netid=netid)
+    if not subs:
+        return _push_bad("no subscription — enable reminders first")
+    test_id = secrets.token_hex(16)
+    push_store.record_event(netid, "test_push", test_id)   # count BEFORE sending
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    payload = {"title": "OpenSRM test",
+               "body": f"Test notification · {now:%H:%M} — reminders are working",
+               "tag": f"test-{test_id}", "test_id": test_id, "url": "/"}
+    job = push_send.send_one({"sub": subs[0], "payload": payload, "ttl": 600})
+    oc = job["outcome"]
+    if oc.get("ok"):
+        return {"ok": True, "test_id": test_id}
+    if oc.get("dead"):
+        push_store.delete_subscription_by_id(subs[0]["id"])
+        return _push_bad("this device's subscription expired — turn reminders off and on again", 410)
+    return _push_bad(f"push service error (http {oc.get('http_status')})", 502)
+
+
+@app.route("/api/push/receipt", methods=["POST"])
+def push_receipt():
+    """The SW posts this when a test notification actually displayed —
+    Navya's server-side proof of device delivery (esp. iOS)."""
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    test_id = d.get("test_id") if isinstance(d, dict) else None
+    if not isinstance(test_id, str) or not re.fullmatch(r"[0-9a-f]{32}", test_id):
+        return _push_bad("invalid test_id")
+    if push_store.count_events(netid, "receipt", int(time.time()) - 3600) >= 30:
+        return _push_bad("too many receipts (30/hour)", 429)
+    push_store.record_event(netid, "receipt", test_id)
+    return {"ok": True}
+
 
 @app.route("/logout")
 def logout():
