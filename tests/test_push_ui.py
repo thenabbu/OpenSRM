@@ -164,6 +164,7 @@ with sync_playwright() as p:
           'Add to Home Screen' in hint and '16.4' in hint and 'unverified' in hint, str(hint))
     check("iOS path hides the enable controls", not page.is_visible('#push-controls'), "")
     check("no console errors in iOS run", len(errs3) == 0, "; ".join(errs3[:2]))
+    page.locator('#push-card').scroll_into_view_if_needed()   # keep the hint in frame
     page.screenshot(path="/tmp/push-ui-390-ios-not-installed.png", full_page=False)
     ctx.close()
 
