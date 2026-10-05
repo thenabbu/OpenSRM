@@ -333,10 +333,12 @@
                 <button id="push-enable" class="btn btn-accent btn-sm">Enable reminders</button>
                 <button id="push-test" class="btn btn-outline btn-sm" hidden>Send test notification</button>
               </div>
-              <p class="text-sm text-base-content/60" id="push-hint" hidden></p>
               <p class="text-sm" id="push-feedback" role="status" aria-live="polite"></p>
             </div>
           </div>
+          <!-- hint lives OUTSIDE #push-controls: the iOS-not-installed and
+               permission-denied states hide the controls but must show it -->
+          <p class="text-sm text-base-content/60" id="push-hint" hidden></p>
         </div>
       </div>
     </div>

@@ -162,6 +162,8 @@ with sync_playwright() as p:
     check("iOS-not-installed state shown", 'On iPhone/iPad' in state, str(state))
     check("Add-to-Home-Screen steps + version + unverified label",
           'Add to Home Screen' in hint and '16.4' in hint and 'unverified' in hint, str(hint))
+    check("hint is actually VISIBLE (not inside hidden controls)",
+          page.is_visible('#push-hint'), "")
     check("iOS path hides the enable controls", not page.is_visible('#push-controls'), "")
     check("no console errors in iOS run", len(errs3) == 0, "; ".join(errs3[:2]))
     page.locator('#push-card').scroll_into_view_if_needed()   # keep the hint in frame
