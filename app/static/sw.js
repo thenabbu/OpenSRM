@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v18';
+const CACHE_NAME = 'opensrm-v19';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -102,9 +102,9 @@ async function handlePush(event) {
     body: data.body || '',
     tag: data.tag || 'opensrm-reminder',
     renotify: true,                       // updated reminder re-alerts (Android)
-    icon: '/static/icon-192.png',         // brand tile; small/status icon is
-                                          // derived by the platform from it —
-                                          // no custom badge asset (looked bad)
+    icon: '/static/icon-192.png',         // large icon (brand tile)
+    badge: '/static/icon-badge.png',      // Android small icon: white mark,
+                                          // alpha-defined, circle-mask safe
     data: { url: data.url || '/' }
   };
   const shown = self.registration.showNotification(data.title || 'OpenSRM', opts);
