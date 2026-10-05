@@ -1948,9 +1948,11 @@ def api_save_timetable():
                   (gid, sub["code"], sub["name"]))
     # audit feature: diff old vs new BEFORE the delete-and-replace so the
     # shared timetable's edit log records exactly who changed what.
-    old_slots = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or ""}
-                 for r in c.execute("SELECT day,period,subject_code,subject_name "
-                                    "FROM timetable_slots WHERE group_id=?", (gid,))}
+    old_rows = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or "",
+                                   "location": r[4] or ""}
+                for r in c.execute("SELECT day,period,subject_code,subject_name,location "
+                                   "FROM timetable_slots WHERE group_id=?", (gid,))}
+    old_slots = {k: {"code": v["code"], "name": v["name"]} for k, v in old_rows.items()}
     new_slots = {}
     for key, val in slots.items():
         if val and len(key.rsplit("-", 1)) == 2:
@@ -1959,8 +1961,15 @@ def api_save_timetable():
     c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
     for key, val in new_slots.items():
         day, period = key.rsplit("-", 1)
-        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name) "
-                  "VALUES(?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"]))
+        # fix 2026-10-05: the editor has no location field, so a blind
+        # delete+re-insert used to wipe `location` for the WHOLE group on
+        # every save (proved: 'Test Hall' -> ''). Carry the room forward
+        # while the slot's subject CODE is unchanged; a swapped subject
+        # drops the old room (it belonged to the old class).
+        prev = old_rows.get(key)
+        loc = prev["location"] if prev and prev["code"] == val["code"] else ""
+        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
+                  "VALUES(?,?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"], loc))
     if changes:  # no-op saves stay out of the log
         c.execute("INSERT INTO timetable_edit_log(group_id,editor_netid,editor_name,changes_json) "
                   "VALUES(?,?,?,?)",
