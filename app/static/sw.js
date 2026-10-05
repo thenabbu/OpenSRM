@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v16';
+const CACHE_NAME = 'opensrm-v17';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -106,7 +106,6 @@ async function handlePush(event) {
     badge: '/static/icon-badge.png',      // white silhouette for the status bar
     data: { url: data.url || '/' }
   };
-  if (data.image) opts.image = data.image;   // hero banner (logo-rect) on reminders
   const shown = self.registration.showNotification(data.title || 'OpenSRM', opts);
   let receipt = null;
   if (data.test_id) {

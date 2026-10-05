@@ -63,13 +63,12 @@ class Reminder:
         send time — never the configured lead."""
         b = self.block
         mins_left = max(1, int(round((b.start - now).total_seconds() / 60)))
-        title = f"{b.name} · starts {b.start:%H:%M}"
-        body = f"OpenSRM · in {mins_left} min · {b.start:%H:%M}–{b.end:%H:%M}"
+        title = f"{b.name} · {b.start:%H:%M}"
+        body = f"in {mins_left} min"
         if b.location:
             body += f" · {b.location}"
         return {"title": title, "body": body,
                 "tag": f"cls-{b.local_date}-{b.start_epoch}-{b.code}",
-                "image": "/static/logo-rect.png",
                 "url": "/#timetable"}
 
 

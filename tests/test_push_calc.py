@@ -94,9 +94,9 @@ check("subject change -> new key -> due again", len(r_swap) == 1 and r_swap[0].b
 
 # ── message text ──────────────────────────────────────────────────────
 m = d[0].message(at(9, 25))
-check("title format", m["title"] == "Operating Systems · starts 09:30", m["title"])
-check("body has brand + real 'in N min' (not the lead)", m["body"].startswith("OpenSRM · in 5 min · 09:30–11:10"), m["body"])
-check("payload carries brand hero image", m.get("image") == "/static/logo-rect.png", str(m.get("image")))
+check("title format", m["title"] == "Operating Systems · 09:30", m["title"])
+check("body has only what's needed: real 'in N min' (not the lead)", m["body"] == "in 5 min", m["body"])
+check("no hero image in payload (lean notification)", m.get("image") is None, str(m.get("image")))
 check("no room -> no room line, no placeholder", "Lab" not in m["body"] and "Room not set" not in m["body"], m["body"])
 m2 = due(at(11, 15))[0].message(at(11, 15)) if due(at(11, 15)) else None
 day_lab = {1: dict(LAB), 2: dict(LAB)}

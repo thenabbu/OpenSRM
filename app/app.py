@@ -2320,9 +2320,8 @@ def push_test():
     push_store.record_event(netid, "test_push", test_id)   # count BEFORE sending
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     payload = {"title": "OpenSRM test",
-               "body": f"OpenSRM · test notification · {now:%H:%M} — reminders are working",
-               "tag": f"test-{test_id}", "test_id": test_id,
-               "image": "/static/logo-rect.png", "url": "/"}
+               "body": f"Test notification · {now:%H:%M}",
+               "tag": f"test-{test_id}", "test_id": test_id, "url": "/"}
     job = push_send.send_one({"sub": subs[0], "payload": payload, "ttl": 600})
     oc = job["outcome"]
     if oc.get("ok"):
