@@ -12,6 +12,7 @@ dependencies = [
     "gunicorn==26.2.0",
     "cryptography>=50.0.1",
     "blobatar[flask]",
+    "pywebpush==2.5.0",
 ]
 
 [project.scripts]

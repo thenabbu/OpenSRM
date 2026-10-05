@@ -72,13 +72,15 @@ check("sent_state exposes (status, attempts, row_id)",
 # 6) failure/retry/orphan lifecycle
 row_id = state[(sid, today, start, "21CSC202J")][2]
 S.record_send_result(row_id, S.STATUS_FAILED, http_status=503)
-check("failed row surfaces as retry candidate",
-      [r["id"] for r in S.pending_retries(today, 3)] == [row_id], str(S.pending_retries(today, 3)))
+st_fail = S.sent_state_for(today)[(sid, today, start, "21CSC202J")]
+check("failed row stays visible to due-calc for retry",
+      st_fail[0] == "failed" and st_fail[1] == 1 and st_fail[2] == row_id, str(st_fail))
 check("retry claim 1 (attempts 1->2)", S.claim_retry(row_id, 3) is True, "")
 check("retry claim 2 (attempts 2->3)", S.claim_retry(row_id, 3) is True, "")
 check("attempt cap stops further retries", S.claim_retry(row_id, 3) is False, "")
 S.record_send_result(row_id, S.STATUS_SENT, http_status=201)
-check("sent row never retried", S.claim_retry(row_id, 3) is False and S.pending_retries(today, 3) == [], "")
+check("sent row never retried", S.claim_retry(row_id, 3) is False
+      and S.sent_state_for(today)[(sid, today, start, "21CSC202J")][0] == "sent", "")
 
 # stale claim -> orphaned (age-gated!)
 sub3 = S.upsert_subscription("dd4444", "https://push.example/ep-3", "pk", "au", "Firefox")

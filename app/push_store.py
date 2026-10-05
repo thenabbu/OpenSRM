@@ -144,21 +144,21 @@ def claim_retry(row_id, max_attempts):
     return n == 1
 
 
+def sent_row_id(sub_id, local_date, block_start, subject_code):
+    """Row id of an existing claim (used to record its outcome)."""
+    c = get_conn()
+    row = c.execute("""SELECT id FROM push_sent_log WHERE subscription_id=? AND local_date=?
+                       AND block_start=? AND subject_code=?""",
+                    (sub_id, local_date, block_start, subject_code)).fetchone()
+    c.close()
+    return row[0] if row else None
+
+
 def record_send_result(row_id, status, http_status=None):
     c = get_conn()
     c.execute("UPDATE push_sent_log SET status=?, http_status=?, sent_at=? WHERE id=?",
               (status, http_status, int(time.time()), row_id))
     c.commit(); c.close()
-
-
-def pending_retries(local_date, max_attempts):
-    """Failed rows for `local_date` still under the attempt cap (id/status/...)."""
-    c = get_conn()
-    rows = c.execute("""SELECT id, subscription_id, local_date, block_start, subject_code, attempts
-                        FROM push_sent_log WHERE local_date=? AND status=? AND attempts<?""",
-                     (local_date, STATUS_FAILED, max_attempts)).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
 
 
 def finalize_stale_claims(before_epoch):
