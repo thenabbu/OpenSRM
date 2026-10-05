@@ -22,6 +22,15 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
       - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
+      # Web Push (docs/push.md): feature stays OFF until PUSH_ENABLED=1 in
+      # /docker/.env; missing VAPID keys -> status endpoint says "not configured".
+      - PUSH_ENABLED=${PUSH_ENABLED:-0}
+      - PUSH_DRY_RUN=${PUSH_DRY_RUN:-0}
+      - PUSH_ALLOW_NETIDS=${PUSH_ALLOW_NETIDS:-}
+      - PUSH_TICK_SECRET=${PUSH_TICK_SECRET:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-}
     # healthcheck + log rotation: SECURITY.md documents both; the live lab
     # compose already had them — this repo copy had drifted from live.
     healthcheck:
