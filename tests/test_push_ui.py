@@ -35,11 +35,14 @@ def open_timetable(page, base):
     page.locator('button[data-tab="timetable"]:visible').first.click()
     page.wait_for_selector('#push-card', state='visible', timeout=5000)
 
-def new_ctx(pw, viewport):
+def new_ctx(pw, viewport, ua=None):
     # Persistent context: Chromium blocks the Push API in incognito/ephemeral
     # contexts (crbug.com/41124656).
     d = tempfile.mkdtemp(prefix="push-ui-profile-")
-    return pw.chromium.launch_persistent_context(d, viewport=viewport)
+    kw = {"viewport": viewport}
+    if ua:
+        kw["user_agent"] = ua
+    return pw.chromium.launch_persistent_context(d, **kw)
 
 with sync_playwright() as p:
     # ── pass 1: unconfigured server — honest default state at 375 + 1280 ──
@@ -137,6 +140,31 @@ with sync_playwright() as p:
     if 'expired' in fb:
         check("dead endpoint cleaned up server-side", S.list_subscriptions(netid='ng2776') == [], "")
     check("no console errors in configured run", len(errs2) == 0, "; ".join(errs2[:2]))
+    ctx.close()
+
+    # ── pass 3: iOS-not-installed UI path ──
+    # Playwright's WebKit cannot launch on this host (no root to install its
+    # system libs) and could not do real push anyway. The branch under test
+    # keys only off the UA + standalone flag, so an iPhone Safari UA in
+    # Chromium exercises the identical code path.
+    IPHONE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                 "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+                 "Mobile/15E148 Safari/604.1")
+    ctx = new_ctx(p, {"width": 390, "height": 844}, ua=IPHONE_UA)
+    ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE_UNCONF}])
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    errs3 = []
+    page.on("console", lambda m: errs3.append(m.text)
+            if m.type == "error" and not m.text.startswith("Failed to load resource") else None)
+    open_timetable(page, BASE_UNCONF)
+    state = page.text_content('#push-state') or ''
+    hint = page.text_content('#push-hint') or ''
+    check("iOS-not-installed state shown", 'On iPhone/iPad' in state, str(state))
+    check("Add-to-Home-Screen steps + version + unverified label",
+          'Add to Home Screen' in hint and '16.4' in hint and 'unverified' in hint, str(hint))
+    check("iOS path hides the enable controls", not page.is_visible('#push-controls'), "")
+    check("no console errors in iOS run", len(errs3) == 0, "; ".join(errs3[:2]))
+    page.screenshot(path="/tmp/push-ui-390-ios-not-installed.png", full_page=False)
     ctx.close()
 
 fails = [r for r in results if not r[1]]

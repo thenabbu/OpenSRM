@@ -83,7 +83,14 @@ timetable stores: live DB (snapshot 2026-10-05) — labs carry rooms
 
 Generate once with `scripts/generate_push_keys.py`; append to lab
 `/docker/.env` (only if missing — replacing the VAPID pair invalidates every
-subscription) and pass through `docker-compose.yml` as `${VAR}`. The app
+subscription) and pass through `docker-compose.yml` as `${VAR}`.
+
+**Compose gotcha (bit us on first deploy):** docker compose interpolates
+`${VAR}` from the **project** env file `/docker/opensrm/.env`, *not* from the
+master registry `/docker/.env`. A var present only in the master registry
+arrives as an empty string — the tick then 401s silently on its own secret.
+Keep the seven push vars in **both** files (same pattern as
+`SRM_PROXY_TOKEN`). The app
 never generates or falls back to generated keys at runtime. **All three
 secrets must be copied into Vercel Production env vars unchanged when the
 app moves.**
