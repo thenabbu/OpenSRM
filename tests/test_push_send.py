@@ -88,3 +88,36 @@ check("deadline open -> send_one invoked", len(called) == 1, str(len(called)))
 
 print("ok  push send" if not fails else f"FAILURES: {fails}")
 sys.exit(1 if fails else 0)
+
+
+def test_subject_bare_email_is_prefixed():
+    """Regression: a bare (non-URI) VAPID_SUBJECT must be normalized to
+    mailto: before it reaches py_vapid, else signing dies with
+    "Missing 'sub'" before any HTTP (prod incident 2026-10-05)."""
+    saved = os.environ.get("VAPID_SUBJECT")
+    try:
+        os.environ["VAPID_SUBJECT"] = "128571614+dev@example.com"
+        job = {"sub": {"endpoint": "https://fcm.example/x", "p256dh": "B", "auth": "a"},
+               "payload": {"title": "t", "body": "b"}, "ttl": 60}
+        sent = []
+        push_send.webpush = lambda **kw: (sent.append(kw), FakeResp())[1]
+        push_send.send_one(job)
+        assert sent[0]["vapid_claims"]["sub"] == "mailto:128571614+dev@example.com", \
+            sent[0]["vapid_claims"]
+        # already-mailto stays untouched (idempotent)
+        os.environ["VAPID_SUBJECT"] = "mailto:kept@example.com"
+        sent.clear()
+        push_send.send_one(job)
+        assert sent[0]["vapid_claims"]["sub"] == "mailto:kept@example.com", \
+            sent[0]["vapid_claims"]
+        # .env whitespace is stripped
+        os.environ["VAPID_SUBJECT"] = "mailto:spaced@example.com  \n"
+        sent.clear()
+        push_send.send_one(job)
+        assert sent[0]["vapid_claims"]["sub"] == "mailto:spaced@example.com", \
+            sent[0]["vapid_claims"]
+    finally:
+        if saved is None:
+            os.environ.pop("VAPID_SUBJECT", None)
+        else:
+            os.environ["VAPID_SUBJECT"] = saved

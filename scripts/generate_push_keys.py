@@ -15,16 +15,19 @@ Rules (see docs/push.md):
   * Append, never rewrite /docker/.env; keep its permissions.
   * Never print these into logs, commits, docs or chat.
 
-VAPID_SUBJECT is not generated — use the contact email already in the repo.
+VAPID_SUBJECT is not generated — use the contact email already in the repo,
+PREFIXED as a URI: mailto:<email>  (py_vapid strict-checks `sub`; a bare
+email raises "Missing sub" before any HTTP and every send fails).
 """
 import base64
 import secrets
 import sys
 
+
 def main():
     try:
-        from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
     except ImportError:
         print("needs the app venv: .venv/bin/python scripts/generate_push_keys.py", file=sys.stderr)
         return 1

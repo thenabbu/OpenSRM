@@ -23,13 +23,19 @@ def send_one(job):
     """One push. `job` = {sub: subscription row, payload: dict, ttl: int, ...}.
     Returns the job with `outcome` attached: {ok, http_status, dead, retryable}."""
     sub = job["sub"]
+    # RFC 8292 `sub` must be a URI: py_vapid 1.9.x strict-checks it and raises
+    # "Missing 'sub'" BEFORE any HTTP when it's a bare email — a bare email in
+    # the env burned 3 retries in prod on 2026-10-05. Idempotent + .env-safe.
+    claim_sub = os.environ.get("VAPID_SUBJECT", "").strip()
+    if claim_sub and not claim_sub.startswith(("mailto:", "https://")):
+        claim_sub = "mailto:" + claim_sub
     try:
         resp = webpush(
             subscription_info={"endpoint": sub["endpoint"],
                                "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},
             data=json.dumps(job["payload"]),
             vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY", ""),
-            vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "")},
+            vapid_claims={"sub": claim_sub},
             ttl=int(job["ttl"]),
             headers={"Urgency": "high"},
             timeout=SEND_TIMEOUT)
