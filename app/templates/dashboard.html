@@ -312,6 +312,33 @@
           <p class="text-base-content/60">Loading…</p>
         </div>
       </details>
+      <!-- Class reminders (Web Push): lives in the Timetable tab because the
+           feature IS class times — set it next to the schedule it announces.
+           All copy/states rendered by push.js; hidden from the edit screen. -->
+      <div class="card bg-base-200 border border-base-300 mt-4" id="push-card">
+        <div class="card-body p-4 gap-3">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <h3 class="text-base font-semibold">Class reminders</h3>
+            <input type="checkbox" id="push-toggle" class="toggle" hidden
+                   aria-label="Turn class reminders on or off">
+          </div>
+          <p class="text-sm text-base-content/60" id="push-state">Loading…</p>
+          <div id="push-controls" hidden>
+            <div class="flex flex-col gap-3">
+              <label class="flex items-center justify-between gap-3 text-sm" for="push-lead">
+                <span>Remind me</span>
+                <select id="push-lead" class="select select-sm w-auto"></select>
+              </label>
+              <div class="flex gap-2 flex-wrap items-center">
+                <button id="push-enable" class="btn btn-accent btn-sm">Enable reminders</button>
+                <button id="push-test" class="btn btn-outline btn-sm" hidden>Send test notification</button>
+              </div>
+              <p class="text-sm text-base-content/60" id="push-hint" hidden></p>
+              <p class="text-sm" id="push-feedback" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="tt-editor" style="display:none">
       <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
@@ -472,6 +499,7 @@
 <script defer src="/static/dash.js"></script>
 <script defer src="/static/gaze.js"></script>
 <script defer src="/static/timetable.js"></script>
+<script defer src="/static/push.js"></script>
 <script defer src="/static/drag-drop-touch.js"></script>
 <div class="h-[env(safe-area-inset-bottom)]"></div>
 </body></html>

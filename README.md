@@ -66,7 +66,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v14<br/>network-first shell"]
+        SW["Service worker opensrm-v15<br/>network-first shell"]
     end
 
     subgraph edge["Cloudflare edge"]
