@@ -2203,6 +2203,152 @@ def push_tick():
     return _run_tick(conf=conf)
 
 
+# ── Web push: user endpoints (JSON, session auth, 401 style) ──────────
+# DB-backed rate limits only (process-local dicts die on serverless):
+# subscribe 10/hour/netid, test push 3/hour/netid, receipts 30/hour/netid.
+
+def _push_401():
+    return {"ok": False, "error": "not logged in"}, 401
+
+
+def _push_bad(msg, code=400):
+    return {"ok": False, "error": msg}, code
+
+
+@app.route("/api/push/status")
+def push_status():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    subs = push_store.list_subscriptions(netid=netid, enabled_only=False)
+    row = subs[0] if subs else None
+    return {"ok": True,
+            "configured": conf["configured"],
+            "enabled": conf["enabled"],
+            "dry_run": conf["dry_run"],
+            "allowlisted": not conf["allow"] or netid.lower() in conf["allow"],
+            "vapid_public_key": conf["public"] if conf["configured"] else "",
+            "endpoint_hash": _endpoint_hash(row["endpoint"]) if row else None,
+            "subscription": ({"lead_minutes": row["lead_minutes"],
+                              "enabled": bool(row["enabled"]),
+                              "created_at": row["created_at"]} if row else None),
+            "lead_choices": list(push_calc.LEAD_CHOICES)}
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def push_subscribe():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    if not conf["configured"]:
+        return _push_bad("push not configured", 409)
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return _push_bad("invalid request — Content-Type must be application/json")
+    endpoint, keys = d.get("endpoint"), d.get("keys")
+    p256dh = keys.get("p256dh") if isinstance(keys, dict) else None
+    auth = keys.get("auth") if isinstance(keys, dict) else None
+    if (not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 4096
+            or not isinstance(p256dh, str) or not p256dh or len(p256dh) > 512
+            or not isinstance(auth, str) or not auth or len(auth) > 512):
+        return _push_bad("invalid subscription")
+    if push_store.count_events(netid, "subscribe", int(time.time()) - 3600) >= 10:
+        return _push_bad("too many subscription updates (10/hour)", 429)
+    row = push_store.upsert_subscription(netid, endpoint, p256dh, auth,
+                                         str(d.get("ua_label", ""))[:64])
+    push_store.record_event(netid, "subscribe", _endpoint_hash(endpoint))
+    return {"ok": True, "lead_minutes": row["lead_minutes"],
+            "endpoint_hash": _endpoint_hash(endpoint)}
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    endpoint = d.get("endpoint") if isinstance(d, dict) else None
+    if not isinstance(endpoint, str) or not endpoint:
+        return _push_bad("endpoint required")
+    removed = push_store.remove_subscription(netid, endpoint)
+    return {"ok": True, "removed": removed}
+
+
+@app.route("/api/push/settings", methods=["POST"])
+def push_settings():
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    if not isinstance(d, dict):
+        return _push_bad("invalid request — Content-Type must be application/json")
+    lead, enabled = d.get("lead_minutes"), d.get("enabled")
+    if lead is None and enabled is None:
+        return _push_bad("nothing to update")
+    if lead is not None and lead not in push_calc.LEAD_CHOICES:
+        return _push_bad(f"lead_minutes must be one of {', '.join(map(str, push_calc.LEAD_CHOICES))}")
+    if enabled is not None and not isinstance(enabled, bool):
+        return _push_bad("enabled must be true or false")
+    n = push_store.set_settings(netid, lead_minutes=lead, enabled=enabled)
+    if n == 0:
+        return _push_bad("no subscription for this account", 404)
+    return {"ok": True, "updated": n}
+
+
+@app.route("/api/push/test", methods=["POST"])
+def push_test():
+    """Send one real notification to this account's device (receipts prove
+    arrival server-side). Rate-limited; works only when the feature is on."""
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    conf = _push_conf()
+    if not conf["configured"]:
+        return _push_bad("push not configured", 409)
+    if not conf["enabled"]:
+        return _push_bad("reminders are disabled", 403)
+    if conf["allow"] and netid.lower() not in conf["allow"]:
+        return _push_bad("reminders are not enabled for your account yet", 403)
+    if push_store.count_events(netid, "test_push", int(time.time()) - 3600) >= 3:
+        return _push_bad("test notifications are limited to 3 per hour", 429)
+    subs = push_store.list_subscriptions(netid=netid)
+    if not subs:
+        return _push_bad("no subscription — enable reminders first")
+    test_id = secrets.token_hex(16)
+    push_store.record_event(netid, "test_push", test_id)   # count BEFORE sending
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    payload = {"title": "OpenSRM test",
+               "body": f"Test notification · {now:%H:%M} — reminders are working",
+               "tag": f"test-{test_id}", "test_id": test_id, "url": "/"}
+    job = push_send.send_one({"sub": subs[0], "payload": payload, "ttl": 600})
+    oc = job["outcome"]
+    if oc.get("ok"):
+        return {"ok": True, "test_id": test_id}
+    if oc.get("dead"):
+        push_store.delete_subscription_by_id(subs[0]["id"])
+        return _push_bad("this device's subscription expired — turn reminders off and on again", 410)
+    return _push_bad(f"push service error (http {oc.get('http_status')})", 502)
+
+
+@app.route("/api/push/receipt", methods=["POST"])
+def push_receipt():
+    """The SW posts this when a test notification actually displayed —
+    Navya's server-side proof of device delivery (esp. iOS)."""
+    netid = get_current_user()
+    if not netid:
+        return _push_401()
+    d = request.get_json(silent=True)
+    test_id = d.get("test_id") if isinstance(d, dict) else None
+    if not isinstance(test_id, str) or not re.fullmatch(r"[0-9a-f]{32}", test_id):
+        return _push_bad("invalid test_id")
+    if push_store.count_events(netid, "receipt", int(time.time()) - 3600) >= 30:
+        return _push_bad("too many receipts (30/hour)", 429)
+    push_store.record_event(netid, "receipt", test_id)
+    return {"ok": True}
+
+
 @app.route("/logout")
 def logout():
     token = request.cookies.get("srm_session")
