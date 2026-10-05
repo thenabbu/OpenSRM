@@ -16,6 +16,23 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Secure flag enabled only when the request carries a real `cf-ray` and arrived over HTTPS
 - 30-day expiry, enforced on every read; expired tokens for an account are pruned when that account logs in again (no background sweeper)
 
+### Push notifications (Web Push)
+- A subscription's **endpoint is a capability URL** — anyone holding it could
+  target that device. It is stored server-side only, never logged in full
+  (12-char hash prefix at most) and never rendered to another user; the
+  status API exposes only the hash
+- `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `PUSH_TICK_SECRET` live in env
+  (`/docker/.env`, passed via compose `${VAR}`), never in the repo or
+  `DATA_DIR`; the app refuses to run the feature without them (no runtime
+  key generation — an ephemeral host would orphan every subscription)
+- `POST /internal/push/tick` is authenticated by the `X-Push-Tick` header
+  compared with `hmac.compare_digest`; missing/wrong secret → bare 401, no
+  session cookie involved, no detail leaked
+- Push endpoints use **DB-backed** rate limits (survive serverless): 10
+  subscribes, 3 test pushes, 30 receipts per netid per hour
+- Reminder payloads contain only timetable facts (subject, time, room) and
+  TTL out at class start; the push path never touches the portal
+
 ### Content Security Policy
 - `default-src 'self'` — everything falls back to same-origin
 - `script-src 'self' https://cdn.jsdelivr.net` — no inline scripts; the only external origin is the Tailwind/daisyUI CDN (both pages load it via `partials/theme.html`)

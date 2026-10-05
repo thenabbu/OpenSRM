@@ -22,6 +22,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Personal Details** — identity header (name + program) over collapse groups (Academic, Personal, Family, Contact) with present-field count badges; dense 2-column label-above-value grid with all groups open on desktop, first group only on mobile; click any value to copy it
 - **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/courses reused until stale (24h); timetable served from SQLite and only changes when you edit it; opening the page shows cached data instantly with a quiet background re-sync
 - **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
+- **Class reminders** — Web Push notification a few minutes before each class (subject, start time, room when set), delivered even with the app closed; opt-in per device with 5/10/15/30-minute lead, a test button with server-side delivery receipts, and iOS Home-Screen guidance — driven by an external every-minute tick ([docs/push.md](docs/push.md))
 
 ---
 
@@ -220,6 +221,9 @@ Environment variables:
 - `LOG_LEVEL` — Logging verbosity: DEBUG, INFO (default), WARNING, ERROR
 - `TZ` — Timezone (default: `Asia/Kolkata`)
 - `SRM_EGRESS_URL` + `SRM_PROXY_TOKEN` — optional: route portal traffic through the Cloudflare egress worker instead of direct egress (both must be set, otherwise direct)
+- `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
+- `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
 
 ---
 
@@ -240,6 +244,7 @@ See [SECURITY.md](SECURITY.md) for details.
 - [AGENTS.md](AGENTS.md) — quickstart for agents: dev loop, test matrix, release rules, gotchas
 - [DESIGN.md](DESIGN.md) — the `openSRM` daisyUI theme: tokens, components, house rules
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, PR flow, portal rate limits
+- [docs/push.md](docs/push.md) — Web Push class reminders: architecture, env vars, cron-job.org job, rollout, limitations
 - [docs/audit/](docs/audit/) — consolidated audit record (76 findings, all fixed)
 
 ---
