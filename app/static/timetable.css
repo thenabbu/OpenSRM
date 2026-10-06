@@ -1,21 +1,16 @@
 /* Timetable custom styles — themed with daisyUI tokens */
 .tt-wrap{background:var(--color-base-200);border:1px solid var(--color-base-300);border-radius:8px;padding:16px}
-.tt-hero{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:6px;background:var(--color-base-300);margin-bottom:14px;border-left:3px solid var(--color-base-300)}
+/* restyled per review R2: no dot, no badge; ONE loud object = the 22px stat;
+   hue ONLY on the faint left rim when the stat is a deviation */
+.tt-hero{padding:12px 14px;border-radius:6px;background:var(--color-base-200);margin-bottom:14px;border:1px solid var(--color-base-300);border-left:3px solid var(--color-base-300)}
 .tt-hero strong{display:block;font-size:13.5px;font-weight:600}
 .tt-hero-sub,.tt-hero-loc{font-size:11.5px;color:var(--color-base-content);opacity:0.5}
-.tt-hero--now{border-left-color:var(--color-success)} .tt-hero--next{border-left-color:var(--color-success)}
-.tt-hero--break{border-left-color:var(--color-warning)}
-/* attendance glance (spec §1.B): one edge, one meaning — when the hero shows a
-   skip stat its edge carries the RISK state, not the temporal now-tint */
-.tt-hero--risk-warn{border-left-color:var(--color-warning)}
-.tt-hero--risk-danger{border-left-color:var(--color-error)}
-.tt-hero-dot--risk-warn{background:var(--color-warning)}
-.tt-hero-dot--risk-danger{background:var(--color-error)}
+.tt-hero-sub{margin-bottom:3px}
+.tt-hero--risk-warn{border-left-color:oklch(63% 0.115 68)}
+.tt-hero--risk-danger{border-left-color:oklch(58% 0.115 25)}
+.tt-hero--break{border-left-color:oklch(63% 0.115 68)}
 .tt-hero-num{display:inline-block;margin-right:6px;font-size:22px;font-weight:700;line-height:1;vertical-align:-2px;font-variant-numeric:tabular-nums;color:var(--color-base-content)}
-.tt-hero-sig{margin-top:4px;font-size:12.5px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
-.tt-hero-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
-.tt-hero-dot--now{background:var(--color-success)} .tt-hero-dot--next{background:var(--color-accent)}
-.tt-hero-dot--break{background:var(--color-warning)} .tt-hero-dot--off{background:var(--color-base-content);opacity:0.5}
+.tt-hero-sig{margin-top:5px;font-size:12.5px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 .tt-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
 .tt-tabbar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .tt-tabbar label{padding:6px 14px;border-radius:999px;background:var(--color-base-300);color:var(--color-base-content);opacity:0.7;font-size:12.5px;cursor:pointer;position:relative}
@@ -49,8 +44,8 @@
 .tt-riskbar{position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:2px;
             /* neutral baseline must be visible; a ladder-step alpha, still no hue */
             background:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
-.tt-riskbar--warn{background:var(--color-warning)}
-.tt-riskbar--danger{background:var(--color-error)}
+.tt-riskbar--warn{background:oklch(63% 0.115 68)}
+.tt-riskbar--danger{background:oklch(58% 0.115 25)}
 .tt-sig{margin-left:auto;flex:0 0 auto;width:104px;display:flex;align-items:center;gap:6px;white-space:nowrap;
         font-family:monospace;font-size:11px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 .tt-sig svg{width:14px;height:14px;flex:0 0 auto}
@@ -58,7 +53,7 @@
 .tt-sig--danger svg{color:var(--color-error)}
 .tt-sig--none{opacity:.5}
 .tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--color-success);color:var(--color-accent-content);font-weight:600}
-.tt-badge--soon{background:var(--color-accent);color:var(--color-accent-content)}
+.tt-badge--soon{background:color-mix(in oklab, var(--color-base-content) 14%, transparent);color:color-mix(in oklab, var(--color-base-content) 70%, transparent)}
 .tt-divider{font-size:11px;color:var(--color-base-content);opacity:0.5;text-align:center;padding:4px 0}
 .tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -101,12 +96,13 @@
 .mname{flex:1 1 auto;min-w:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mpct{flex:0 0 auto;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--color-base-content)}
 .mrows{display:flex;flex-direction:column;gap:14px}
+@media (min-width:768px){.mrows{display:grid;grid-template-columns:1fr 1fr;gap:16px 28px}}
 /* flat track; faint status tint on the FILL only — red = below 75,
    orange(warn) = pct ≥ 75 AND skip-now == 0, gray = comfortable */
 .meter{position:relative;height:14px;border-radius:2px;background:var(--color-base-300);margin-top:6px}
 .mz{position:absolute;left:0;top:0;bottom:0;background:color-mix(in oklab, var(--color-base-content) 60%, transparent);border-radius:2px 0 0 2px}
-.mz--red{background:var(--color-error)}
-.mz--warn{background:var(--color-warning)}
+.mz--red{background:oklch(58% 0.115 25)}
+.mz--warn{background:oklch(63% 0.115 68)}
 .mtick{position:absolute;left:75%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--color-base-content)}
 /* hatched segment = the gap between current fill and the 75% tick (either side) */
 .mhatch{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,color-mix(in oklab, var(--color-base-content) 50%, transparent) 0 2px,transparent 2px 5px);pointer-events:none}
@@ -130,6 +126,7 @@
 .qgrid .qhead:first-child{text-align:left}
 .qgrid .qnum{text-align:right;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 .qlist{display:flex;flex-direction:column;gap:9px;font-size:12.5px}
+.qlabel{font-size:11.5px;font-weight:600;color:var(--color-base-content);opacity:0.5;margin:10px 0 2px}.qlabel:first-of-type{margin-top:0}
 .qarow{display:flex;align-items:baseline;gap:10px}
 .qdate{flex:0 0 58px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);font-variant-numeric:tabular-nums}
 .qhrs{flex:0 0 auto;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);font-variant-numeric:tabular-nums}

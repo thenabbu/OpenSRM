@@ -411,12 +411,12 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
 ```css
 .tt-row--current  { border-color: var(--color-success);
                     background: color-mix(in oklab, var(--color-success) 8%, transparent); }
-.tt-badge         { background: var(--color-success); color: var(--color-accent-content); }
-.tt-badge--soon   { background: var(--color-accent);  color: var(--color-accent-content); }
+.tt-badge--soon   { background: color-mix(in oklab, var(--color-base-content) 14%, transparent);
+                    color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
 .tt-time          { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
 ```
 
-Meaning map: current class = `success` border + 8% tint + "Now" badge · next/soon = white (`accent`) · selected day pill = `accent` fill with `accent-content` text · break = `warning` · drop target hover = `base-content` border · filled cell = `success` border.
+Meaning map: current class = `success` border + 8% tint (the hero states it — the "Now" chip was removed in the attention review: one state, one indicator) · next/soon = quiet neutral chip (base-content mix — `accent` pulled the eye) · selected day pill = `accent` fill with `accent-content` text · break = `warning` · drop target hover = `base-content` border · filled cell = `success` border.
 
 ### 4.12 End-sem schedule card (dashboard)
 
@@ -515,16 +515,16 @@ Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for 
 </div>
 ```
 
-- **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always.
+- **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always. **Values are the faint approved-mockup tints — `oklch(58% 0.115 25)` / `oklch(63% 0.115 68)`** — NOT the `--color-error`/`--color-warning` theme tokens: those are full-saturation and pull the eye (attention review R1; the timetable `.tt-riskbar`/hero rims use the same faint values).
 - **Pinned numbers:** attended @fill%, `ceil(0.75·C)` @75% (38 when C=50), total @right pole. `pnums`/`pconn` alphas are ladder steps only (50%/60% via `color-mix`); the connector's action number is `base-content` (100%) punched out on `base-200`.
-- **Connector line** spans fill↔tick and carries the BARE action count (must-attend below 75, skippable above) — no words under the bar; the aria-label carries the sentence for screen readers (never "X of Y classes").
+- **Connector line** spans fill↔tick and carries the BARE action count (must-attend below 75, skippable above) — no words under the bar; the aria-label carries the sentence for screen readers (never "X of Y classes"). Renders **only when the count > 0** (review R3): a lone "0" on a hairline read as a bug; the orange fill already carries zero-margin.
 - **Nudges** (±6px <9%, ±14px <3%) separate the `pn-now`/`pn-75` labels near the tick; they nudge AWAY from each other (`nudL`/`nud2L` when fill < 75, `nudR`/`nud2R` when fill > 75).
 - **Degrade, never fake:** C=0 → no meter at all (row skipped); w=0 → budgets hidden from Estimates; no exams → Estimates endsem column `--`; unmatched/custom in the timetable → neutral "no data", NEVER a numeric 0%.
 - **CSS lives in `app/static/timetable.css`** under the `/* ── Attendance meter row */` banner — every color a `var(--color-*)` token or `color-mix` ladder step; no badges, no uppercase, no gradients (the hatch is the one sanctioned pattern), one divider style, labels ≤3 words, no sentence over 8 words.
-- **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and `qlist` absences rows `date · hours` ONLY (no subject column — `daily_absent` carries none). Monthly breakdown is demoted verbatim into a `<details>` under them.
+- **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and `qlist` absences rows `date · hours` ONLY (no subject column — `daily_absent` carries none), **month-grouped under quiet `.qlabel` subheads** (review R4: the flat list read dry). Monthly breakdown is demoted verbatim into a `<details>` under them.
 - **Attention budget:** the meter row is attention-budget-compliant by construction — grayscale default, hue only on the fill of a deviation, numbers neutral, no aggregate anywhere (no overall %, no overall bunk line, no summed totals).
 
-Timetable glance (same PR): `.tt-sig` 104px shape-glyph line (check = can skip, triangle = no margin, X = must attend; colour reinforces only), a 2px `.tt-riskbar` edge carrying risk (one edge, one meaning — the now-tint yields), and the today's-slot hero gaining a 22px `tt-hero-num` skip stat whose edge/dot take the risk state. Unmatched/custom slots render neutral "no data" at `opacity .5`. The Now/Soon `.tt-badge` is KEPT (§5 attention rules are scoped to the attendance tab).
+Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.tt-riskbar` rim is the **sole can-be-missed indicator** (faint danger/warn tints, same values as the meter fills) and the bare action number in `.tt-sig` is data — the shape glyph was removed (two indicators for one fact). The today's-slot hero is a quiet card: `Now · ends HH:MM` at /50, Title-Case subject, and ONE loud object — the 22px `tt-hero-num` stat; hue appears only on the faint left rim when the stat is a deviation. No dot, no "Now" chip. Unmatched/custom slots render neutral "no data" at `opacity .5`. Subject names are Title-Cased at render (`_title_case`: ALL-CAPS portal names only; custom mixed-case names untouched; join keys still go through `_norm_subject`).
 
 ---
 

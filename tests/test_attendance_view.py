@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # verify76 forbids test-DB files in the repo root / tests dir; mkdtemp (not a
 # `with` block) so the DB dir outlives this module-level test body
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-att-view-")
-from app.app import (_absences_view, _attendance_budgets, _attendance_index,
+from app.app import (_absences_view, _attendance_budgets, _attendance_index, _title_case,
                      _bunk_counts, _bunk_line, _course_view, _exam_stop,
                      _join_attendance, _tt_att_sig, _weekdays)
 
@@ -123,10 +123,13 @@ check("sig: neutral for no-join", _tt_att_sig(None) is None)
 
 # 8) absences rows: date · hours ONLY (no subject column) [R5]
 av = _absences_view(json.loads(json.dumps({"SEP / 2026": [{"date": "03-09-2026", "hours": "3"}]})))
-check("absences row keys = date·hours", all(set(r) == {"date", "hours"} for r in av), str(av))
-check("absences date rendered", av and av[0]["date"] == "03 Sep" and av[0]["hours"] == "3", str(av))
+check("absences grouped by month", av and av[0]["label"] == "Sep 2026", str(av))
+check("absences row keys = date·hours", av and all(set(r) == {"date", "hours"} for r in av[0]["rows"]), str(av))
+check("absences date rendered", av and av[0]["rows"][0]["date"] == "03 Sep" and av[0]["rows"][0]["hours"] == "3", str(av))
 check("absences empty → []", _absences_view({}) == [])
-check("absences junk date shown raw", _absences_view({"X": [{"date": "?", "hours": "1"}]})[0]["date"] == "?")
+check("absences junk date shown raw", _absences_view({"X": [{"date": "?", "hours": "1"}]})[0]["rows"][0]["date"] == "?")
+check("title-case: ALL CAPS portal name", _title_case("DATABASE MANAGEMENT SYSTEMS") == "Database Management Systems")
+check("title-case: mixed-case custom untouched", _title_case("CN Lab") == "CN Lab")
 
 print(f"\n{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)

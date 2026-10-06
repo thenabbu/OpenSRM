@@ -1229,22 +1229,32 @@ def _weekly_slots(group_key):
     return out
 
 def _absences_view(daily):
-    """Absences card rows: `date · hours` ONLY — no subject column [R5]
-    (daily_absent rows carry none; deriving one from the timetable would be a lie)."""
+    """Absences card (review R4): month-grouped; each row is `date · hours` ONLY —
+    no subject column [R5] (daily_absent rows carry none; deriving one would be a lie)."""
     out = []
-    for _label, rows in (daily or {}).items():
+    for label, rows in (daily or {}).items():
+        disp_rows = []
         for r in rows or []:
             raw = str(r.get("date", ""))
             try:
                 disp = datetime.strptime(raw, "%d-%m-%Y").strftime("%d %b")
             except ValueError:
                 disp = raw  # unknown shape: show it raw rather than hide the absence
-            out.append({"date": disp, "hours": r.get("hours", "")})
+            disp_rows.append({"date": disp, "hours": r.get("hours", "")})
+        if disp_rows:
+            out.append({"label": _title_case(str(label).replace(" / ", " ")), "rows": disp_rows})
     return out
 
 def _norm_subject(s):
     """Join key: upper / strip / squash whitespace (spec §4.3)."""
     return " ".join(str(s or "").upper().split())
+
+def _title_case(s):
+    """Display only (review R2): portal names arrive ALL CAPS -> Title Case.
+    No-op on mixed-case strings (custom timetable names keep their casing);
+    join keys still go through _norm_subject, so casing is render-time only."""
+    s = str(s or "")
+    return s.title() if s.isupper() else s
 
 def _attendance_index(courses):
     """spec §4 join index built in index(): code-exact map + normalized-name fallback map."""
@@ -1278,7 +1288,7 @@ def _course_view(c):
     absent = _safe_int(c.get("absent"))
     pct = min(100.0, round((attended / max_hours) * 100, 1)) if max_hours > 0 else 0.0
     skip, attend = _bunk_counts(attended, max_hours)
-    return {"code": c.get("code", ""), "description": c.get("description", ""),
+    return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
             "max_hours": max_hours, "attended": attended, "absent": absent,
             "pct": pct, "status": _status_for_pct(pct), "bunk_line": _bunk_line(attended, max_hours),
             # meter-row fields (spec §1.1): display 0dp, fill EXACT A/C [F12],
@@ -1583,37 +1593,33 @@ def timetable_html(group_key, attendance=None):
     hero_status = _now_next_from_slots(today, today_slots)
     # Hero HTML
     if hero_status is None or hero_status["kind"] == "done":
-        hero = ("<div class=\"tt-hero tt-hero--done\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
-                "<div><strong>Done for today</strong><div class=\"tt-hero-sub\">No more classes</div></div></div>")
+        hero = ("<div class=\"tt-hero tt-hero--done\"><strong>Done for today</strong>"
+                "<div class=\"tt-hero-sub\">No more classes</div></div>")
     elif hero_status["kind"] == "break":
-        hero = ("<div class=\"tt-hero tt-hero--break\"><span class=\"tt-hero-dot tt-hero-dot--break\"></span>"
-                "<div><strong>{label}</strong><div class=\"tt-hero-sub\">Until {until}</div></div></div>").format(**hero_status)
+        hero = ("<div class=\"tt-hero tt-hero--break\"><strong>{label}</strong>"
+                "<div class=\"tt-hero-sub\">Until {until}</div></div>").format(**hero_status)
     elif hero_status["kind"] == "current":
         # today's-slot hero: when the current class carries a skip stat, the stat is
         # the loud object (22px number) and the hero edge takes the RISK colour, not
         # the temporal now-tint (spec §1.B) — one edge, one meaning.
-        hero = ("<div class=\"tt-hero tt-hero--now{riskcls}\"><span class=\"tt-hero-dot{dotcls}\"></span>"
-                "<div><div class=\"tt-hero-sub\">Now — ends {until}</div>"
-                "<strong>{code} \u2014 {name}</strong>{sig}"
-                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(
+        hero = ("<div class=\"tt-hero tt-hero--now{riskcls}\">"
+                "<div class=\"tt-hero-sub\">Now \u00b7 ends {until}</div>"
+                "<strong>{code} \u2014 {name}</strong>{sig}</div>").format(
+            # review R2: no dot, no badge; hue only on the faint left rim = deviation
             riskcls=" tt-hero--risk-danger" if (sig_txt := _tt_att_sig(hero_status.get("_att")) if "_att" in hero_status else None) and sig_txt["cls"] == "danger"
                    else (" tt-hero--risk-warn" if sig_txt and sig_txt["cls"] == "warn" else ""),
-            dotcls=" tt-hero-dot--risk-danger" if sig_txt and sig_txt["cls"] == "danger"
-                   else (" tt-hero-dot--risk-warn" if sig_txt and sig_txt["cls"] == "warn" else " tt-hero-dot--now"),
-            code=hero_status["code"], name=hero_status["name"], until=hero_status["until"],
-            loc=hero_status.get("loc", ""),
+            code=hero_status["code"], name=_title_case(hero_status["name"]), until=hero_status["until"],
             sig=("<div class=\"tt-hero-sig\"><span class=\"tt-hero-num\">{num}</span>{txt}</div>"
                  .format(num=sig_txt["num"], txt="classes in a row to hold 75%" if sig_txt["cls"] == "danger"
                          else "skippable and still hold 75%" if sig_txt["cls"] == "ok"
                          else "left — one miss drops below 75%") if sig_txt else ""))
     elif hero_status["kind"] == "next":
-        hero = ("<div class=\"tt-hero tt-hero--next\"><span class=\"tt-hero-dot tt-hero-dot--next\"></span>"
-                "<div><strong>{code} \u2014 {name}</strong>"
+        hero = ("<div class=\"tt-hero tt-hero--next\"><strong>{code} \u2014 {name}</strong>"
                 "<div class=\"tt-hero-sub\">Starts at {at} (in {in_mins}m)</div>"
-                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(**hero_status)
+                "<div class=\"tt-hero-loc\">{loc}</div></div>").format(
+            **{**hero_status, "name": _title_case(hero_status["name"])})
     else:
-        hero = ("<div class=\"tt-hero tt-hero--off\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
-                "<div><strong>No classes today</strong></div></div>")
+        hero = ("<div class=\"tt-hero tt-hero--off\"><strong>No classes today</strong></div>")
     # Day tabs + panels
     default_day = today if today in DAY_ORDER else "Monday"
     radios = "".join("<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(d, " checked" if d == default_day else "") for d in DAY_ORDER)
@@ -1634,7 +1640,7 @@ def timetable_html(group_key, attendance=None):
             sl = day_slots.get(d, {}).get(s["period"])
             if not sl:
                 continue
-            code, name, loc = sl["code"], sl["name"], sl.get("location", "")
+            code, name, loc = sl["code"], _title_case(sl["name"]), sl.get("location", "")
             now_mins = datetime.now().hour * 60 + datetime.now().minute
             sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
             em = int(s["end"].split(":")[0])*60 + int(s["end"].split(":")[1])
@@ -1644,22 +1650,18 @@ def timetable_html(group_key, attendance=None):
             elif d == today and now_mins < sm and (sm - now_mins) <= 120:
                 hl = "upcoming"
             cls = " tt-row--" + hl if hl else ""
-            badge = ""
-            if hl == "current": badge = "<span class=tt-badge>Now</span>"
-            elif hl == "upcoming": badge = "<span class=tt-badge tt-badge--soon>Soon</span>"
+            # review R6/R9: no Now badge (the hero already says it); Soon stays
+            badge = "<span class=tt-badge tt-badge--soon>Soon</span>" if hl == "upcoming" else ""
             loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
-            # attendance glance (spec §1.B): shape glyph + slim risk edge; neutral
-            # "no data" for unmatched/custom (opacity-50, never a numeric 0%)
+            # attendance glance (review R7): the slim risk rim IS the can-be-missed
+            # indicator; the bare number is data. Neutral "no data" for
+            # unmatched/custom (opacity-50, never a numeric 0%)
             sig = _tt_att_sig(sl.get("_att"))
             riskbar = ('<span class="tt-riskbar{}"></span>'.format(
                 " tt-riskbar--danger" if sig and sig["cls"] == "danger" else " tt-riskbar--warn" if sig and sig["cls"] == "warn" else ""))
-            icon = {"ok": '<path d="M4 10.5l4 4 8-9"/>', "warn": '<path d="M10 3.5l7 13H3z"/>',
-                    "danger": '<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>', "none": '<path d="M5 10h10"/>'}[(sig["cls"] if sig else "none")]
-            sig_html = ('<div class="tt-sub">{loc}<span class="tt-sig{cls}">'
-                        '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" '
-                        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{icon}</svg>{text}</span></div>'
+            sig_html = ('<div class="tt-sub">{loc}<span class="tt-sig{cls}">{text}</span></div>'
                         ).format(loc=loc_html, cls=" tt-sig--" + sig["cls"] if sig else " tt-sig--none",
-                                 icon=icon, text=sig["text"] if sig else "no data")
+                                 text=sig["text"] if sig else "no data")
             rows.append('<div class="tt-row{cls}">{risk}'
                         '<div class="tt-time">{start}<small>{end}</small></div>'
                         '<div class="tt-info"><strong>{code}</strong><span class="tt-name">{name}</span></div>'

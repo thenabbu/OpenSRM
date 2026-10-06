@@ -249,7 +249,8 @@
             <i class="mtick"></i>
           </div>
           <div class="pnums"><span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span><span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
-          <div class="pconn"><i style="left:{{ (fill if fill < 75 else 75)|round(2) }}%;width:{{ hatch_w }}%"></i><span style="left:{{ ((fill + 75) / 2)|round(2) }}%">{{ c.attend_now if c.attend_now is not none else c.skip_now }}</span></div>
+          {% set conn = c.attend_now if c.attend_now is not none else c.skip_now %}
+          {% if conn %}<div class="pconn"><i style="left:{{ (fill if fill < 75 else 75)|round(2) }}%;width:{{ hatch_w }}%"></i><span style="left:{{ ((fill + 75) / 2)|round(2) }}%">{{ conn }}</span></div>{% endif %}
         </div>
       {% endif %}
       {% endfor %}
@@ -276,11 +277,14 @@
     {% if absences %}
     <div class="att-h">Absences</div>
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+      {% for g in absences %}
+      <div class="qlabel">{{ g.label }}</div>
       <div class="qlist">
-        {% for a in absences %}
+        {% for a in g.rows %}
         <div class="qarow"><span class="qdate">{{ a.date }}</span><span class="qhrs">{{ a.hours }}h</span></div>
         {% endfor %}
       </div>
+      {% endfor %}
     </div>
     {% endif %}
 
