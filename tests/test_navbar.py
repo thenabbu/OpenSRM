@@ -1,8 +1,9 @@
-"""Navbar DUT (12 checks): desktop bar sheds the netid echo, the selected tab
+"""Navbar DUT (18 checks): desktop bar sheds the netid echo, the selected tab
 has a perceivable tint (daisyUI .btn-active is a no-op on this dark surface),
 the sync caption is a relative age to the right of the refresh button and
-disappears when fresh, the mobile bar shows no version badge, and the wordmark
-carries a 4px minor radius. Server under test: AGENTS.md."""
+disappears when fresh, the mobile bar shows no version badge, the wordmark
+carries a 4px minor radius, and the page gutter holds 8px mobile / 16px desktop
+with the column flush to the navbar content edge. Server under test: AGENTS.md."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-navbar')
@@ -104,7 +105,8 @@ with sync_playwright() as p:
         syncText: sync.textContent, syncDisplay: getComputedStyle(sync).display,
         syncTitle: sync.title,
         endOrder: end.map(c => c.tagName + (c.dataset && c.dataset.refresh ? ':refresh' : '')),
-        overflow: document.documentElement.scrollWidth - window.innerWidth
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        gutter: parseFloat(getComputedStyle(document.querySelector('main')).paddingLeft)
       };
     }""")
     nav_bg = rgb(page.evaluate("() => getComputedStyle(document.querySelector('.navbar.hidden')).backgroundColor"))
@@ -184,6 +186,9 @@ with sync_playwright() as p:
           f"bar={bar_w}px paddingBox={ind['padW']}px pill={ind['pillW']}px "
           f"left={ind['on']['left']} right={ind['on']['right']}")
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
+    # DESIGN.md §5: gutter steps back to 16px beside the px-4 desktop navbar
+    check('desktop: page gutter = 16px (lg column, matches navbar px-4)',
+          d['gutter'] == 16, f"gutter={d['gutter']}px")
     ctx.close()
 
     # ── mobile 393x851 ──────────────────────────────────────────────
@@ -202,7 +207,12 @@ with sync_playwright() as p:
         logoRadius: getComputedStyle(nav.querySelector('img')).borderRadius,
         syncDisplay: getComputedStyle(sync).display,
         endOrder: [...nav.querySelector('.navbar-end').children].map(c => c.tagName),
-        overflow: document.documentElement.scrollWidth - window.innerWidth
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        gutter: parseFloat(getComputedStyle(document.querySelector('main')).paddingLeft),
+        cardX: (() => { const p = document.getElementById('tab-dashboard');
+          const f = [...p.children].find(e => e.getBoundingClientRect().width > 0);
+          return f ? f.getBoundingClientRect().x : null; })(),
+        navContentX: nav.getBoundingClientRect().x + parseFloat(getComputedStyle(nav).paddingLeft)
       };
     }""")
     check('mobile: no version badge in the navbar',
@@ -213,6 +223,11 @@ with sync_playwright() as p:
           m['endOrder'] == ['BUTTON', 'SPAN', 'A'] and m['syncDisplay'] == 'none',
           f"{m['endOrder']} display={m['syncDisplay']}")
     check('mobile: no horizontal overflow', m['overflow'] <= 0, str(m['overflow']))
+    # DESIGN.md §5: 8px below lg (matches the mobile navbar's own 8px content
+    # padding, so the column aligns) — never px-0, never the old 16px
+    check('mobile: page gutter = 8px and column aligns with navbar content edge',
+          m['gutter'] == 8 and m['cardX'] == m['navContentX'] == 8,
+          f"gutter={m['gutter']} cardX={m['cardX']} navContentX={m['navContentX']}")
     b.close()
 
 fails = [r for r in results if not r[1]]
