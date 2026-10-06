@@ -44,6 +44,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
+.venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
@@ -120,7 +121,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v15`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v20; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

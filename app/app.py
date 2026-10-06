@@ -31,7 +31,7 @@ import secrets
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
 from urllib.parse import urlparse
@@ -1123,6 +1123,7 @@ def fetch_attendance(netid, password):
 # ── View model ─────────────────────────────────────────────────────
 ATTENDANCE_TARGET = 0.75
 ATTENDANCE_WARN = 0.65
+WORKING_DAYS = 90  # 90-working-day skip-budget horizon (spec §3); no academic calendar exists (see _attendance_budgets)
 
 def _safe_int(v):
     try:
@@ -1135,17 +1136,144 @@ def _status_for_pct(pct):
     if pct >= ATTENDANCE_WARN * 100: return "warn"
     return "danger"
 
+def _bunk_counts(attended, total, threshold=ATTENDANCE_TARGET):
+    """(skip_now, attend_now) — the numbers behind _bunk_line's prose (spec §3).
+    Exactly one side is non-None when total > 0; (None, None) when nothing was held.
+    The ±1e-9 epsilon and max(1, …) are the original _bunk_line's semantics [F10] —
+    _bunk_line renders these; the meter connector + timetable glance need the NUMBER."""
+    if total <= 0:
+        return (None, None)
+    room = attended / threshold - total
+    if room >= -1e-9:
+        return (max(0, math.floor(room + 1e-9)), None)
+    return (None, max(1, math.ceil((threshold * total - attended) / (1 - threshold) - 1e-9)))
+
 def _bunk_line(attended, max_hours, threshold=ATTENDANCE_TARGET):
     if max_hours <= 0: return None
     pct_target = threshold * 100
-    room = attended / threshold - max_hours
-    if room >= -1e-9:
-        n = max(0, math.floor(room + 1e-9))
-        if n == 0:
+    skip, attend = _bunk_counts(attended, max_hours, threshold)
+    if skip is not None:
+        if skip == 0:
             return "One more miss drops you below %.0f%%" % pct_target
-        return "Can miss %d more class%s and stay above %.0f%%" % (n, "" if n == 1 else "es", pct_target)
-    need = max(1, math.ceil((threshold * max_hours - attended) / (1 - threshold) - 1e-9))
-    return "Attend the next %d class%s in a row to reach %.0f%%" % (need, "" if need == 1 else "es", pct_target)
+        return "Can miss %d more class%s and stay above %.0f%%" % (skip, "" if skip == 1 else "es", pct_target)
+    return "Attend the next %d class%s in a row to reach %.0f%%" % (attend, "" if attend == 1 else "es", pct_target)
+
+def _weekdays(a, b):
+    """Mon–Fri count with BOTH ends inclusive (0 when b < a) [F13]."""
+    if not a or not b or b < a:
+        return 0
+    n, d = 0, a
+    while d <= b:
+        if d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+def _exam_stop(exams):
+    """One global attendance horizon for every subject: first parseable endsem date − 1 day
+    (spec §0/R6 — portal marking stops at the FIRST exam of ANY subject). None when
+    exam_schedule is empty/junk: callers degrade, never guess a date."""
+    dates = []
+    for r in exams or []:
+        try:
+            dates.append(datetime.strptime(str(r.get("date", "")), "%d-%m-%Y").date())
+        except ValueError:
+            continue  # junk rows fall back in _exams_view; they must not anchor the horizon
+    return (min(dates) - timedelta(days=1)) if dates else None
+
+def _attendance_budgets(attended, max_hours, w, period=None, exams=None, today=None):
+    """Semester skip budgets (spec §3): 90-working-day model + endsem-date model.
+    Every value degrades to None (template renders `--` / hides) — never a fake zero:
+    no exams → m_end/days_left_exam None; w = 0 → both budgets None; period absent or
+    elapsed ≤ 0 → days_left_90 dropped (column keeps its budgets) [F9].
+    ponytail: period.from may be a rolling window; if days-left ever looks wrong, add
+    academic_calendar_json (migration v11 is free) — ceiling disclosed in the PR [R7]."""
+    today = today or date.today()
+    stop = _exam_stop(exams)
+    out = {"m90": None, "m_end": None, "days_left_90": None, "days_left_exam": None, "stop": stop}
+    if w > 0:
+        T = math.ceil(WORKING_DAYS * w / 5)
+        N = T - max_hours
+        out["m90"] = max(0, math.floor(attended + N - ATTENDANCE_TARGET * T))
+        if stop is not None:
+            # ceil REQUIRED here: floor/raw gives DBMS 4 where the frozen table says 5 [F1]
+            N_e = math.ceil(w * _weekdays(today + timedelta(days=1), stop) / 5)
+            T_e = max_hours + N_e
+            out["m_end"] = max(0, math.floor(attended + N_e - ATTENDANCE_TARGET * T_e))
+    if stop is not None:
+        out["days_left_exam"] = (stop - today).days
+    frm = period.get("from") if isinstance(period, dict) else None
+    if frm:
+        try:
+            elapsed = _weekdays(datetime.strptime(str(frm), "%d/%b/%Y").date(), today)
+        except ValueError:
+            elapsed = 0
+        if elapsed > 0:
+            out["days_left_90"] = WORKING_DAYS - min(elapsed, WORKING_DAYS)
+    return out
+
+def _weekly_slots(group_key):
+    """w = weekly slot count per subject_code, scoped to THIS user's group [F4].
+    Precedent: _day_slots / timetable_html / /api/timetable all scope by group_id."""
+    if not group_key:
+        return {}
+    c = db()
+    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
+    out = {}
+    if gid:
+        out = {r[0]: r[1] for r in c.execute(
+            "SELECT subject_code, COUNT(*) FROM timetable_slots "
+            "WHERE group_id=? AND subject_code IS NOT NULL AND subject_code != '' "
+            "GROUP BY subject_code", (gid[0],))}
+    c.close()
+    return out
+
+def _absences_view(daily):
+    """Absences card (review R4): month-grouped; each row is `date · hours` ONLY —
+    no subject column [R5] (daily_absent rows carry none; deriving one would be a lie)."""
+    out = []
+    for label, rows in (daily or {}).items():
+        disp_rows = []
+        for r in rows or []:
+            raw = str(r.get("date", ""))
+            try:
+                disp = datetime.strptime(raw, "%d-%m-%Y").strftime("%d %b")
+            except ValueError:
+                disp = raw  # unknown shape: show it raw rather than hide the absence
+            disp_rows.append({"date": disp, "hours": r.get("hours", "")})
+        if disp_rows:
+            out.append({"label": _title_case(str(label).replace(" / ", " ")), "rows": disp_rows})
+    return out
+
+def _norm_subject(s):
+    """Join key: upper / strip / squash whitespace (spec §4.3)."""
+    return " ".join(str(s or "").upper().split())
+
+def _title_case(s):
+    """Display only (review R2): portal names arrive ALL CAPS -> Title Case.
+    No-op on mixed-case strings (custom timetable names keep their casing);
+    join keys still go through _norm_subject, so casing is render-time only."""
+    s = str(s or "")
+    return s.title() if s.isupper() else s
+
+def _attendance_index(courses):
+    """spec §4 join index built in index(): code-exact map + normalized-name fallback map."""
+    by_code = {c["code"]: c for c in courses if c.get("code")}
+    by_name = {}
+    for c in courses:
+        key = _norm_subject(c.get("description"))
+        if key:
+            by_name.setdefault(key, c)
+    return {"by_code": by_code, "by_name": by_name}
+
+def _join_attendance(index, custom_codes, code, name):
+    """spec §4 order is load-bearing: custom (is_custom=1) → code-exact → normalized name
+    → None. None means neutral "no data" — an unmatched slot must NEVER render as 0% [F9]."""
+    if not index:
+        return None
+    if code in custom_codes:
+        return None  # a custom subject typed with a portal-matching name must never join
+    return index["by_code"].get(code) or index["by_name"].get(_norm_subject(name))
 
 def _fmt_period(p):
     """Portal period comes as {'from': '20/Jul/2026', 'to': '25/Sep/2026'} — render readable."""
@@ -1159,9 +1287,18 @@ def _course_view(c):
     max_hours = _safe_int(c.get("max_hours"))
     absent = _safe_int(c.get("absent"))
     pct = min(100.0, round((attended / max_hours) * 100, 1)) if max_hours > 0 else 0.0
-    return {"code": c.get("code", ""), "description": c.get("description", ""),
+    skip, attend = _bunk_counts(attended, max_hours)
+    return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
             "max_hours": max_hours, "attended": attended, "absent": absent,
-            "pct": pct, "status": _status_for_pct(pct), "bunk_line": _bunk_line(attended, max_hours)}
+            "pct": pct, "status": _status_for_pct(pct), "bunk_line": _bunk_line(attended, max_hours),
+            # meter-row fields (spec §1.1): display 0dp, fill EXACT A/C [F12],
+            # pct_disp None = `--` (C = 0 holds nothing → no fill, no pinned numbers)
+            "pct_disp": int(pct + 0.5) if max_hours > 0 else None,
+            "fill": (100.0 * attended / max_hours) if max_hours > 0 else None,
+            "t75": math.ceil(ATTENDANCE_TARGET * max_hours),
+            "skip_now": skip, "attend_now": attend,
+            # fill tint: red = pct < 75 · orange(warn) = pct ≥ 75 AND skip-now == 0 · gray = comfortable
+            "tint": "red" if pct < ATTENDANCE_TARGET * 100 else ("warn" if skip == 0 else "gray")}
 
 def _month_view(m):
     present = _safe_int(m.get("present"))
@@ -1171,12 +1308,6 @@ def _month_view(m):
     out["pct"] = round((present / total) * 100, 1) if total > 0 else None
     return out
 
-def _overall_view(courses):
-    total_att = sum(c["attended"] for c in courses)
-    total_max = sum(c["max_hours"] for c in courses)
-    pct = min(100.0, round((total_att / total_max) * 100, 1)) if total_max > 0 else 0.0
-    return {"attended": total_att, "max_hours": total_max, "pct": pct,
-            "status": _status_for_pct(pct), "bunk_line": _bunk_line(total_att, total_max)}
 
 # ── Request logging ─────────────────────────────────────────────────
 @app.before_request
@@ -1226,7 +1357,6 @@ def index():
     hours_old = int((time.time() - last_epoch) / 3600) if last_epoch else None
     courses = sorted((_course_view(x) for x in data.get("courses", [])), key=lambda c: c["pct"])  # risk-first: lowest % first
     monthly = [_month_view(x) for x in data.get("monthly", [])]
-    overall = _overall_view(courses)
 
     # Extract student name from personal details
     personal_data = json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {}
@@ -1241,14 +1371,25 @@ def index():
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
-    # End-sem schedule card (leaked ScribeInner probe; None -> card hidden)
+    # End-sem schedule card (leaked ScribeInner probe; None -> card hidden).
+    # Rows are kept: _exam_stop needs the raw dates for the budget horizon (spec §1.2).
     try:
-        exams = _exams_view(json.loads(row["exam_schedule_json"]) if row and row["exam_schedule_json"] else [])
+        exam_rows = json.loads(row["exam_schedule_json"]) if row and row["exam_schedule_json"] else []
     except (ValueError, TypeError):
-        exams = None
+        exam_rows = []
+    exams = _exams_view(exam_rows)
 
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
+    # Attendance budgets (spec §3): w is gid-scoped to THIS user; stop is one global
+    # horizon shared by every subject (min parsed exam date − 1, §0/R6).
+    weekly = _weekly_slots(group_key)
+    today = date.today()
+    for c in courses:
+        c["w"] = weekly.get(c["code"], 0)
+        c.update(_attendance_budgets(c["attended"], c["max_hours"], c["w"],
+                                     data.get("period"), exam_rows, today))
+    attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
     dash = {
         "email": personal_data.get("Personal Email ID", "") or netid,
         "reg_no": personal_data.get("Register No.", ""),
@@ -1260,13 +1401,17 @@ def index():
     }
 
     return render_template(
-        "dashboard.html", netid=netid, courses=courses, monthly=monthly, overall=overall,
+        "dashboard.html", netid=netid, courses=courses, monthly=monthly,
         period=_fmt_period(data.get("period")), daily_absent=data.get("daily_absent", {}),
+        absences=_absences_view(data.get("daily_absent", {})),
+        days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
+        stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
+        days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
         exams=exams,
         version=APP_VERSION,
-        timetable=timetable_html(group_key),
+        timetable=timetable_html(group_key, attendance),
         personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1292,8 +1437,11 @@ def _now_next_from_slots(day, slots):
         if sm <= now_mins < em:
             if s.get("type") == "break":
                 return {"kind": "break", "label": s.get("name","Break"), "until": s["end"]}
+            # _att must ride along: the hero's 22px sig block reads it (spec §1.B);
+            # dropping it here silently rendered hero without the stat
             return {"kind": "current", "code": s["code"], "name": s["name"],
-                    "loc": s.get("location",""), "until": s["end"]}
+                    "loc": s.get("location",""), "until": s["end"],
+                    **({"_att": s["_att"]} if "_att" in s else {})}
     upcoming = [s for s in slots if s.get("type") != "break" and
                 int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1]) > now_mins]
     if upcoming:
@@ -1368,7 +1516,21 @@ def _week_updates(daily_absent):
     return {"days": len(hits), "hours": hours, "dates": hits,
             "today_absent": any(h["date"] == today.strftime("%d-%m-%Y") for h in hits)}
 
-def timetable_html(group_key):
+def _tt_att_sig(course):
+    """One glance signal for a timetable slot (spec §1.B): shape glyph carries the
+    meaning, colour only reinforces. None → neutral "no data", never a numeric 0%."""
+    if not course or course.get("max_hours", 0) <= 0:
+        return None
+    skip, attend = course.get("skip_now"), course.get("attend_now")
+    if skip is None and attend is None:
+        return None
+    if attend is not None:
+        return {"cls": "danger", "icon": "x", "text": "attend %d" % attend, "num": attend}
+    if skip == 0:
+        return {"cls": "warn", "icon": "tri", "text": "no margin", "num": 0}
+    return {"cls": "ok", "icon": "check", "text": "can skip %d" % skip, "num": skip}
+
+def timetable_html(group_key, attendance=None):
     if not group_key:
         return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
                 "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
@@ -1384,6 +1546,13 @@ def timetable_html(group_key):
                 "<div class=\"tt-hero-sub\">Your group has no timetable. Use the editor to build one.</div></div></div></div>")
     gid = gid[0]
     day_slots = {}
+    # attendance join (spec §4): custom short-circuits BEFORE any name match —
+    # a custom subject typed with a portal-matching name must never join.
+    custom_codes = set()
+    if attendance:
+        for r in c.execute("SELECT code FROM timetable_subjects WHERE group_id=? AND is_custom=1", (gid,)):
+            if r[0]:
+                custom_codes.add(r[0])
     for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
         if r[0] not in day_slots: day_slots[r[0]] = {}
         # audit 2026-09-27: slots are written by ANY user of the group via
@@ -1393,6 +1562,8 @@ def timetable_html(group_key):
         day_slots[r[0]][r[1]] = {"code": _hesc(str(r[2] or "")),
                                  "name": _hesc(str(r[3] or "")),
                                  "location": _hesc(str(r[4] or ""))}
+        # raw (unescaped) pair for the join + sig lookup; rendered values above stay escaped
+        day_slots[r[0]][r[1]]["_att"] = _join_attendance(attendance, custom_codes, str(r[2] or ""), str(r[3] or ""))
     c.close()
     # If no slots at all, show empty state
     has_slots = any(day_slots.get(d) for d in DAY_ORDER)
@@ -1417,28 +1588,38 @@ def timetable_html(group_key):
                 today_slots.append(s)
         elif today in day_slots and s["period"] in day_slots[today]:
             m = day_slots[today][s["period"]]
-            today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"]})
+            today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"],
+                                **({"_att": m["_att"]} if "_att" in m else {})})
     hero_status = _now_next_from_slots(today, today_slots)
     # Hero HTML
     if hero_status is None or hero_status["kind"] == "done":
-        hero = ("<div class=\"tt-hero tt-hero--done\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
-                "<div><strong>Done for today</strong><div class=\"tt-hero-sub\">No more classes</div></div></div>")
+        hero = ("<div class=\"tt-hero tt-hero--done\"><strong>Done for today</strong>"
+                "<div class=\"tt-hero-sub\">No more classes</div></div>")
     elif hero_status["kind"] == "break":
-        hero = ("<div class=\"tt-hero tt-hero--break\"><span class=\"tt-hero-dot tt-hero-dot--break\"></span>"
-                "<div><strong>{label}</strong><div class=\"tt-hero-sub\">Until {until}</div></div></div>").format(**hero_status)
+        hero = ("<div class=\"tt-hero tt-hero--break\"><strong>{label}</strong>"
+                "<div class=\"tt-hero-sub\">Until {until}</div></div>").format(**hero_status)
     elif hero_status["kind"] == "current":
-        hero = ("<div class=\"tt-hero tt-hero--now\"><span class=\"tt-hero-dot tt-hero-dot--now\"></span>"
-                "<div><strong>{code} \u2014 {name}</strong>"
-                "<div class=\"tt-hero-sub\">Ends {until}</div>"
-                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(**hero_status)
+        # today's-slot hero: when the current class carries a skip stat, the stat is
+        # the loud object (22px number) and the hero edge takes the RISK colour, not
+        # the temporal now-tint (spec §1.B) — one edge, one meaning.
+        hero = ("<div class=\"tt-hero tt-hero--now{riskcls}\">"
+                "<div class=\"tt-hero-sub\">Now \u00b7 ends {until}</div>"
+                "<strong>{code} \u2014 {name}</strong>{sig}</div>").format(
+            # review R2: no dot, no badge; hue only on the faint left rim = deviation
+            riskcls=" tt-hero--risk-danger" if (sig_txt := _tt_att_sig(hero_status.get("_att")) if "_att" in hero_status else None) and sig_txt["cls"] == "danger"
+                   else (" tt-hero--risk-warn" if sig_txt and sig_txt["cls"] == "warn" else ""),
+            code=hero_status["code"], name=_title_case(hero_status["name"]), until=hero_status["until"],
+            sig=("<div class=\"tt-hero-sig\"><span class=\"tt-hero-num\">{num}</span>{txt}</div>"
+                 .format(num=sig_txt["num"], txt="classes in a row to hold 75%" if sig_txt["cls"] == "danger"
+                         else "skippable and still hold 75%" if sig_txt["cls"] == "ok"
+                         else "left — one miss drops below 75%") if sig_txt else ""))
     elif hero_status["kind"] == "next":
-        hero = ("<div class=\"tt-hero tt-hero--next\"><span class=\"tt-hero-dot tt-hero-dot--next\"></span>"
-                "<div><strong>{code} \u2014 {name}</strong>"
+        hero = ("<div class=\"tt-hero tt-hero--next\"><strong>{code} \u2014 {name}</strong>"
                 "<div class=\"tt-hero-sub\">Starts at {at} (in {in_mins}m)</div>"
-                "<div class=\"tt-hero-loc\">{loc}</div></div></div>").format(**hero_status)
+                "<div class=\"tt-hero-loc\">{loc}</div></div>").format(
+            **{**hero_status, "name": _title_case(hero_status["name"])})
     else:
-        hero = ("<div class=\"tt-hero tt-hero--off\"><span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
-                "<div><strong>No classes today</strong></div></div>")
+        hero = ("<div class=\"tt-hero tt-hero--off\"><strong>No classes today</strong></div>")
     # Day tabs + panels
     default_day = today if today in DAY_ORDER else "Monday"
     radios = "".join("<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(d, " checked" if d == default_day else "") for d in DAY_ORDER)
@@ -1459,7 +1640,7 @@ def timetable_html(group_key):
             sl = day_slots.get(d, {}).get(s["period"])
             if not sl:
                 continue
-            code, name, loc = sl["code"], sl["name"], sl.get("location", "")
+            code, name, loc = sl["code"], _title_case(sl["name"]), sl.get("location", "")
             now_mins = datetime.now().hour * 60 + datetime.now().minute
             sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
             em = int(s["end"].split(":")[0])*60 + int(s["end"].split(":")[1])
@@ -1469,13 +1650,23 @@ def timetable_html(group_key):
             elif d == today and now_mins < sm and (sm - now_mins) <= 120:
                 hl = "upcoming"
             cls = " tt-row--" + hl if hl else ""
-            badge = ""
-            if hl == "current": badge = "<span class=tt-badge>Now</span>"
-            elif hl == "upcoming": badge = "<span class=tt-badge tt-badge--soon>Soon</span>"
+            # review R6/R9: no Now badge (the hero already says it); Soon stays
+            badge = "<span class=tt-badge tt-badge--soon>Soon</span>" if hl == "upcoming" else ""
             loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
-            rows.append("<div class=tt-row{0}><div class=tt-time>{1}<small>{2}</small></div>"
-                        "<div class=tt-info><strong>{3}</strong><span class=tt-name>{4}</span>{5}</div>"
-                        "{6}</div>".format(cls, s["start"], s["end"], code, name, loc_html, badge))
+            # attendance glance (review R7): the slim risk rim IS the can-be-missed
+            # indicator; the bare number is data. Neutral "no data" for
+            # unmatched/custom (opacity-50, never a numeric 0%)
+            sig = _tt_att_sig(sl.get("_att"))
+            riskbar = ('<span class="tt-riskbar{}"></span>'.format(
+                " tt-riskbar--danger" if sig and sig["cls"] == "danger" else " tt-riskbar--warn" if sig and sig["cls"] == "warn" else ""))
+            sig_html = ('<div class="tt-sub">{loc}<span class="tt-sig{cls}">{text}</span></div>'
+                        ).format(loc=loc_html, cls=" tt-sig--" + sig["cls"] if sig else " tt-sig--none",
+                                 text=sig["text"] if sig else "no data")
+            rows.append('<div class="tt-row{cls}">{risk}'
+                        '<div class="tt-time">{start}<small>{end}</small></div>'
+                        '<div class="tt-info"><strong>{code}</strong><span class="tt-name">{name}</span></div>'
+                        '{badge}{sig}</div>'.format(cls=cls, risk=riskbar, start=s["start"], end=s["end"],
+                                                     code=code, name=name, badge=badge, sig=sig_html))
         panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(d, "".join(rows)))
     return ("<div class=tt-wrap>" + hero
             + "<div class=tt-tabs>" + radios

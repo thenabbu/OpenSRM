@@ -15,7 +15,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 ## What it does
 
 - **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift); rejections are classified on the portal's own alert text, so a wrong password says "invalid credentials" on the first attempt instead of burning 3 captcha retries (and the portal's 3-attempts-per-NetID lockout), and every sync lockout names its real remaining time
-- **Attendance** — course-wise, monthly, and daily absent details with live percentages; bunk calculator ("can miss N more"); courses ordered by risk (lowest % first); overall shown as a compact strip
+- **Attendance** — meter rows per subject (§4.15): exact fill vs a white 75% tick, pinned numbers (attended / 75%-value / total), and the bare must-attend-or-can-skip count on a connector line; semester skip budgets (90-working-day and day-before-first-endsem models) in a quiet Estimates card; absences as `date · hours` rows; monthly breakdown demoted into a collapsed `<details>`; no aggregate anywhere. Timetable rows carry a shape-glyph glance signal (check/triangle/X; neutral "no data" for unmatched or custom slots) and the today hero shows the current class's skip stat
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), neutral numbers with a single muted outlier accent, IE-1/IE-2 roles derived from component maxima and confirmable per class (persisted for GPA prediction); glance widget on the dashboard
 - **End-sem exams** — provisional exam schedule *before* the portal announces it: while you're logged in, the sync probes `ScribeInner.jsp` (`iden=1` + any month/year — the portal doesn't validate against its own dropdown) for upcoming exam windows; stamped-date dashboard card (day + weekday + countdown, `Provisional` pill); card hides itself if no session is seeded or the portal closes the gap — and a portal response that lists subjects *without* dates (seen Oct 2026) never wipes the stored schedule
 - **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks (and only *between* classes — no stray break after the day's last one); drag-and-drop editor with subject palette; **section-visible edit history** — every save logs who changed which slot and when, so fixes and vandalism are both on the record (bulk saves collapse to 3 lines + a `+N more` toggle)
@@ -67,7 +67,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v19<br/>network-first shell"]
+        SW["Service worker opensrm-v20<br/>network-first shell"]
     end
 
     subgraph edge["Cloudflare edge"]

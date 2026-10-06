@@ -231,75 +231,78 @@
     </div>
   </div>
   <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel style="display:none">
-    <!-- Overall: compact strip, not the page hero -->
-    <div class="card bg-base-200 border border-base-300 mb-5">
-      <div class="card-body p-4 py-3 flex-row items-center gap-4 flex-wrap">
-        <div class="radial-progress text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }} font-bold text-sm"
-             style="--value:{{ overall.pct }}; --size:3.4rem; --thickness:4px;" role="progressbar"
-             aria-label="Overall attendance">{{ overall.pct }}%</div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-{{ 'success' if overall.status == 'ok' else 'warning' if overall.status == 'warn' else 'error' }}">{{ overall.bunk_line }}</p>
-          <p class="text-xs text-base-content/50 mt-0.5">{{ overall.attended }} of {{ overall.max_hours }} hours attended{% if period %} · {{ period }}{% endif %}</p>
-        </div>
-      </div>
-    </div>
-    <h3 class="text-base font-semibold mb-3">Courses <span class="text-xs font-normal text-base-content/40">· what you can miss</span></h3>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+    <h1 class="text-base font-semibold mb-3">Subjects</h1>
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+      <div class="mrows">
       {% for c in courses %}
-      <div class="card bg-base-200 border border-base-300 border-l-3 border-l-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">
-        <div class="card-body p-4 gap-2">
-          <div class="flex justify-between items-baseline gap-2">
-            <span class="font-mono text-xs text-base-content/60">{{ c.code }}</span>
-            <span class="font-mono font-bold text-lg text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">{{ c.pct }}%</span>
+      {% if c.pct_disp is not none %}
+        {% set fill = c.fill %}
+        {% set gap = (75 - fill)|abs %}
+        {% set nudge = 'nud2R' if gap < 3 and fill > 75 else 'nud2L' if gap < 3 else 'nudR' if gap < 9 and fill > 75 else 'nudL' if gap < 9 else '' %}
+        <div class="mrow {{ nudge }}">
+          <div class="mtop"><span class="mname">{{ c.description }}</span><span class="mpct">{{ c.pct_disp }}%</span></div>
+          {% set hatch_l = (fill if fill < 75 else 75)|round(2) %}
+          {% set hatch_w = ((75 - fill) if fill < 75 else (fill - 75))|round(2) %}
+          <div class="meter" role="img" aria-label="{{ c.description }}, {{ c.pct_disp }} percent attended{% if c.attend_now is not none %}, needs {{ c.attend_now }} for 75 percent{% else %}, {{ c.skip_now }} skippable for 75 percent{% endif %}">
+            <i class="mz{% if c.tint == 'red' %} mz--red{% elif c.tint == 'warn' %} mz--warn{% endif %}" style="width:{{ fill|round(2) }}%"></i>
+            <i class="mhatch" style="left:{{ hatch_l }}%;width:{{ hatch_w }}%"></i>
+            <i class="mtick"></i>
           </div>
-          <h3 class="text-sm capitalize leading-snug">{{ c.description }}</h3>
-          <progress class="progress progress-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}" value="{{ c.pct }}" max="100" aria-label="{{ c.code }} attendance"></progress>
-          {% if c.bunk_line %}
-          <p class="text-xs font-medium text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}">{{ c.bunk_line }}</p>
-          {% endif %}
-          <div class="flex gap-3 font-mono text-xs text-base-content/40 flex-wrap border-t border-base-300 pt-2">
-            <span>{{ c.attended }} attended</span><span>{{ c.absent }} absent</span><span>{{ c.max_hours }} total</span>
-          </div>
+          <div class="pnums"><span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span><span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
+          {% set conn = c.attend_now if c.attend_now is not none else c.skip_now %}
+          {% if conn %}<div class="pconn"><i style="left:{{ (fill if fill < 75 else 75)|round(2) }}%;width:{{ hatch_w }}%"></i><span style="left:{{ ((fill + 75) / 2)|round(2) }}%">{{ conn }}</span></div>{% endif %}
         </div>
-      </div>
+      {% endif %}
       {% endfor %}
+      </div>
     </div>
-    <h3 class="text-base font-semibold mb-3">Monthly attendance</h3>
-    <div class="card bg-base-200 border border-base-300 mb-5">
-      <div class="card-body p-4 flex flex-col gap-3">
-        {% for m in monthly %}
-        <div class="flex items-center gap-3" title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}">
-          <span class="text-sm w-20 shrink-0 truncate">{{ m.month }}</span>
-          <progress class="progress flex-1 progress-{{ 'success' if (m.pct or 0) >= 75 else 'warning' if (m.pct or 0) >= 65 else 'error' }}"
-                    value="{{ m.pct or 0 }}" max="100" aria-label="{{ m.month }} attendance"></progress>
-          <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct if m.pct is not none else '–' }}{% if m.pct is not none %}%{% endif %}</span>
-        </div>
+
+    <div class="att-h">Estimates</div>
+    <div class="att-n">can skip: 90 working days (excl. Sat/Sun){% if stop %} · till {{ stop.strftime('%d %b') }} (day before first endsem){% endif %}</div>
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+      <div class="qgrid">
+        <span class="qhead">Subject</span>
+        <span class="qhead">90 days{% if days_left_90 is not none %} · {{ days_left_90 }} left{% endif %}</span>
+        <span class="qhead">{% if stop is not none %}till {{ stop.strftime('%d %b') }}{% else %}till first endsem{% endif %}{% if days_left_exam is not none %} · {{ days_left_exam }} left{% endif %}</span>
+        {% for c in courses %}
+        {% if c.m90 is not none or c.m_end is not none %}
+        <span>{{ c.description }}</span>
+        <span class="qnum">{{ c.m90 if c.m90 is not none else '--' }}</span>
+        <span class="qnum">{{ c.m_end if c.m_end is not none else '--' }}</span>
+        {% endif %}
         {% endfor %}
       </div>
     </div>
-    <h3 class="text-base font-semibold mb-3">Daily absences
-      {% set total_abs = daily_absent.values() | map('length') | sum %}
-      {% if total_abs %}<span class="badge badge-soft badge-error badge-sm align-middle">{{ total_abs }} day{{ 's' if total_abs != 1 }}</span>{% endif %}
-    </h3>
-    <div class="flex flex-col gap-4 mb-5">
-      {% for label, dates in daily_absent.items() %}
-      <div class="collapse collapse-arrow bg-base-200 border border-base-300">
-        <input type="radio" name="absent-accordion" />
-        <div class="collapse-title text-sm font-semibold flex justify-between items-center">
-          <span>{{ label }}</span>
-          <span class="badge badge-sm badge-error">{{ dates|length }} day{{ 's' if dates|length != 1 }}</span>
-        </div>
-        <div class="collapse-content">
-          {% for d in dates %}
-          <div class="flex justify-between items-center py-1 text-sm font-mono text-base-content/60">
-            <span>{{ d.date }}</span>
-            <span class="badge badge-sm badge-soft badge-warning">{{ d.hours }} hr</span>
+
+    {% if absences %}
+    <div class="att-h">Absences</div>
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+      {% for g in absences %}
+      <div class="qlabel">{{ g.label }}</div>
+      <div class="qlist">
+        {% for a in g.rows %}
+        <div class="qarow"><span class="qdate">{{ a.date }}</span><span class="qhrs">{{ a.hours }}h</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <details class="collapse collapse-arrow bg-base-200 border border-base-300 mb-5">
+      <summary class="collapse-title text-sm font-semibold min-h-0">Monthly breakdown</summary>
+      <div class="collapse-content">
+        <div class="flex flex-col gap-3">
+          {% for m in monthly %}
+          <div class="flex items-center gap-3" title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}">
+            <span class="text-sm w-20 shrink-0 truncate">{{ m.month }}</span>
+            <progress class="progress flex-1 progress-{{ 'success' if (m.pct or 0) >= 75 else 'warning' if (m.pct or 0) >= 65 else 'error' }}"
+                      value="{{ m.pct or 0 }}" max="100" aria-label="{{ m.month }} attendance"></progress>
+            <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct if m.pct is not none else '–' }}{% if m.pct is not none %}%{% endif %}</span>
           </div>
           {% endfor %}
         </div>
       </div>
-      {% endfor %}
-    </div>
+    </details>
   </div>
   <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
