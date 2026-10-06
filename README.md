@@ -224,6 +224,7 @@ Environment variables:
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
 - `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
+- `NTFY_ALERT_URL` — optional: an [ntfy](https://ntfy.sh) topic URL; when set, WARNING+ `opensrm.*` log lines POST there (rate-limited to 1/min) so no error goes unseen
 
 ---
 
