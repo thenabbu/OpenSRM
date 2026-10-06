@@ -39,9 +39,15 @@ with sync_playwright() as p:
     controlled = page.evaluate("() => !!navigator.serviceWorker.controller")
     check("page controlled by SW after reload", controlled)
 
-    # 3) caches created with v11 name
+    # 3) cache name matches app/static/sw.js (single source of truth — this
+    #    literal rotted twice: v15->v19 on main, v19->v20 here, both undetected
+    #    because PR CI is lint-only)
+    import re as _re
+    from pathlib import Path as _P
+    _sw = (_P(__file__).resolve().parent.parent / "app" / "static" / "sw.js").read_text()
+    _expected = _re.search(r"opensrm-v\d+", _sw).group(0)
     keys = page.evaluate("() => caches.keys()")
-    check("cache opensrm-v19 present", "opensrm-v15" in keys, str(keys))
+    check(f"cache {_expected} present", _expected in keys, str(keys))
 
     # 4) dashboard path: registration also present via dash.js
     ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])

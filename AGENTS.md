@@ -121,7 +121,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (`opensrm-v15`, read from `sw.js`) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v20; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
