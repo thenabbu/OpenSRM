@@ -33,5 +33,14 @@ assert v2["rows"][0]["short"] == "junk" and v2["rows"][0]["dow"] == ""
 v3 = _exams_view([{"code": "X", "name": "A B", "date": "28-12-2026", "session": "AN"},
                   {"code": "Y", "name": "C D", "date": "03-01-2027", "session": "AN"}])
 assert v3["label"] == "Dec 2026\u2013Jan 2027", v3["label"]
+# source badge: slot-carrying rows = official; slotless = scribe estimate
+assert v["source"] == "Estimated", v["source"]                      # all slotless
+v4 = _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
+                   "session": "AN", "slot": "02:00-05:00"},
+                  {"code": "Y", "name": "C D", "date": "27-11-2026", "session": "AN"}])
+assert v4["source"] == "Official + est.", v4["source"]              # mixed
+v5 = _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
+                   "session": "AN", "slot": "02:00-05:00"}])
+assert v5["source"] == "Official", v5["source"]                     # all official
 assert _exams_view([]) is None
 print("ok  exams view model")

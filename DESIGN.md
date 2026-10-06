@@ -420,7 +420,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
 
 ### 4.12 End-sem schedule card (dashboard)
 
-`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards).
+`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`, `source`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards). The header caveat is a **dynamic source badge** (Oct 2026: the portal published official dates): `Official` when every row carries a clock `slot` (from the iden=126 Exam Time Table), `Official + est.` on a mixed view, `Estimated` when rows come from the ScribeInner leak alone. Same `badge-outline badge-sm text-base-content/60` styling as the old static `Provisional` pill (7.15:1, subtle-but-present). Row metadata carries the clock slot when present: `{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}`.
 
 ```jinja
 <!-- mobile: one landmark (day stamp) + one bright line (name) per row -->
@@ -431,20 +431,20 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
   </span>
   <span class="min-w-0 flex-1 sm:hidden">
     <span class="block text-sm leading-snug text-base-content">{{ e.name_disp }}</span>
-    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session }}</span>
+    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
   </span>
   <!-- desktop: one dense line via sm: switches, zero JS -->
   <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
     <span class="min-w-0 truncate text-sm"><span class="font-mono text-base-content/60">{{ e.code }}</span> <span class="text-base-content">{{ e.name_disp }}</span></span>
-    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session }}</span>
+    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
   </span>
 </li>
 ```
 
 - **Rows:** `space-y-3 sm:space-y-2`, no dividers — density comes from grouping, not rules (§ B2 / §6). The day stamp is the only 17px/600 element; name is the only `text-base-content` line; everything else `/60` (§2.5 ladder).
 - **Names** are title-cased in `_exams_view()` (`name_disp`); storage keeps the portal's ALL-CAPS `name`.
-- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
-- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
+- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The source caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — formerly a static `Provisional` pill, now the dynamic `{{ exams.source }}` badge (Official / Official + est. / Estimated). Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
+- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, source badge in the header, card bottom above the fixed dock).
 
 ### 4.13 Internal marks card (Marks tab)
 

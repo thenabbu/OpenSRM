@@ -190,12 +190,13 @@
           </div>
           {% endif %}
           {% if exams %}
-          <!-- End-sem schedule: leaked ScribeInner probe (provisional until officially released) -->
+          <!-- End-sem schedule: official Exam Time Table (iden=126) + scribe-leak
+               estimate fallback for subjects the official page leaves pending -->
           <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
             <div class="flex items-center gap-2 mb-2">
               <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
               <span class="badge badge-soft badge-sm">{{ exams.label }}</span>
-              <span class="badge badge-outline badge-sm text-base-content/60">Provisional</span>
+              <span class="badge badge-outline badge-sm text-base-content/60">{{ exams.source }}</span>
             </div>
             <ul class="space-y-3 sm:space-y-2">
               {% for e in exams.rows %}
@@ -207,7 +208,7 @@
                 </span>
                 <span class="min-w-0 flex-1 sm:hidden">
                   <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
-                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}</span>
+                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
                 </span>
                 <!-- desktop: one dense line, date right -->
                 <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
@@ -215,7 +216,7 @@
                     <span class="font-mono text-base-content/60">{{ e.code }}</span>
                     <span class="text-base-content">{{ e.name_disp }}</span>
                   </span>
-                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}</span>
+                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
                 </span>
               </li>
               {% endfor %}

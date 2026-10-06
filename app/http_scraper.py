@@ -42,13 +42,15 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 # JSPs scraped after login: formId -> path
 JSPS = {
-    "1": "/students/report/studentProfile.jsp",
+    "1": "/students/transaction/ScribeInner.jsp",
     "9": "/students/report/studentAttendanceDetails.jsp",
     "13": "/students/report/studentInternalMarkDetails.jsp",
     "17": "/students/report/studentPersonalDetails.jsp",
     "7": "/students/report/studentSubjectLists.jsp",
+    "32": "/students/courseReg/studentFeedback.jsp",
+    "126": "/students/transaction/StudentExamTimeTable.jsp",  # official Exam Time Table (verified live Oct 7 2026)
 }
-HOT_FORMIDS = {"9", "13"}  # attendance + marks: fetched every sync
+HOT_FORMIDS = {"9", "13", "126"}  # attendance + marks + official exam timetable: every sync
 COLD_FORMIDS = {"1", "17", "7", "32"}  # profile/personal/courses/feedback-form: re-fetch only when stale > COLD_TTL
 COLD_TTL = 24 * 3600  # seconds
 
@@ -561,7 +563,7 @@ def fill_feedback(netid, plan, cookies_json):
     return res
 
 
-def _merge_exam_results(results):
+def _merge_exam_results(results, official_html=None):
     """[(month, year), html] | None entries -> sorted rows, or None when the
     probe is unreliable — None means 'preserve stored value' upstream.
 
@@ -569,10 +571,17 @@ def _merge_exam_results(results):
     marker, no table), OR a subject table with zero dated rows: the portal
     blanked Date/Session for a window it still lists (seen Oct 4 2026 — an
     empty result there wiped stored schedules; it is not proof the stored
-    rows are wrong)."""
-    from app.app import parse_exam_schedule  # deferred: avoid circularity
+    rows are wrong).
+
+    official_html: the iden=126 Exam Time Table body. Official rows win per
+    subject code (they carry exact clock slots); scribe rows fill subjects the
+    official page leaves pending — pre-release fallback for future sems."""
+    from app.app import parse_exam_schedule, parse_exam_timetable  # deferred: avoid circularity
+    official = []
+    if official_html:
+        official = parse_exam_timetable(official_html)
     ok = [r for r in results if r is not None]
-    if not ok:
+    if not ok and not official:
         return None
     rows, blanked = [], False
     for _wy, html in ok:
@@ -583,6 +592,11 @@ def _merge_exam_results(results):
             rows.extend(wrows)
         else:
             blanked = True
+    if official:
+        # per-code merge: official replaces scribe rows with real slots;
+        # scribe rows fill subjects the official page leaves pending ("- -")
+        codes = {o["code"] for o in official}
+        rows = official + [r for r in rows if r["code"] not in codes]
     if not rows and blanked:
         log.debug("exam probe: subject table(s) with no dated rows — "
                   "unreliable, preserving stored value")
@@ -681,7 +695,6 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
               {k: len(v) for k, v in parallel_html.items()})
 
     from app.app import MONTHS, _cells, _parse_component_inner, parse_attendance, parse_marks, parse_personal_details  # deferred
-
     content_html = parallel_html.get("9", "")
     if "youLogin" in content_html or ("captcha" in content_html.lower() and "Login" in content_html[:2000]):
         # Session died mid-scrape → relogin once
@@ -757,9 +770,9 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         log.debug("daily drilldown months=%s", [t["mstr"] for t in targets])
     data["daily_absent"] = daily
 
-    # End-sem schedule: None (probe unreliable) -> key omitted -> stored value
-    # preserved upstream; [] (clean probe, no seeded window) -> overwrite.
-    exams = _merge_exam_results(exam_results)
+    # End-sem schedule: official 126 table wins; scribe rows fill the rest.
+    # None (both unreliable) -> key omitted -> stored value preserved upstream.
+    exams = _merge_exam_results(exam_results, official_html=parallel_html.get("126", ""))
     log.debug("exam probe netid=%s candidates=%s rows=%s", netid, cands,
               len(exams) if exams is not None else None)
 

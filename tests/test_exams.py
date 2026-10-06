@@ -130,5 +130,67 @@ check("blanked + clean-empty window -> None (preserve)",
 check("blanked alongside real rows -> real rows win",
       _merge_exam_results([((11, 2026), FULL_PAGE), ((12, 2026), BLANKED_PAGE)]) is not None)
 
+# 10. Official Exam Time Table (iden=126, verified live Oct 7 2026) —
+#     `DD-MMM-YYYY AN  (02:00-05:00)` cells; subjects without a slot = `- -`.
+#     Synthetic fixture, fake codes; mirrors the live row shape exactly.
+ETT_ROW = """<tr>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">III</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">{code}</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">{name}</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})">{datecell}</td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})"></td>
+    <td style="cursor: pointer;" onclick="funOnclickSubjectListTr({n})"></td>
+</tr>"""
+OFFICIAL_ETT = ('<html><head><title>Strike Out Grid Example</title></head><body>'
+                '<div class="table-responsive"><table class="table"><tbody>'
+                + ETT_ROW.format(n=1, code="21AAA101J", name="TEST SUBJECT ONE",
+                                 datecell="25-NOV-2026 AN  (02:00-05:00)")
+                + ETT_ROW.format(n=2, code="21BBB102T", name="TEST SUBJECT TWO",
+                                 datecell="26-NOV-2026 AN  (02:00-05:00)")
+                + ETT_ROW.format(n=3, code="21CCC103P", name="TEST SUBJECT THREE",
+                                 datecell="- -")
+                + "</tbody></table></div></body></html>")
+OFFICIAL_EMPTY = ('<html><head><title>Strike Out Grid Example</title></head><body>'
+                  '<div class="table-responsive"><table class="table"><tbody>'
+                  '<tr><td colspan="8">No subjects found</td></tr>'
+                  '</tbody></table></div></body></html>')
+
+from app.app import parse_exam_timetable  # noqa: E402
+
+ett = parse_exam_timetable(OFFICIAL_ETT)
+check("ett parses dated rows only", len(ett) == 2, ett)
+check("ett date DD-MMM -> dd-mm-yyyy",
+      ett and ett[0]["date"] == "25-11-2026", ett and ett[0]["date"])
+check("ett session extracted from datecell", ett and ett[0]["session"] == "AN")
+check("ett clock slot extracted", ett and ett[0]["slot"] == "02:00-05:00")
+check("ett pending rows (- -) dropped", not any(r["code"] == "21CCC103P" for r in ett))
+check("ett empty -> []", parse_exam_timetable(OFFICIAL_EMPTY) == [])
+check("ett garbage -> []", parse_exam_timetable("<html>x</html>") == [])
+ett_fn = parse_exam_timetable(ETT_ROW.format(n=5, code="21DDD104T", name="FN SUB",
+                                             datecell="01-DEC-2026 FN  (09:30-12:30)"))
+check("ett FN + morning slot", ett_fn and ett_fn[0]["session"] == "FN"
+      and ett_fn[0]["slot"] == "09:30-12:30", ett_fn)
+
+# 11. merge: official wins per code; scribe fills official-pending subjects
+merged_off = _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=OFFICIAL_ETT)
+check("official + scribe merge -> 4 rows", merged_off is not None and len(merged_off) == 4, merged_off)
+check("official replaces scribe row for same code",
+      merged_off and not any(r["code"] == "21AAA101J" and r.get("slot", "") == ""
+                             for r in merged_off), merged_off)
+check("scribe fills official-pending code",
+      merged_off and any(r["code"] == "21CCC103P" and r.get("slot", "") == "" for r in merged_off),
+      merged_off)
+check("scribe fills code absent from official",
+      merged_off and any(r["code"] == "21DDD104T" for r in merged_off), merged_off)
+only_off = _merge_exam_results([], official_html=OFFICIAL_ETT)
+check("official alone -> 2 rows", only_off is not None and len(only_off) == 2, only_off)
+off_empty = _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=OFFICIAL_EMPTY)
+check("official empty + scribe rows -> scribe wins",
+      off_empty is not None and len(off_empty) == 4, off_empty)
+check("official garbage + scribe rows -> scribe wins",
+      _merge_exam_results([((11, 2026), FULL_PAGE)], official_html="<html>blocked</html>") is not None)
+check("official table no transport + no scribe -> None",
+      _merge_exam_results([None, None], official_html=OFFICIAL_EMPTY) is None)
+
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

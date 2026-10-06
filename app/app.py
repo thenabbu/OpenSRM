@@ -673,6 +673,36 @@ def parse_exam_schedule(html):
     return out
 
 
+def parse_exam_timetable(html):
+    """StudentExamTimeTable.jsp (iden=126, official 'Exam Time Table' page)
+    -> end-sem exam rows. Verified live Oct 7 2026 (the ONLY published source
+    with exact clock times).
+
+    Columns: Sem/Year/Trim | Subject Code | Subject Description | Date & Session
+    | Hall No. | Seat No. — cells[3] is `DD-MMM-YYYY AN  (02:00-05:00)`; subjects
+    without a slot yet render `- -`. Empty page = 'No subjects found'. The
+    `<title>Strike Out Grid Example</title>` head is an unused dev template —
+    only one table exists, row shapes gate parsing.
+    """
+    if not html or "No subjects found" in html:
+        return []
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = _cells(row)
+        if len(cells) >= 4 and cells[1] and re.search(r"\d{2}-[A-Z]{3}-\d{4}", cells[3] or ""):
+            dm = re.match(r"(\d{2})-([A-Z]{3})-(\d{4})", cells[3])
+            mon = MONTHS.get(dm.group(2), "00")
+            tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", cells[3])
+            out.append({
+                "code": cells[1], "name": cells[2],
+                "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
+                "session": (re.search(r"\b(AN|FN)\b", cells[3]) or [None, ""])[1],
+                "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
+                "hall": cells[4] or "", "seat": cells[5] or "",
+            })
+    return out
+
+
 def _ensure_loop():
     """Return a long-lived asyncio loop running in a daemon thread."""
     global _loop, _loop_thread
@@ -877,10 +907,11 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             "9": "../../students/report/studentAttendanceDetails.jsp",
             "13": "../../students/report/studentInternalMarkDetails.jsp",
             "17": "../../students/report/studentPersonalDetails.jsp",
-            "7": "../../students/report/studentSubjectLists.jsp"
+            "7": "../../students/report/studentSubjectLists.jsp",
+            "126": "../../students/transaction/StudentExamTimeTable.jsp"
         }
         _fetch_jsps = {f: u for f, u in _all_jsps.items()
-                       if f in ("9", "13") or cold}
+                       if f in ("9", "13", "126") or cold}
         parallel_html = await page.evaluate("""async (JSPS) => {
             const r = {};
             await Promise.all(Object.entries(JSPS).map(([f, u]) =>
@@ -1032,7 +1063,12 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         except Exception as e:
             log.warning("marks/component parse failed — marks render empty: %r", e)
 
-        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
+        # End-sem schedule: official 126 table wins; scribe rows fill the rest.
+        # Key always present: the Playwright path has no probe fallback, so an
+        # empty table overwrites like a clean scribe empty would upstream.
+        from app.http_scraper import _merge_exam_results
+        exams = _merge_exam_results([], official_html=parallel_html.get("126", ""))
+        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time()), "exams": exams}
     finally:
         # Don't close persistent context — keep alive for next request
         pass
@@ -1981,7 +2017,12 @@ def _exams_view(rows):
         label = first.strftime("%b") + "\u2013" + last.strftime("%b %Y")
     else:
         label = first.strftime("%b %Y") + "\u2013" + last.strftime("%b %Y")
-    return {"rows": rows, "label": label, "days_until": days}
+    # Source badge: rows from the official 126 table carry a clock "slot";
+    # scribe-leak rows don't. Mixed view = official dates + scribe estimates.
+    n_official = sum(1 for r in rows if r.get("slot"))
+    source = ("Official" if n_official == len(rows)
+              else "Official + est." if n_official else "Estimated")
+    return {"rows": rows, "label": label, "days_until": days, "source": source}
 
 
 @app.route("/static/<path:filename>")
