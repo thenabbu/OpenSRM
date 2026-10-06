@@ -63,7 +63,7 @@ Anatomy of the dashboard:
 │ logo | name     [Dashboard][Attendance]…[Personal]  [Refresh] (5m ago) [Log out]
 │                ← role=tab, selected = §4.9 tint     ← caption only once ≥5m old
 ├────────────────────────────────────────────────────┤   page: bg-base-100
-│  ┌──────────────────────────────────────────────┐      max-w-3xl mx-auto px-4 py-5
+│  ┌──────────────────────────────────────────────┐      max-w-3xl mx-auto px-2 lg:px-4 py-5
 │  │ (82%)  Overall attendance                    │   ←  card bg-base-200 border border-base-300
 │  │        Can miss 3 more classes and stay …    │
 │  └──────────────────────────────────────────────┘
@@ -499,7 +499,7 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 
 ## 5. Layout and responsive
 
-- **Mobile-first single column.** Dashboard container `max-w-3xl mx-auto px-4 py-5`. Login is a centered card, `w-full max-w-md`, on `min-h-[100dvh]`.
+- **Mobile-first single column.** Dashboard container `max-w-3xl mx-auto px-2 lg:px-4 py-5`. The gutter is **8px below `lg`** because the mobile navbar's own content padding is 8px — the card column then lines up with the logo/icons above it, and the column gains 16px of width on a 393px phone; at `lg` the desktop navbar takes `px-4`, so the gutter steps back to 16px and stays aligned. Both breakpoints keep a real gutter (never `px-0`). Login is a centered card, `w-full max-w-md`, on `min-h-[100dvh]`.
 - **Rhythm (the 4px scale, in use):** `gap-2` / `gap-3` inside and between cards · `mb-5` between blocks · card padding `p-4` (`p-5` for the hero, `p-0` for list cards). Don't introduce new spacing values.
 - **Vertical gaps are RANKED by relationship, never uniform** (Gestalt proximity — equal gaps everywhere give consistency without hierarchy). Same 4px scale, ordered tight → loose: **0** attached (a field and its own hint/error) → **`gap-2` 8px** feedback that reports on one element (status under its button) → **`gap-3` 12px** peers inside a group (field ↔ field) → **group break**, sized per card **and stepped, never pinned**: `mb-5` 20px between content blocks — and in the login card the two group breaks (the brand band, and password → Sign in = 16px reserved Caps row + the button's margin) step *together* with the card's own `p-6 sm:p-8` padding: **24px below `sm`, 36px at `sm`+ — equal to each other at every breakpoint** (same idea as daisyUI's `--card-p`, a token that resizes instead of a fixed pixel) → **section break**, looser than every group break (login card: 40px whitespace + rule + `pt-3`). A card must show ≥3 of these tiers in order. Horizontal gutters stay uniform — the column is one unit — and card padding must stay larger than the gaps inside it. Worked example: the login card, audited at 390/768/1280 as **0 < 8 < 12 < 24|36 < 40** (the `24|36` tier is the adaptive one).
 - **Section headings:** `text-base font-semibold mb-3`.
@@ -716,7 +716,7 @@ html[data-theme="openSRM"] {
 <body class="bg-base-100 text-base-content">
   <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3"
        style="padding-top:calc(0.75rem + env(safe-area-inset-top))"> … </div>
-  <main class="max-w-3xl mx-auto px-4 py-5"> … </main>
+  <main class="max-w-3xl mx-auto px-2 lg:px-4 py-5"> … </main>
   <script src="/static/your-script.js"></script>   <!-- external file only: CSP blocks inline scripts -->
 </body>
 </html>
