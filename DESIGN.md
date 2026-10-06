@@ -36,7 +36,7 @@
 | Body / heading text | inherit (`text-base-content`) |
 | Description, caption | `text-base-content/60` · footnote floor `text-base-content/50` |
 | Good / at-risk / bad number | `text-success` / `text-warning` / `text-error` (by threshold) |
-| Status progress bar | `progress progress-success` / `-warning` / `-error` |
+| Status progress bar | `progress progress-success` / `-warning` / `-error` (monthly rows; subjects use §4.15 meters) |
 | Hero button (one per screen) | `btn btn-accent` |
 | Standard button | `btn btn-primary hover:bg-base-300 focus-visible:outline-accent` |
 | Selected pill | `bg-accent text-accent-content` |
@@ -64,12 +64,10 @@ Anatomy of the dashboard:
 │                ← role=tab, selected = §4.9 tint     ← caption only once ≥5m old
 ├────────────────────────────────────────────────────┤   page: bg-base-100
 │  ┌──────────────────────────────────────────────┐      max-w-3xl mx-auto px-2 lg:px-4 py-5
-│  │ (82%)  Overall attendance                    │   ←  card bg-base-200 border border-base-300
-│  │        Can miss 3 more classes and stay …    │
+│  │ Subjects                                      │   ←  h1, one card of §4.15 meter rows
+│  │ DBMS ▓▓▓▓▓▓░░░│75%  62%  31/38/50  −26        │
 │  └──────────────────────────────────────────────┘
-│  Courses                                            ←  text-base font-semibold
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐      ←  status color on left border only
-│  └────────────┘ └────────────┘ └────────────┘
+│  Estimates · Absences · Monthly breakdown        ←  quiet cards (§4.15)
 └────────────────────────────────────────────────────┘
 ```
 
@@ -242,7 +240,9 @@ Copy the nearest recipe here or the nearest existing markup in `dashboard.html`.
 
 At most one solid button per row; the rest are `btn-outline` or `btn-ghost`. Labels are verb-first ("Edit timetable", "Save").
 
-### 4.3 Status card (one per course)
+### 4.3 Status card (one per course) — RETIRED for attendance (§4.15)
+
+> Superseded on the Attendance tab by the §4.15 meter row (2026-10). Kept below as the historical reference — `_bunk_line` still produces this sentence and it may appear in other surfaces.
 
 ```html
 <div class="card bg-base-200 border border-base-300 border-l-3 border-l-success">
@@ -263,7 +263,9 @@ At most one solid button per row; the rest are `btn-outline` or `btn-ghost`. Lab
 
 The grid that holds them: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3`. (Existing stat rows use `/40`; use `/50` in new work.)
 
-### 4.4 Hero metric (overall attendance)
+### 4.4 Hero metric (overall attendance) — RETIRED (§4.15)
+
+> The overall strip was removed with the §4.15 redesign: no aggregate anywhere (no overall %, no overall bunk line). Kept below for the radial-progress idiom only.
 
 ```html
 <div class="flex items-center gap-5">
@@ -495,6 +497,35 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 - **XSS rule (audit 2026-09-27 applies here too):** every value in the payload (peer-written subject codes/names, editor name) is student-controlled — `loadHistory()` in `timetable.js` builds it with `textContent`/`createElement` only, **never `innerHTML`**.
 - Server: `_tt_diff()` in `app.py` writes `timetable_edit_log` (migration v9) on POST `/api/timetable`; no-op saves are skipped, last 200 entries per group kept.
 
+### 4.15 Attendance meter row (Subjects tab)
+
+Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for attendance**). One primitive per subject, all subjects in ONE `bg-base-200 border border-base-300 rounded-box p-4` card under an `h1` "Subjects", risk-first (lowest % first — server already sorts). The numbers, not a sentence, carry the answer to "can I skip?".
+
+```html
+<div class="mrow <!--nudge: nudL|nudR|nud2L|nud2R when |fill−75|<9%/<3%-->">
+  <div class="mtop"><span class="mname">Course description</span><span class="mpct">62%</span></div>
+  <div class="meter" role="img" aria-label="Course, 62 percent attended, needs 26 for 75 percent">
+    <i class="mz mz--red" style="width:62.0%"></i>   <!-- fill = EXACT 100·A/C, never rounded pct -->
+    <i class="mhatch" style="left:62.0%;width:13.0%"></i>
+    <i class="mtick"></i>                            <!-- fixed at left:75%, white -->
+  </div>
+  <div class="pnums"><span class="pn pn-now" style="left:62.0%">31</span>
+    <span class="pn pn-75" style="left:75%">38</span><span class="pn pn-tot">50</span></div>
+  <div class="pconn"><i style="left:62.0%;width:13.0%"></i><span style="left:68.5%">26</span></div>
+</div>
+```
+
+- **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always.
+- **Pinned numbers:** attended @fill%, `ceil(0.75·C)` @75% (38 when C=50), total @right pole. `pnums`/`pconn` alphas are ladder steps only (50%/60% via `color-mix`); the connector's action number is `base-content` (100%) punched out on `base-200`.
+- **Connector line** spans fill↔tick and carries the BARE action count (must-attend below 75, skippable above) — no words under the bar; the aria-label carries the sentence for screen readers (never "X of Y classes").
+- **Nudges** (±6px <9%, ±14px <3%) separate the `pn-now`/`pn-75` labels near the tick; they nudge AWAY from each other (`nudL`/`nud2L` when fill < 75, `nudR`/`nud2R` when fill > 75).
+- **Degrade, never fake:** C=0 → no meter at all (row skipped); w=0 → budgets hidden from Estimates; no exams → Estimates endsem column `--`; unmatched/custom in the timetable → neutral "no data", NEVER a numeric 0%.
+- **CSS lives in `app/static/timetable.css`** under the `/* ── Attendance meter row */` banner — every color a `var(--color-*)` token or `color-mix` ladder step; no badges, no uppercase, no gradients (the hatch is the one sanctioned pattern), one divider style, labels ≤3 words, no sentence over 8 words.
+- **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and `qlist` absences rows `date · hours` ONLY (no subject column — `daily_absent` carries none). Monthly breakdown is demoted verbatim into a `<details>` under them.
+- **Attention budget:** the meter row is attention-budget-compliant by construction — grayscale default, hue only on the fill of a deviation, numbers neutral, no aggregate anywhere (no overall %, no overall bunk line, no summed totals).
+
+Timetable glance (same PR): `.tt-sig` 104px shape-glyph line (check = can skip, triangle = no margin, X = must attend; colour reinforces only), a 2px `.tt-riskbar` edge carrying risk (one edge, one meaning — the now-tint yields), and the today's-slot hero gaining a 22px `tt-hero-num` skip stat whose edge/dot take the risk state. Unmatched/custom slots render neutral "no data" at `opacity .5`. The Now/Soon `.tt-badge` is KEPT (§5 attention rules are scoped to the attendance tab).
+
 ---
 
 ## 5. Layout and responsive
@@ -545,7 +576,7 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 ## 8. Copy
 
 - Plain, direct, second person, sentence case. Say what will happen. One verb per action across the whole flow: **Refresh** → "Refreshing attendance…" → the caption `(5m ago)` beside the button, and nothing at all while the data is younger than 5 minutes.
-- Data lines are actionable, not decorative: "Can miss 3 more classes and stay above 75%", "Attend the next 2 classes in a row to reach 75%". The UI says "miss", never "bunk".
+- Data lines are actionable, not decorative. On the Subjects tab the §4.15 numbers carry this ("26" on the connector = attend 26 in a row); where a sentence is still rendered (`_bunk_line`), it stays "Can miss 3 more classes and stay above 75%" / "Attend the next 2 classes in a row to reach 75%". The UI says "miss", never "bunk".
 - Errors name what happened and what to try: "Network error — is the server reachable?". No apologies, no exclamation marks, no emoji, no blame.
 - Empty states: one sentence plus the next step ("Your group has no timetable. Use the editor to build one.").
 - Spell things the way people know them: NetID, Log out, Attendance, Timetable, Personal details.
