@@ -506,6 +506,11 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
             parallel_html = {fid: html for fid, html in
                              (f.result() for f in futures)}
             exam_results = [f.result() for f in exam_futs]
+        # audit S25: re-derive from the REFETCHED body — content_html still
+        # held the dead session's page, so a legitimate refetch parsed a
+        # 466-byte corpse and reported 'Attendance page did not load'
+        # (3 prod 503s on 2026-10-07 with the fresh 19KB body in the log)
+        content_html = parallel_html.get("9", "")
 
     data = parse_attendance(content_html)
     if not data.get("courses"):
@@ -620,7 +625,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
             log.debug("marks drilldown subjects=%d", len(drill_subjects))
             _prog("Reading personal details & timetable…", 80)
     except Exception as e:
-        log.debug("marks parse err=%r", e)
+        log.warning("marks parse err — marks return empty (stored marks now preserved by caller): %r", e)
 
     _prog("Preparing your dashboard…", 92)
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
