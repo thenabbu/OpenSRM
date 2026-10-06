@@ -1651,7 +1651,7 @@ def timetable_html(group_key, attendance=None):
             riskbar = ('<span class="tt-riskbar{}"></span>'.format(
                 " tt-riskbar--danger" if sig and sig["cls"] == "danger" else " tt-riskbar--warn" if sig and sig["cls"] == "warn" else ""))
             icon = {"ok": '<path d="M4 10.5l4 4 8-9"/>', "warn": '<path d="M10 3.5l7 13H3z"/>',
-                    "danger": '<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>', "none": '<path d="M5 10h10"/>'}[sig["icon"] if sig else "none"]
+                    "danger": '<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>', "none": '<path d="M5 10h10"/>'}[(sig["cls"] if sig else "none")]
             sig_html = ('<div class="tt-sub">{loc}<span class="tt-sig{cls}">'
                         '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" '
                         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{icon}</svg>{text}</span></div>'
