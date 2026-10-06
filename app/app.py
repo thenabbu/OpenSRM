@@ -1427,8 +1427,11 @@ def _now_next_from_slots(day, slots):
         if sm <= now_mins < em:
             if s.get("type") == "break":
                 return {"kind": "break", "label": s.get("name","Break"), "until": s["end"]}
+            # _att must ride along: the hero's 22px sig block reads it (spec §1.B);
+            # dropping it here silently rendered hero without the stat
             return {"kind": "current", "code": s["code"], "name": s["name"],
-                    "loc": s.get("location",""), "until": s["end"]}
+                    "loc": s.get("location",""), "until": s["end"],
+                    **({"_att": s["_att"]} if "_att" in s else {})}
     upcoming = [s for s in slots if s.get("type") != "break" and
                 int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1]) > now_mins]
     if upcoming:
