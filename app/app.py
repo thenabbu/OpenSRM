@@ -1071,7 +1071,10 @@ def fetch_attendance(netid, password):
             log.debug("cold data fresh netid=%s — hot-only sync", netid)
         try:
             from . import http_scraper
-        except ImportError:
+        except ImportError as e:
+            # audit 2026-10-07: the HTTP pipeline going silently missing doubled
+            # every sync's latency with no log line — first ERROR call in the repo
+            log.error("http_scraper unavailable — playwright-only mode: %r", e)
             http_scraper = None
         log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
@@ -1322,9 +1325,24 @@ def _log_request_start():
 @app.after_request
 def _log_request(resp):
     duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
-    log_with_kv(log_http, logging.INFO, "request",
-                method=request.method, path=request.path,
-                status=resp.status_code, duration_ms=duration_ms)
+    # audit 2026-10-07: 86% of the log file was the docker healthcheck's
+    # urllib GET pair (66,003 of 76,857 lines) — synthetic traffic now logs
+    # at DEBUG. Real >=400 responses log at WARNING with the error body,
+    # so every failure carries its cause on the request line itself.
+    ua = request.headers.get("user-agent", "")
+    if resp.status_code >= 400 and not ua.startswith("Python-urllib"):
+        kv = dict(method=request.method, path=request.path,
+                  status=resp.status_code, duration_ms=duration_ms)
+        body = resp.get_json(silent=True)
+        err = (body or {}).get("error") if isinstance(body, dict) else None
+        if err:
+            kv["error"] = str(err)[:120]
+        log_with_kv(log_http, logging.WARNING, "request", **kv)
+    else:
+        lvl = logging.DEBUG if ua.startswith("Python-urllib") else logging.INFO
+        log_with_kv(log_http, lvl, "request",
+                    method=request.method, path=request.path,
+                    status=resp.status_code, duration_ms=duration_ms)
     return resp
 
 # ── Security headers ───────────────────────────────────────────────
@@ -1375,6 +1393,19 @@ def _jload(raw, default):
         return default
     return v
 
+def _track(event, target="", detail="", user=""):
+    """One usage-event row: page views, syncs, feature usage. Closed
+    vocabulary (usage_events), no PII — user is the netid already stored
+    in the DB; never passwords, tokens, or portal payloads. ponytail:
+    plain INSERT, no batching — a few rows/day at this scale."""
+    try:
+        c = db()
+        c.execute("INSERT INTO usage_events(day, user, event, target, detail) VALUES(?,?,?,?,?)",
+                  (time.strftime("%Y-%m-%d"), user, event, target[:64], detail[:64]))
+        c.commit(); c.close()
+    except Exception as e:
+        log.debug("usage track failed event=%s: %r", event, e)  # telemetry must never break a request
+
 # ── Routes ─────────────────────────────────────────────────
 @app.route("/")
 @require_login
@@ -1383,6 +1414,7 @@ def index():
     c = db()
     row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
+    _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
                   {"courses": [], "monthly": [], "period": None, "daily_absent": {}})
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
@@ -1918,6 +1950,7 @@ def api_login():
     # the 10/hour budget and 429'd the rest of the hour — a cheap self-DoS on
     # shared campus NAT that never even reached the portal.
     if not _check_ip_rate(_client_ip()):
+        log_with_kv(log_auth, logging.WARNING, "login ip limited", ip=_client_ip())
         return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
@@ -1926,11 +1959,13 @@ def api_login():
     if not res["ok"]:
         log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
                     error=res["error"][:80], duration_ms=login_ms)
+        _track("login_fail", detail=res["error"][:60], user=netid)
         # audit F4: auth failures are 401; busy/rate are 429/503
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
+    _track("login_ok", detail=f"{login_ms}ms", user=netid)
     c = db()
     # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
     existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json FROM users WHERE netid=?", (netid,)).fetchone()
@@ -2006,6 +2041,7 @@ def api_refresh():
         # not be diagnosed after the fact. Same KV line as /api/login.
         log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
                     error=res["error"][:80])
+        _track("sync_fail", detail=res["error"][:60], user=netid)
         # audit F4: match /api/login's status-code discipline
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
@@ -2030,6 +2066,7 @@ def api_refresh():
               (json.dumps(res["data"]), res["fetched"], personal_json,
                marks_json, json.dumps(res.get("subjects", {})), exams_json, netid))
     c.commit(); c.close()
+    _track("sync_ok", user=netid)
     return {"ok": True}
 
 # ── Login preflight: browser fires this when the user focuses the
@@ -2043,7 +2080,8 @@ def _run_preflight(netid):
         from . import http_scraper
         http_scraper.preflight(netid)
     except Exception as e:
-        log.debug("preflight failed netid=%s err=%r", netid, e)
+        # audit 2026-10-07: warm-login loss was DEBUG-only — now visible at WARNING
+        log.warning("preflight failed netid=%s err=%r", netid, e)
 
 @app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
@@ -2056,10 +2094,12 @@ def api_login_preflight():
     ip = _client_ip()
     hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
     if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+        log_with_kv(log_auth, logging.WARNING, "preflight ip limited", netid=netid, ip=ip)
         return {"ok": False, "error": "rate"}, 429
     if now - _preflight_last.get(netid, 0) < 30:
         return {"ok": True, "cooldown": True}
     if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+        log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
     if not _check_portal_budget():  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does
         return {"ok": False, "error": "rate"}, 429
@@ -2442,6 +2482,7 @@ def push_tick():
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
     if not conf["tick_secret"] or not hmac.compare_digest(got, conf["tick_secret"]):
+        log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
         return "", 401
     return _run_tick(conf=conf)
 
@@ -2567,6 +2608,13 @@ def push_test():
                "tag": f"test-{test_id}", "test_id": test_id, "url": "/"}
     job = push_send.send_one({"sub": subs[0], "payload": payload, "ttl": 600})
     oc = job["outcome"]
+    if not oc.get("ok"):
+        # audit 2026-10-07: the 3 prod push-test 502s (Oct 5 VAPID) and the
+        # 410 row deletion left only "status=502 duration_ms=10" — the
+        # outcome was never logged anywhere.
+        log_with_kv(log_push, logging.WARNING, "push test failed",
+                    netid=netid, http=oc.get("http_status"),
+                    dead=bool(oc.get("dead")), err=(oc.get("error") or "")[:120])
     if oc.get("ok"):
         return {"ok": True, "test_id": test_id}
     if oc.get("dead"):

@@ -214,6 +214,18 @@ def m004_marks(conn):
             if "duplicate column name" not in str(e):
                 raise
 
+@migration(version=12, description="usage_events (in-app telemetry: event counts per day, no PII)")
+def m012_usage_events(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS usage_events (
+        id INTEGER PRIMARY KEY,
+        ts INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        day TEXT NOT NULL,
+        user TEXT NOT NULL DEFAULT '',
+        event TEXT NOT NULL,
+        target TEXT DEFAULT '',
+        detail TEXT DEFAULT '')""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_day_event ON usage_events(day, event)")
+
 @migration(version=9, description="timetable_edit_log (who edited the shared timetable, when, what changed)")
 def m009_timetable_edit_log(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS timetable_edit_log (
