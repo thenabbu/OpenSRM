@@ -32,7 +32,9 @@ PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech
 
 import json
 import time
+
 from app import app as A
+
 now = int(time.time())
 c = A.db()
 c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json,
@@ -43,6 +45,7 @@ c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json
 c.commit(); c.close()
 
 from playwright.sync_api import sync_playwright
+
 from app.app import make_session_token
 
 JS = """
@@ -94,6 +97,7 @@ JS = """
   const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 :
     Math.pow((v + 0.055) / 1.055, 2.4); };
     return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  document.querySelectorAll('details').forEach(d => { d.open = true; });  // measure the preview panel too
   const card = [...document.querySelectorAll('div')].find(d =>
     d.className.includes('rounded-box') && d.textContent.includes('From the mid-sem feedback form'));
   if (!card) return {error: 'card not found'};

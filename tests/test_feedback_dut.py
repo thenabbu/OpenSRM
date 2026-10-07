@@ -71,6 +71,7 @@ def seed():
 
 def run():
     from playwright.sync_api import sync_playwright
+
     from app.app import make_session_token
     tok = make_session_token("ng2776")
     tok2 = make_session_token("zz9999")
@@ -94,6 +95,16 @@ def run():
         # subject names title-cased
         check("subject title-case", "Data Structures And Algorithms" in content)
 
+        # ── opt-in preview (server-rendered) + submit button ──
+        check("preview summary", "What will be submitted" in content)
+        check("plan shows teacher", "Dr.Test Alpha (Theory)" in content)
+        check("plan shows ratings", "5 = EXCELLENT on all 14 questions" in content)
+        check("plan shows comment", "Comment:" in content)
+        check("submit button", "Submit feedback (2 subjects)" in content)
+        page.locator("#fb-plan summary").click()
+        pbox = page.locator("#fb-plan").bounding_box()
+        check("preview panel opens", pbox is not None and pbox["height"] > 50, str(pbox))
+
         # card visible: the source footnote lives inside the card — a real
         # bounding box proves the card painted (None = display:none ancestor)
         foot = page.get_by_text("From the mid-sem feedback form")
@@ -110,14 +121,30 @@ def run():
         page2.goto(BASE + "/", wait_until="networkidle")
         content2 = page2.content()
         check("negative control: no Teachers card", "From the mid-sem feedback form" not in content2)
+        check("negative control: no submit button", "fb-submit" not in content2)
         check("negative control: page still renders", "Subjects" in content2 or "Attendance" in content2)
 
+        # clean PR screenshot: preview open, no interaction yet
         page.screenshot(path="/tmp/fb-dut-shots/dash_desktop.png", full_page=True)
+
+        # opt-in click with NO cached portal session -> honest 400, no portal contact
+        page.locator("#fb-submit").click()
+        page.wait_for_function(
+            "() => { const t = document.getElementById('fb-status').textContent;"
+            " return t.includes('session') || t.includes('failed') || t.includes('error'); }")
+        status = page.locator("#fb-status").text_content() or ""
+        check("submit reports honest error (no session)",
+              "session expired" in status, repr(status))
+        check("status styled as error",
+              "text-error" in (page.locator("#fb-status").get_attribute("class") or ""))
+        check("button re-enabled", page.locator("#fb-submit").is_enabled())
+
         # mobile viewport
         mctx = browser.new_context(viewport={"width": 393, "height": 851}, device_scale_factor=2.75)
         mctx.add_cookies([{"name": "srm_session", "value": tok, "url": BASE}])
         mpage = mctx.new_page()
         mpage.goto(BASE + "/", wait_until="networkidle")
+        mpage.locator("#fb-plan summary").click()  # preview visible in the shot; overflow sees the worst case
         mpage.screenshot(path="/tmp/fb-dut-shots/dash_mobile.png", full_page=True)
         # horizontal overflow check at 393
         overflow = mpage.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")

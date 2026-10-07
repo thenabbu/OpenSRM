@@ -1372,9 +1372,27 @@ def _faculty_view(faculty_map, courses):
         if not staff or all(sid == "0" for sid, _n, _k in staff):
             continue
         code = _by_name.get(" ".join(name.split()).upper(), "")
-        out.append({"code": code, "name": name.title(), "staff": staff})
+        out.append({"code": code, "name": name.title(), "raw": name, "staff": staff})
     out.sort(key=lambda x: x["name"])
     return out
+
+
+def _fb_plan(faculty_map):
+    """Stored map -> [{subject, teacher, staff_id, comment}] — the exact rows the
+    fill endpoint submits (first listed teacher, rotating comment).
+
+    SINGLE builder: the dashboard preview AND POST /api/feedback/fill both call
+    this, so what the student previewed IS what gets sent. {} / unknown-only -> [].
+    """
+    comments = _fb_submit_comments()
+    plan = []
+    for i, r in enumerate(_faculty_view(faculty_map, [])):
+        sid, tname, kind = r["staff"][0]
+        plan.append({"subject": r["name"],
+                     "teacher": f"{tname} ({kind})" if kind else tname,
+                     "staff_id": sid,
+                     "comment": comments[i % len(comments)]})
+    return plan
 
 
 @app.route("/")
@@ -1423,6 +1441,8 @@ def index():
     except (ValueError, TypeError):
         faculty_map = {}
     faculty_view = _faculty_view(faculty_map, data.get("courses", []))
+    # Preview of what the opt-in fill would submit (same builder as the endpoint).
+    fb_plan = _fb_plan(faculty_map)
 
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
@@ -1454,7 +1474,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
-        exams=exams, faculty=faculty_view,
+        exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         personal=personal_data)
@@ -1731,6 +1751,39 @@ def api_marks():
     c.close()
     marks = json.loads(row["marks_json"]) if row and row["marks_json"] else []
     return {"ok": True, "marks": marks}
+
+@app.route("/api/feedback/fill", methods=["POST"])
+@require_login
+def api_feedback_fill():
+    """OPT-IN mid-sem feedback submit (sync only harvests the map read-only).
+
+    No request body: the server rebuilds the plan from the stored faculty map
+    with _fb_plan() — the SAME builder that rendered the dashboard preview —
+    so what the student saw IS what gets sent. Re-verified live per subject
+    (already-registered / teacher-changed / window-closed all report honestly).
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    c = db()
+    row = c.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c.close()
+    try:
+        fmap = json.loads(row["faculty_map_json"]) if row and row["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        fmap = {}
+    plan = _fb_plan(fmap)
+    if not plan:
+        return {"ok": False, "error": "no feedback data yet — sync first"}, 400
+    cookies = _load_session(netid)
+    if not cookies:
+        return {"ok": False, "error": "portal session expired — sync first"}, 400
+    from . import http_scraper
+    try:
+        res = http_scraper.fill_feedback(netid, plan, cookies)
+    except http_scraper.HttpScraperError as e:
+        return {"ok": False, "error": str(e)}, 502
+    return {"ok": True, **res}
 
 def _fmt_score(v):
     """Score keeps 2 decimals: 11.7 -> '11.70'."""

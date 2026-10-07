@@ -7,16 +7,14 @@ exactly (value-before-id hidden inputs, txtCourseTitle/txtCourseStaff selects,
 Never commit real staff ids harvested from the portal.
 """
 import os
-import re
 import sys
 import tempfile
 
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="fb-test-"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from app.app import _fb_submit_comments, _faculty_view  # noqa: E402
-from app.http_scraper import (  # noqa: E402
-    _fb_common, _fb_registered, _fb_staff_options, _fb_subjects)
+from app.app import _faculty_view, _fb_submit_comments  # noqa: E402
+from app.http_scraper import _fb_common, _fb_registered, _fb_staff_options, _fb_subjects  # noqa: E402
 
 FAILS = []
 
@@ -122,13 +120,47 @@ check("pool non-empty", len(cs) >= 5)
 check("all <= 250 chars", all(len(x) <= 250 for x in cs), str([len(x) for x in cs]))
 check("all non-empty", all(x.strip() for x in cs))
 
+print("== _fb_plan (preview == submission payload) ==")
+from app.app import _fb_plan
+
+plan = _fb_plan(fmap)
+check("plan skips unknown-only subject", len(plan) == 2, repr(plan))
+check("plan fields", set(plan[0].keys()) == {"subject", "teacher", "staff_id", "comment"}, repr(plan[0]))
+check("teacher name+kind", plan[0]["teacher"] == "Dr.Priyanka Gupta (Theory)", repr(plan[0]))
+check("staff_id carried", plan[0]["staff_id"] == "50001", repr(plan[0]))
+check("comment from pool", plan[0]["comment"] in cs, repr(plan[0]["comment"]))
+check("comments rotate", plan[0]["comment"] != plan[1]["comment"], repr([p["comment"] for p in plan]))
+check("comment <= 250", all(len(p["comment"]) <= 250 for p in plan))
+check("no-kind teacher label", _fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})[0]["teacher"] == "Dr. X",
+      repr(_fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})))
+check("empty map -> empty plan", _fb_plan({}) == [])
+check("unknown-only -> empty plan", _fb_plan({"SOME UNLISTED SUBJECT": {"subject_id": "90003", "staff": [["0", "Unknown"]]}}) == [])
+
 print("== migration v12 (fresh DB) ==")
 import sqlite3
+
 db_path = os.path.join(os.environ["DATA_DIR"], "srm.db")
 conn = sqlite3.connect(db_path)
 cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
 conn.close()
 check("faculty_map_json column", "faculty_map_json" in cols, str(cols))
 
-print(f"\n{31 - len(FAILS)}/{31} passed" if not FAILS else f"\nFAILED: {FAILS}")
+print("== fill endpoint guards (test client, no server) ==")
+# require_login redirects unauthenticated traffic to /login (repo convention).
+import app.app as AA
+
+client = AA.app.test_client()
+r = client.post("/api/feedback/fill")
+check("unauthenticated -> 302 to /login",
+      r.status_code == 302 and "/login" in (r.headers.get("Location") or ""),
+      f"status={r.status_code} loc={r.headers.get('Location')}")
+# logged-in but empty map -> honest 400 (no portal contact)
+tok = AA.make_session_token("zz9999")  # no user row needed: get_current_user reads the cookie
+client.set_cookie("srm_session", tok)
+r2 = client.post("/api/feedback/fill")
+j = r2.get_json() or {}
+check("no feedback data -> 400", r2.status_code == 400 and not j.get("ok"),
+      f"status={r2.status_code} body={j}")
+
+print(f"\n{40 - len(FAILS)}/{40} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)

@@ -430,16 +430,14 @@ def _fb_registered(frag):
     return False
 
 
-def _fb_fill_all(opener, base, xheaders, netid):
-    """Harvest the subject->staff map + submit all-5 feedback for every unregistered
-    subject. Returns {name: {"subject_id", "staff": [[id, name], ...]}, "filled": N}.
+def _fb_harvest(opener, base, xheaders, netid):
+    """Read-only harvest of the subject->staff map. Returns
+    {name: {"subject_id", "staff": [[id, name], ...]}} — no submissions.
 
-    per-GET pacing 0.7s (12-19 requests) keeps total portal load at human scale.
-    ponytail: submit params mirror the page JS verbatim (forWhat=2, trailing
-    commas, comment<=250); a rejection shows in the response text and is logged.
+    Sync only ever runs this; submitting is opt-in via fill_feedback() (the
+    student must preview + confirm). per-GET pacing 0.7s keeps portal load
+    at human scale.
     """
-    from app.app import _fb_submit_comments  # deferred: avoid circularity
-    comments = _fb_submit_comments()
     t0 = time.monotonic()
 
     # 1. main fragment (POST iden=32, the funSetFormId contract)
@@ -453,55 +451,114 @@ def _fb_fill_all(opener, base, xheaders, netid):
     if "youLogin" in frag or "txtCourseTitle" not in frag:
         raise HttpScraperError("feedback form did not load (session dead or window closed)")
 
-    common = _fb_common(frag)
     subjects = _fb_subjects(frag)
     if not subjects:
         raise HttpScraperError("feedback form parsed but lists no subjects — "
-                               "portal markup changed, aborting without submitting")
+                               "portal markup changed, aborting")
 
-    # 2. per subject: staff list -> submit all-5 for the FIRST unregistered staff
-    filled, skipped = 0, 0
+    # 2. per subject: staff list (read-only)
     faculty_map = {}
     for sid, name in subjects:
         name = name.strip()
         q = "&" + urllib.parse.urlencode(dict(subjectId=sid, forWhat="1", functionId="1",
-                                              staffid="0", **common))
+                                              staffid="0", **_fb_common(frag)))
         _u, inner = _fb_post(opener, base, xheaders, q)
         staff = _fb_staff_options(inner)
         if not staff:
-            log.warning("feedback probe netid=%s subject=%s staff=EMPTY (marking unknown, no submit)", netid, name[:40])
+            log.warning("feedback probe netid=%s subject=%s staff=EMPTY (marking unknown)", netid, name[:40])
             faculty_map[name] = {"subject_id": sid, "staff": [["0", "Unknown"]]}
-            skipped += 1
+        else:
+            faculty_map[name] = {"subject_id": sid,
+                                 "staff": [[v, t.strip()] for v, t in staff]}
+        time.sleep(0.7)
+
+    log.info("feedback harvest done netid=%s subjects=%d total_ms=%d",
+             netid, len(faculty_map), int((time.monotonic() - t0) * 1000))
+    return faculty_map
+
+
+def fill_feedback(netid, plan, cookies_json):
+    """Opt-in submit: restore the cached portal session, re-verify the live form,
+    then submit all-5 ratings + the comment for each planned subject.
+
+    plan comes from app._fb_plan() — the SAME builder the dashboard preview
+    renders, so what the student saw IS what gets sent. Returns
+    {"filled": [names], "already": [names], "failed": [[name, reason]]}.
+    Raises HttpScraperError when the session or window is unusable (nothing
+    submitted).
+    """
+    t0 = time.monotonic()
+    base, xheaders = _route()
+    opener, jar = _make_opener()
+    try:
+        for ck in json.loads(cookies_json):
+            jar.set_cookie(http.cookiejar.Cookie(
+                version=0, name=ck["name"], value=ck.get("value", ""),
+                port=None, port_specified=False,
+                domain=ck.get("domain", PORTAL_HOST), domain_specified=True,
+                domain_initial_dot=False, path=ck.get("path", "/"), path_specified=True,
+                secure=ck.get("secure", True), expires=ck.get("expires"),
+                discard=False, comment=None, comment_url=None, rest={}))
+    except Exception as e:
+        raise HttpScraperError(f"bad cached session: {e!r}") from e
+
+    _u, body = _req(opener, f"{base}{BASE_PATH}/students/template/HRDSystem.jsp", _hdrs(xheaders))
+    if "HRDSystem" not in _u and b"HRDSystem" not in body[:4000]:
+        raise HttpScraperError("portal session expired — sync first")
+
+    # fresh main fragment: common hidden fields + the CURRENT subject list
+    url = f"{base}{BASE_PATH}/students/Feedback/MidSemFeedback.jsp"
+    data = urllib.parse.urlencode({"iden": "32", "filter": "", "hdnFormDetails": "1",
+                                   "csrfPreventionSalt": ""}).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    _u, body = _req(opener, url, headers, data=data)
+    frag = body.decode("utf-8", errors="replace")
+    if "youLogin" in frag or "txtCourseTitle" not in frag:
+        raise HttpScraperError("feedback window closed or session dead — nothing submitted")
+    common = _fb_common(frag)
+    live = {" ".join(n.split()).upper(): sid for sid, n in _fb_subjects(frag)}
+
+    qids = ",".join(str(x) for x in range(23, 37)) + ","
+    ans = ",".join(["5"] * 14) + ","
+    res = {"filled": [], "already": [], "failed": []}
+    for item in plan:
+        name, staff_id, comment = item["subject"], item["staff_id"], item["comment"]
+        sid = live.get(" ".join(name.split()).upper())
+        if not sid:
+            res["failed"].append([name, "not on the live form — re-sync"])
+            log.warning("feedback fill netid=%s subject=%s no-live-match", netid, name[:40])
             time.sleep(0.7)
             continue
-        faculty_map[name] = {"subject_id": sid,
-                             "staff": [[v, t.strip()] for v, t in staff]}
+        q = "&" + urllib.parse.urlencode(dict(subjectId=sid, forWhat="1", functionId="1",
+                                              staffid="0", **common))
+        _u, inner = _fb_post(opener, base, xheaders, q)
         if _fb_registered(inner):
-            skipped += 1
-            log.debug("feedback skip netid=%s subject=%s already registered", netid, name[:40])
+            res["already"].append(name)
             time.sleep(0.7)
             continue
-        staff_id = staff[0][0]
-        qids = ",".join(str(x) for x in range(23, 37)) + ","
-        ans = ",".join(["5"] * 14) + ","
-        comment = comments[filled % len(comments)]
+        if staff_id not in [v for v, _t in _fb_staff_options(inner)]:
+            res["failed"].append([name, "teacher not on the live form — re-sync"])
+            time.sleep(0.7)
+            continue
         sub = "&" + urllib.parse.urlencode(dict(
             subjectId=sid, forWhat="2", staffid=staff_id,
             hiddenQuestionId=qids, hiddenAnswerId=ans,
             commentTextArea=comment[:250], **common))
         _u, resp = _fb_post(opener, base, xheaders, sub)
         if _fb_registered(resp):
-            filled += 1
+            res["filled"].append(name)
             log.info("feedback submitted netid=%s subject=%s staff=%s", netid, name[:40], staff_id)
         else:
-            skipped += 1
-            log.warning("feedback submit no-success-marker netid=%s subject=%s staff=%s "
-                        "resp=%dB", netid, name[:40], staff_id, len(resp))
+            res["failed"].append([name, f"no success marker ({len(resp)}B)"])
+            log.warning("feedback submit no-success-marker netid=%s subject=%s resp=%dB",
+                        netid, name[:40], len(resp))
         time.sleep(0.7)
 
-    log.info("feedback fill done netid=%s filled=%d skipped=%d subjects=%d total_ms=%d",
-             netid, filled, skipped, len(subjects), int((time.monotonic() - t0) * 1000))
-    return {"map": faculty_map, "filled": filled}
+    log.info("feedback fill done netid=%s filled=%d already=%d failed=%d total_ms=%d",
+             netid, len(res["filled"]), len(res["already"]), len(res["failed"]),
+             int((time.monotonic() - t0) * 1000))
+    return res
 
 
 def _merge_exam_results(results):
@@ -710,14 +767,15 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     except Exception as e:
         log.debug("personal parse err=%r", e)
 
-    # Faculty map + auto-fill feedback: rides the same logged-in session after
-    # the JSP batch (MidSemFeedback.jsp is a portal window — when closed, the
-    # whole harvest raises and the sync still ships attendance/marks).
+    # Faculty map: read-only harvest rides the same logged-in session after the
+    # JSP batch (MidSemFeedback.jsp is a portal window — when closed, the whole
+    # harvest raises and the sync still ships attendance/marks). Submitting is
+    # OPT-IN from the dashboard (fill_feedback) — sync never writes to the portal.
     fb = None
     if cold:
         try:
             _prog("Checking mid-sem feedback…", 85)
-            fb = _fb_fill_all(opener, base, xheaders, netid)
+            fb = _fb_harvest(opener, base, xheaders, netid)
         except HttpScraperError as e:
             log.info("feedback harvest skipped netid=%s err=%r", netid, e)
         except Exception as e:
@@ -782,5 +840,5 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     if exams is not None:  # absent key = preserve stored exam_schedule_json
         out["exams"] = exams
     if fb is not None:  # absent key = feedback window closed / harvest failed
-        out["faculty"] = fb["map"]
+        out["faculty"] = fb
     return out

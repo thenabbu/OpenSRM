@@ -245,6 +245,24 @@
               {% endfor %}
             </ul>
             <div class="text-xs text-base-content/70 mt-2">From the mid-sem feedback form</div>
+            {% if fb_plan %}
+            <!-- Opt-in fill: preview shows EXACTLY what will be submitted (same builder
+                 as the endpoint); the button is the only way to write to the portal -->
+            <details id="fb-plan" class="mt-3 pt-3 border-t border-base-300/60">
+              <summary class="cursor-pointer select-none text-xs text-base-content/70">What will be submitted ({{ fb_plan|length }} subjects)</summary>
+              <ul class="mt-2 space-y-2">
+                {% for p in fb_plan %}
+                <li class="text-xs leading-relaxed">
+                  <span class="block font-semibold text-base-content">{{ p.subject }}</span>
+                  <span class="block text-base-content/70">{{ p.teacher }} · 5 = EXCELLENT on all 14 questions</span>
+                  <span class="block mt-0.5 text-base-content/60">Comment: “{{ p.comment }}”</span>
+                </li>
+                {% endfor %}
+              </ul>
+              <button id="fb-submit" class="btn btn-sm btn-primary mt-3 min-h-11">Submit feedback ({{ fb_plan|length }} subjects)</button>
+              <p id="fb-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></p>
+            </details>
+            {% endif %}
           </div>
           {% endif %}
         </div>
