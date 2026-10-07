@@ -67,8 +67,12 @@ def t_access_log():
     warns = [r for r in records if r.levelno == logging.WARNING and r.getMessage() == "request"]
     kv_err = [r for r in warns if getattr(r, "kv", {}).get("error")]
     assert kv_err, f">=400 request lines must carry error=: {[getattr(r, 'kv', {}) for r in warns]}"
+    # fix kv-log-level-gate: log_with_kv() used to bypass isEnabledFor, so the
+    # healthcheck's DEBUG-demoted lines still wrote at LOG_LEVEL=INFO.
     deb = [r for r in records if r.levelno == logging.DEBUG]
-    assert deb, "healthcheck UA must log at DEBUG, not INFO"
+    assert not deb, f"healthcheck kv lines must be suppressed at INFO: {[getattr(r, 'kv', {}) for r in deb]}"
+    assert logging.getLogger("opensrm.portal").getEffectiveLevel() == logging.DEBUG, \
+        "opensrm.portal must stay DEBUG at prod INFO (incident recipes read it)"
 
 
 def t_rate_limit_logged():
@@ -177,7 +181,7 @@ def t_usage_env_passthrough():
 
 
 for name, fn in [
-    ("access log: >=400 WARNING+error=, healthcheck DEBUG", t_access_log),
+    ("access log: >=400 WARNING+error=, healthcheck suppressed at INFO", t_access_log),
     ("per-IP 429 logs a cause line", t_rate_limit_logged),
     ("tick-secret 401 logs a WARNING", t_tick_auth_logged),
     ("root logger INFO, opensrm obeys LOG_LEVEL", t_root_level),
