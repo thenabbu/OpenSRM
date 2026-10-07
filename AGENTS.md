@@ -43,6 +43,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
+.venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 .venv/bin/python tests/test_feedback.py      # 40/40 (harvester parse, registered markers, faculty view, fb_plan preview==payload, v12 migration, endpoint 401)

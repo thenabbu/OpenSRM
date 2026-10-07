@@ -39,6 +39,7 @@ from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
 from flask import Flask, make_response, redirect, render_template, request
+from werkzeug.exceptions import HTTPException
 
 from . import push_calc, push_send, push_store
 from .logging_setup import log_with_kv, setup_logging
@@ -106,7 +107,8 @@ def encrypt_pw(pw):
 def decrypt_pw(blob):
     try:
         return get_fernet().decrypt(blob.encode()).decode()
-    except Exception:
+    except Exception as e:
+        log.warning("stored password unreadable — user must re-login: %r", e)
         return ""
 
 def _import_legacy_timetable():
@@ -117,12 +119,14 @@ def _import_legacy_timetable():
              os.path.join(DATA_DIR, "timetable.json")]
     json_path = next((p for p in paths if os.path.exists(p)), None)
     if not json_path: return
-    with open(json_path) as f:
-        data = json.load(f)
-    # Infer group from the imported timetable's known cohort data
-    group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
+    # audit B11: open+parse INSIDE the try — a corrupt legacy timetable.json
+    # used to escape init_db() at import time and crash-loop the container
     c = db()
     try:
+        with open(json_path) as f:
+            data = json.load(f)
+        # Infer group from the imported timetable's known cohort data
+        group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
         c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
                   "VALUES(?,?,?,?,?)", (group_key, "B.Tech.-CSE Cloud Computing", 2025, 3, "A"))
         gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()[0]
@@ -425,9 +429,10 @@ _DATE_CELL_RE = re.compile(r"\d{1,2}[/ -](?:\w{3,9}|\d{1,2})[/ -]\d{2,4}")
 ROMAN = {'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
 
 def _semester_int(semester_str):
-    """Convert 'III SEMESTER' -> 3."""
-    roman = semester_str.split()[0].strip()
-    return ROMAN.get(roman, 0)
+    """Convert 'III SEMESTER' -> 3. Empty/None -> 0: split()[0] raised
+    IndexError (probe-verified) and 500'd every page calling _group_key."""
+    parts = (semester_str or "").split()
+    return ROMAN.get(parts[0].strip(), 0) if parts else 0
 
 def _program_short(program):
     """Portal Program -> stable branch id: drop the bracketed suffix and the
@@ -868,8 +873,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             try:
                 cookies = await ctx.cookies()
                 _save_session(netid, json.dumps(cookies))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("portal session save failed netid=%s (next sync pays a full login): %r", netid, e)
 
 
         # ── Parallel fetch (hot always; cold when requested) ─────────
@@ -907,8 +912,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             try:
                 cookies = await ctx.cookies()
                 _save_session(netid, json.dumps(cookies))
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("portal session save failed netid=%s (next sync pays a full login): %r", netid, e)
             parallel_html = await page.evaluate("""async (JSPS) => {
                 const r = {};
                 await Promise.all(Object.entries(JSPS).map(([f, u]) =>
@@ -982,8 +987,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             personal_html = parallel_html.get("17", "")
             if personal_html:
                 personal = parse_personal_details(personal_html)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("personal details parse failed — profile renders empty: %r", e)
 
         # Course list (from parallel fetch)
         courses = []
@@ -993,8 +998,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                 cells = _cells(row)
                 if len(cells) >= 3 and cells[0] and not cells[0].lower().startswith("total"):
                     courses.append({"code": cells[0], "name": cells[1], "credits": int(cells[2] or 0)})
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("course list parse failed — subjects missing from dashboard: %r", e)
 
         # Marks (from parallel fetch)
         marks = []
@@ -1030,8 +1035,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                                     m["scored_total"] = round(sum(x["scored"] for x in comps), 2)
                                     m["max_total"] = round(sum(x["max"] for x in comps), 2)
                                 break
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("marks/component parse failed — marks render empty: %r", e)
 
         return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
     finally:
@@ -1081,7 +1086,10 @@ def fetch_attendance(netid, password):
             log.debug("cold data fresh netid=%s — hot-only sync", netid)
         try:
             from . import http_scraper
-        except ImportError:
+        except ImportError as e:
+            # audit 2026-10-07: the HTTP pipeline going silently missing doubled
+            # every sync's latency with no log line — first ERROR call in the repo
+            log.error("http_scraper unavailable — playwright-only mode: %r", e)
             http_scraper = None
         log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
@@ -1332,14 +1340,40 @@ def _log_request_start():
 @app.after_request
 def _log_request(resp):
     duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
-    log_with_kv(log_http, logging.INFO, "request",
-                method=request.method, path=request.path,
-                status=resp.status_code, duration_ms=duration_ms)
+    # audit 2026-10-07: 86% of the log file was the docker healthcheck's
+    # urllib GET pair (66,003 of 76,857 lines) — synthetic traffic now logs
+    # at DEBUG. Real >=400 responses log at WARNING with the error body,
+    # so every failure carries its cause on the request line itself.
+    ua = request.headers.get("user-agent", "")
+    if resp.status_code >= 400 and not ua.startswith("Python-urllib"):
+        kv = dict(method=request.method, path=request.path,
+                  status=resp.status_code, duration_ms=duration_ms)
+        body = resp.get_json(silent=True)
+        err = (body or {}).get("error") if isinstance(body, dict) else None
+        if err:
+            kv["error"] = str(err)[:120]
+        log_with_kv(log_http, logging.WARNING, "request", **kv)
+    else:
+        lvl = logging.DEBUG if ua.startswith("Python-urllib") else logging.INFO
+        log_with_kv(log_http, lvl, "request",
+                    method=request.method, path=request.path,
+                    status=resp.status_code, duration_ms=duration_ms)
     return resp
 
 # ── Security headers ───────────────────────────────────────────────
+@app.errorhandler(Exception)
+def _unhandled_error(e):
+    """Safety net: one greppable opensrm ERROR line for anything the app
+    fails to catch (audit: no handler existed — sqlite lock errors and
+    parser crashes surfaced as a bare Flask 500 with no opensrm.* line)."""
+    if isinstance(e, HTTPException):
+        return e
+    log.error("unhandled error path=%s method=%s", request.path, request.method,
+              exc_info=(type(e), e, e.__traceback__))
+    return {"ok": False, "error": "internal server error"}, 500
+
 @app.after_request
-def set_security_headers(resp):
+def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -1395,6 +1429,37 @@ def _fb_plan(faculty_map):
     return plan
 
 
+def _jload(raw, default):
+    """json.loads over a stored row: degrade to `default` + log the
+    corruption. index()/api_marks decoded unguarded — one corrupt row
+    500'd the whole dashboard on every load (audit B1-B4). Also checks
+    shape: valid-JSON-wrong-type used to reach renderers as a 500 (B10)."""
+    if not raw:
+        return default
+    try:
+        v = json.loads(raw)
+    except (ValueError, TypeError) as e:
+        log.warning("corrupt stored json — returning default: %r", e)
+        return default
+    if not isinstance(v, type(default)):
+        log.warning("stored json wrong shape — returning default")
+        return default
+    return v
+
+def _track(event, target="", detail="", user=""):
+    """One usage-event row: page views, syncs, feature usage. Closed
+    vocabulary (usage_events), no PII — user is the netid already stored
+    in the DB; never passwords, tokens, or portal payloads. ponytail:
+    plain INSERT, no batching — a few rows/day at this scale."""
+    try:
+        c = db()
+        c.execute("INSERT INTO usage_events(day, user, event, target, detail) VALUES(?,?,?,?,?)",
+                  (time.strftime("%Y-%m-%d"), user, event, target[:64], detail[:64]))
+        c.commit(); c.close()
+    except Exception as e:
+        log.debug("usage track failed event=%s: %r", event, e)  # telemetry must never break a request
+
+# ── Routes ─────────────────────────────────────────────────
 @app.route("/")
 @require_login
 def index():
@@ -1402,7 +1467,9 @@ def index():
     c = db()
     row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
-    data = json.loads(row["attendance_json"]) if row and row["attendance_json"] else {"courses": [], "monthly": [], "period": None, "daily_absent": {}}
+    _track("page_view", target="dashboard", user=netid)
+    data = _jload(row["attendance_json"] if row else None,
+                  {"courses": [], "monthly": [], "period": None, "daily_absent": {}})
     last_epoch = row["last_fetch"] if row and row["last_fetch"] else 0
     last = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_epoch)) if last_epoch else "never"
 
@@ -1411,24 +1478,21 @@ def index():
     monthly = [_month_view(x) for x in data.get("monthly", [])]
 
     # Extract student name from personal details
-    personal_data = json.loads(row["personal_details_json"]) if row and row["personal_details_json"] else {}
+    personal_data = _jload(row["personal_details_json"] if row else None, {})
     student_name = personal_data.get("Student Name", "").title()
 
     # Marks: server-rendered (tab + dashboard widget). Re-synced hot data.
     c2 = db()
     mrow = c2.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
     c2.close()
-    marks_raw = json.loads(mrow["marks_json"]) if mrow and mrow["marks_json"] else []
+    marks_raw = _jload(mrow["marks_json"] if mrow else None, [])
     marks_view = _marks_view(marks_raw,
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
     # End-sem schedule card (leaked ScribeInner probe; None -> card hidden).
     # Rows are kept: _exam_stop needs the raw dates for the budget horizon (spec §1.2).
-    try:
-        exam_rows = json.loads(row["exam_schedule_json"]) if row and row["exam_schedule_json"] else []
-    except (ValueError, TypeError):
-        exam_rows = []
+    exam_rows = _jload(row["exam_schedule_json"] if row else None, [])
     exams = _exams_view(exam_rows)
 
     # Faculty map card (harvested from the mid-sem feedback form; {} -> hidden).
@@ -1749,7 +1813,7 @@ def api_marks():
     c = db()
     row = c.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
-    marks = json.loads(row["marks_json"]) if row and row["marks_json"] else []
+    marks = _jload(row["marks_json"] if row else None, [])
     return {"ok": True, "marks": marks}
 
 @app.route("/api/feedback/fill", methods=["POST"])
@@ -1786,12 +1850,20 @@ def api_feedback_fill():
     return {"ok": True, **res}
 
 def _fmt_score(v):
-    """Score keeps 2 decimals: 11.7 -> '11.70'."""
-    return f"{v:.2f}"
+    """Score keeps 2 decimals: 11.7 -> '11.70'. Junk/None -> '?' — a stored
+    null score used to TypeError into a 500 (audit B9)."""
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return "?"
 
 def _fmt_max(v):
     """Maxima are whole marks on the portal: 15.0 -> '15' (never '15.00')."""
-    return str(int(v)) if float(v).is_integer() else f"{v:.2f}"
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "?"
+    return str(int(f)) if f.is_integer() else f"{f:.2f}"
 
 def _fmt_date(s):
     """Portal date '04/Sep/2026' -> muted display '04 Sep'; junk passes through."""
@@ -1977,6 +2049,7 @@ def api_login():
     # the 10/hour budget and 429'd the rest of the hour — a cheap self-DoS on
     # shared campus NAT that never even reached the portal.
     if not _check_ip_rate(_client_ip()):
+        log_with_kv(log_auth, logging.WARNING, "login ip limited", ip=_client_ip())
         return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
@@ -1985,16 +2058,23 @@ def api_login():
     if not res["ok"]:
         log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
                     error=res["error"][:80], duration_ms=login_ms)
+        _track("login_fail", detail=res["error"][:60], user=netid)
         # audit F4: auth failures are 401; busy/rate are 429/503
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
+    _track("login_ok", detail=f"{login_ms}ms", user=netid)
     c = db()
     # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     subjects_json = json.dumps(res.get("subjects", {}))
+    # audit B6: preserve stored marks on empty — a parse failure returns
+    # marks=[] with ok=True and used to wipe stored marks silently
+    marks_json = json.dumps(res.get("marks", []))
+    if not res.get("marks") and existing and existing["marks_json"]:
+        marks_json = existing["marks_json"]
     if not res.get("personal") and existing and existing["personal_details_json"]:
         personal_json = existing["personal_details_json"]
     if not res.get("subjects") and existing and existing["subjects_json"]:
@@ -2018,7 +2098,7 @@ def api_login():
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               personal_json, json.dumps(res.get("marks", [])), subjects_json, exams_json, faculty_json))
+               personal_json, marks_json, subjects_json, exams_json, faculty_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -2037,8 +2117,8 @@ def api_login():
                            "VALUES(?,?,?,?,0) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
                            (gid, sub["code"], sub["name"], sub["credits"]))
             c2.commit(); c2.close()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("timetable group/subject save failed netid=%s: %r", netid, e, exc_info=True)
 
     token = make_session_token(netid)
     resp = make_response({"ok": True})
@@ -2053,10 +2133,13 @@ def api_refresh():
     c = db()
     row = c.execute("SELECT password FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
-    if not row: return {"ok": False, "error": "no stored creds"}
+    if not row:
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
+        return {"ok": False, "error": "no stored creds"}, 401
     password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
     if not password:
-        return {"ok": False, "error": "stored credentials unreadable \u2014 log in again"}
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
+        return {"ok": False, "error": "stored credentials unreadable \u2014 log in again"}, 401
     res = fetch_attendance(netid, password)
     if not res["ok"]:
         # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
@@ -2064,15 +2147,20 @@ def api_refresh():
         # not be diagnosed after the fact. Same KV line as /api/login.
         log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
                     error=res["error"][:80])
+        _track("sync_fail", detail=res["error"][:60], user=netid)
         # audit F4: match /api/login's status-code discipline
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
+    # audit B6: same preserve-if-empty contract as login
+    marks_json = json.dumps(res.get("marks", []))
+    if not res.get("marks") and row2 and row2["marks_json"]:
+        marks_json = row2["marks_json"]
     # exams: absent key -> preserve stored (same contract as login upsert above)
     if "exams" in res:
         exams_json = json.dumps(res["exams"])
@@ -2089,8 +2177,9 @@ def api_refresh():
         faculty_json = "{}"
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
+               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
     c.commit(); c.close()
+    _track("sync_ok", user=netid)
     return {"ok": True}
 
 # ── Login preflight: browser fires this when the user focuses the
@@ -2104,7 +2193,8 @@ def _run_preflight(netid):
         from . import http_scraper
         http_scraper.preflight(netid)
     except Exception as e:
-        log.debug("preflight failed netid=%s err=%r", netid, e)
+        # audit 2026-10-07: warm-login loss was DEBUG-only — now visible at WARNING
+        log.warning("preflight failed netid=%s err=%r", netid, e)
 
 @app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
@@ -2117,10 +2207,12 @@ def api_login_preflight():
     ip = _client_ip()
     hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
     if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+        log_with_kv(log_auth, logging.WARNING, "preflight ip limited", netid=netid, ip=ip)
         return {"ok": False, "error": "rate"}, 429
     if now - _preflight_last.get(netid, 0) < 30:
         return {"ok": True, "cooldown": True}
     if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+        log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
     if not _check_portal_budget():  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does
         return {"ok": False, "error": "rate"}, 429
@@ -2157,8 +2249,8 @@ def api_get_timetable():
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
         if r and r[0]: personal = json.loads(r[0])
-    except Exception:  # corrupt/unreadable row → proceed with empty personal details
-        pass
+    except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
+        log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "slots": {}, "subjects": [], "group_key": None}
     c = db()
@@ -2208,8 +2300,8 @@ def api_timetable_history():
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
         if r and r[0]: personal = json.loads(r[0])
-    except Exception:  # corrupt/unreadable row → proceed with empty personal details
-        pass
+    except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
+        log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "entries": []}
     c = db()
@@ -2221,7 +2313,8 @@ def api_timetable_history():
                        (gid[0],)):
         try:
             changes = json.loads(r[3] or "[]")
-        except Exception:
+        except Exception as e:
+            log.warning("corrupt timetable edit changes_json: %r", e)
             changes = []
         entries.append({"netid": r[0], "name": r[1] or "", "at": r[2], "changes": changes})
     c.close()
@@ -2240,8 +2333,8 @@ def api_save_timetable():
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
         if r and r[0]: personal = json.loads(r[0])
-    except Exception:  # corrupt/unreadable row → proceed with empty personal details
-        pass
+    except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
+        log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
     gk = _group_key(personal)
     if not gk: return {"ok": False, "error": "could not determine group"}, 400
     c = db()
@@ -2502,6 +2595,7 @@ def push_tick():
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
     if not conf["tick_secret"] or not hmac.compare_digest(got, conf["tick_secret"]):
+        log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
         return "", 401
     return _run_tick(conf=conf)
 
@@ -2627,6 +2721,13 @@ def push_test():
                "tag": f"test-{test_id}", "test_id": test_id, "url": "/"}
     job = push_send.send_one({"sub": subs[0], "payload": payload, "ttl": 600})
     oc = job["outcome"]
+    if not oc.get("ok"):
+        # audit 2026-10-07: the 3 prod push-test 502s (Oct 5 VAPID) and the
+        # 410 row deletion left only "status=502 duration_ms=10" — the
+        # outcome was never logged anywhere.
+        log_with_kv(log_push, logging.WARNING, "push test failed",
+                    netid=netid, http=oc.get("http_status"),
+                    dead=bool(oc.get("dead")), err=(oc.get("error") or "")[:120])
     if oc.get("ok"):
         return {"ok": True, "test_id": test_id}
     if oc.get("dead"):

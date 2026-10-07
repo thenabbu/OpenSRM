@@ -18,10 +18,16 @@ services:
       - opensrm-data:/app/data
     environment:
       - TZ=Asia/Kolkata
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      # audit 2026-10-07: compose default DEBUG overrode the Dockerfile INFO —
+      # prod ran DEBUG for 15 days (3,366 junk DEBUG lines). Default INFO now;
+      # set LOG_LEVEL=DEBUG in /docker/.env to debug.
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
       - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
+      # Error alerting (docs/README logging section): set NTFY_ALERT_URL in
+      # /docker/.env to push WARNING+ opensrm log lines to an ntfy topic.
+      - NTFY_ALERT_URL=${NTFY_ALERT_URL:-}
       # Web Push (docs/push.md): feature stays OFF until PUSH_ENABLED=1 in
       # /docker/.env; missing VAPID keys -> status endpoint says "not configured".
       - PUSH_ENABLED=${PUSH_ENABLED:-0}

@@ -14,6 +14,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 ## What it does
 
+- **Reliability** — a corrupt stored row degrades with a logged warning instead of a 500 on every load; a mid-scrape relogin re-reads the fresh portal page instead of the dead session's body; stored marks survive a failed marks fetch (preserve-if-empty, like attendance/personal/exams); unhandled errors land in one greppable ERROR line with a traceback
 - **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift); rejections are classified on the portal's own alert text, so a wrong password says "invalid credentials" on the first attempt instead of burning 3 captcha retries (and the portal's 3-attempts-per-NetID lockout), and every sync lockout names its real remaining time
 - **Attendance** — meter rows per subject (§4.15): exact fill vs a white 75% tick, pinned numbers (attended / 75%-value / total), and the bare must-attend-or-can-skip count on a connector line; semester skip budgets (90-working-day and day-before-first-endsem models) in a quiet Estimates card; absences as `date · hours` rows; monthly breakdown demoted into a collapsed `<details>`; no aggregate anywhere. Timetable rows carry a shape-glyph glance signal (check/triangle/X; neutral "no data" for unmatched or custom slots) and the today hero shows the current class's skip stat
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), neutral numbers with a single muted outlier accent, IE-1/IE-2 roles derived from component maxima and confirmable per class (persisted for GPA prediction); glance widget on the dashboard
@@ -22,6 +23,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Timetable** — per-group schedule from SQLite; current/next class status; break/lunch shown as dividers, not period blocks (and only *between* classes — no stray break after the day's last one); drag-and-drop editor with subject palette; **section-visible edit history** — every save logs who changed which slot and when, so fixes and vandalism are both on the record (bulk saves collapse to 3 lines + a `+N more` toggle)
 - **Personal Details** — identity header (name + program) over collapse groups (Academic, Personal, Family, Contact) with present-field count badges; dense 2-column label-above-value grid with all groups open on desktop, first group only on mobile; click any value to copy it
 - **Hot/cold data** — attendance + marks refreshed and persisted on every sync; personal details/courses reused until stale (24h); timetable served from SQLite and only changes when you edit it; opening the page shows cached data instantly with a quiet background re-sync
+- **Telemetry** — anonymous usage events (page views, logins, syncs) in the app's own SQLite; no third-party scripts, no cookies, no profile data — used to see which features matter
 - **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
 - **Class reminders** — Web Push notification a few minutes before each class (subject, start time, room when set), delivered even with the app closed; opt-in per device with 5/10/15/30-minute lead, a test button with server-side delivery receipts, and iOS Home-Screen guidance — driven by an external every-minute tick ([docs/push.md](docs/push.md))
 
@@ -225,6 +227,7 @@ Environment variables:
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
 - `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
+- `NTFY_ALERT_URL` — optional: an [ntfy](https://ntfy.sh) topic URL; when set, WARNING+ `opensrm.*` log lines POST there (rate-limited to 1/min) so no error goes unseen
 
 ---
 
