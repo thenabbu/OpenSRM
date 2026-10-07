@@ -49,7 +49,7 @@ JSPS = {
     "7": "/students/report/studentSubjectLists.jsp",
 }
 HOT_FORMIDS = {"9", "13"}  # attendance + marks: fetched every sync
-COLD_FORMIDS = {"1", "17", "7"}  # profile/personal/courses: re-fetch only when stale > COLD_TTL
+COLD_FORMIDS = {"1", "17", "7", "32"}  # profile/personal/courses/feedback-form: re-fetch only when stale > COLD_TTL
 COLD_TTL = 24 * 3600  # seconds
 
 MAX_CAPTCHA_RETRIES = 3
@@ -367,6 +367,143 @@ def _exam_post(opener, base, xheaders, month, year):
         return None
 
 
+def _fb_post(opener, base, xheaders, query):
+    """GET MidSemFeedbackInner.jsp with the form's own query contract.
+    Returns (final_url, text); raises HttpScraperError on transport fail."""
+    url = f"{base}{BASE_PATH}/students/Feedback/MidSemFeedbackInner.jsp?{query}"
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    _u, body = _req(opener, url, headers)
+    return _u, body.decode("utf-8", errors="replace")
+
+
+def _fb_common(frag):
+    """Hidden-field values from the MidSemFeedback fragment (attribute order
+    varies — value-before-id on most tags, so extract independently)."""
+    def _val(_id):
+        m = re.search(r'<input[^>]*id="%s"[^>]*>' % _id, frag, re.I)
+        if m:
+            vm = re.search(r'value="([^"]*)"', m.group(0))
+            if vm:
+                return vm.group(1)
+        return ""
+    return {
+        "programme": _val("hdntxtProgramme"),
+        "section": _val("hdntxtSection"),
+        "classstrenth": _val("hdnStudentCount"),
+        "studenId": _val("hdnStudentId"),
+        "academicyearid": _val("hdnAcademicYearId"),
+        "courseid": _val("hdnCourseId"),
+        "hdnPgsecid": _val("hdnPgsecid"),
+        "semesterId": _val("hdntxtSem") or _val("txtSem"),
+        "totalFeedBack": _val("hdnTotalFeedBack"),
+        "feedbacktypeId": _val("hdnFeedbackTypeId") or "2",
+        "previousSemester": _val("previousSemester") or _val("txtSem"),
+        "subjectTypeId": "1",
+    }
+
+
+def _fb_subjects(frag):
+    """[(subject_id, name)] from the form's txtCourseTitle select."""
+    m = re.search(r'<select[^>]*id="txtCourseTitle".*?</select>', frag, re.S | re.I)
+    return re.findall(r'<option[^>]*value="(\d+)"[^>]*>\s*([^<]+?)\s*</option>', m.group(0)) if m else []
+
+
+def _fb_staff_options(frag):
+    """[(staff_id, 'Name-Kind')] from the response's txtCourseStaff select."""
+    m = re.search(r'<select[^>]*id="txtCourseStaff".*?</select>', frag, re.S | re.I)
+    return re.findall(r'<option[^>]*value="(\d+)"[^>]*>\s*([^<]+?)\s*</option>', m.group(0)) if m else []
+
+
+def _fb_registered(frag):
+    """True when the response says this subject is already registered — the
+    ONLY trustworthy done-signal ('SAVED SUCCESSFULLY' never re-renders).
+    Attr order varies (value-before-id on the saved response), so extract
+    the tag first, then the value."""
+    if "ALREADY REGISTERED" in frag.upper():
+        return True
+    m = re.search(r'<input[^>]*id="hdnRegisterFeedBack"[^>]*>', frag, re.I)
+    if m:
+        vm = re.search(r'value="([^"]*)"', m.group(0))
+        if vm:
+            return vm.group(1) == "1"
+    return False
+
+
+def _fb_fill_all(opener, base, xheaders, netid):
+    """Harvest the subject->staff map + submit all-5 feedback for every unregistered
+    subject. Returns {name: {"subject_id", "staff": [[id, name], ...]}, "filled": N}.
+
+    per-GET pacing 0.7s (12-19 requests) keeps total portal load at human scale.
+    ponytail: submit params mirror the page JS verbatim (forWhat=2, trailing
+    commas, comment<=250); a rejection shows in the response text and is logged.
+    """
+    from app.app import _fb_submit_comments  # deferred: avoid circularity
+    comments = _fb_submit_comments()
+    t0 = time.monotonic()
+
+    # 1. main fragment (POST iden=32, the funSetFormId contract)
+    url = f"{base}{BASE_PATH}/students/Feedback/MidSemFeedback.jsp"
+    data = urllib.parse.urlencode({"iden": "32", "filter": "", "hdnFormDetails": "1",
+                                   "csrfPreventionSalt": ""}).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    _u, body = _req(opener, url, headers, data=data)
+    frag = body.decode("utf-8", errors="replace")
+    if "youLogin" in frag or "txtCourseTitle" not in frag:
+        raise HttpScraperError("feedback form did not load (session dead or window closed)")
+
+    common = _fb_common(frag)
+    subjects = _fb_subjects(frag)
+    if not subjects:
+        raise HttpScraperError("feedback form parsed but lists no subjects — "
+                               "portal markup changed, aborting without submitting")
+
+    # 2. per subject: staff list -> submit all-5 for the FIRST unregistered staff
+    filled, skipped = 0, 0
+    faculty_map = {}
+    for sid, name in subjects:
+        name = name.strip()
+        q = "&" + urllib.parse.urlencode(dict(subjectId=sid, forWhat="1", functionId="1",
+                                              staffid="0", **common))
+        _u, inner = _fb_post(opener, base, xheaders, q)
+        staff = _fb_staff_options(inner)
+        if not staff:
+            log.warning("feedback probe netid=%s subject=%s staff=EMPTY (marking unknown, no submit)", netid, name[:40])
+            faculty_map[name] = {"subject_id": sid, "staff": [["0", "Unknown"]]}
+            skipped += 1
+            time.sleep(0.7)
+            continue
+        faculty_map[name] = {"subject_id": sid,
+                             "staff": [[v, t.strip()] for v, t in staff]}
+        if _fb_registered(inner):
+            skipped += 1
+            log.debug("feedback skip netid=%s subject=%s already registered", netid, name[:40])
+            time.sleep(0.7)
+            continue
+        staff_id = staff[0][0]
+        qids = ",".join(str(x) for x in range(23, 37)) + ","
+        ans = ",".join(["5"] * 14) + ","
+        comment = comments[filled % len(comments)]
+        sub = "&" + urllib.parse.urlencode(dict(
+            subjectId=sid, forWhat="2", staffid=staff_id,
+            hiddenQuestionId=qids, hiddenAnswerId=ans,
+            commentTextArea=comment[:250], **common))
+        _u, resp = _fb_post(opener, base, xheaders, sub)
+        if _fb_registered(resp):
+            filled += 1
+            log.info("feedback submitted netid=%s subject=%s staff=%s", netid, name[:40], staff_id)
+        else:
+            skipped += 1
+            log.warning("feedback submit no-success-marker netid=%s subject=%s staff=%s "
+                        "resp=%dB", netid, name[:40], staff_id, len(resp))
+        time.sleep(0.7)
+
+    log.info("feedback fill done netid=%s filled=%d skipped=%d subjects=%d total_ms=%d",
+             netid, filled, skipped, len(subjects), int((time.monotonic() - t0) * 1000))
+    return {"map": faculty_map, "filled": filled}
+
+
 def _merge_exam_results(results):
     """[(month, year), html] | None entries -> sorted rows, or None when the
     probe is unreliable — None means 'preserve stored value' upstream.
@@ -573,6 +710,19 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     except Exception as e:
         log.debug("personal parse err=%r", e)
 
+    # Faculty map + auto-fill feedback: rides the same logged-in session after
+    # the JSP batch (MidSemFeedback.jsp is a portal window — when closed, the
+    # whole harvest raises and the sync still ships attendance/marks).
+    fb = None
+    if cold:
+        try:
+            _prog("Checking mid-sem feedback…", 85)
+            fb = _fb_fill_all(opener, base, xheaders, netid)
+        except HttpScraperError as e:
+            log.info("feedback harvest skipped netid=%s err=%r", netid, e)
+        except Exception as e:
+            log.warning("feedback harvest crashed netid=%s err=%r", netid, e)
+
     courses = []
     try:
         ch = parallel_html.get("7", "")
@@ -631,4 +781,6 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
            "fetched": int(time.time())}
     if exams is not None:  # absent key = preserve stored exam_schedule_json
         out["exams"] = exams
+    if fb is not None:  # absent key = feedback window closed / harvest failed
+        out["faculty"] = fb["map"]
     return out

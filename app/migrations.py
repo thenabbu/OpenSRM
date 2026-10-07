@@ -214,6 +214,17 @@ def m004_marks(conn):
             if "duplicate column name" not in str(e):
                 raise
 
+@migration(version=12, description="faculty_map_json (subject->teacher map, harvested from MidSemFeedback)")
+def m012_faculty_map(conn):
+    # ALTER-only like m002/m004/m008 — the versioned registry runs every
+    # pending migration on fresh DBs too. Keyed by subject NAME (the feedback
+    # form's subject select carries only opaque subject_ids + names, no codes).
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN faculty_map_json TEXT DEFAULT '{}'")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            raise
+
 @migration(version=9, description="timetable_edit_log (who edited the shared timetable, when, what changed)")
 def m009_timetable_edit_log(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS timetable_edit_log (

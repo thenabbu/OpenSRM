@@ -45,6 +45,9 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
+.venv/bin/python tests/test_feedback.py      # 31/31 (feedback harvester: hidden-field parse, registered markers, faculty view, v12 migration)
+.venv/bin/python tests/test_feedback_dut.py  # 13/13 DUT (Teachers card renders, Unknown hidden, negative control, overflow) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_feedback_contrast.py # 7/7 WCAG pairs (Teachers card; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)

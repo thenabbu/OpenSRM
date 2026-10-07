@@ -639,6 +639,21 @@ def _parse_component_inner(html):
     return comps
 
 
+def _fb_submit_comments():
+    """Neutral comment pool for auto-filled mid-sem feedback (<=250 chars each;
+    the form requires one comment per submission). Rotating pool so 6-7
+    submissions in one window don't carry an identical string."""
+    return (
+        "Teaching is clear and well structured",
+        "Concepts are explained with good examples",
+        "Classes are regular and punctual",
+        "Syllabus coverage is on schedule",
+        "Doubts are addressed patiently",
+        "Overall a very good learning experience",
+        "Lectures are engaging and informative",
+    )
+
+
 def parse_exam_schedule(html):
     """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
     validate against the official dropdown) -> end-sem exam rows.
@@ -1343,6 +1358,25 @@ def set_security_headers(resp):
 # ── HTML Templates ─────────────────────────────────────────────────
 
 # ── Routes ─────────────────────────────────────────────────────────
+def _faculty_view(faculty_map, courses):
+    """Stored faculty map + scraped courses -> sorted card rows.
+    {} / no staff entries -> [] (card hidden). Joins the feedback form's
+    subject NAME to the scraped course CODE via whitespace-normalised match."""
+    _by_name = {" ".join(c["name"].split()).upper(): c["code"] for c in courses}
+    out = []
+    for name, entry in faculty_map.items():
+        staff = [(sid, " ".join(nm.split("-")[0].split()).title(),
+                  (nm.split("-")[1].strip() if "-" in nm else ""))
+                 for sid, nm in (entry.get("staff") or [])]
+        # the harvester's Unknown placeholder (portal listed no staff) is not a person
+        if not staff or all(sid == "0" for sid, _n, _k in staff):
+            continue
+        code = _by_name.get(" ".join(name.split()).upper(), "")
+        out.append({"code": code, "name": name.title(), "staff": staff})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
 @app.route("/")
 @require_login
 def index():
@@ -1379,6 +1413,17 @@ def index():
         exam_rows = []
     exams = _exams_view(exam_rows)
 
+    # Faculty map card (harvested from the mid-sem feedback form; {} -> hidden).
+    # Keyed by subject NAME — the feedback form carries no subject codes.
+    c3 = db()
+    frow = c3.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c3.close()
+    try:
+        faculty_map = json.loads(frow["faculty_map_json"]) if frow and frow["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        faculty_map = {}
+    faculty_view = _faculty_view(faculty_map, data.get("courses", []))
+
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
     # Attendance budgets (spec §3): w is gid-scoped to THIS user; stop is one global
@@ -1409,7 +1454,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
-        exams=exams,
+        exams=exams, faculty=faculty_view,
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         personal=personal_data)
@@ -1908,12 +1953,19 @@ def api_login():
         exams_json = existing["exam_schedule_json"]
     else:
         exams_json = "[]"
+    # faculty map: key absent (window closed / harvest failed) -> preserve stored
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif existing and existing["faculty_map_json"]:
+        faculty_json = existing["faculty_map_json"]
+    else:
+        faculty_json = "{}"
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json) VALUES(?,?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json) VALUES(?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               personal_json, json.dumps(res.get("marks", [])), subjects_json, exams_json))
+               personal_json, json.dumps(res.get("marks", [])), subjects_json, exams_json, faculty_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -1964,7 +2016,7 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
@@ -1975,9 +2027,16 @@ def api_refresh():
         exams_json = row2["exam_schedule_json"]
     else:
         exams_json = "[]"
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=? WHERE netid=?",
+    # faculty map: absent key -> preserve stored (same contract as login upsert)
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif row2 and row2["faculty_map_json"]:
+        faculty_json = row2["faculty_map_json"]
+    else:
+        faculty_json = "{}"
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), exams_json, netid))
+               json.dumps(res.get("marks", [])), json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
     c.commit(); c.close()
     return {"ok": True}
 
