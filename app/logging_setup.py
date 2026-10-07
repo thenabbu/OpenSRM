@@ -52,7 +52,12 @@ class NtfyHandler(logging.Handler):
             return
         self._last = now
         try:
-            msg = f"OpenSRM {record.levelname} {record.name}: {record.getMessage()}"[:400]
+            msg = f"OpenSRM {record.levelname} {record.name}: {record.getMessage()}"
+            if hasattr(record, "kv"):
+                # an alert that says only "request" tells nothing — the kv
+                # (path/status/error) IS the cause the tripwire exists for
+                msg += " " + " ".join(f"{k}={v}" for k, v in record.kv.items())
+            msg = msg[:400]
             req = urllib.request.Request(self.url, data=msg.encode("utf-8"), method="POST")
             urllib.request.urlopen(req, timeout=5).close()
         except Exception:

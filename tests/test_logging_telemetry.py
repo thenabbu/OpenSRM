@@ -143,11 +143,15 @@ def t_ntfy():
         raise AssertionError("should not be reached")
 
     h = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
-    rec = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "boom happened", None, None)
+    rec = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "request", None, None)
+    rec.kv = {"path": "/api/push/receipt", "status": 401, "error": "not logged in"}
     with mock.patch.object(urllib.request, "urlopen", side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
         h.emit(rec)
-        h.emit(rec)  # second call inside the 60s window must be dropped
+        h.emit(rec)  # second call inside the 60s window must be droped
     assert len(posts) == 1, f"ntfy must rate-limit to 1 per 60s (got {len(posts)})"
+    body = posts[0].data.decode()
+    # the alert must carry the kv cause — an alert saying only "request" is useless
+    assert "error=not logged in" in body and "status=401" in body, body
     # emit() must never raise even when the POST fails
     h2 = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
     h2._last = 0.0
