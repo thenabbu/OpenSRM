@@ -66,6 +66,10 @@ def setup_logging():
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     logging.getLogger("opensrm").setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    # opensrm.portal stays DEBUG even at prod INFO: the incident recipes
+    # (invalid_captcha, step=post, silent_rejection, preflight detail) read
+    # this namespace — its volume is ~190 lines/day, keep the forensics.
+    logging.getLogger("opensrm.portal").setLevel(logging.DEBUG)
     root.handlers.clear()
     fmt = _Formatter()
     sh = logging.StreamHandler(sys.stderr)
@@ -92,6 +96,12 @@ def setup_logging():
 
 
 def log_with_kv(logger: logging.Logger, level: int, msg: str, **kv):
+    if not logger.isEnabledFor(level):
+        # Logger.handle() (unlike debug()/info()/warning()) BYPASSES the
+        # logger's own level check — without this gate every kv record
+        # ignores LOG_LEVEL: the healthcheck's "DEBUG" demoted lines still
+        # wrote at prod INFO (the 86% noise cut never took effect).
+        return
     record = logger.makeRecord(logger.name, level, "(setup)", 0, msg, (), None)
     record.kv = kv
     logger.handle(record)
