@@ -644,6 +644,15 @@ def _parse_component_inner(html):
     return comps
 
 
+def _fb_submit_comments():
+    """Deprecated pool kept ONLY so existing test imports resolve; unused.
+
+    ponytail: comment is now the literal "none" (optional field, user spec) —
+    delete this stub when tests are updated in the same release.
+    """
+    return ("none",)
+
+
 def parse_exam_schedule(html):
     """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
     validate against the official dropdown) -> end-sem exam rows.
@@ -1376,6 +1385,43 @@ def _security_headers(resp):
 
 # ── HTML Templates ─────────────────────────────────────────────────
 
+# ── Routes ─────────────────────────────────────────────────────────
+def _faculty_view(faculty_map, courses):
+    """Stored faculty map + scraped courses -> sorted card rows.
+    {} / no staff entries -> [] (card hidden). Joins the feedback form's
+    subject NAME to the scraped course CODE via whitespace-normalised match."""
+    _by_name = {" ".join(c["name"].split()).upper(): c["code"] for c in courses}
+    out = []
+    for name, entry in faculty_map.items():
+        staff = [(sid, " ".join(nm.split("-")[0].split()).title(),
+                  (nm.split("-")[1].strip() if "-" in nm else ""))
+                 for sid, nm in (entry.get("staff") or [])]
+        # the harvester's Unknown placeholder (portal listed no staff) is not a person
+        if not staff or all(sid == "0" for sid, _n, _k in staff):
+            continue
+        code = _by_name.get(" ".join(name.split()).upper(), "")
+        out.append({"code": code, "name": name.title(), "raw": name, "staff": staff})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def _fb_plan(faculty_map):
+    """Stored map -> [{subject, teacher, staff_id, comment}] — the exact rows the
+    fill endpoint submits (first listed teacher).
+
+    SINGLE builder: the modal preview AND POST /api/feedback/fill both call
+    this, so what the student saw IS what gets sent. {} / unknown-only -> [].
+    """
+    plan = []
+    for r in _faculty_view(faculty_map, []):
+        sid, tname, kind = r["staff"][0]
+        plan.append({"subject": r["name"],
+                     "teacher": f"{tname} ({kind})" if kind else tname,
+                     "staff_id": sid,
+                     "comment": "none"})
+    return plan
+
+
 def _jload(raw, default):
     """json.loads over a stored row: degrade to `default` + log the
     corruption. index()/api_marks decoded unguarded — one corrupt row
@@ -1442,6 +1488,19 @@ def index():
     exam_rows = _jload(row["exam_schedule_json"] if row else None, [])
     exams = _exams_view(exam_rows)
 
+    # Faculty map card (harvested from the mid-sem feedback form; {} -> hidden).
+    # Keyed by subject NAME — the feedback form carries no subject codes.
+    c3 = db()
+    frow = c3.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c3.close()
+    try:
+        faculty_map = json.loads(frow["faculty_map_json"]) if frow and frow["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        faculty_map = {}
+    faculty_view = _faculty_view(faculty_map, data.get("courses", []))
+    # Preview of what the opt-in fill would submit (same builder as the endpoint).
+    fb_plan = _fb_plan(faculty_map)
+
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
     # Attendance budgets (spec §3): w is gid-scoped to THIS user; stop is one global
@@ -1472,7 +1531,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
-        exams=exams,
+        exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         personal=personal_data)
@@ -1750,6 +1809,47 @@ def api_marks():
     marks = _jload(row["marks_json"] if row else None, [])
     return {"ok": True, "marks": marks}
 
+@app.route("/api/feedback/fill", methods=["POST"])
+@require_login
+def api_feedback_fill():
+    """OPT-IN mid-sem feedback submit (sync only harvests the map read-only).
+
+    No request body: the server rebuilds the plan from the stored faculty map
+    with _fb_plan() — the SAME builder that rendered the dashboard preview —
+    so what the student saw IS what gets sent. Re-verified live per subject
+    (already-registered / teacher-changed / window-closed all report honestly).
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    c = db()
+    row = c.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c.close()
+    try:
+        fmap = json.loads(row["faculty_map_json"]) if row and row["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        fmap = {}
+    plan = _fb_plan(fmap)
+    if not plan:
+        return {"ok": False, "error": "no feedback data yet — sync first"}, 400
+    cookies = _load_session(netid)
+    if not cookies:
+        return {"ok": False, "error": "portal session expired — sync first"}, 400
+    from . import http_scraper
+    t0 = time.monotonic()
+    try:
+        res = http_scraper.fill_feedback(netid, plan, cookies)
+    except http_scraper.HttpScraperError as e:
+        log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
+        _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
+        return {"ok": False, "error": str(e)}, 502
+    ms = int((time.monotonic() - t0) * 1000)
+    log_with_kv(log_portal, logging.INFO, "feedback fill done",
+                netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
+                failed=len(res.get("failed", [])), total_ms=ms)
+    _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
+    return {"ok": True, **res}
+
 def _fmt_score(v):
     """Score keeps 2 decimals: 11.7 -> '11.70'. Junk/None -> '?' — a stored
     null score used to TypeError into a 500 (audit B9)."""
@@ -1968,7 +2068,7 @@ def api_login():
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
     c = db()
     # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     subjects_json = json.dumps(res.get("subjects", {}))
     # audit B6: preserve stored marks on empty — a parse failure returns
@@ -1987,12 +2087,19 @@ def api_login():
         exams_json = existing["exam_schedule_json"]
     else:
         exams_json = "[]"
+    # faculty map: key absent (window closed / harvest failed) -> preserve stored
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif existing and existing["faculty_map_json"]:
+        faculty_json = existing["faculty_map_json"]
+    else:
+        faculty_json = "{}"
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json) VALUES(?,?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json) VALUES(?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-              personal_json, marks_json, subjects_json, exams_json))
+               personal_json, marks_json, subjects_json, exams_json, faculty_json))
     c.commit(); c.close()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
@@ -2047,7 +2154,7 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
@@ -2062,9 +2169,16 @@ def api_refresh():
         exams_json = row2["exam_schedule_json"]
     else:
         exams_json = "[]"
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=? WHERE netid=?",
+    # faculty map: absent key -> preserve stored (same contract as login upsert)
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif row2 and row2["faculty_map_json"]:
+        faculty_json = row2["faculty_map_json"]
+    else:
+        faculty_json = "{}"
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               marks_json, json.dumps(res.get("subjects", {})), exams_json, netid))
+               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
     c.commit(); c.close()
     _track("sync_ok", user=netid)
     return {"ok": True}

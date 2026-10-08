@@ -190,6 +190,49 @@ if ("serviceWorker" in navigator && location.pathname !== "/login") {
   navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
 }
 
+// ── Mid-sem feedback (OPT-IN auto-fill) ─────────────────────────────
+// CTA opens the explainer modal; ONLY the confirm button inside the modal
+// writes to the portal (sync harvests read-only). Same builder rendered the
+// modal list, so what the student saw IS what gets sent.
+var fbCta = document.getElementById('fb-cta');
+var fbSubmit = document.getElementById('fb-submit');
+if (fbCta) {
+  fbCta.addEventListener('click', function() { document.getElementById('fb-modal').showModal(); });
+}
+if (fbSubmit) {
+  fbSubmit.addEventListener('click', function() {
+    var status = document.getElementById('fb-status');
+    fbSubmit.disabled = true;
+    status.textContent = 'Submitting to the portal…';
+    status.className = 'mt-2 text-xs text-base-content/70';
+    fetch('/api/feedback/fill', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(j) {
+        if (!j.ok) {
+          status.textContent = j.error || 'failed — nothing submitted';
+          status.className = 'mt-2 text-xs text-error';
+          showError('Feedback autofill failed: ' + (j.error || 'unknown error'));
+          return;
+        }
+        var parts = [];
+        if (j.filled && j.filled.length) parts.push(j.filled.length + ' submitted');
+        if (j.already && j.already.length) parts.push(j.already.length + ' already filled');
+        if (j.failed && j.failed.length) {
+          parts.push(j.failed.length + ' failed: ' + j.failed.map(function(f) { return f[0]; }).join(', '));
+          showError('Feedback: ' + j.failed.map(function(f) { return f[0] + ' — ' + f[1]; }).join('; '));
+        }
+        status.textContent = parts.join(' · ') || 'nothing to submit';
+        status.className = 'mt-2 text-xs ' + (j.failed && j.failed.length ? 'text-error' : 'text-success');
+      })
+      .catch(function() {
+        status.textContent = 'network error — try again';
+        status.className = 'mt-2 text-xs text-error';
+        showError('Feedback autofill: network error — try again');
+      })
+      .finally(function() { fbSubmit.disabled = false; });
+  });
+}
+
 // ── Outside-click dismiss for popover <details> (marks tag panel) ────
 // Tap-away is the expected dismiss gesture; without it the panel covers the
 // next card until Save or a re-tap of the pencil — Save must never be the
