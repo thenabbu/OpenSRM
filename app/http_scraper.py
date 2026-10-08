@@ -483,9 +483,11 @@ def fill_feedback(netid, plan, cookies_json):
     """Opt-in submit: restore the cached portal session, re-verify the live form,
     then submit all-5 ratings + the comment for each planned subject.
 
-    plan comes from app._fb_plan() — the SAME builder the dashboard preview
-    renders, so what the student saw IS what gets sent. Returns
-    {"filled": [names], "already": [names], "failed": [[name, reason]]}.
+    plan comes from app._fb_plan() — the SAME builder the modal preview
+    renders, so what the student saw IS what gets sent. Rows are PER TEACHER
+    (one portal form per teacher within a subject). Returns
+    {"filled": [labels], "already": [labels], "failed": [[label, reason]]}
+    where label = "subject · teacher".
     Raises HttpScraperError when the session or window is unusable (nothing
     submitted).
     """
@@ -526,9 +528,10 @@ def fill_feedback(netid, plan, cookies_json):
     res = {"filled": [], "already": [], "failed": []}
     for item in plan:
         name, staff_id, comment = item["subject"], item["staff_id"], item["comment"]
+        label = f"{name} · {item['teacher']}"
         sid = live.get(" ".join(name.split()).upper())
         if not sid:
-            res["failed"].append([name, "not on the live form — re-sync"])
+            res["failed"].append([label, "not on the live form — re-sync"])
             log.warning("feedback fill netid=%s subject=%s no-live-match", netid, name[:40])
             time.sleep(0.7)
             continue
@@ -536,11 +539,11 @@ def fill_feedback(netid, plan, cookies_json):
                                               staffid="0", **common))
         _u, inner = _fb_post(opener, base, xheaders, q)
         if _fb_registered(inner):
-            res["already"].append(name)
+            res["already"].append(label)
             time.sleep(0.7)
             continue
         if staff_id not in [v for v, _t in _fb_staff_options(inner)]:
-            res["failed"].append([name, "teacher not on the live form — re-sync"])
+            res["failed"].append([label, "teacher not on the live form — re-sync"])
             time.sleep(0.7)
             continue
         sub = "&" + urllib.parse.urlencode(dict(
@@ -549,10 +552,10 @@ def fill_feedback(netid, plan, cookies_json):
             commentTextArea=comment[:250], **common))
         _u, resp = _fb_post(opener, base, xheaders, sub)
         if _fb_registered(resp):
-            res["filled"].append(name)
+            res["filled"].append(label)
             log.info("feedback submitted netid=%s subject=%s staff=%s", netid, name[:40], staff_id)
         else:
-            res["failed"].append([name, f"no success marker ({len(resp)}B)"])
+            res["failed"].append([label, f"no success marker ({len(resp)}B)"])
             log.warning("feedback submit no-success-marker netid=%s subject=%s resp=%dB",
                         netid, name[:40], len(resp))
         time.sleep(0.7)

@@ -517,9 +517,9 @@
     <h3 id="fb-modal-title" class="font-bold text-base mb-2">Auto-fill mid-sem feedback</h3>
     <p class="text-xs text-base-content/70">Opt-in — nothing is submitted until you confirm.</p>
     <ol class="mt-3 space-y-1 text-sm leading-relaxed text-base-content/80 list-decimal list-inside">
-      <li>All {{ fb_plan|length }} teachers get 5 = EXCELLENT on all 14 questions</li>
-      <li>Each subject's comment is "none" (optional field)</li>
-      <li>Each submission is re-verified live; already-filled subjects are skipped honestly</li>
+      <li>Every teacher of every subject gets 5 = EXCELLENT on all 14 questions — one form per teacher</li>
+      <li>Each form's comment is "none" (optional field)</li>
+      <li>Each submission is re-verified live; already-filled ones are skipped honestly</li>
     </ol>
     <ul class="mt-3 space-y-2 max-h-48 overflow-y-auto">
       {% for p in fb_plan %}
@@ -532,7 +532,7 @@
     <div id="fb-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
     <div class="modal-action">
       <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
-      <button id="fb-submit" class="btn btn-primary btn-sm min-h-11">Fill feedback for {{ fb_plan|length }} subjects</button>
+      <button id="fb-submit" class="btn btn-primary btn-sm min-h-11">Fill feedback for {{ fb_plan|length }} teachers</button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>

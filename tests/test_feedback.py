@@ -132,16 +132,20 @@ check("comment is the literal 'none' (optional field)", _fb_plan(fmap)[0]["comme
 print("== _fb_plan (preview == submission payload) ==")
 
 plan = _fb_plan(fmap)
-check("plan skips unknown-only subject", len(plan) == 2, repr(plan))
+check("plan skips unknown-only subject", len(plan) == 3, repr(plan))  # DSA has TWO teachers -> 2 rows
 check("plan fields", set(plan[0].keys()) == {"subject", "teacher", "staff_id", "comment"}, repr(plan[0]))
 check("teacher name+kind", plan[0]["teacher"] == "Dr.Priyanka Gupta (Theory)", repr(plan[0]))
 check("staff_id carried", plan[0]["staff_id"] == "50001", repr(plan[0]))
+check("BOTH DSA teachers planned", [p["staff_id"] for p in plan if p["subject"] == "Data Structures And Algorithms"] == ["50001", "50002"],
+      repr([p for p in plan if "Data" in p["subject"]]))
+check("second teacher label", plan[1]["teacher"] == "Dr. Dinesh Kumar (Theory)", repr(plan[1]))
 check("comment literal 'none'", plan[0]["comment"] == "none", repr(plan[0]["comment"]))
 check("comment <= 250", all(len(p["comment"]) <= 250 for p in plan))
 check("no-kind teacher label", _fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})[0]["teacher"] == "Dr. X",
       repr(_fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})))
 check("empty map -> empty plan", _fb_plan({}) == [])
 check("unknown-only -> empty plan", _fb_plan({"SOME UNLISTED SUBJECT": {"subject_id": "90003", "staff": [["0", "Unknown"]]}}) == [])
+check("rows == total staff count (excl Unknown)", sum(len(e["staff"]) for k, e in fmap.items() if k != "SOME UNLISTED SUBJECT") == len(_fb_plan(fmap)))
 
 print("== migration v12 (fresh DB) ==")
 import sqlite3
