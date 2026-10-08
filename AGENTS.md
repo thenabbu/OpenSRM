@@ -47,7 +47,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 .venv/bin/python tests/test_feedback.py      # 38/38 (harvester parse, registered markers, faculty view, fb_plan preview==payload + literal "none", v13 migration, endpoint 401)
-.venv/bin/python tests/test_feedback_dut.py  # 28/28 DUT (Teachers card + CTA → opt-in explainer modal, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_feedback_dut.py  # 29/29 DUT (Teachers card + CTA → opt-in explainer modal, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)

@@ -99,6 +99,7 @@ def run():
         check("CTA rendered", "Auto-fill mid-sem feedback" in content)
         check("no inline preview details anymore", "fb-plan" not in content)
         check("modal in DOM (closed)", page.locator("#fb-modal").get_attribute("open") is None)
+        page.screenshot(path="/tmp/fb-dut-shots/dash_desktop.png", full_page=True)
         page.locator("#fb-cta").click()
         page.wait_for_selector("#fb-modal[open]")
         check("modal opens on CTA click", page.locator("#fb-modal").get_attribute("open") is not None)
@@ -133,9 +134,6 @@ def run():
         check("negative control: no Teachers card", "From the mid-sem feedback form" not in content2)
         check("negative control: no CTA", "fb-cta" not in content2)
         check("negative control: page still renders", "Subjects" in content2 or "Attendance" in content2)
-
-        # clean PR screenshot: modal open, no interaction yet
-        page.screenshot(path="/tmp/fb-dut-shots/dash_desktop.png", full_page=True)
 
         # opt-in confirm with NO cached portal session -> honest 400, no portal contact
         page.locator("#fb-submit").click()
