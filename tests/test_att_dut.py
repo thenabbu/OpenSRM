@@ -1,10 +1,15 @@
-"""DUT: attendance tab view toggle + merged absences card (v1.13.0).
-Boots its own server via run pattern of test_sw: DATA_DIR decides DB.
+"""DUT: attendance tab view toggle + merged absences card (v1.15.0).
+
+Seeds attendance in the SAME DB the gunicorn under test uses (DATA_DIR decides
+both). Payload mirrors the real portal shape: 9-char codes (21CSC201J), ALL-CAPS
+descriptions, plain-string hours ("46"), a CL / CLASS IN CHARGE junk row,
+monthly "MMM / YYYY", daily rows DD-MM-YYYY {date, hours} — values fabricated.
 Usage: DATA_DIR=/tmp/x DUT_BASE=http://127.0.0.1:P python tests/test_att_dut.py
 """
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18187")
@@ -20,7 +25,36 @@ def check(name, cond, detail=""):
 
 def main():
     from playwright.sync_api import sync_playwright
-    from tests._seed import mint_token
+
+    from tests._seed import mint_token, seed
+    seed()
+    # real portal shape (code 9ch / ALL CAPS / string hours / CL junk row / MMM YYYY months)
+    attendance = {"courses": [
+        {"code": "21CSC201J", "description": "DATA STRUCTURES AND ALGORITHMS", "max_hours": "46", "attended": "45", "absent": "1"},
+        {"code": "21CSC202J", "description": "OPERATING SYSTEMS", "max_hours": "44", "attended": "39", "absent": "5"},
+        {"code": "21CSC203P", "description": "ADVANCED PROGRAMMING PRACTICE", "max_hours": "55", "attended": "30", "absent": "25"},
+        {"code": "21CSS201T", "description": "COMPUTER ORGANIZATION AND ARCHITECTURE", "max_hours": "45", "attended": "43", "absent": "2"},
+        {"code": "21DCS201P", "description": "DESIGN THINKING AND METHODOLOGY", "max_hours": "30", "attended": "26", "absent": "4"},
+        {"code": "21LEM201T", "description": "PROFESSIONAL ETHICS", "max_hours": "11", "attended": "10", "absent": "1"},
+        {"code": "21MAB206T", "description": "NUMERICAL METHODS AND ANALYSIS", "max_hours": "44", "attended": "38", "absent": "6"},
+        {"code": "CL", "description": "CLASS IN CHARGE", "max_hours": "4", "attended": "2", "absent": "2"},
+    ],
+        "period": {"from": "20/Jul/2026", "to": "07/Oct/2026"},
+        "monthly": [
+            {"month": "JUL / 2026", "present": "53", "absent": "1", "od_present": "0", "od_absent": "0", "ml": "0"},
+            {"month": "AUG / 2026", "present": "81", "absent": "7", "od_present": "0", "od_absent": "0", "ml": "0"},
+            {"month": "SEP / 2026", "present": "101", "absent": "12", "od_present": "0", "od_absent": "0", "ml": "0"},
+            {"month": "OCT / 2026", "present": "19", "absent": "5", "od_present": "0", "od_absent": "0", "ml": "0"}],
+        "daily_absent": {
+            "JUL / 2026": [{"date": "21-07-2026", "hours": "1"}],
+            "AUG / 2026": [{"date": "17-08-2026", "hours": "1"}, {"date": "18-08-2026", "hours": "1"}, {"date": "22-08-2026", "hours": "1"}],
+            "SEP / 2026": [{"date": "03-09-2026", "hours": "1"}, {"date": "10-09-2026", "hours": "1"}, {"date": "24-09-2026", "hours": "2"}, {"date": "29-09-2026", "hours": "1"}],
+            "OCT / 2026": [{"date": "01-10-2026", "hours": "1"}, {"date": "06-10-2026", "hours": "2"}]}}
+    from app import app as A
+    c = A.db()
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=? WHERE netid='ng2776'",
+              (json.dumps(attendance), int(time.time())))
+    c.commit(); c.close()
     tok = mint_token()
 
     with sync_playwright() as p:
@@ -107,6 +141,17 @@ def main():
         check("absences: month blocks with bar + chips", r["months"] >= 4 and r["bars"] == r["months"]
               and r["chips"] >= 9, str(r))
         check("no standalone Monthly breakdown <details>", r["details"] == 0, str(r))
+
+        # 7) portal's CL / CLASS IN CHARGE junk row is filtered from both views
+        r = page.evaluate("""() => {
+          const names = [...document.querySelectorAll('.mrow .mname')].map(e => e.textContent.trim());
+          const codes = [...document.querySelectorAll('.att-table tbody tr td:first-child')].map(e => e.textContent.trim());
+          return {names, codes, meters: names.length, rows: codes.length};
+        }""")
+        junk_names = [n for n in r["names"] if "CLASS IN CHARGE" in n.upper()]
+        junk_codes = [c for c in r["codes"] if c == "CL"]
+        check("CL / CLASS IN CHARGE filtered from meters + table",
+              not junk_names and not junk_codes and r["meters"] == 7 and r["rows"] == 7, str(r))
 
         ctx.close()
         b.close()

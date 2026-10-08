@@ -34,6 +34,7 @@ import time
 from datetime import date, datetime, timedelta
 from functools import wraps
 from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
+from html import unescape as _hescu
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -644,6 +645,15 @@ def _parse_component_inner(html):
     return comps
 
 
+def _fb_submit_comments():
+    """Deprecated pool kept ONLY so existing test imports resolve; unused.
+
+    ponytail: comment is now the literal "none" (optional field, user spec) —
+    delete this stub when tests are updated in the same release.
+    """
+    return ("none",)
+
+
 def parse_exam_schedule(html):
     """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
     validate against the official dropdown) -> end-sem exam rows.
@@ -661,6 +671,77 @@ def parse_exam_schedule(html):
         if len(cells) >= 6 and re.fullmatch(r"\d{2}-\d{2}-\d{4}", cells[3] or ""):
             out.append({"code": cells[1], "name": cells[2], "date": cells[3],
                         "session": cells[4], "type": cells[5]})
+    return out
+
+
+def parse_exam_timetable(html):
+    """StudentExamTimeTable.jsp (iden=126, official 'Exam Time Table' page)
+    -> end-sem exam rows. Verified live Oct 7 2026 (the ONLY published source
+    with exact clock times).
+
+    Columns: Sem/Year/Trim | Subject Code | Subject Description | Date & Session
+    | Hall No. | Seat No. (+ a month banner) — cells at the Date & Session
+    position hold `DD-MMM-YYYY AN  (02:00-05:00)`; subjects without a slot yet
+    render `- -`. Empty page = 'No subjects found'.
+
+    Column positions are resolved from the header row so the portal can
+    REORDER or INSERT columns (hall allotment day may add fields) without
+    breaking known fields; unknown labels are ignored. Falls back to the
+    positional shape above when no header row exists.
+
+    Returns rows, [] (clean empty — 'No subjects found'), or None (table
+    present but unparseable: label/column drift or blanked rows — callers
+    MUST preserve stored rows, never treat as empty).
+    """
+    if not html or "No subjects found" in html:
+        return []
+    # header-driven indexes: label -> column position (known fields only)
+    labels = {"subject code": "code", "subject description": "name",
+              "date & session": "date", "hall no.": "hall", "seat no.": "seat"}
+    idx = {}
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        ths = re.findall(r"<th[^>]*>(.*?)</th>", tr, re.S)
+        if len(ths) >= 4:
+            for i, th in enumerate(ths):
+                lbl = _hescu(re.sub(r"<[^>]+>", "", th)).replace("\xa0", " ").strip().lower()
+                if lbl in labels:
+                    idx.setdefault(labels[lbl], i)
+            break
+    got_header = bool(idx)
+    pos = {"code": 1, "name": 2, "date": 3, "hall": 4, "seat": 5}  # positional fallback
+    # header found but a known label missing -> the column is GONE (do not
+    # guess positionally — that would read a neighbour cell as the field)
+    def _i(field):
+        if field in idx:
+            return idx[field]
+        return None if got_header else pos[field]
+
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = _cells(row)
+        i_date, i_code = _i("date"), _i("code")
+        need = [i for i in (i_date, i_code, _i("hall"), _i("seat")) if i is not None]
+        if not need or len(cells) <= max(need) or i_date is None or i_code is None:
+            continue
+        ds = cells[i_date] or ""
+        dm = re.match(r"(\d{2})-([A-Z]{3})-(\d{4})", ds)
+        if not dm or not cells[i_code]:
+            continue  # header/banner rows, pending `- -`, blanked cells
+        mon = MONTHS.get(dm.group(2), "00")
+        tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", ds)
+        out.append({
+            "code": cells[i_code], "name": (cells[_i("name")] or "") if _i("name") is not None else "",
+            "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
+            "session": (re.search(r"\b(AN|FN)\b", ds) or [None, ""])[1],
+            "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
+            "hall": (cells[_i("hall")] or "") if _i("hall") is not None else "",
+            "seat": (cells[_i("seat")] or "") if _i("seat") is not None else "",
+        })
+    if not out and "<table" in html:
+        # table present but nothing parsed: label/column drift or blanked rows.
+        # NOT a clean empty — callers must preserve stored rows (Oct 4 2026 rule).
+        log.debug("exam timetable: table present but 0 dated rows parsed (shape drift?)")
+        return None
     return out
 
 
@@ -868,10 +949,11 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             "9": "../../students/report/studentAttendanceDetails.jsp",
             "13": "../../students/report/studentInternalMarkDetails.jsp",
             "17": "../../students/report/studentPersonalDetails.jsp",
-            "7": "../../students/report/studentSubjectLists.jsp"
+            "7": "../../students/report/studentSubjectLists.jsp",
+            "126": "../../students/transaction/StudentExamTimeTable.jsp"
         }
         _fetch_jsps = {f: u for f, u in _all_jsps.items()
-                       if f in ("9", "13") or cold}
+                       if f in ("9", "13", "126") or cold}
         parallel_html = await page.evaluate("""async (JSPS) => {
             const r = {};
             await Promise.all(Object.entries(JSPS).map(([f, u]) =>
@@ -1023,7 +1105,12 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         except Exception as e:
             log.warning("marks/component parse failed — marks render empty: %r", e)
 
-        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
+        # End-sem schedule: official 126 table wins; scribe rows fill the rest.
+        # Key always present: the Playwright path has no probe fallback, so an
+        # empty table overwrites like a clean scribe empty would upstream.
+        from app.http_scraper import _merge_exam_results
+        exams = _merge_exam_results([], official_html=parallel_html.get("126", ""))
+        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time()), "exams": exams}
     finally:
         # Don't close persistent context — keep alive for next request
         pass
@@ -1378,6 +1465,50 @@ def _security_headers(resp):
 
 # ── HTML Templates ─────────────────────────────────────────────────
 
+# ── Routes ─────────────────────────────────────────────────────────
+def _faculty_view(faculty_map, courses):
+    """Stored faculty map + scraped courses -> sorted card rows.
+    {} / no staff entries -> [] (card hidden). Joins the feedback form's
+    subject NAME to the scraped course CODE via whitespace-normalised match.
+
+    Course rows come from attendance_json, whose real shape is `description`
+    (seen live Oct 8 2026: KeyError 'name' 500'd every dashboard); `name` is
+    the test-seed shape — accept both."""
+    _by_name = {" ".join((c.get("name") or c.get("description") or "").split()).upper():
+                c.get("code", "") for c in courses}
+    out = []
+    for name, entry in faculty_map.items():
+        staff = [(sid, " ".join(nm.split("-")[0].split()).title(),
+                  (nm.split("-")[1].strip() if "-" in nm else ""))
+                 for sid, nm in (entry.get("staff") or [])]
+        # the harvester's Unknown placeholder (portal listed no staff) is not a person
+        if not staff or all(sid == "0" for sid, _n, _k in staff):
+            continue
+        code = _by_name.get(" ".join(name.split()).upper(), "")
+        out.append({"code": code, "name": name.title(), "raw": name, "staff": staff})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def _fb_plan(faculty_map):
+    """Stored map -> [{subject, teacher, staff_id, comment}] — the exact rows the
+    fill endpoint submits. EVERY listed teacher gets their own row: the portal
+    takes one form per teacher within a subject, so a subject with 2 staff
+    becomes 2 rows.
+
+    SINGLE builder: the modal preview AND POST /api/feedback/fill both call
+    this, so what the student saw IS what gets sent. {} / unknown-only -> [].
+    """
+    plan = []
+    for r in _faculty_view(faculty_map, []):
+        for sid, tname, kind in r["staff"]:
+            plan.append({"subject": r["name"],
+                         "teacher": f"{tname} ({kind})" if kind else tname,
+                         "staff_id": sid,
+                         "comment": "none"})
+    return plan
+
+
 def _jload(raw, default):
     """json.loads over a stored row: degrade to `default` + log the
     corruption. index()/api_marks decoded unguarded — one corrupt row
@@ -1423,7 +1554,11 @@ def index():
     last = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_epoch)) if last_epoch else "never"
 
     hours_old = int((time.time() - last_epoch) / 3600) if last_epoch else None
-    courses = sorted((_course_view(x) for x in data.get("courses", [])), key=lambda c: c["pct"])  # risk-first: lowest % first
+    # portal sends a "CLASS IN CHARGE" marker row (code CL) alongside subjects — not a subject, drop it
+    raw = [x for x in data.get("courses", [])
+           if (x.get("code") or "").strip().upper() != "CL"
+           and (x.get("description") or "").strip().upper() != "CLASS IN CHARGE"]
+    courses = sorted((_course_view(x) for x in raw), key=lambda c: c["pct"])  # risk-first: lowest % first
     # Absences card: one structure per month — the monthly attendance bar with
     # that month's absence chips directly under it (absence rows join by the
     # same normalized label _absences_view produces).
@@ -1456,6 +1591,19 @@ def index():
     exam_rows = _jload(row["exam_schedule_json"] if row else None, [])
     exams = _exams_view(exam_rows)
 
+    # Faculty map card (harvested from the mid-sem feedback form; {} -> hidden).
+    # Keyed by subject NAME — the feedback form carries no subject codes.
+    c3 = db()
+    frow = c3.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c3.close()
+    try:
+        faculty_map = json.loads(frow["faculty_map_json"]) if frow and frow["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        faculty_map = {}
+    faculty_view = _faculty_view(faculty_map, data.get("courses", []))
+    # Preview of what the opt-in fill would submit (same builder as the endpoint).
+    fb_plan = _fb_plan(faculty_map)
+
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
     # Attendance budgets (spec §3): w is gid-scoped to THIS user; stop is one global
@@ -1485,6 +1633,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         personal=personal_data)
@@ -1762,6 +1911,47 @@ def api_marks():
     marks = _jload(row["marks_json"] if row else None, [])
     return {"ok": True, "marks": marks}
 
+@app.route("/api/feedback/fill", methods=["POST"])
+@require_login
+def api_feedback_fill():
+    """OPT-IN mid-sem feedback submit (sync only harvests the map read-only).
+
+    No request body: the server rebuilds the plan from the stored faculty map
+    with _fb_plan() — the SAME builder that rendered the dashboard preview —
+    so what the student saw IS what gets sent. Re-verified live per subject
+    (already-registered / teacher-changed / window-closed all report honestly).
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    c = db()
+    row = c.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    c.close()
+    try:
+        fmap = json.loads(row["faculty_map_json"]) if row and row["faculty_map_json"] else {}
+    except (ValueError, TypeError):
+        fmap = {}
+    plan = _fb_plan(fmap)
+    if not plan:
+        return {"ok": False, "error": "no feedback data yet — sync first"}, 400
+    cookies = _load_session(netid)
+    if not cookies:
+        return {"ok": False, "error": "portal session expired — sync first"}, 400
+    from . import http_scraper
+    t0 = time.monotonic()
+    try:
+        res = http_scraper.fill_feedback(netid, plan, cookies)
+    except http_scraper.HttpScraperError as e:
+        log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
+        _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
+        return {"ok": False, "error": str(e)}, 502
+    ms = int((time.monotonic() - t0) * 1000)
+    log_with_kv(log_portal, logging.INFO, "feedback fill done",
+                netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
+                failed=len(res.get("failed", [])), total_ms=ms)
+    _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
+    return {"ok": True, **res}
+
 def _fmt_score(v):
     """Score keeps 2 decimals: 11.7 -> '11.70'. Junk/None -> '?' — a stored
     null score used to TypeError into a 500 (audit B9)."""
@@ -1881,9 +2071,8 @@ def _exams_view(rows):
         r["dow"] = d.strftime("%a") if d else ""
         # portal returns ALL-CAPS names; shouty when wrapped on a narrow screen
         r["name_disp"] = " ".join(w.capitalize() for w in r.get("name", "").split())
-        # portal codes: AN/FN are exam-cell jargon; expand (no clock times exist in the leak)
-        r["session_disp"] = {"AN": "Afternoon", "FN": "Forenoon"}.get(
-            r.get("session", ""), r.get("session", ""))
+        # portal codes: students know AN/FN natively — show them as-is
+        r["session_disp"] = r.get("session", "")
     first = ts(rows[0])
     last = ts(rows[-1])
     days = (first.date() - datetime.now().date()).days
@@ -1893,7 +2082,143 @@ def _exams_view(rows):
         label = first.strftime("%b") + "\u2013" + last.strftime("%b %Y")
     else:
         label = first.strftime("%b %Y") + "\u2013" + last.strftime("%b %Y")
-    return {"rows": rows, "label": label, "days_until": days}
+    # Source badge: rows from the official 126 table carry a clock "slot";
+    # scribe-leak rows don't. Mixed view = official dates + scribe estimates.
+    n_official = sum(1 for r in rows if r.get("slot"))
+    source = ("Official" if n_official == len(rows)
+              else "Official + est." if n_official else "Estimated")
+    return {"rows": rows, "label": label, "days_until": days, "source": source}
+
+
+# ── exam event pushes (one-shot) ───────────────────────────────────────────
+EXAM_EVT_TTL = 12 * 3600  # offline phones: deliver for 12 h, then drop
+
+
+def _exam_events(old_json, new_rows):
+    """One-shot exam push triggers, detected at save time as TRANSITIONS:
+    estimate -> official release (the official 126 table supersedes the scribe
+    estimate), and halls/seats newly published (the portal shows room numbers
+    ~1 day before each exam — students crowd notice boards for them).
+
+    Returns event dicts {claim, title, body, tag, url}. Claim keys are
+    content-stable: re-detecting the same transition never mints a new claim.
+    Fresh users (nothing stored) get no 'released' note — the card already
+    shows the official schedule."""
+    try:
+        old = json.loads(old_json) if old_json else []
+    except ValueError:
+        old = []
+    if not isinstance(old, list):
+        old = []
+    new_rows = new_rows or []
+    events = []
+    # estimate -> official release (only when we actually held estimates)
+    old_off = any(r.get("slot") for r in old)
+    new_off = [r for r in new_rows if r.get("slot")]
+    if old and not old_off and new_off:
+        first = min((r["date"] for r in new_off if r.get("date")), default="")
+        try:
+            first_disp = datetime.strptime(first, "%d-%m-%Y").strftime("%d %b")
+        except ValueError:
+            first_disp = first or "TBA"
+        events.append({
+            "claim": "official-" + (first or "unknown"),
+            "title": "Official exam timetable",
+            "body": f"{len(new_off)} exams \u00b7 starts {first_disp}",
+            "tag": "exam-official-" + (first or "x"),
+            "url": "/",
+        })
+    # halls/seats newly published or CHANGED (room corrections re-notify)
+    old_hall = {r.get("code"): (r.get("hall", ""), r.get("seat", "")) for r in old}
+    changed = [r for r in new_rows if r.get("hall")
+               and old_hall.get(r.get("code")) != (r.get("hall", ""), r.get("seat", ""))]
+    if changed:
+        digest = hashlib.md5("|".join(
+            f"{r.get('code')}:{r.get('hall')}:{r.get('seat')}" for r in
+            sorted(changed, key=lambda r: r.get("code", ""))).encode()).hexdigest()[:12]
+        if len(changed) == 1:
+            r0 = changed[0]
+            body = f"{r0['code']} \u00b7 Hall {r0['hall']}"
+            if r0.get("seat"):
+                body += f" \u00b7 Seat {r0['seat']}"
+        else:
+            body = " \u00b7 ".join(f"{r['code']} H{r['hall']}" for r in changed[:3])
+            if len(changed) > 3:
+                body += f" +{len(changed) - 3}"
+        events.append({
+            "claim": f"hall-{digest}",
+            "title": ("Exam room allotted" if len(changed) == 1
+                      else f"Exam rooms allotted ({len(changed)})"),
+            "body": body, "tag": f"exam-hall-{digest}", "url": "/",
+        })
+    return events
+
+
+def _notify_exam_events(netid, events, conf=None, send_batch=None):
+    """Fire exam event pushes INLINE from the save path (right after commit —
+    events are rare, a couple per semester, so no tick scheduling needed).
+
+    At-most-once per device via push_sent_log's unique claim with a permanent
+    local_date ('event'): the claim row can never be minted again, so a crash
+    between claim and send loses the notification rather than duplicating it.
+    dry-run / allowlist-held audits WITHOUT claiming — the one-shot transition
+    is then gone (accepted: test modes don't keep history).
+
+    ponytail: failed sends are dropped, not retried — move into the minute
+    tick if retries ever matter. Injectable conf/send_batch for tests.
+    Returns jobs handed to send_batch (0 = nothing sent)."""
+    if not events:
+        return 0
+    if conf is None:
+        conf = _push_conf()
+    if not (conf["enabled"] and conf["configured"]):
+        return 0
+    subs = push_store.list_subscriptions(netid, enabled_only=True)
+    if not subs:
+        return 0
+    jobs = []
+    for ev in events:
+        for sub in subs:
+            if conf["dry_run"] or (conf["allow"] and netid not in conf["allow"]):
+                log_with_kv(log_push, logging.INFO, "exam event held (dry-run/allowlist)",
+                            netid=netid, ev=ev["claim"])
+                continue
+            if not push_store.claim_send(sub["id"], "event", 0, ev["claim"]):
+                continue  # already claimed for this device — at-most-once
+            row_id = push_store.sent_row_id(sub["id"], "event", 0, ev["claim"])
+            if row_id is None:
+                continue
+            jobs.append({"sub": sub, "row_id": row_id, "claim": ev["claim"],
+                         "ttl": EXAM_EVT_TTL, "payload": {
+                             "title": ev["title"], "body": ev["body"],
+                             "tag": ev["tag"], "url": ev["url"]}})
+    if not jobs:
+        return 0
+    send_batch = send_batch or push_send.send_batch
+    sent = 0
+    for job in send_batch(jobs, time.monotonic() + 10):
+        oc = job.get("outcome") or {}
+        row_id, sub_row = job["row_id"], job["sub"]
+        if oc.get("reason") == "deadline":
+            push_store.record_send_result(row_id, push_store.STATUS_SKIPPED)
+            continue
+        if oc.get("ok"):
+            push_store.record_send_result(row_id, push_store.STATUS_SENT, oc.get("http_status"))
+            push_store.record_subscription_result(sub_row["id"], True, oc.get("http_status"))
+            sent += 1
+            status = "sent"
+        elif oc.get("dead"):
+            push_store.record_send_result(row_id, push_store.STATUS_FAILED, oc.get("http_status"))
+            push_store.delete_subscription_by_id(sub_row["id"])
+            status = "dead_cleanup"
+        else:
+            final = push_store.STATUS_FAILED if oc.get("retryable") else push_store.STATUS_SKIPPED
+            push_store.record_send_result(row_id, final, oc.get("http_status"))
+            push_store.record_subscription_result(sub_row["id"], False, oc.get("http_status"))
+            status = final
+        log_with_kv(log_push, logging.INFO, "exam event push", netid=netid,
+                    ev=job["claim"], http=oc.get("http_status"), status=status)
+    return sent
 
 
 @app.route("/static/<path:filename>")
@@ -1980,7 +2305,7 @@ def api_login():
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
     c = db()
     # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     subjects_json = json.dumps(res.get("subjects", {}))
     # audit B6: preserve stored marks on empty — a parse failure returns
@@ -1995,17 +2320,35 @@ def api_login():
     # exams: key absent (probe unreliable / Playwright fallback) -> preserve stored
     if "exams" in res:
         exams_json = json.dumps(res["exams"])
+        # transition detection reads PRE-write rows (old value still stored)
+        exam_events = _exam_events(existing["exam_schedule_json"] if existing else None,
+                                   res["exams"])
     elif existing and existing["exam_schedule_json"]:
         exams_json = existing["exam_schedule_json"]
+        exam_events = []
     else:
         exams_json = "[]"
+        exam_events = []
+    # faculty map: key absent (window closed / harvest failed) -> preserve stored
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif existing and existing["faculty_map_json"]:
+        faculty_json = existing["faculty_map_json"]
+    else:
+        faculty_json = "{}"
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json) VALUES(?,?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json) VALUES(?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-              personal_json, marks_json, subjects_json, exams_json))
+               personal_json, marks_json, subjects_json, exams_json, faculty_json))
     c.commit(); c.close()
+    # one-shot exam pushes (official release / room allotment): post-commit,
+    # background thread — detection already read pre-write rows, and the
+    # single gunicorn worker must not wait on a push round-trip
+    if exam_events:
+        threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
+                         daemon=True, name="srm-exam-evt").start()
 
     # Save timetable group and scraped subjects (non-critical, separate tx)
     try:
@@ -2059,7 +2402,7 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     personal_json = json.dumps(res.get("personal", {}))
     if not res.get("personal") and row2 and row2["personal_details_json"]:
         personal_json = row2["personal_details_json"]
@@ -2070,15 +2413,29 @@ def api_refresh():
     # exams: absent key -> preserve stored (same contract as login upsert above)
     if "exams" in res:
         exams_json = json.dumps(res["exams"])
+        exam_events = _exam_events(row2["exam_schedule_json"] if row2 else None, res["exams"])
     elif row2 and row2["exam_schedule_json"]:
         exams_json = row2["exam_schedule_json"]
+        exam_events = []
     else:
         exams_json = "[]"
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=? WHERE netid=?",
+        exam_events = []
+    # faculty map: absent key -> preserve stored (same contract as login upsert)
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    elif row2 and row2["faculty_map_json"]:
+        faculty_json = row2["faculty_map_json"]
+    else:
+        faculty_json = "{}"
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               marks_json, json.dumps(res.get("subjects", {})), exams_json, netid))
+               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
     c.commit(); c.close()
     _track("sync_ok", user=netid)
+    # same one-shot exam pushes as login — post-commit, background thread
+    if exam_events:
+        threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
+                         daemon=True, name="srm-exam-evt").start()
     return {"ok": True}
 
 # ── Login preflight: browser fires this when the user focuses the

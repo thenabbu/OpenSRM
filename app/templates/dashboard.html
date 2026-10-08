@@ -190,12 +190,13 @@
           </div>
           {% endif %}
           {% if exams %}
-          <!-- End-sem schedule: leaked ScribeInner probe (provisional until officially released) -->
+          <!-- End-sem schedule: official Exam Time Table (iden=126) + scribe-leak
+               estimate fallback for subjects the official page leaves pending -->
           <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
             <div class="flex items-center gap-2 mb-2">
               <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
               <span class="badge badge-soft badge-sm">{{ exams.label }}</span>
-              <span class="badge badge-outline badge-sm text-base-content/60">Provisional</span>
+              <span class="badge badge-outline badge-sm text-base-content/60">{{ exams.source }}</span>
             </div>
             <ul class="space-y-3 sm:space-y-2">
               {% for e in exams.rows %}
@@ -207,7 +208,7 @@
                 </span>
                 <span class="min-w-0 flex-1 sm:hidden">
                   <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
-                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}</span>
+                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
                 </span>
                 <!-- desktop: one dense line, date right -->
                 <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
@@ -215,7 +216,7 @@
                     <span class="font-mono text-base-content/60">{{ e.code }}</span>
                     <span class="text-base-content">{{ e.name_disp }}</span>
                   </span>
-                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}</span>
+                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
                 </span>
               </li>
               {% endfor %}
@@ -226,6 +227,35 @@
             </div>
           </div>
           {% endif %}
+          {% if faculty %}
+          <!-- Faculty map: harvested from the mid-sem feedback form (the portal's only subject->teacher source) -->
+          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="text-[11px] uppercase tracking-wider text-base-content/50">Teachers</div>
+              <span class="badge badge-outline badge-sm text-base-content/60">{{ faculty|length }}</span>
+            </div>
+            <ul class="space-y-3 sm:space-y-2">
+              {% for f in faculty %}
+              <li class="flex items-start gap-3">
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ f.name }}</span>
+                  <span class="block mt-0.5 text-xs text-base-content/60">{% for s in f.staff %}{{ s[1] }}{% if s[2] %} <span class="text-base-content/50">({{ s[2] }})</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+                </span>
+                {% if f.code %}<span class="shrink-0 mt-0.5 font-mono text-xs text-base-content/60">{{ f.code }}</span>{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+            <div class="text-xs text-base-content/70 mt-2">From the mid-sem feedback form</div>
+            {% if fb_plan %}
+            <!-- Opt-in auto-fill: CTA opens the explainer modal (what happens,
+                 what gets submitted); ONLY the modal's confirm button writes
+                 to the portal. Sync harvests read-only. -->
+            <button id="fb-cta" class="btn btn-sm btn-primary min-h-11" aria-haspopup="dialog">
+              Auto-fill mid-sem feedback
+            </button>
+            {% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -234,14 +264,15 @@
     <div class="flex items-center justify-between mb-3">
       <h1 class="text-base font-semibold">Subjects</h1>
       <div class="join" role="group" aria-label="Attendance view">
-        <button type="button" id="att-view-graph" class="btn btn-ghost btn-sm btn-square join-item" aria-pressed="true" title="Graph view">
+        <button type="button" id="att-view-graph" class="btn btn-sm btn-square join-item btn-active" aria-pressed="true" title="Graph view">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/>
           </svg>
         </button>
-        <button type="button" id="att-view-table" class="btn btn-ghost btn-sm btn-square join-item" aria-pressed="false" title="Table view">
+        <button type="button" id="att-view-table" class="btn btn-sm btn-square join-item" aria-pressed="false" title="Table view">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a.75.75 0 0 1-.75-.75m.75.75h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V4.875c0-.621.504-1.125 1.125-1.125h12.75c.621 0 1.125.504 1.125 1.125m-15 14.625v-4.5m0 4.5c0 .621.504 1.125 1.125 1.125h4.5m-5.625-9.75h5.625m-5.625 9.75V9.375m0 0c0-.621.504-1.125 1.125-1.125h4.5m-5.625 4.5V4.875m0 14.625h11.25M12.75 8.25v9m3.75-9v9m3.75-9v4.5M3.375 4.875h17.25"/>
+            <rect x="3.75" y="4.5" width="16.5" height="15" rx="1.5"/>
+            <path stroke-linecap="round" d="M3.75 9.75h16.5M9.75 9.75v9.75M15.75 9.75v9.75"/>
           </svg>
         </button>
       </div>
@@ -256,8 +287,7 @@
         {% set dpol = 100 - fill %}
         {% set nudge = 'nud2R' if gap < 3 and fill > 75 else 'nud2L' if gap < 3 else 'nudR' if gap < 9 and fill > 75 else 'nudL' if gap < 9 else '' %}
         {% set pnudge = 'nud2P' if dpol < 3 else 'nudP' if dpol < 9 else '' %}
-        {% set znudge = 'nud2Z' if fill < 3 else 'nudZ' if fill < 9 else '' %}
-        <div class="mrow {{ nudge }} {{ pnudge }} {{ znudge }}">
+        <div class="mrow {{ nudge }} {{ pnudge }}">
           <div class="mtop"><span class="mname">{{ c.description }}</span><span class="mpct">{{ c.pct_disp }}%</span></div>
           {% set hatch_l = (fill if fill < 75 else 75)|round(2) %}
           {% set hatch_w = ((75 - fill) if fill < 75 else (fill - 75))|round(2) %}
@@ -267,9 +297,9 @@
             <i class="mhatch" style="left:{{ hatch_l }}%;width:{{ hatch_w }}%"></i>
             <i class="mtick"></i>
           </div>
-          {# at ≥99.5% the current labels ARE the pole values: attended==total is
-             implied, so pn-now/pct-tot drop and the current % right-aligns at the pole #}
-          <div class="pcts"><span class="pct pct-0">0</span><span class="pct pct-now{% if fill >= 99.5 %} pct-at-pole{% endif %}"{% if not pnudge %} style="left:{{ fill|round(2) }}%"{% endif %}>{{ c.pct_disp }}%</span><span class="pct pct-75" style="left:75%">75</span>{% if fill < 99.5 %}<span class="pct pct-tot">100</span>{% endif %}</div>
+          {# % scale carries only the threshold marks: 0% at the start, 75% at the
+             tick — current % is the header figure, 100% is the bar's end #}
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
           {% set conn = c.attend_now if c.attend_now is not none else c.skip_now %}
           {% if conn %}<div class="pconn"><i style="left:{{ (fill if fill < 75 else 75)|round(2) }}%;width:{{ hatch_w }}%"></i><span style="left:{{ ((fill + 75) / 2)|round(2) }}%">{{ conn }}</span></div>{% endif %}
         </div>
@@ -522,9 +552,33 @@
   </div>
 </main>
 <div id="offline-banner" role="status" aria-live="polite"></div>
+<dialog id="fb-modal" class="modal" aria-labelledby="fb-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 id="fb-modal-title" class="font-bold text-base mb-2">Auto-fill mid-sem feedback</h3>
+    <p class="text-xs text-base-content/70">Opt-in — nothing is submitted until you confirm.</p>
+    <ol class="mt-3 space-y-1 text-sm leading-relaxed text-base-content/80 list-decimal list-inside">
+      <li>Every teacher of every subject gets 5 = EXCELLENT on all 14 questions — one form per teacher</li>
+      <li>Each form's comment is "none" (optional field)</li>
+      <li>Each submission is re-verified live; already-filled ones are skipped honestly</li>
+    </ol>
+    <ul class="mt-3 space-y-2 max-h-48 overflow-y-auto">
+      {% for p in fb_plan %}
+      <li class="text-xs leading-relaxed">
+        <span class="block font-semibold text-base-content">{{ p.subject }}</span>
+        <span class="block text-base-content/70">{{ p.teacher }} · 5 = EXCELLENT on all 14 questions · comment “{{ p.comment }}”</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <div id="fb-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <button id="fb-submit" class="btn btn-primary btn-sm min-h-11">Fill feedback for {{ fb_plan|length }} teachers</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 <dialog id="add-subject-modal" class="modal">
   <div class="modal-box bg-base-200 border border-base-300">
-    <h3 class="font-bold text-base mb-4">Add custom subject</h3>
     <fieldset class="fieldset">
       <label class="label" for="subj-code"><span class="fieldset-legend">Subject code</span></label>
       <input type="text" id="subj-code" class="input w-full" placeholder="e.g. 21XYZ123" maxlength="20">

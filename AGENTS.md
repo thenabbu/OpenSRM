@@ -39,14 +39,17 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ## Test matrix (all green before push)
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
-.venv/bin/python tests/test_exams.py        # 27/27 (end-sem probe parser + candidates + blanked-dates preserve)
+.venv/bin/python tests/test_exams.py        # 66/66 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
-.venv/bin/python tests/test_att_dut.py   # 10/10 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps, merged absences card)
+.venv/bin/python tests/test_att_dut.py   # 11/11 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps, merged absences card, CL junk-row filter)
+.venv/bin/python tests/test_feedback.py      # 40/40 (harvester parse, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration, endpoint 401)
+.venv/bin/python tests/test_feedback_dut.py  # 31/31 DUT (Teachers card + CTA → opt-in explainer modal with BOTH teachers listed, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
@@ -109,6 +112,10 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
 # ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
 #  smoke recipe used "x" and read as a failure until this line was fixed.)
+# AUTHENTICATED RENDER (added Oct 8 2026 after _faculty_view 500'd every
+# dashboard while /login stayed green): mint a cookie for an existing user
+# (INSERT INTO cookies) and assert / → 200 with real row data — /login only
+# proves the shell boots, not that stored-data paths render.
 ```
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.

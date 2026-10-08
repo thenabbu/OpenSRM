@@ -119,27 +119,14 @@
 .nudR .pn-now{transform:translateX(calc(-50% + 6px))} .nudR .pn-75{transform:translateX(calc(-50% - 6px))}
 .nud2L .pn-now{transform:translateX(calc(-50% - 14px))} .nud2L .pn-75{transform:translateX(calc(-50% + 14px))}
 .nud2R .pn-now{transform:translateX(calc(-50% + 14px))} .nud2R .pn-75{transform:translateX(calc(-50% - 14px))}
-/* pole nudges: |fill−100|<9% → count label steps left of the pole pair; the %
    label is too wide to center that near the pole, so it right-aligns left of
    "100" (bullet-graph end-label idiom — overlap is impossible at any width) */
 .nudP .pn-now{transform:translateX(calc(-50% - 10px))}
 .nud2P .pn-now{transform:translateX(calc(-50% - 12px))}
-.nudP .pct-now,.nud2P .pct-now{left:auto;right:29px;transform:none}
-/* zero nudges: fill<9% → current labels step right of "0"; fill<3% → "0" yields entirely */
-.nudZ .pn-now{transform:translateX(calc(-50% + 8px))} .nudZ .pct-now{transform:translateX(calc(-50% + 8px))}
-.nud2Z .pn-now{transform:translateX(calc(-50% + 12px))} .nud2Z .pct-now{transform:translateX(calc(-50% + 12px))}
-.nud2Z .pct-0{visibility:hidden}
-/* 75-side nudges mirrored onto the percentage scale row (same ladder, wider labels) */
-.nudL .pct-now{transform:translateX(calc(-50% - 6px))} .nudL .pct-75{transform:translateX(calc(-50% + 6px))}
-.nudR .pct-now{transform:translateX(calc(-50% + 6px))} .nudR .pct-75{transform:translateX(calc(-50% - 6px))}
-.nud2L .pct-now{transform:translateX(calc(-50% - 14px))} .nud2L .pct-75{transform:translateX(calc(-50% + 14px))}
-.nud2R .pct-now{transform:translateX(calc(-50% + 14px))} .nud2R .pct-75{transform:translateX(calc(-50% - 14px))}
 /* percentage scale under the bar: 0 / current / 75 / 100 */
 .pcts{position:relative;height:13px;margin-top:5px;font-size:11.5px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .pct{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
-.pct-now{color:var(--color-base-content)}
-.pct-at-pole{right:0;left:auto;transform:none}
-.pct-tot{right:0;transform:none}
+.pct-0{left:0;transform:none}
 /* attendance table view (view-toggle alternative to the meters) */
 .att-table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
 .att-table th{font-size:10.5px;font-weight:400;text-align:left;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);padding:0 8px 6px 0;border-bottom:1px solid var(--color-base-300)}
@@ -151,7 +138,6 @@
 .att-pos{color:oklch(70% 0.10 163)}
 .att-neg{color:oklch(63% 0.11 25)}
 /* view toggle: pressed state reuses the §4.9 selected-tint convention */
-.att-view-on{background:color-mix(in oklab, var(--color-base-content) 8%, transparent)}
 /* quiet cards: estimates + absences (numbers neutral, labels ≤3 words) */
 .qgrid{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:baseline;font-size:12.5px}
 .qgrid .qhead{font-size:10.5px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);text-align:right;margin-bottom:4px}

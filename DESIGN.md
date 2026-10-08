@@ -420,7 +420,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
 
 ### 4.12 End-sem schedule card (dashboard)
 
-`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards).
+`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`, `source`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards). The header caveat is a **dynamic source badge** (Oct 2026: the portal published official dates): `Official` when every row carries a clock `slot` (from the iden=126 Exam Time Table), `Official + est.` on a mixed view, `Estimated` when rows come from the ScribeInner leak alone. Same `badge-outline badge-sm text-base-content/60` styling as the old static `Provisional` pill (7.15:1, subtle-but-present). Row metadata carries the clock slot when present, plus the room allotment when the portal publishes it (`Hall … · Seat …`, hidden until then — the ETT table leaves those cells blank until ~1 day before each exam): `{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}`. Sessions display as the portal's own `AN`/`FN` codes — students' native notation — never expanded. The iden=126 parser is **header-driven** (column positions resolved from the header row's labels, unknown columns ignored, `None` on drifted-but-present tables so stored rows are preserved rather than wiped); hall/seat publication and the estimate→official transition fire **one-shot Web Push events** (at-most-once per device via `push_sent_log` claims, 12 h delivery TTL).
 
 ```jinja
 <!-- mobile: one landmark (day stamp) + one bright line (name) per row -->
@@ -431,20 +431,20 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
   </span>
   <span class="min-w-0 flex-1 sm:hidden">
     <span class="block text-sm leading-snug text-base-content">{{ e.name_disp }}</span>
-    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session }}</span>
+    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
   </span>
   <!-- desktop: one dense line via sm: switches, zero JS -->
   <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
     <span class="min-w-0 truncate text-sm"><span class="font-mono text-base-content/60">{{ e.code }}</span> <span class="text-base-content">{{ e.name_disp }}</span></span>
-    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session }}</span>
+    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
   </span>
 </li>
 ```
 
 - **Rows:** `space-y-3 sm:space-y-2`, no dividers — density comes from grouping, not rules (§ B2 / §6). The day stamp is the only 17px/600 element; name is the only `text-base-content` line; everything else `/60` (§2.5 ladder).
 - **Names** are title-cased in `_exams_view()` (`name_disp`); storage keeps the portal's ALL-CAPS `name`.
-- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The **Provisional** caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — it replaced the old footnote line. Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
-- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, Provisional pill in the header, card bottom above the fixed dock).
+- **Chip** is the default `badge-soft` — same as the marks pills (§2.7: no decorative hue). Measured soft ≈14:1 here; `badge-info` soft measured **4.07:1 on this surface (fails)** — see §10 for the override trap. The source caveat lives in the header as `badge-outline badge-sm text-base-content/60` (7.15:1, subtle-but-present) — formerly a static `Provisional` pill, now the dynamic `{{ exams.source }}` badge (Official / Official + est. / Estimated). Unlike `badge-info`, outline badges carry no explicit color rule, so `/60` does apply.
+- **Verify after any row change:** a contrast probe on the rendered page (canvas-normalized colors composited over the real card bg) and geometry assertions at 393×851 + 1280×900 (one stamp x, one name x, no overlap, no h-overflow, source badge in the header, card bottom above the fixed dock).
 
 ### 4.13 Internal marks card (Marks tab)
 
@@ -499,12 +499,12 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 
 ### 4.15 Attendance meter row (Subjects tab)
 
-Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for attendance**). One primitive per subject, all subjects in ONE `bg-base-200 border border-base-300 rounded-box p-4` card under an `h1` "Subjects" + a right-aligned two-icon view toggle (`join` of `btn btn-ghost btn-sm btn-square`, 2026-10/v1.13.0: bar-chart = graph view, table = the plain-rows alternative; choice persists in `localStorage.attView`; visibility via the `hidden` attribute only). Risk-first (lowest % first — server already sorts). The numbers, not a sentence, carry the answer to "can I skip?".
+Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for attendance**). One primitive per subject, all subjects in ONE `bg-base-200 border border-base-300 rounded-box p-4` card under an `h1` "Subjects" + a right-aligned two-icon view toggle (2026-10/v1.15.0: a real segmented control — `join` of `btn btn-sm btn-square` with `btn-active` on the pressed side, bordered base-200 buttons so the control reads as a control; bar-chart = graph view, clean 3-column grid icon = the plain-rows table; `aria-pressed` + `title` on both; choice persists in `localStorage.attView`; visibility via the `hidden` attribute only). Risk-first (lowest % first — server already sorts). The portal's `CL` / "CLASS IN CHARGE" marker row is filtered out server-side in `index()` (not a subject: 2-of-4 hours renders a nonsense 50% meter). The numbers, not a sentence, carry the answer to "can I skip?".
 
-Two label rows sandwich the meter (2026-10/v1.13.0): the **class-count line ABOVE** (`pnums`, unchanged) and the **percentage scale BELOW** (`pcts`: `0` @0 · current % @fill · `75` @tick · `100` @right pole). Splitting the two lines is what keeps the margin number and the % text from overlapping.
+Two label rows sandwich the meter (2026-10/v1.15.0): the **class-count line ABOVE** (`pnums`, unchanged) and the **percentage scale BELOW** (`pcts`: `0%` @0 · `75%` @tick — threshold marks only; the current % is the header `mpct` figure, `100` is the bar's end, both redundant under the bar). Splitting the two lines is what keeps the margin number and the % text from overlapping.
 
 ```html
-<div class="mrow <!--nudge: nudL|nudR|nud2L|nud2R when |fill−75|<9%/<3%, nudP|nud2P near the pole, nudZ|nud2Z near zero-->">
+<div class="mrow <!--nudge: nudL|nudR|nud2L|nud2R when |fill−75|<9%/<3%, nudP|nud2P near the pole-->">
   <div class="mtop"><span class="mname">Course description</span><span class="mpct">62%</span></div>
   <div class="pnums"><span class="pn pn-now" style="left:62.0%">31</span>
     <span class="pn pn-75" style="left:75%">38</span><span class="pn pn-tot">50</span></div>
@@ -513,14 +513,13 @@ Two label rows sandwich the meter (2026-10/v1.13.0): the **class-count line ABOV
     <i class="mhatch" style="left:62.0%;width:13.0%"></i>
     <i class="mtick"></i>                            <!-- fixed at left:75%, white -->
   </div>
-  <div class="pcts"><span class="pct pct-0">0</span><span class="pct pct-now" style="left:62.0%">62%</span>
-    <span class="pct pct-75" style="left:75%">75</span><span class="pct pct-tot">100</span></div>
+  <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
   <div class="pconn"><i style="left:62.0%;width:13.0%"></i><span style="left:68.5%">26</span></div>
 </div>
 ```
 
 - **Meter grid:** `.mrows` is `repeat(auto-fit, minmax(280px, 1fr))` — bar width stays in a 270–345px band at every viewport; the old hard `min-width:768px` flip snapped bars from 650px to 345px at one pixel (the "75% mark changes width with screen size" report).
-- **Pole/zero collisions:** at fill ≥ 99.5% `pn-now`/`pct-tot` drop (attended == total, 100% == the pole label) and `pct-now` right-aligns at the pole (`pct-at-pole`); 91–99% nudges step the current labels left of the pole pair (`nudP`/`nud2P`; for the % label this is a right-align at `right:29px` — a centered label that close cannot fit at any width); fill < 9% steps current labels right of "0" (`nudZ`), < 3% hides "0" (`nud2Z`).
+- **Pole collisions (number row only):** at fill ≥ 99.5% `pn-now` drops (attended == total is implied); 91–99% `nudP`/`nud2P` steps the count label left of the pole total. The % scale needs no collision handling: `0%` and `75%` are fixed marks 75 percentage points apart.
 
 - **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always. **Values are the faint approved-mockup tints — `oklch(58% 0.115 25)` / `oklch(63% 0.115 68)`** — NOT the `--color-error`/`--color-warning` theme tokens: those are full-saturation and pull the eye (attention review R1; the timetable `.tt-riskbar`/hero rims use the same faint values).
 - **Pinned numbers:** attended @fill%, `ceil(0.75·C)` @75% (38 when C=50), total @right pole. `pnums`/`pconn` alphas are ladder steps only (50%/60% via `color-mix`); the connector's action number is `base-content` (100%) punched out on `base-200`.
@@ -532,6 +531,10 @@ Two label rows sandwich the meter (2026-10/v1.13.0): the **class-count line ABOV
 - **Attention budget:** the meter row is attention-budget-compliant by construction — grayscale default, hue only on the fill of a deviation, numbers neutral, no aggregate anywhere (no overall %, no overall bunk line, no summed totals).
 
 Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.tt-riskbar` rim is the **sole can-be-missed indicator** (faint danger/warn tints, same values as the meter fills) and the bare action number in `.tt-sig` is data — the shape glyph was removed (two indicators for one fact). The today's-slot hero is a quiet card: `Now · ends HH:MM` at /50, Title-Case subject, and ONE loud object — the 22px `tt-hero-num` stat; hue appears only on the faint left rim when the stat is a deviation. No dot, no "Now" chip. Unmatched/custom slots render neutral "no data" at `opacity .5`. Subject names are Title-Cased at render (`_title_case`: ALL-CAPS portal names only; custom mixed-case names untouched; join keys still go through `_norm_subject`).
+
+### 4.16 Teachers card (dashboard home, faculty map)
+
+Anatomy — copied from the end-sem card (§4.12): `bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2`; header row = `text-[11px] uppercase tracking-wider text-base-content/50` "Teachers" + one `badge-outline badge-sm` count badge; rows = subject name (`text-sm font-semibold`, title-cased) over the staff line (`text-xs text-base-content/60`, names title-cased, kind labels `(Theory)/(Practical)` at `/50` — `/40` measured 3.83:1 and fails WCAG at 12px); optional `font-mono text-xs` code chip right. Source footnote `text-xs text-base-content/70 mt-2` "From the mid-sem feedback form". Below it, when a plan exists, the *Auto-fill mid-sem feedback* CTA (`btn btn-sm btn-primary min-h-11`, 21:1) opens the opt-in explainer modal `<dialog id="fb-modal">` (daisyUI modal, same pattern as add-subject): an "Opt-in — nothing is submitted until you confirm" line, a 3-step mechanics list (every teacher gets their own form — one portal form per teacher within a subject; 5 = EXCELLENT on all 14 questions; comment "none"; live re-verify with honest skips), then the exact PER-TEACHER plan rows (subject `text-xs font-semibold` over `teacher · 5 = EXCELLENT … · comment “none”` at `/70`, `max-h-48` scrollable). The modal's *Fill feedback for N subjects* `btn btn-sm btn-primary min-h-11` is the ONLY element that writes feedback to the portal (sync harvests read-only); result line `#fb-status` inside the modal uses `text-success`/`text-error`, never color alone (counts in text), and hard failures also fire the global `#error-toast`. A `badge-neutral` "new" badge on the CTA was tried and dropped — it measured 1.35:1 on the primary button. Empty map (`{}`) -> the whole card is omitted (no empty-state block — same pattern as §4.12). Card rows live in `_faculty_view()` (app.py); the map is harvested server-side (mid-sem feedback form), never user-edited; the preview and `POST /api/feedback/fill` share ONE plan builder (`_fb_plan()`) so what the student saw IS what gets sent.
 
 ---
 
@@ -628,6 +631,7 @@ Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.t
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
 11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
 12. **A closed `<details>` still reports a layout rect for its hidden children** (Chrome lays them out via `content-visibility`), so a geometry audit that measures "card height vs deepest descendant" counts the hidden tag form (§4.13) and reports phantom negative slack. Filter measurement sweeps with `!el.closest('details:not([open])')`.
+13. **daisyUI 5.7 emits opacity-modified tokens as `oklab(L a b / alpha)`** (Lab form, not LCH) — and the alpha is a DECIMAL number (`oklab(1 0 0 / 0.5)` = 50%), never a percentage. A contrast probe that divides the alpha by 100 unconditionally turns every `/60` token into 0.006 alpha and reports the whole card at ~1:1 (measured on the Teachers card, Oct 2026). `tests/test_feedback_contrast.py` holds the parser (rgb + oklch + oklab + hex, `alpha()` honoring the optional `%`); crib it for any new color sweep. Only `oklch(1 0 0)`-style full-opacity tokens parse as LCH.
 
 ---
 

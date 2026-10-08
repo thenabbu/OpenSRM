@@ -22,7 +22,7 @@ c = A.db()
 ver = c.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
 tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 c.close()
-check("fresh DATA_DIR migrates to v12", ver == 12, str(ver))  # v12 = usage_events
+check("fresh DATA_DIR migrates to latest (13)", ver == 13, str(ver))  # v13 = faculty_map_json
 check("push tables exist", {"push_subscriptions", "push_sent_log", "push_events"} <= tables, str(sorted(tables)))
 
 # 2) portable SQL: scan REAL string literals (skip docstrings) of the
