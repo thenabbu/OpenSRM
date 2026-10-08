@@ -111,6 +111,10 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
 # ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
 #  smoke recipe used "x" and read as a failure until this line was fixed.)
+# AUTHENTICATED RENDER (added Oct 8 2026 after _faculty_view 500'd every
+# dashboard while /login stayed green): mint a cookie for an existing user
+# (INSERT INTO cookies) and assert / → 200 with real row data — /login only
+# proves the shell boots, not that stored-data paths render.
 ```
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
