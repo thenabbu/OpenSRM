@@ -575,12 +575,18 @@ def _merge_exam_results(results, official_html=None):
 
     official_html: the iden=126 Exam Time Table body. Official rows win per
     subject code (they carry exact clock slots); scribe rows fill subjects the
-    official page leaves pending — pre-release fallback for future sems."""
+    official page leaves pending — pre-release fallback for future sems.
+    Parse state: rows = merge them; [] = official publishes nothing yet
+    (scribe fallback rules apply); None = table present but unparseable
+    (label/column drift) — preserve stored rows, never wipe."""
     from app.app import parse_exam_schedule, parse_exam_timetable  # deferred: avoid circularity
     official = []
     if official_html:
         official = parse_exam_timetable(official_html)
     ok = [r for r in results if r is not None]
+    if official is None:
+        log.debug("exam timetable: unparseable table shape — preserving stored value")
+        return None
     if not ok and not official:
         return None
     rows, blanked = [], False

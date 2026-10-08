@@ -420,7 +420,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
 
 ### 4.12 End-sem schedule card (dashboard)
 
-`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`, `source`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards). The header caveat is a **dynamic source badge** (Oct 2026: the portal published official dates): `Official` when every row carries a clock `slot` (from the iden=126 Exam Time Table), `Official + est.` on a mixed view, `Estimated` when rows come from the ScribeInner leak alone. Same `badge-outline badge-sm text-base-content/60` styling as the old static `Provisional` pill (7.15:1, subtle-but-present). Row metadata carries the clock slot when present: `{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}`.
+`_exams_view()` builds the view model (`day`, `dow`, `short`, `name_disp`, month-range `label`, `source`); the card renders only when exams exist — **empty = hidden, by design** (no empty-state text, unlike sibling cards). The header caveat is a **dynamic source badge** (Oct 2026: the portal published official dates): `Official` when every row carries a clock `slot` (from the iden=126 Exam Time Table), `Official + est.` on a mixed view, `Estimated` when rows come from the ScribeInner leak alone. Same `badge-outline badge-sm text-base-content/60` styling as the old static `Provisional` pill (7.15:1, subtle-but-present). Row metadata carries the clock slot when present, plus the room allotment when the portal publishes it (`Hall … · Seat …`, hidden until then — the ETT table leaves those cells blank until ~1 day before each exam): `{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}`. Sessions display as the portal's own `AN`/`FN` codes — students' native notation — never expanded. The iden=126 parser is **header-driven** (column positions resolved from the header row's labels, unknown columns ignored, `None` on drifted-but-present tables so stored rows are preserved rather than wiped); hall/seat publication and the estimate→official transition fire **one-shot Web Push events** (at-most-once per device via `push_sent_log` claims, 12 h delivery TTL).
 
 ```jinja
 <!-- mobile: one landmark (day stamp) + one bright line (name) per row -->
@@ -431,12 +431,12 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
   </span>
   <span class="min-w-0 flex-1 sm:hidden">
     <span class="block text-sm leading-snug text-base-content">{{ e.name_disp }}</span>
-    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
+    <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
   </span>
   <!-- desktop: one dense line via sm: switches, zero JS -->
   <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
     <span class="min-w-0 truncate text-sm"><span class="font-mono text-base-content/60">{{ e.code }}</span> <span class="text-base-content">{{ e.name_disp }}</span></span>
-    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}</span>
+    <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
   </span>
 </li>
 ```

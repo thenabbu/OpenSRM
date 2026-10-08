@@ -23,7 +23,7 @@ assert [r["day"] for r in v["rows"]] == ["25", "27"]
 assert v["rows"][0]["dow"] in ("Tue", "Wed"), v["rows"][0]["dow"]   # 25 Nov 2026 = Wednesday
 assert v["rows"][0]["name_disp"] == "Numerical Methods And Analysis"
 assert v["label"] == "Nov 2026" and v["days_until"] > 0
-assert v["rows"][0]["session_disp"] == "Afternoon"          # AN/FN expanded
+assert v["rows"][0]["session_disp"] == "AN"                   # FN/AN shown as students know them
 assert _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
                     "session": "ZZ"}])["rows"][0]["session_disp"] == "ZZ"
 # junk date falls back to the raw value, never crashes
@@ -42,5 +42,9 @@ assert v4["source"] == "Official + est.", v4["source"]              # mixed
 v5 = _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
                    "session": "AN", "slot": "02:00-05:00"}])
 assert v5["source"] == "Official", v5["source"]                     # all official
+# hall/seat pass through to the card rows (room allotment display)
+v6 = _exams_view([{"code": "X", "name": "A B", "date": "25-11-2026",
+                   "session": "AN", "slot": "02:00-05:00", "hall": "12", "seat": "08"}])
+assert v6["rows"][0]["hall"] == "12" and v6["rows"][0]["seat"] == "08", v6["rows"][0]
 assert _exams_view([]) is None
 print("ok  exams view model")
