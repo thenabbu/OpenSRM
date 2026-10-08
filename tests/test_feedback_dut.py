@@ -95,21 +95,31 @@ def run():
         # subject names title-cased
         check("subject title-case", "Data Structures And Algorithms" in content)
 
-        # ── opt-in preview (server-rendered) + submit button ──
-        check("preview summary", "What will be submitted" in content)
-        check("plan shows teacher", "Dr.Test Alpha (Theory)" in content)
-        check("plan shows ratings", "5 = EXCELLENT on all 14 questions" in content)
-        check("plan shows comment", "Comment:" in content)
-        check("submit button", "Submit feedback (2 subjects)" in content)
-        page.locator("#fb-plan summary").click()
-        pbox = page.locator("#fb-plan").bounding_box()
-        check("preview panel opens", pbox is not None and pbox["height"] > 50, str(pbox))
+        # ── CTA button opens the explainer modal; modal shows exact plan ──
+        check("CTA rendered", "Auto-fill mid-sem feedback" in content)
+        check("no inline preview details anymore", "fb-plan" not in content)
+        check("modal in DOM (closed)", page.locator("#fb-modal").get_attribute("open") is None)
+        page.locator("#fb-cta").click()
+        page.wait_for_selector("#fb-modal[open]")
+        check("modal opens on CTA click", page.locator("#fb-modal").get_attribute("open") is not None)
+        mcontent = page.locator("#fb-modal").inner_text()
+        check("modal explains opt-in", "Opt-in" in mcontent)
+        check("modal lists mechanics", "EXCELLENT" in mcontent and 'comment is "none"' in mcontent)
+        check("modal shows teacher", "Dr.Test Alpha (Theory)" in mcontent)
+        check("modal shows comment none", 'comment “none”' in mcontent)
+        check("modal per-subject list", "Data Structures And Algorithms" in mcontent)
+        box = page.locator("#fb-modal").bounding_box()
+        check("modal visible", box is not None and box["height"] > 100, str(box))
+        # touch targets inside the modal
+        h = page.evaluate("() => document.getElementById('fb-submit').getBoundingClientRect().height")
+        check("confirm button ~44px touch target", h >= 42, str(h))  # btn-sm min-h-11: 42-44px rendered
+        page.screenshot(path="/tmp/fb-dut-shots/modal_desktop.png")
 
         # card visible: the source footnote lives inside the card — a real
         # bounding box proves the card painted (None = display:none ancestor)
         foot = page.get_by_text("From the mid-sem feedback form")
-        box = foot.bounding_box()
-        check("card visible", box is not None and box["height"] > 0 and box["width"] > 100, str(box))
+        fbox = foot.bounding_box()
+        check("card visible", fbox is not None and fbox["height"] > 0 and fbox["width"] > 100, str(fbox))
         hdr = page.get_by_text("Teachers", exact=True)
         hbox = hdr.bounding_box()
         check("header visible", hbox is not None and hbox["height"] > 0, str(hbox))
@@ -121,13 +131,13 @@ def run():
         page2.goto(BASE + "/", wait_until="networkidle")
         content2 = page2.content()
         check("negative control: no Teachers card", "From the mid-sem feedback form" not in content2)
-        check("negative control: no submit button", "fb-submit" not in content2)
+        check("negative control: no CTA", "fb-cta" not in content2)
         check("negative control: page still renders", "Subjects" in content2 or "Attendance" in content2)
 
-        # clean PR screenshot: preview open, no interaction yet
+        # clean PR screenshot: modal open, no interaction yet
         page.screenshot(path="/tmp/fb-dut-shots/dash_desktop.png", full_page=True)
 
-        # opt-in click with NO cached portal session -> honest 400, no portal contact
+        # opt-in confirm with NO cached portal session -> honest 400, no portal contact
         page.locator("#fb-submit").click()
         page.wait_for_function(
             "() => { const t = document.getElementById('fb-status').textContent;"
@@ -137,6 +147,7 @@ def run():
               "session expired" in status, repr(status))
         check("status styled as error",
               "text-error" in (page.locator("#fb-status").get_attribute("class") or ""))
+        check("error toast shown", not page.locator("#error-toast").evaluate("el => el.classList.contains('hidden')"))
         check("button re-enabled", page.locator("#fb-submit").is_enabled())
 
         # mobile viewport
@@ -144,7 +155,7 @@ def run():
         mctx.add_cookies([{"name": "srm_session", "value": tok, "url": BASE}])
         mpage = mctx.new_page()
         mpage.goto(BASE + "/", wait_until="networkidle")
-        mpage.locator("#fb-plan summary").click()  # preview visible in the shot; overflow sees the worst case
+        mpage.locator("#fb-cta").click()  # modal open in the shot; overflow sees the worst case
         mpage.screenshot(path="/tmp/fb-dut-shots/dash_mobile.png", full_page=True)
         # horizontal overflow check at 393
         overflow = mpage.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")

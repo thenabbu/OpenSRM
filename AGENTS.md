@@ -46,9 +46,9 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
-.venv/bin/python tests/test_feedback.py      # 40/40 (harvester parse, registered markers, faculty view, fb_plan preview==payload, v12 migration, endpoint 401)
-.venv/bin/python tests/test_feedback_dut.py  # 17/17 DUT (Teachers card + opt-in preview panel, honest no-session error, negative control, overflow) — needs DATA_DIR+DUT_BASE
-.venv/bin/python tests/test_feedback_contrast.py # 7+/7+ WCAG pairs (Teachers card + preview panel; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_feedback.py      # 38/38 (harvester parse, registered markers, faculty view, fb_plan preview==payload + literal "none", v13 migration, endpoint 401)
+.venv/bin/python tests/test_feedback_dut.py  # 28/28 DUT (Teachers card + CTA → opt-in explainer modal, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)

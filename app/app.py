@@ -645,18 +645,12 @@ def _parse_component_inner(html):
 
 
 def _fb_submit_comments():
-    """Neutral comment pool for auto-filled mid-sem feedback (<=250 chars each;
-    the form requires one comment per submission). Rotating pool so 6-7
-    submissions in one window don't carry an identical string."""
-    return (
-        "Teaching is clear and well structured",
-        "Concepts are explained with good examples",
-        "Classes are regular and punctual",
-        "Syllabus coverage is on schedule",
-        "Doubts are addressed patiently",
-        "Overall a very good learning experience",
-        "Lectures are engaging and informative",
-    )
+    """Deprecated pool kept ONLY so existing test imports resolve; unused.
+
+    ponytail: comment is now the literal "none" (optional field, user spec) —
+    delete this stub when tests are updated in the same release.
+    """
+    return ("none",)
 
 
 def parse_exam_schedule(html):
@@ -1413,19 +1407,18 @@ def _faculty_view(faculty_map, courses):
 
 def _fb_plan(faculty_map):
     """Stored map -> [{subject, teacher, staff_id, comment}] — the exact rows the
-    fill endpoint submits (first listed teacher, rotating comment).
+    fill endpoint submits (first listed teacher).
 
-    SINGLE builder: the dashboard preview AND POST /api/feedback/fill both call
-    this, so what the student previewed IS what gets sent. {} / unknown-only -> [].
+    SINGLE builder: the modal preview AND POST /api/feedback/fill both call
+    this, so what the student saw IS what gets sent. {} / unknown-only -> [].
     """
-    comments = _fb_submit_comments()
     plan = []
-    for i, r in enumerate(_faculty_view(faculty_map, [])):
+    for r in _faculty_view(faculty_map, []):
         sid, tname, kind = r["staff"][0]
         plan.append({"subject": r["name"],
                      "teacher": f"{tname} ({kind})" if kind else tname,
                      "staff_id": sid,
-                     "comment": comments[i % len(comments)]})
+                     "comment": "none"})
     return plan
 
 
@@ -1843,10 +1836,18 @@ def api_feedback_fill():
     if not cookies:
         return {"ok": False, "error": "portal session expired — sync first"}, 400
     from . import http_scraper
+    t0 = time.monotonic()
     try:
         res = http_scraper.fill_feedback(netid, plan, cookies)
     except http_scraper.HttpScraperError as e:
+        log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
+        _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
         return {"ok": False, "error": str(e)}, 502
+    ms = int((time.monotonic() - t0) * 1000)
+    log_with_kv(log_portal, logging.INFO, "feedback fill done",
+                netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
+                failed=len(res.get("failed", [])), total_ms=ms)
+    _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
     return {"ok": True, **res}
 
 def _fmt_score(v):

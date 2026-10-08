@@ -13,7 +13,7 @@ import tempfile
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="fb-test-"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from app.app import _faculty_view, _fb_submit_comments  # noqa: E402
+from app.app import _faculty_view  # noqa: E402
 from app.http_scraper import _fb_common, _fb_registered, _fb_staff_options, _fb_subjects  # noqa: E402
 
 FAILS = []
@@ -114,22 +114,18 @@ check("empty courses -> blank codes", _faculty_view(fmap, [])[0]["code"] == "")
 courses_ws = [{"code": "21CSC201J", "name": "DATA  STRUCTURES AND ALGORITHMS ", "credits": 4}]
 check("whitespace-normalised join", _faculty_view(fmap, courses_ws)[0]["code"] == "21CSC201J")
 
-print("== _fb_submit_comments ==")
-cs = _fb_submit_comments()
-check("pool non-empty", len(cs) >= 5)
-check("all <= 250 chars", all(len(x) <= 250 for x in cs), str([len(x) for x in cs]))
-check("all non-empty", all(x.strip() for x in cs))
+print("== comment literal ==")
+from app.app import _fb_plan
+check("comment is the literal 'none' (optional field)", _fb_plan(fmap)[0]["comment"] == "none")
 
 print("== _fb_plan (preview == submission payload) ==")
-from app.app import _fb_plan
 
 plan = _fb_plan(fmap)
 check("plan skips unknown-only subject", len(plan) == 2, repr(plan))
 check("plan fields", set(plan[0].keys()) == {"subject", "teacher", "staff_id", "comment"}, repr(plan[0]))
 check("teacher name+kind", plan[0]["teacher"] == "Dr.Priyanka Gupta (Theory)", repr(plan[0]))
 check("staff_id carried", plan[0]["staff_id"] == "50001", repr(plan[0]))
-check("comment from pool", plan[0]["comment"] in cs, repr(plan[0]["comment"]))
-check("comments rotate", plan[0]["comment"] != plan[1]["comment"], repr([p["comment"] for p in plan]))
+check("comment literal 'none'", plan[0]["comment"] == "none", repr(plan[0]["comment"]))
 check("comment <= 250", all(len(p["comment"]) <= 250 for p in plan))
 check("no-kind teacher label", _fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})[0]["teacher"] == "Dr. X",
       repr(_fb_plan({"X": {"subject_id": "9", "staff": [["5", "Dr. X"]]}})))
@@ -162,5 +158,5 @@ j = r2.get_json() or {}
 check("no feedback data -> 400", r2.status_code == 400 and not j.get("ok"),
       f"status={r2.status_code} body={j}")
 
-print(f"\n{40 - len(FAILS)}/{40} passed" if not FAILS else f"\nFAILED: {FAILS}")
+print(f"\n{38 - len(FAILS)}/{38} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
