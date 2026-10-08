@@ -46,6 +46,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 80/80 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
+.venv/bin/python tests/test_att_dut.py   # 10/10 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps, merged absences card)
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)

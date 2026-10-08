@@ -231,29 +231,76 @@
     </div>
   </div>
   <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel style="display:none">
-    <h1 class="text-base font-semibold mb-3">Subjects</h1>
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="text-base font-semibold">Subjects</h1>
+      <div class="join" role="group" aria-label="Attendance view">
+        <button type="button" id="att-view-graph" class="btn btn-ghost btn-sm btn-square join-item" aria-pressed="true" title="Graph view">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/>
+          </svg>
+        </button>
+        <button type="button" id="att-view-table" class="btn btn-ghost btn-sm btn-square join-item" aria-pressed="false" title="Table view">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a.75.75 0 0 1-.75-.75m.75.75h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V4.875c0-.621.504-1.125 1.125-1.125h12.75c.621 0 1.125.504 1.125 1.125m-15 14.625v-4.5m0 4.5c0 .621.504 1.125 1.125 1.125h4.5m-5.625-9.75h5.625m-5.625 9.75V9.375m0 0c0-.621.504-1.125 1.125-1.125h4.5m-5.625 4.5V4.875m0 14.625h11.25M12.75 8.25v9m3.75-9v9m3.75-9v4.5M3.375 4.875h17.25"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="att-graph">
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
       <div class="mrows">
       {% for c in courses %}
       {% if c.pct_disp is not none %}
         {% set fill = c.fill %}
         {% set gap = (75 - fill)|abs %}
+        {% set dpol = 100 - fill %}
         {% set nudge = 'nud2R' if gap < 3 and fill > 75 else 'nud2L' if gap < 3 else 'nudR' if gap < 9 and fill > 75 else 'nudL' if gap < 9 else '' %}
-        <div class="mrow {{ nudge }}">
+        {% set pnudge = 'nud2P' if dpol < 3 else 'nudP' if dpol < 9 else '' %}
+        {% set znudge = 'nud2Z' if fill < 3 else 'nudZ' if fill < 9 else '' %}
+        <div class="mrow {{ nudge }} {{ pnudge }} {{ znudge }}">
           <div class="mtop"><span class="mname">{{ c.description }}</span><span class="mpct">{{ c.pct_disp }}%</span></div>
           {% set hatch_l = (fill if fill < 75 else 75)|round(2) %}
           {% set hatch_w = ((75 - fill) if fill < 75 else (fill - 75))|round(2) %}
+          <div class="pnums">{% if fill < 99.5 %}<span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span>{% endif %}<span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
           <div class="meter" role="img" aria-label="{{ c.description }}, {{ c.pct_disp }} percent attended{% if c.attend_now is not none %}, needs {{ c.attend_now }} for 75 percent{% else %}, {{ c.skip_now }} skippable for 75 percent{% endif %}">
             <i class="mz{% if c.tint == 'red' %} mz--red{% elif c.tint == 'warn' %} mz--warn{% endif %}" style="width:{{ fill|round(2) }}%"></i>
             <i class="mhatch" style="left:{{ hatch_l }}%;width:{{ hatch_w }}%"></i>
             <i class="mtick"></i>
           </div>
-          <div class="pnums"><span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span><span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
+          {# at ≥99.5% the current labels ARE the pole values: attended==total is
+             implied, so pn-now/pct-tot drop and the current % right-aligns at the pole #}
+          <div class="pcts"><span class="pct pct-0">0</span><span class="pct pct-now{% if fill >= 99.5 %} pct-at-pole{% endif %}"{% if not pnudge %} style="left:{{ fill|round(2) }}%"{% endif %}>{{ c.pct_disp }}%</span><span class="pct pct-75" style="left:75%">75</span>{% if fill < 99.5 %}<span class="pct pct-tot">100</span>{% endif %}</div>
           {% set conn = c.attend_now if c.attend_now is not none else c.skip_now %}
           {% if conn %}<div class="pconn"><i style="left:{{ (fill if fill < 75 else 75)|round(2) }}%;width:{{ hatch_w }}%"></i><span style="left:{{ ((fill + 75) / 2)|round(2) }}%">{{ conn }}</span></div>{% endif %}
         </div>
       {% endif %}
       {% endfor %}
+      </div>
+    </div>
+    </div>
+    <div id="att-table" hidden>
+      <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+        <table class="att-table">
+          <colgroup><col style="width:17%"><col style="width:38%"><col style="width:13%"><col style="width:17%"><col style="width:15%"></colgroup>
+          <thead><tr>
+            <th scope="col">Code</th><th scope="col">Subject</th>
+            <th scope="col" class="num">Total</th><th scope="col" class="num">Attended</th>
+            <th scope="col" class="num">Margin</th>
+          </tr></thead>
+          <tbody>
+          {% for c in courses %}
+          {% if c.pct_disp is not none %}
+            <tr>
+              <td class="font-mono">{{ c.code }}</td>
+              <td class="att-subj" title="{{ c.description }}">{{ c.description }}</td>
+              <td class="num">{{ c.max_hours }}</td>
+              <td class="num">{{ c.attended }}</td>
+              <td class="num att-margin{% if c.margin is not none and c.margin > 0 %} att-pos{% elif c.margin is not none and c.margin < 0 %} att-neg{% endif %}">{% if c.margin is none %}--{% elif c.margin > 0 %}+{{ c.margin }}{% else %}{{ c.margin }}{% endif %}</td>
+            </tr>
+          {% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -274,35 +321,28 @@
       </div>
     </div>
 
-    {% if absences %}
+    {% if monthly %}
     <div class="att-h">Absences</div>
-    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
-      {% for g in absences %}
-      <div class="qlabel">{{ g.label }}</div>
-      <div class="qlist">
-        {% for a in g.rows %}
-        <div class="qarow"><span class="qdate">{{ a.date }}</span><span class="qhrs">{{ a.hours }}h</span></div>
-        {% endfor %}
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5 att-abs-card">
+      {% for m in monthly %}
+      <div class="att-month">
+        <div class="flex items-center gap-3" title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}">
+          <span class="text-sm w-20 shrink-0 truncate">{{ m.month }}</span>
+          <progress class="progress flex-1 progress-{{ 'success' if (m.pct or 0) >= 75 else 'warning' if (m.pct or 0) >= 65 else 'error' }}"
+                    value="{{ m.pct or 0 }}" max="100" aria-label="{{ m.month }} attendance"></progress>
+          <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct if m.pct is not none else '–' }}{% if m.pct is not none %}%{% endif %}</span>
+        </div>
+        {% if m.abs_rows %}
+        <div class="flex flex-wrap gap-1.5 mt-2">
+          {% for a in m.abs_rows %}
+          <span class="badge badge-soft badge-sm font-mono" title="{{ a.hours }} hrs absent">{{ a.date }} · {{ a.hours }}h</span>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% endif %}
-
-    <details class="collapse collapse-arrow bg-base-200 border border-base-300 mb-5">
-      <summary class="collapse-title text-sm font-semibold min-h-0">Monthly breakdown</summary>
-      <div class="collapse-content">
-        <div class="flex flex-col gap-3">
-          {% for m in monthly %}
-          <div class="flex items-center gap-3" title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}">
-            <span class="text-sm w-20 shrink-0 truncate">{{ m.month }}</span>
-            <progress class="progress flex-1 progress-{{ 'success' if (m.pct or 0) >= 75 else 'warning' if (m.pct or 0) >= 65 else 'error' }}"
-                      value="{{ m.pct or 0 }}" max="100" aria-label="{{ m.month }} attendance"></progress>
-            <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct if m.pct is not none else '–' }}{% if m.pct is not none %}%{% endif %}</span>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-    </details>
   </div>
   <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
