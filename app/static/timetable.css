@@ -119,11 +119,11 @@
 .nudR .pn-now{transform:translateX(calc(-50% + 6px))} .nudR .pn-75{transform:translateX(calc(-50% - 6px))}
 .nud2L .pn-now{transform:translateX(calc(-50% - 14px))} .nud2L .pn-75{transform:translateX(calc(-50% + 14px))}
 .nud2R .pn-now{transform:translateX(calc(-50% + 14px))} .nud2R .pn-75{transform:translateX(calc(-50% - 14px))}
-   label is too wide to center that near the pole, so it right-aligns left of
-   "100" (bullet-graph end-label idiom — overlap is impossible at any width) */
+/* pole nudges: |fill−100|<9% → the count label steps left of the pole total
+   (nudP −10px, nud2P −12px below 3%) */
 .nudP .pn-now{transform:translateX(calc(-50% - 10px))}
 .nud2P .pn-now{transform:translateX(calc(-50% - 12px))}
-/* percentage scale under the bar: 0 / current / 75 / 100 */
+/* percentage scale under the bar: threshold marks only (0% start, 75% tick) */
 .pcts{position:relative;height:13px;margin-top:5px;font-size:11.5px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .pct{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
 .pct-0{left:0;transform:none}
