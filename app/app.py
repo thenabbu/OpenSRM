@@ -1393,7 +1393,9 @@ def _course_view(c):
             "t75": math.ceil(ATTENDANCE_TARGET * max_hours),
             "skip_now": skip, "attend_now": attend,
             # fill tint: red = pct < 75 · orange(warn) = pct ≥ 75 AND skip-now == 0 · gray = comfortable
-            "tint": "red" if pct < ATTENDANCE_TARGET * 100 else ("warn" if skip == 0 else "gray")}
+            "tint": "red" if pct < ATTENDANCE_TARGET * 100 else ("warn" if skip == 0 else "gray"),
+            # table view: attended − ceil(0.75·total); None = no classes held (no margin exists)
+            "margin": (attended - math.ceil(ATTENDANCE_TARGET * max_hours)) if max_hours > 0 else None}
 
 def _month_view(m):
     present = _safe_int(m.get("present"))
@@ -1552,8 +1554,24 @@ def index():
     last = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_epoch)) if last_epoch else "never"
 
     hours_old = int((time.time() - last_epoch) / 3600) if last_epoch else None
-    courses = sorted((_course_view(x) for x in data.get("courses", [])), key=lambda c: c["pct"])  # risk-first: lowest % first
-    monthly = [_month_view(x) for x in data.get("monthly", [])]
+    # portal sends a "CLASS IN CHARGE" marker row (code CL) alongside subjects — not a subject, drop it
+    raw = [x for x in data.get("courses", [])
+           if (x.get("code") or "").strip().upper() != "CL"
+           and (x.get("description") or "").strip().upper() != "CLASS IN CHARGE"]
+    courses = sorted((_course_view(x) for x in raw), key=lambda c: c["pct"])  # risk-first: lowest % first
+    # Absences card: one structure per month — the monthly attendance bar with
+    # that month's absence chips directly under it (absence rows join by the
+    # same normalized label _absences_view produces).
+    abs_by_label = {g["label"]: g["rows"] for g in _absences_view(data.get("daily_absent", {}))}
+    monthly = []
+    for m in data.get("monthly", []):
+        v = _month_view(m)
+        label = _title_case(str(m.get("month", "")).replace(" / ", " "))
+        v["label"] = label
+        v["abs_rows"] = abs_by_label.pop(label, [])
+        monthly.append(v)
+    for label, rows in abs_by_label.items():  # degrade: drill-down months with no cumulative row
+        monthly.append({"month": label, "label": label, "pct": None, "abs_rows": rows})
 
     # Extract student name from personal details
     personal_data = _jload(row["personal_details_json"] if row else None, {})
@@ -1610,7 +1628,6 @@ def index():
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly,
         period=_fmt_period(data.get("period")), daily_absent=data.get("daily_absent", {}),
-        absences=_absences_view(data.get("daily_absent", {})),
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),

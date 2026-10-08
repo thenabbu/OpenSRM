@@ -152,6 +152,28 @@ tabButtons.forEach(function(b) {
   });
 })();
 
+// ── Attendance view toggle (graph ↔ table). Persisted in localStorage;
+//    visibility via the `hidden` attribute ONLY (never a Tailwind class).
+(function() {
+  var graph = document.getElementById('att-graph');
+  var table = document.getElementById('att-table');
+  var bg = document.getElementById('att-view-graph');
+  var bt = document.getElementById('att-view-table');
+  if (!graph || !table || !bg || !bt) return;
+  function apply(view) {
+    var isTable = view === 'table';
+    table.hidden = !isTable;
+    graph.hidden = isTable;
+    bt.setAttribute('aria-pressed', isTable ? 'true' : 'false');
+    bg.setAttribute('aria-pressed', isTable ? 'false' : 'true');
+    bt.classList.toggle('btn-active', isTable);
+    bg.classList.toggle('btn-active', !isTable);
+  }
+  try { apply(localStorage.getItem('attView') || 'graph'); } catch (e) { apply('graph'); }
+  bg.addEventListener('click', function() { apply('graph'); try { localStorage.setItem('attView', 'graph'); } catch (e) {} });
+  bt.addEventListener('click', function() { apply('table'); try { localStorage.setItem('attView', 'table'); } catch (e) {} });
+})();
+
 // ── Personal groups: all open on desktop (dense fact-sheet scan), first
 //    group only on mobile (compact lookup — matches the design mockup).
 //    ponytail: evaluated once at load; rotating across the sm breakpoint

@@ -95,8 +95,7 @@
 .mtop{display:flex;align-items:baseline;gap:8px}
 .mname{flex:1 1 auto;min-w:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mpct{flex:0 0 auto;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--color-base-content)}
-.mrows{display:flex;flex-direction:column;gap:14px}
-@media (min-width:768px){.mrows{display:grid;grid-template-columns:1fr 1fr;gap:16px 28px}}
+.mrows{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px 28px}
 /* flat track; faint status tint on the FILL only — red = below 75,
    orange(warn) = pct ≥ 75 AND skip-now == 0, gray = comfortable */
 .meter{position:relative;height:14px;border-radius:2px;background:var(--color-base-300);margin-top:6px}
@@ -120,6 +119,25 @@
 .nudR .pn-now{transform:translateX(calc(-50% + 6px))} .nudR .pn-75{transform:translateX(calc(-50% - 6px))}
 .nud2L .pn-now{transform:translateX(calc(-50% - 14px))} .nud2L .pn-75{transform:translateX(calc(-50% + 14px))}
 .nud2R .pn-now{transform:translateX(calc(-50% + 14px))} .nud2R .pn-75{transform:translateX(calc(-50% - 14px))}
+/* pole nudges: |fill−100|<9% → the count label steps left of the pole total
+   (nudP −10px, nud2P −12px below 3%) */
+.nudP .pn-now{transform:translateX(calc(-50% - 10px))}
+.nud2P .pn-now{transform:translateX(calc(-50% - 12px))}
+/* percentage scale under the bar: threshold marks only (0% start, 75% tick) */
+.pcts{position:relative;height:13px;margin-top:5px;font-size:11.5px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+.pct{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.pct-0{left:0;transform:none}
+/* attendance table view (view-toggle alternative to the meters) */
+.att-table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.att-table th{font-size:10.5px;font-weight:400;text-align:left;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);padding:0 8px 6px 0;border-bottom:1px solid var(--color-base-300)}
+.att-table td{padding:7px 8px 7px 0;border-bottom:1px solid color-mix(in oklab, var(--color-base-300) 50%, transparent);vertical-align:top}
+.att-table tr:last-child td{border-bottom:none}
+.att-table .num{text-align:right;white-space:nowrap}
+.att-table .att-subj{max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:color-mix(in oklab, var(--color-base-content) 80%, transparent)}
+.att-table .att-margin{font-weight:600}
+.att-pos{color:oklch(70% 0.10 163)}
+.att-neg{color:oklch(63% 0.11 25)}
+/* view toggle: pressed state reuses the §4.9 selected-tint convention */
 /* quiet cards: estimates + absences (numbers neutral, labels ≤3 words) */
 .qgrid{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:baseline;font-size:12.5px}
 .qgrid .qhead{font-size:10.5px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);text-align:right;margin-bottom:4px}
@@ -132,3 +150,5 @@
 .qhrs{flex:0 0 auto;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);font-variant-numeric:tabular-nums}
 .att-h{font-size:13px;font-weight:600;margin:18px 0 8px}
 .att-n{font-size:11px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);margin:-4px 0 8px}
+/* absences card: one block per month — bar row + wrapped absence chips under it */
+.att-abs-card .att-month + .att-month{margin-top:14px}

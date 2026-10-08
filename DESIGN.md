@@ -67,7 +67,7 @@ Anatomy of the dashboard:
 │  │ Subjects                                      │   ←  h1, one card of §4.15 meter rows
 │  │ DBMS ▓▓▓▓▓▓░░░│75%  62%  31/38/50  −26        │
 │  └──────────────────────────────────────────────┘
-│  Estimates · Absences · Monthly breakdown        ←  quiet cards (§4.15)
+│  Estimates · Absences (month bar + chips)        ←  quiet cards (§4.15)
 └────────────────────────────────────────────────────┘
 ```
 
@@ -499,21 +499,27 @@ Sits inside `#tab-timetable-view` under the Edit button: a §4.9 accordion (`col
 
 ### 4.15 Attendance meter row (Subjects tab)
 
-Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for attendance**). One primitive per subject, all subjects in ONE `bg-base-200 border border-base-300 rounded-box p-4` card under an `h1` "Subjects", risk-first (lowest % first — server already sorts). The numbers, not a sentence, carry the answer to "can I skip?".
+Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for attendance**). One primitive per subject, all subjects in ONE `bg-base-200 border border-base-300 rounded-box p-4` card under an `h1` "Subjects" + a right-aligned two-icon view toggle (2026-10/v1.15.0: a real segmented control — `join` of `btn btn-sm btn-square` with `btn-active` on the pressed side, bordered base-200 buttons so the control reads as a control; bar-chart = graph view, clean 3-column grid icon = the plain-rows table; `aria-pressed` + `title` on both; choice persists in `localStorage.attView`; visibility via the `hidden` attribute only). Risk-first (lowest % first — server already sorts). The portal's `CL` / "CLASS IN CHARGE" marker row is filtered out server-side in `index()` (not a subject: 2-of-4 hours renders a nonsense 50% meter). The numbers, not a sentence, carry the answer to "can I skip?".
+
+Two label rows sandwich the meter (2026-10/v1.15.0): the **class-count line ABOVE** (`pnums`, unchanged) and the **percentage scale BELOW** (`pcts`: `0%` @0 · `75%` @tick — threshold marks only; the current % is the header `mpct` figure, `100` is the bar's end, both redundant under the bar). Splitting the two lines is what keeps the margin number and the % text from overlapping.
 
 ```html
-<div class="mrow <!--nudge: nudL|nudR|nud2L|nud2R when |fill−75|<9%/<3%-->">
+<div class="mrow <!--nudge: nudL|nudR|nud2L|nud2R when |fill−75|<9%/<3%, nudP|nud2P near the pole-->">
   <div class="mtop"><span class="mname">Course description</span><span class="mpct">62%</span></div>
+  <div class="pnums"><span class="pn pn-now" style="left:62.0%">31</span>
+    <span class="pn pn-75" style="left:75%">38</span><span class="pn pn-tot">50</span></div>
   <div class="meter" role="img" aria-label="Course, 62 percent attended, needs 26 for 75 percent">
     <i class="mz mz--red" style="width:62.0%"></i>   <!-- fill = EXACT 100·A/C, never rounded pct -->
     <i class="mhatch" style="left:62.0%;width:13.0%"></i>
     <i class="mtick"></i>                            <!-- fixed at left:75%, white -->
   </div>
-  <div class="pnums"><span class="pn pn-now" style="left:62.0%">31</span>
-    <span class="pn pn-75" style="left:75%">38</span><span class="pn pn-tot">50</span></div>
+  <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
   <div class="pconn"><i style="left:62.0%;width:13.0%"></i><span style="left:68.5%">26</span></div>
 </div>
 ```
+
+- **Meter grid:** `.mrows` is `repeat(auto-fit, minmax(280px, 1fr))` — bar width stays in a 270–345px band at every viewport; the old hard `min-width:768px` flip snapped bars from 650px to 345px at one pixel (the "75% mark changes width with screen size" report).
+- **Pole collisions (number row only):** at fill ≥ 99.5% `pn-now` drops (attended == total is implied); 91–99% `nudP`/`nud2P` steps the count label left of the pole total. The % scale needs no collision handling: `0%` and `75%` are fixed marks 75 percentage points apart.
 
 - **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always. **Values are the faint approved-mockup tints — `oklch(58% 0.115 25)` / `oklch(63% 0.115 68)`** — NOT the `--color-error`/`--color-warning` theme tokens: those are full-saturation and pull the eye (attention review R1; the timetable `.tt-riskbar`/hero rims use the same faint values).
 - **Pinned numbers:** attended @fill%, `ceil(0.75·C)` @75% (38 when C=50), total @right pole. `pnums`/`pconn` alphas are ladder steps only (50%/60% via `color-mix`); the connector's action number is `base-content` (100%) punched out on `base-200`.
@@ -521,7 +527,7 @@ Replaces the old status-card grid + overall hero (§4.3/§4.4 are **retired for 
 - **Nudges** (±6px <9%, ±14px <3%) separate the `pn-now`/`pn-75` labels near the tick; they nudge AWAY from each other (`nudL`/`nud2L` when fill < 75, `nudR`/`nud2R` when fill > 75).
 - **Degrade, never fake:** C=0 → no meter at all (row skipped); w=0 → budgets hidden from Estimates; no exams → Estimates endsem column `--`; unmatched/custom in the timetable → neutral "no data", NEVER a numeric 0%.
 - **CSS lives in `app/static/timetable.css`** under the `/* ── Attendance meter row */` banner — every color a `var(--color-*)` token or `color-mix` ladder step; no badges, no uppercase, no gradients (the hatch is the one sanctioned pattern), one divider style, labels ≤3 words, no sentence over 8 words.
-- **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and `qlist` absences rows `date · hours` ONLY (no subject column — `daily_absent` carries none), **month-grouped under quiet `.qlabel` subheads** (review R4: the flat list read dry). Monthly breakdown is demoted verbatim into a `<details>` under them.
+- **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and ONE merged Absences card (2026-10, v1.13.0): one `.att-month` block per month — the monthly attendance `progress` bar with that month's absence chips (`date · Nh`, `badge badge-soft badge-sm font-mono`) wrapped directly beneath it; the old standalone "Monthly breakdown" `<details>` is gone (its rows ARE the card). `date · hours` ONLY still — no subject column (daily_absent rows carry none). Months with a drill-down but no cumulative row degrade to a chip-only block.
 - **Attention budget:** the meter row is attention-budget-compliant by construction — grayscale default, hue only on the fill of a deviation, numbers neutral, no aggregate anywhere (no overall %, no overall bunk line, no summed totals).
 
 Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.tt-riskbar` rim is the **sole can-be-missed indicator** (faint danger/warn tints, same values as the meter fills) and the bare action number in `.tt-sig` is data — the shape glyph was removed (two indicators for one fact). The today's-slot hero is a quiet card: `Now · ends HH:MM` at /50, Title-Case subject, and ONE loud object — the 22px `tt-hero-num` stat; hue appears only on the faint left rim when the stat is a deviation. No dot, no "Now" chip. Unmatched/custom slots render neutral "no data" at `opacity .5`. Subject names are Title-Cased at render (`_title_case`: ALL-CAPS portal names only; custom mixed-case names untouched; join keys still go through `_norm_subject`).
