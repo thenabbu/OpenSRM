@@ -1467,8 +1467,13 @@ def _security_headers(resp):
 def _faculty_view(faculty_map, courses):
     """Stored faculty map + scraped courses -> sorted card rows.
     {} / no staff entries -> [] (card hidden). Joins the feedback form's
-    subject NAME to the scraped course CODE via whitespace-normalised match."""
-    _by_name = {" ".join(c["name"].split()).upper(): c["code"] for c in courses}
+    subject NAME to the scraped course CODE via whitespace-normalised match.
+
+    Course rows come from attendance_json, whose real shape is `description`
+    (seen live Oct 8 2026: KeyError 'name' 500'd every dashboard); `name` is
+    the test-seed shape — accept both."""
+    _by_name = {" ".join((c.get("name") or c.get("description") or "").split()).upper():
+                c.get("code", "") for c in courses}
     out = []
     for name, entry in faculty_map.items():
         staff = [(sid, " ".join(nm.split("-")[0].split()).title(),

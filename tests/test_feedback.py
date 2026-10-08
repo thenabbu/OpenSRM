@@ -108,6 +108,17 @@ check("sorted by name", [r["name"] for r in fv] == ["Data Structures And Algorit
 check("code joined", fv[0]["code"] == "21CSC201J" and fv[1]["code"] == "21LEM201T", repr(fv))
 check("staff title-cased", fv[0]["staff"][0][1] == "Dr.Priyanka Gupta", repr(fv[0]["staff"]))
 check("kind split", fv[0]["staff"][0][2] == "Theory", repr(fv[0]["staff"]))
+# prod regression (Oct 8 2026): real attendance_json courses carry `description`,
+# not `name` — c["name"] KeyError'd every dashboard load for users with any
+# attendance data (dictcomp runs even with an empty faculty map)
+fv2 = _faculty_view({}, [{"code": "21CSC201J", "description": "DATA STRUCTURES AND ALGORITHMS",
+                          "absent": 2, "attended": 30, "max_hours": 40}])
+check("prod course shape (description) — no KeyError, empty map -> []",
+      fv2 == [], repr(fv2))
+fv3 = _faculty_view({"Data Structures And Algorithms": {"staff": [["9", "Dr. X-Theory"]]}},
+                    [{"code": "21CSC201J", "description": "DATA STRUCTURES AND ALGORITHMS"}])
+check("prod course shape joins code via description",
+      fv3 and fv3[0]["code"] == "21CSC201J", repr(fv3))
 check("empty map -> []", _faculty_view({}, courses) == [])
 check("empty courses -> blank codes", _faculty_view(fmap, [])[0]["code"] == "")
 # whitespace drift between the form name and the scraped name must still join
@@ -158,5 +169,5 @@ j = r2.get_json() or {}
 check("no feedback data -> 400", r2.status_code == 400 and not j.get("ok"),
       f"status={r2.status_code} body={j}")
 
-print(f"\n{38 - len(FAILS)}/{38} passed" if not FAILS else f"\nFAILED: {FAILS}")
+print(f"\n{40 - len(FAILS)}/40 passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
