@@ -14,12 +14,18 @@ os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="fb-test-"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from app.app import _faculty_view  # noqa: E402
-from app.http_scraper import _fb_common, _fb_registered, _fb_staff_options, _fb_subjects  # noqa: E402
+from app.http_scraper import (DEFAULT_FB_QIDS, _fb_common,  # noqa: E402
+                            _fb_question_ids, _fb_registered,
+                            _fb_staff_options, _fb_subjects)
 
 FAILS = []
 
 
+TOTAL = [0]  # dynamic — a hardcoded 40 silently mis-reports after any added check
+
+
 def check(name, cond, detail=""):
+    TOTAL[0] += 1
     if cond:
         print(f"  ok  {name}")
     else:
@@ -90,6 +96,15 @@ check("SAVED value-before-id", _fb_registered(SAVED) is True, "value-before-id f
 check("id-first value=1", _fb_registered('<input type="hidden" id="hdnRegisterFeedBack" value="1" />') is True)
 check("value=0", _fb_registered('<input type="hidden" id="hdnRegisterFeedBack" value="0" />') is False)
 check("open form", _fb_registered(NOT_REGISTERED) is False)
+
+print("== _fb_question_ids ==")
+check("live ids extracted", _fb_question_ids(
+    '<input type="hidden" name="hiddenQuestionId" value="23,24,25," />') == "23,24,25,")
+check("value-before-name", _fb_question_ids(
+    '<input type="hidden" value="30,31," name="hiddenQuestionId" />') == "30,31,")
+check("absent -> None (fallback to default set)", _fb_question_ids("<div>no hidden fields</div>") is None)
+check("default set covers 14 questions",
+      len([x for x in DEFAULT_FB_QIDS.split(",") if x.strip()]) == 14)
 
 print("== _faculty_view ==")
 fmap = {
@@ -173,5 +188,5 @@ j = r2.get_json() or {}
 check("no feedback data -> 400", r2.status_code == 400 and not j.get("ok"),
       f"status={r2.status_code} body={j}")
 
-print(f"\n{40 - len(FAILS)}/40 passed" if not FAILS else f"\nFAILED: {FAILS}")
+print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)

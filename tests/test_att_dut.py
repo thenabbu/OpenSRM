@@ -37,6 +37,11 @@ def main():
         {"code": "21DCS201P", "description": "DESIGN THINKING AND METHODOLOGY", "max_hours": "30", "attended": "26", "absent": "4"},
         {"code": "21LEM201T", "description": "PROFESSIONAL ETHICS", "max_hours": "11", "attended": "10", "absent": "1"},
         {"code": "21MAB206T", "description": "NUMERICAL METHODS AND ANALYSIS", "max_hours": "44", "attended": "38", "absent": "6"},
+        # pole-band boundaries (dpol<9): the class of data the pre-v1.15.1
+        # overlap check never seeded — 119/120 etc. overlapped by up to 13.5px
+        {"code": "21ECE301T", "description": "SIGNALS AND SYSTEMS", "max_hours": "120", "attended": "118", "absent": "2"},
+        {"code": "21ECE302T", "description": "ELECTROMAGNETIC THEORY", "max_hours": "100", "attended": "99", "absent": "1"},
+        {"code": "21MAT301T", "description": "ENGINEERING MATHEMATICS III", "max_hours": "55", "attended": "54", "absent": "1"},
         {"code": "CL", "description": "CLASS IN CHARGE", "max_hours": "4", "attended": "2", "absent": "2"},
     ],
         "period": {"from": "20/Jul/2026", "to": "07/Oct/2026"},
@@ -107,8 +112,10 @@ def main():
         check("row order: mtop, pnums, meter, pcts[, pconn]",
               r["kids"][:4] == ["mtop", "pnums", "meter", "pcts"], str(r["kids"]))
 
-        # 5) zero same-row label overlaps (both rows, both viewports checked at 393 here)
-        r = page.evaluate("""() => {
+        # 5) zero same-row label overlaps — BOTH viewports, and the seed
+        # carries pole-band rows (118/120, 99/100, 54/55) so the near-100%
+        # band the v1.15.0 nudge mis-handled is actually exercised
+        SCAN = """() => {
           const bad = [];
           document.querySelectorAll('.mrow').forEach(row => {
             ['.pn', '.pct'].forEach(sel => {
@@ -125,8 +132,28 @@ def main():
             });
           });
           return bad;
-        }""")
+        }"""
+        r = page.evaluate(SCAN)
         check("zero label overlaps at 393", r == [], str(r))
+        page.set_viewport_size({"width": 320, "height": 851})
+        r = page.evaluate(SCAN)
+        check("zero label overlaps at 320", r == [], str(r))
+        # pole band renders ONE right-anchored `attended / total` cluster
+        r = page.evaluate("""() => {
+          const rows = [...document.querySelectorAll('.mrow')];
+          const pole = rows.find(x => x.querySelector('.pn-tot')?.textContent.includes(' / '));
+          if (!pole) return {found: false};
+          const cluster = pole.querySelector('.pn-tot');
+          const b = cluster.getBoundingClientRect();
+          const row = pole.getBoundingClientRect();
+          return {found: true, now: !!pole.querySelector('.pn-now'),
+                  rightGap: Math.round((row.right - b.right) * 10) / 10,
+                  text: cluster.textContent.trim()};
+        }""")
+        check("pole rows use attended/total cluster, no pn-now, right-anchored",
+              r.get("found") and not r.get("now") and r.get("rightGap", 99) <= 1
+              and " / " in r.get("text", ""), str(r))
+        page.set_viewport_size({"width": 393, "height": 851})
 
         # 6) absences card: month blocks = bar + chips; no <details> Monthly breakdown
         r = page.evaluate("""() => {
@@ -142,6 +169,41 @@ def main():
               and r["chips"] >= 9, str(r))
         check("no standalone Monthly breakdown <details>", r["details"] == 0, str(r))
 
+        # 6b) fallback month (daily_absent key with NO monthly row) must render
+        # chips only — never a fake red 0% bar / empty tooltip (DESIGN §4.15)
+        import json as _json
+        c2u = A.db()  # the seed connection `c` is closed above
+        att2 = _json.loads(c2u.execute("SELECT attendance_json FROM users WHERE netid='ng2776'").fetchone()[0])
+        att2["daily_absent"]["NOV / 2026"] = [{"date": "05-11-2026", "hours": "1"}]
+        att2["daily_absent"]["JUNK KEY"] = [{"date": "06-11-2026", "hours": "2"}]
+        c2u.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'", (_json.dumps(att2),))
+        c2u.commit(); c2u.close()
+        page.reload()
+        r = page.evaluate("""() => {
+          const months = [...document.querySelectorAll('.att-month')];
+          const nov = months.find(m => m.textContent.includes('Nov 2026'));
+          const junk = months.find(m => m.textContent.includes('Junk Key'));
+          const bar = m => m ? m.querySelector('progress') : null;
+          return {novBars: bar(nov) ? 1 : 0, novChips: nov ? nov.querySelectorAll('.badge').length : 0,
+                  junkBars: bar(junk) ? 1 : 0, junkChips: junk ? junk.querySelectorAll('.badge').length : 0,
+                  fake0: months.filter(m => { const p = bar(m); return p && p.value == 0; }).length};
+        }""")
+        check("fallback month: chips only, no bar, no fake 0% anywhere",
+              r["novBars"] == 0 and r["novChips"] >= 1 and r["junkBars"] == 0
+              and r["junkChips"] >= 1 and r["fake0"] == 0, str(r))
+
+        # 6c) no timetable -> zero budgets -> the WHOLE Estimates block hidden
+        # (v1.15.0 rendered a header-only card under a note promising budgets)
+        c3u = A.db()  # c2u was closed at the end of 6b
+        c3u.execute("DELETE FROM timetable_slots")
+        c3u.commit(); c3u.close()
+        page.reload()
+        r = page.evaluate("""() => {
+          const heads = [...document.querySelectorAll('.att-h')].map(h => h.textContent.trim());
+          return {heads, estimates: heads.includes('Estimates')};
+        }""")
+        check("no timetable -> Estimates block hidden entirely", not r["estimates"], str(r))
+
         # 7) portal's CL / CLASS IN CHARGE junk row is filtered from both views
         r = page.evaluate("""() => {
           const names = [...document.querySelectorAll('.mrow .mname')].map(e => e.textContent.trim());
@@ -151,7 +213,7 @@ def main():
         junk_names = [n for n in r["names"] if "CLASS IN CHARGE" in n.upper()]
         junk_codes = [c for c in r["codes"] if c == "CL"]
         check("CL / CLASS IN CHARGE filtered from meters + table",
-              not junk_names and not junk_codes and r["meters"] == 7 and r["rows"] == 7, str(r))
+              not junk_names and not junk_codes and r["meters"] == 10 and r["rows"] == 10, str(r))
 
         ctx.close()
         b.close()

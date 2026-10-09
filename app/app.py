@@ -645,15 +645,6 @@ def _parse_component_inner(html):
     return comps
 
 
-def _fb_submit_comments():
-    """Deprecated pool kept ONLY so existing test imports resolve; unused.
-
-    ponytail: comment is now the literal "none" (optional field, user spec) —
-    delete this stub when tests are updated in the same release.
-    """
-    return ("none",)
-
-
 def parse_exam_schedule(html):
     """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
     validate against the official dropdown) -> end-sem exam rows.
@@ -970,7 +961,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         # Photo: removed Sep 25 2026 — unused in any workflow (blobatar avatars instead)
 
         content_html = parallel_html.get("9", "")
-        if "youLogin" in content_html or "Login" in content_html[:2000] and "captcha" in content_html.lower():
+        if "youLogin" in content_html or ("Login" in content_html[:2000] and "captcha" in content_html.lower()):
             # Session silently expired mid-scrape — relogin and refetch
             _clear_session(netid)
             ok, err = await _do_login(page, ctx, netid, password)
@@ -1106,11 +1097,16 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             log.warning("marks/component parse failed — marks render empty: %r", e)
 
         # End-sem schedule: official 126 table wins; scribe rows fill the rest.
-        # Key always present: the Playwright path has no probe fallback, so an
-        # empty table overwrites like a clean scribe empty would upstream.
+        # Key present ONLY when the merge produced rows — same contract as
+        # http_scraper.fetch (omit = preserve stored schedule). An absent/
+        # unparseable table returns None; storing it would write the literal
+        # "null" over exam_schedule_json and wipe the card (Oct-4 never-wipe rule).
         from app.http_scraper import _merge_exam_results
         exams = _merge_exam_results([], official_html=parallel_html.get("126", ""))
-        return {"ok": True, "data": data, "personal": personal, "photo": "", "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time()), "exams": exams}
+        out = {"ok": True, "data": data, "personal": personal, "courses": courses, "marks": marks, "subjects": subject_map, "fetched": int(time.time())}
+        if exams is not None:
+            out["exams"] = exams
+        return out
     finally:
         # Don't close persistent context — keep alive for next request
         pass
@@ -1160,11 +1156,13 @@ def fetch_attendance(netid, password):
             from . import http_scraper
         except ImportError as e:
             # audit 2026-10-07: the HTTP pipeline going silently missing doubled
-            # every sync's latency with no log line — first ERROR call in the repo
+            # every sync's latency with no log line — log the cause loudly
             log.error("http_scraper unavailable — playwright-only mode: %r", e)
             http_scraper = None
-        log.debug("pipeline=http netid=%s", netid)
         if http_scraper:
+            # only on the HTTP path — this line printed pipeline=http even on
+            # the exact ImportError path where http_scraper is None
+            log.debug("pipeline=http netid=%s", netid)
             try:
                 # Consume any warm login the browser preflighted while the
                 # user was typing their password (single-use, 150s TTL).
@@ -1370,22 +1368,16 @@ def _join_attendance(index, custom_codes, code, name):
         return None  # a custom subject typed with a portal-matching name must never join
     return index["by_code"].get(code) or index["by_name"].get(_norm_subject(name))
 
-def _fmt_period(p):
-    """Portal period comes as {'from': '20/Jul/2026', 'to': '25/Sep/2026'} — render readable."""
-    if not p or not isinstance(p, dict):
-        return p or ""
-    f, t = p.get("from", ""), p.get("to", "")
-    return f"{f} – {t}" if f and t else (f or t or "")
-
 def _course_view(c):
     attended = _safe_int(c.get("attended"))
     max_hours = _safe_int(c.get("max_hours"))
-    absent = _safe_int(c.get("absent"))
     pct = min(100.0, round((attended / max_hours) * 100, 1)) if max_hours > 0 else 0.0
     skip, attend = _bunk_counts(attended, max_hours)
+    # status/absent outputs dropped: grep showed no template/route consumer —
+    # the monthly bar's band lives on the MONTH dict now (_month_view)
     return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
-            "max_hours": max_hours, "attended": attended, "absent": absent,
-            "pct": pct, "status": _status_for_pct(pct), "bunk_line": _bunk_line(attended, max_hours),
+            "max_hours": max_hours, "attended": attended,
+            "pct": pct, "bunk_line": _bunk_line(attended, max_hours),
             # meter-row fields (spec §1.1): display 0dp, fill EXACT A/C [F12],
             # pct_disp None = `--` (C = 0 holds nothing → no fill, no pinned numbers)
             "pct_disp": int(pct + 0.5) if max_hours > 0 else None,
@@ -1397,12 +1389,17 @@ def _course_view(c):
             # table view: attended − ceil(0.75·total); None = no classes held (no margin exists)
             "margin": (attended - math.ceil(ATTENDANCE_TARGET * max_hours)) if max_hours > 0 else None}
 
+_BAND_BAR = {"ok": "success", "warn": "warning", "danger": "error"}
+
 def _month_view(m):
     present = _safe_int(m.get("present"))
     absent = _safe_int(m.get("absent"))
     total = present + absent
     out = dict(m)
     out["pct"] = round((present / total) * 100, 1) if total > 0 else None
+    # bar class derived in Python from the ONE threshold source — the old
+    # template ternary re-typed >=75/>=65 as a second copy of _status_for_pct
+    out["bar"] = _BAND_BAR[_status_for_pct(out["pct"])] if out["pct"] is not None else None
     return out
 
 
@@ -1416,17 +1413,23 @@ def _log_request(resp):
     duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
     # audit 2026-10-07: 86% of the log file was the docker healthcheck's
     # urllib GET pair (66,003 of 76,857 lines) — synthetic traffic now logs
-    # at DEBUG. Real >=400 responses log at WARNING with the error body,
-    # so every failure carries its cause on the request line itself.
+    # at DEBUG. Real 4xx responses log at WARNING with the error body, 5xx at
+    # ERROR (NtfyHandler pages on ERROR/5xx, never on routine 4xx) — every
+    # failure carries its cause on the request line itself.
     ua = request.headers.get("user-agent", "")
-    if resp.status_code >= 400 and not ua.startswith("Python-urllib"):
+    if resp.status_code >= 400:
         kv = dict(method=request.method, path=request.path,
                   status=resp.status_code, duration_ms=duration_ms)
         body = resp.get_json(silent=True)
         err = (body or {}).get("error") if isinstance(body, dict) else None
         if err:
             kv["error"] = str(err)[:120]
-        log_with_kv(log_http, logging.WARNING, "request", **kv)
+        # 5xx is a real fault: ALWAYS ERROR (NtfyHandler pages on ERROR/5xx),
+        # even from a urllib monitor — healthcheck 4xx noise stays DEBUG.
+        lvl = (logging.ERROR if resp.status_code >= 500
+               else logging.WARNING if not ua.startswith("Python-urllib")
+               else logging.DEBUG)
+        log_with_kv(log_http, lvl, "request", **kv)
     else:
         lvl = logging.DEBUG if ua.startswith("Python-urllib") else logging.INFO
         log_with_kv(log_http, lvl, "request",
@@ -1442,8 +1445,18 @@ def _unhandled_error(e):
     parser crashes surfaced as a bare Flask 500 with no opensrm.* line)."""
     if isinstance(e, HTTPException):
         return e
-    log.error("unhandled error path=%s method=%s", request.path, request.method,
+    # error=%r rides getMessage() — the ntfy alert carries only the message,
+    # so path/method alone told WHERE the crash was, never WHAT.
+    log.error("unhandled error path=%s method=%s error=%r", request.path, request.method, e,
               exc_info=(type(e), e, e.__traceback__))
+    # browsers navigating a page must not be handed a raw JSON body; fetch()
+    # callers (Accept: application/json first) keep the JSON contract
+    if request.accept_mimetypes.best == "text/html":
+        return ("<!doctype html><html lang=en><meta charset=utf-8>"
+                "<title>500 — something broke</title><h1>Something went wrong</h1>"
+                "<p>Reload the page. If it keeps failing, the error is logged "
+                "with this path and will show up on the next sync.</p>"), 500, \
+               {"Content-Type": "text/html; charset=utf-8"}
     return {"ok": False, "error": "internal server error"}, 500
 
 @app.after_request
@@ -1465,7 +1478,7 @@ def _security_headers(resp):
 
 # ── HTML Templates ─────────────────────────────────────────────────
 
-# ── Routes ─────────────────────────────────────────────────────────
+# ── Faculty card / feedback plan (view helpers, not routes) ────────
 def _faculty_view(faculty_map, courses):
     """Stored faculty map + scraped courses -> sorted card rows.
     {} / no staff entries -> [] (card hidden). Joins the feedback form's
@@ -1537,7 +1550,12 @@ def _track(event, target="", detail="", user=""):
                   (time.strftime("%Y-%m-%d"), user, event, target[:64], detail[:64]))
         c.commit(); c.close()
     except Exception as e:
-        log.debug("usage track failed event=%s: %r", event, e)  # telemetry must never break a request
+        # INFO, not debug: a permanently broken usage_events table (lock
+        # errors, missed migration on a restored backup) used to fail forever
+        # with zero trace at prod LOG_LEVEL=INFO — the silent-failure class
+        # the reliability audit outlawed. Telemetry failing must stay visible;
+        # telemetry working stays quiet.
+        log.info("usage track failed event=%s error=%r", event, e)
 
 # ── Routes ─────────────────────────────────────────────────
 @app.route("/")
@@ -1545,7 +1563,8 @@ def _track(event, target="", detail="", user=""):
 def index():
     netid = get_current_user()
     c = db()
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json FROM users WHERE netid=?", (netid,)).fetchone()
+    # one row read: marks/faculty live on the same users row (was three queries)
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
@@ -1571,6 +1590,9 @@ def index():
         v["abs_rows"] = abs_by_label.pop(label, [])
         monthly.append(v)
     for label, rows in abs_by_label.items():  # degrade: drill-down months with no cumulative row
+        # pct None = chip-only block (template skips the bar entirely — a
+        # fallback month must never render as a numeric 0% / fake red bar,
+        # DESIGN §4.15; a junk daily_absent key lands here as label+chips too)
         monthly.append({"month": label, "label": label, "pct": None, "abs_rows": rows})
 
     # Extract student name from personal details
@@ -1578,28 +1600,20 @@ def index():
     student_name = personal_data.get("Student Name", "").title()
 
     # Marks: server-rendered (tab + dashboard widget). Re-synced hot data.
-    c2 = db()
-    mrow = c2.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
-    c2.close()
-    marks_raw = _jload(mrow["marks_json"] if mrow else None, [])
+    marks_raw = _jload(row["marks_json"] if row else None, [])
     marks_view = _marks_view(marks_raw,
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
-    # End-sem schedule card (leaked ScribeInner probe; None -> card hidden).
-    # Rows are kept: _exam_stop needs the raw dates for the budget horizon (spec §1.2).
+    # End-sem schedule card (official iden=126 table primary, scribe probe as
+    # fallback; None -> card hidden). Rows are kept: _exam_stop needs the raw
+    # dates for the budget horizon (spec §1.2).
     exam_rows = _jload(row["exam_schedule_json"] if row else None, [])
     exams = _exams_view(exam_rows)
 
     # Faculty map card (harvested from the mid-sem feedback form; {} -> hidden).
     # Keyed by subject NAME — the feedback form carries no subject codes.
-    c3 = db()
-    frow = c3.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
-    c3.close()
-    try:
-        faculty_map = json.loads(frow["faculty_map_json"]) if frow and frow["faculty_map_json"] else {}
-    except (ValueError, TypeError):
-        faculty_map = {}
+    faculty_map = _jload(row["faculty_map_json"] if row else None, {})
     faculty_view = _faculty_view(faculty_map, data.get("courses", []))
     # Preview of what the opt-in fill would submit (same builder as the endpoint).
     fb_plan = _fb_plan(faculty_map)
@@ -1614,6 +1628,9 @@ def index():
         c["w"] = weekly.get(c["code"], 0)
         c.update(_attendance_budgets(c["attended"], c["max_hours"], c["w"],
                                      data.get("period"), exam_rows, today))
+    # no timetable -> no budgets anywhere -> the Estimates card would render
+    # header-only (empty-state rule DESIGN §8); hide the whole block instead
+    has_budgets = any(c.get("m90") is not None or c.get("m_end") is not None for c in courses)
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
     dash = {
         "email": personal_data.get("Personal Email ID", "") or netid,
@@ -1627,11 +1644,10 @@ def index():
 
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly,
-        period=_fmt_period(data.get("period")), daily_absent=data.get("daily_absent", {}),
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
-        last=last, last_epoch=last_epoch, hours_old=hours_old, has_data=bool(courses),
+        last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         version=APP_VERSION,
@@ -1741,7 +1757,7 @@ def _week_updates(daily_absent):
             "today_absent": any(h["date"] == today.strftime("%d-%m-%Y") for h in hits)}
 
 def _tt_att_sig(course):
-    """One glance signal for a timetable slot (spec §1.B): shape glyph carries the
+    """One glance signal for a timetable slot (spec §1.B): the text carries the
     meaning, colour only reinforces. None → neutral "no data", never a numeric 0%."""
     if not course or course.get("max_hours", 0) <= 0:
         return None
@@ -1749,23 +1765,23 @@ def _tt_att_sig(course):
     if skip is None and attend is None:
         return None
     if attend is not None:
-        return {"cls": "danger", "icon": "x", "text": "attend %d" % attend, "num": attend}
+        return {"cls": "danger", "text": "attend %d" % attend, "num": attend}
     if skip == 0:
-        return {"cls": "warn", "icon": "tri", "text": "no margin", "num": 0}
-    return {"cls": "ok", "icon": "check", "text": "can skip %d" % skip, "num": skip}
+        return {"cls": "warn", "text": "no margin", "num": 0}
+    return {"cls": "ok", "text": "can skip %d" % skip, "num": skip}
 
 def timetable_html(group_key, attendance=None):
     if not group_key:
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
-                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
+                ""
                 "<div><strong>No timetable found</strong>"
                 "<div class=\"tt-hero-sub\">No timetable exists for your group yet.</div></div></div></div>")
     c = db()
     gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
     if not gid:
         c.close()
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
-                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
+                ""
                 "<div><strong>No timetable set</strong>"
                 "<div class=\"tt-hero-sub\">Your group has no timetable. Use the editor to build one.</div></div></div></div>")
     gid = gid[0]
@@ -1792,8 +1808,8 @@ def timetable_html(group_key, attendance=None):
     # If no slots at all, show empty state
     has_slots = any(day_slots.get(d) for d in DAY_ORDER)
     if not has_slots:
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero tt-hero--off\">"
-                "<span class=\"tt-hero-dot tt-hero-dot--off\"></span>"
+        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
+                ""
                 "<div><strong>Timetable empty</strong>"
                 "<div class=\"tt-hero-sub\">Use the editor to map out your schedule.</div></div></div></div>")
     # Build today's slots for hero
@@ -1843,7 +1859,7 @@ def timetable_html(group_key, attendance=None):
                 "<div class=\"tt-hero-loc\">{loc}</div></div>").format(
             **{**hero_status, "name": _title_case(hero_status["name"])})
     else:
-        hero = ("<div class=\"tt-hero tt-hero--off\"><strong>No classes today</strong></div>")
+        hero = ("<div class=\"tt-hero\"><strong>No classes today</strong></div>")
     # Day tabs + panels
     default_day = today if today in DAY_ORDER else "Monday"
     radios = "".join("<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(d, " checked" if d == default_day else "") for d in DAY_ORDER)
@@ -1927,10 +1943,7 @@ def api_feedback_fill():
     c = db()
     row = c.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
-    try:
-        fmap = json.loads(row["faculty_map_json"]) if row and row["faculty_map_json"] else {}
-    except (ValueError, TypeError):
-        fmap = {}
+    fmap = _jload(row["faculty_map_json"] if row else None, {})
     plan = _fb_plan(fmap)
     if not plan:
         return {"ok": False, "error": "no feedback data yet — sync first"}, 400
@@ -2258,6 +2271,42 @@ def login():
     if get_current_user(): return redirect("/")
     return render_template("login.html", version=APP_VERSION)
 
+def _merge_fetch_result(existing, res):
+    """preserve-if-empty merge shared by /api/login and /api/refresh (audit B6).
+
+    An absent/empty fetch key must never clobber stored data: parse failures
+    return marks=[] / personal={} with ok=True. The two routes had separate
+    copies of this contract and drifted — refresh was missing the subjects
+    preserve, so a hot-only refresh wiped stored subjects_json on the exact
+    marks-page failure that preserved marks_json. One copy now.
+    `existing` = current users row (dict row, or None on first fetch).
+    Returns (personal_json, marks_json, subjects_json, exams_json,
+    faculty_json, exam_events)."""
+    def _col(key, col):
+        if res.get(key):
+            return json.dumps(res[key])
+        if existing and existing[col]:
+            return existing[col]   # transition events read PRE-write rows
+        return json.dumps({"personal": {}, "marks": [], "subjects": {}}[key])
+    personal_json = _col("personal", "personal_details_json")
+    marks_json = _col("marks", "marks_json")
+    subjects_json = _col("subjects", "subjects_json")
+    # exams: key absent (probe unreliable / Playwright fallback) -> preserve stored
+    if "exams" in res:
+        exams_json = json.dumps(res["exams"])
+        exam_events = _exam_events(existing["exam_schedule_json"] if existing else None,
+                                   res["exams"])
+    else:
+        exams_json = (existing["exam_schedule_json"] if existing and existing["exam_schedule_json"] else "[]")
+        exam_events = []
+    # faculty map: key absent (window closed / harvest failed) -> preserve stored
+    if "faculty" in res:
+        faculty_json = json.dumps(res["faculty"])
+    else:
+        faculty_json = (existing["faculty_map_json"] if existing and existing["faculty_map_json"] else "{}")
+    return personal_json, marks_json, subjects_json, exams_json, faculty_json, exam_events
+
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     # audit: no force=True — require real application/json content-type
@@ -2304,38 +2353,11 @@ def api_login():
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
     c = db()
-    # Hot/cold: on hot-only syncs, personal/subjects are empty — preserve the stored cold data instead of clobbering.
+    # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
+    # (single shared contract — see _merge_fetch_result)
     existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
-    personal_json = json.dumps(res.get("personal", {}))
-    subjects_json = json.dumps(res.get("subjects", {}))
-    # audit B6: preserve stored marks on empty — a parse failure returns
-    # marks=[] with ok=True and used to wipe stored marks silently
-    marks_json = json.dumps(res.get("marks", []))
-    if not res.get("marks") and existing and existing["marks_json"]:
-        marks_json = existing["marks_json"]
-    if not res.get("personal") and existing and existing["personal_details_json"]:
-        personal_json = existing["personal_details_json"]
-    if not res.get("subjects") and existing and existing["subjects_json"]:
-        subjects_json = existing["subjects_json"]
-    # exams: key absent (probe unreliable / Playwright fallback) -> preserve stored
-    if "exams" in res:
-        exams_json = json.dumps(res["exams"])
-        # transition detection reads PRE-write rows (old value still stored)
-        exam_events = _exam_events(existing["exam_schedule_json"] if existing else None,
-                                   res["exams"])
-    elif existing and existing["exam_schedule_json"]:
-        exams_json = existing["exam_schedule_json"]
-        exam_events = []
-    else:
-        exams_json = "[]"
-        exam_events = []
-    # faculty map: key absent (window closed / harvest failed) -> preserve stored
-    if "faculty" in res:
-        faculty_json = json.dumps(res["faculty"])
-    elif existing and existing["faculty_map_json"]:
-        faculty_json = existing["faculty_map_json"]
-    else:
-        faculty_json = "{}"
+    (personal_json, marks_json, subjects_json, exams_json, faculty_json,
+     exam_events) = _merge_fetch_result(existing, res)
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json) VALUES(?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
@@ -2401,32 +2423,10 @@ def api_refresh():
         code = _login_error_code(res["error"])
         return {"ok": False, "error": res["error"]}, code
     c = db()
-    # Hot/cold: preserve cold data on hot-only refresh (personal unchanged if not fetched)
-    row2 = c.execute("SELECT personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
-    personal_json = json.dumps(res.get("personal", {}))
-    if not res.get("personal") and row2 and row2["personal_details_json"]:
-        personal_json = row2["personal_details_json"]
-    # audit B6: same preserve-if-empty contract as login
-    marks_json = json.dumps(res.get("marks", []))
-    if not res.get("marks") and row2 and row2["marks_json"]:
-        marks_json = row2["marks_json"]
-    # exams: absent key -> preserve stored (same contract as login upsert above)
-    if "exams" in res:
-        exams_json = json.dumps(res["exams"])
-        exam_events = _exam_events(row2["exam_schedule_json"] if row2 else None, res["exams"])
-    elif row2 and row2["exam_schedule_json"]:
-        exams_json = row2["exam_schedule_json"]
-        exam_events = []
-    else:
-        exams_json = "[]"
-        exam_events = []
-    # faculty map: absent key -> preserve stored (same contract as login upsert)
-    if "faculty" in res:
-        faculty_json = json.dumps(res["faculty"])
-    elif row2 and row2["faculty_map_json"]:
-        faculty_json = row2["faculty_map_json"]
-    else:
-        faculty_json = "{}"
+    # Hot/cold + audit B6: same single preserve contract as login
+    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    (personal_json, marks_json, subjects_json, exams_json, faculty_json,
+     exam_events) = _merge_fetch_result(row2, res)
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
                marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
@@ -2495,18 +2495,27 @@ def api_login_progress():
     return {"step": p["step"], "pct": p["pct"]} if p else {"step": "", "pct": 0}
 
 # ── Timetable API ───────────────────────────────────────────────
-@app.route("/api/timetable", methods=["GET"])
-def api_get_timetable():
-    netid = get_current_user()
-    if not netid: return {"ok": False, "error": "not logged in"}, 401
-    personal = {}
+def _load_personal(netid):
+    """personal_details_json for a netid; corrupt/missing row -> {}.
+
+    One shared decode — was copy-pasted (with a different comment) across the
+    three timetable routes."""
     try:
         c = db()
         r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
         c.close()
-        if r and r[0]: personal = json.loads(r[0])
+        v = json.loads(r[0]) if r and r[0] else {}
+        return v if isinstance(v, dict) else {}
     except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
         log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
+        return {}
+
+
+@app.route("/api/timetable", methods=["GET"])
+def api_get_timetable():
+    netid = get_current_user()
+    if not netid: return {"ok": False, "error": "not logged in"}, 401
+    personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "slots": {}, "subjects": [], "group_key": None}
     c = db()
@@ -2550,14 +2559,7 @@ def api_timetable_history():
     """Edit log for the caller's own group (classmates share group_key)."""
     netid = get_current_user()
     if not netid: return {"ok": False, "error": "not logged in"}, 401
-    personal = {}
-    try:
-        c = db()
-        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
-        c.close()
-        if r and r[0]: personal = json.loads(r[0])
-    except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
-        log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
+    personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "entries": []}
     c = db()
@@ -2583,14 +2585,7 @@ def api_save_timetable():
     data = request.get_json(silent=True) or {}
     slots = data.get("slots", {})
     custom = data.get("custom_subjects", [])
-    personal = {}
-    try:
-        c = db()
-        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
-        c.close()
-        if r and r[0]: personal = json.loads(r[0])
-    except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
-        log.warning("corrupt personal_details_json netid=%s: %r", netid, e)
+    personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": False, "error": "could not determine group"}, 400
     c = db()

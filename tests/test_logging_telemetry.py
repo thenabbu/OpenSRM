@@ -33,7 +33,11 @@ from _seed import mint_token, seed  # noqa: E402
 FAILS = []
 
 
+TOTAL = [0]  # dynamic — a hardcoded 8 silently mis-reports after any added check
+
+
 def check(name, fn):
+    TOTAL[0] += 1
     try:
         fn()
         print(f"  ok  {name}")
@@ -138,24 +142,53 @@ def t_rotation():
 def t_ntfy():
     posts = []
 
-    def fake_urlopen(req, timeout=None):
-        posts.append(req.data.decode())
-        raise AssertionError("should not be reached")
+    def _wait_for(n, timeout=2.0):
+        # POST runs on a daemon thread (the logging hot path must not block
+        # on a slow ntfy) — poll instead of assuming synchronous delivery
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and len(posts) < n:
+            time.sleep(0.01)
 
     h = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
     rec = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "request", None, None)
     rec.kv = {"path": "/api/push/receipt", "status": 401, "error": "not logged in"}
-    with mock.patch.object(urllib.request, "urlopen", side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
         h.emit(rec)
-        h.emit(rec)  # second call inside the 60s window must be droped
+        _wait_for(1)
+        h.emit(rec)  # second call inside the 60s window must be dropped
     assert len(posts) == 1, f"ntfy must rate-limit to 1 per 60s (got {len(posts)})"
     body = posts[0].data.decode()
     # the alert must carry the kv cause — an alert saying only "request" is useless
     assert "error=not logged in" in body and "status=401" in body, body
-    # emit() must never raise even when the POST fails
+    # alert-fatigue gate: a routine 4xx (WARNING, status<500) must NOT page
+    h3 = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    rec_w = logging.LogRecord("opensrm.test", logging.WARNING, "x", 1, "request", None, None)
+    rec_w.kv = {"path": "/login", "status": 401, "error": "invalid credentials"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h3.emit(rec_w)
+        _wait_for(2, timeout=0.1)
+    assert len(posts) == 1, f"routine 4xx WARNING must not page (got {len(posts)} posts)"
+    # ...but the same WARNING with status=500 (access-log line) pages
+    rec_5 = logging.LogRecord("opensrm.test", logging.WARNING, "x", 1, "request", None, None)
+    rec_5.kv = {"path": "/", "status": 500, "error": "boom"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h3.emit(rec_5)
+        _wait_for(2)
+    assert len(posts) == 2, f"5xx must page even at WARNING (got {len(posts)} posts)"
+    assert "status=500" in posts[1].data.decode() and "error=boom" in posts[1].data.decode()
+    # emit() must never raise when the POST fails, and a failed send must
+    # RE-ARM the window (not eat the next 60s of alerts)
     h2 = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
-    h2._last = 0.0
-    h2.emit(rec)  # must not raise
+    with mock.patch.object(urllib.request, "urlopen", side_effect=OSError("ntfy down")):
+        h2.emit(rec)  # must not raise
+        end = time.monotonic() + 2.0
+        while time.monotonic() < end and time.monotonic() - h2._last < 40:
+            time.sleep(0.01)
+    assert time.monotonic() - h2._last >= 40, \
+        f"failed send must re-arm the window (got age {time.monotonic() - h2._last:.1f}s)"
     # wiring is env-gated
     src = (REPO / "app" / "logging_setup.py").read_text()
     assert "NTFY_ALERT_URL" in src
@@ -196,8 +229,7 @@ for name, fn in [
 ]:
     check(name, fn)
 
-total = 8
-print(f"\n{total - len(FAILS)}/{total} passed")
+print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed")
 if FAILS:
     print("FAILED:", ", ".join(FAILS))
     sys.exit(1)

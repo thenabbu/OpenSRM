@@ -7,8 +7,8 @@ Usage:
 Adding a new migration:
     from migrations import migration
 
-    @migration(version=5, description="add exam_scores column")
-    def m005_exam_scores(conn):
+    @migration(version=14, description="add exam_scores column")
+    def m014_exam_scores(conn):
         conn.execute("ALTER TABLE users ADD COLUMN exam_scores TEXT DEFAULT '[]'")
 """
 import logging

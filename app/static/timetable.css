@@ -29,8 +29,8 @@
 .tt-name{font-size:11.5px;color:var(--color-base-content);opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tt-loc{font-size:11px;color:var(--color-base-content);opacity:0.5}
 /* --- attendance glance signal (spec §1.B) --------------------------------
-   Shape glyph + slim risk edge strip. Colour only reinforces the shape:
-   healthy rows are grayscale, hue appears only on deviation. Never a badge. */
+   Text signal (can skip N / attend N) + slim risk edge strip. Colour only
+   reinforces the text: healthy rows are grayscale, hue only on deviation. */
 .tt-row{position:relative;flex-wrap:wrap}
 .tt-sub{flex:0 0 100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding-left:72px;margin-top:2px}
 @media (min-width:640px){
@@ -48,9 +48,6 @@
 .tt-riskbar--danger{background:oklch(58% 0.115 25)}
 .tt-sig{margin-left:auto;flex:0 0 auto;width:104px;display:flex;align-items:center;gap:6px;white-space:nowrap;
         font-family:monospace;font-size:11px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
-.tt-sig svg{width:14px;height:14px;flex:0 0 auto}
-.tt-sig--warn svg{color:var(--color-warning)}
-.tt-sig--danger svg{color:var(--color-error)}
 .tt-sig--none{opacity:.5}
 .tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--color-success);color:var(--color-accent-content);font-weight:600}
 .tt-badge--soon{background:color-mix(in oklab, var(--color-base-content) 14%, transparent);color:color-mix(in oklab, var(--color-base-content) 70%, transparent)}
@@ -88,14 +85,15 @@
 
 /* ── Attendance meter row (spec §1.1, DESIGN §4.15) ─────────────────────
    One primitive per subject: a flat meter with a 75% tick. Pinned numbers
-   under the bar (attended @fill, 75%-value @tick, total @right pole), a
-   connector line carrying the bare action count, and ±6/±14px nudges that
-   stop label collisions near the tick. Text alphas are the DESIGN §2.5
-   ladder ONLY (/100 /60 /50) — never off-ladder values. */
+   ABOVE the bar (attended @fill, 75%-value @tick; in the pole band one
+   right-anchored `attended / total` cluster instead), a connector line
+   carrying the bare action count, and ±6/±14px nudges that stop label
+   collisions near the tick. Text alphas are the DESIGN §2.5 ladder ONLY
+   (/100 /60 /50) — never off-ladder values. */
 .mtop{display:flex;align-items:baseline;gap:8px}
 .mname{flex:1 1 auto;min-w:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mpct{flex:0 0 auto;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--color-base-content)}
-.mrows{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px 28px}
+.mrows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:16px 28px}
 /* flat track; faint status tint on the FILL only — red = below 75,
    orange(warn) = pct ≥ 75 AND skip-now == 0, gray = comfortable */
 .meter{position:relative;height:14px;border-radius:2px;background:var(--color-base-300);margin-top:6px}
@@ -114,15 +112,13 @@
 .pconn{position:relative;height:13px;margin-top:2px}
 .pconn i{position:absolute;top:6px;height:1px;background:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .pconn span{position:absolute;top:-1px;transform:translateX(-50%);font-size:11px;font-weight:500;color:var(--color-base-content);background:var(--color-base-200);padding:0 4px;font-variant-numeric:tabular-nums}
-/* nudges: |fill−75|<9% → ±6px; <3% → ±14px (nudL/nudR/nud2L/nud2R) */
+/* nudges: |fill−75|<9% → ±6px; <3% → ±14px (nudL/nudR/nud2L/nud2R).
+   Pole band (dpol<9) has NO nudge — the template swaps in one right-anchored
+   `attended / total` cluster there (fixed-px nudges couldn't pay for width). */
 .nudL .pn-now{transform:translateX(calc(-50% - 6px))} .nudL .pn-75{transform:translateX(calc(-50% + 6px))}
 .nudR .pn-now{transform:translateX(calc(-50% + 6px))} .nudR .pn-75{transform:translateX(calc(-50% - 6px))}
 .nud2L .pn-now{transform:translateX(calc(-50% - 14px))} .nud2L .pn-75{transform:translateX(calc(-50% + 14px))}
 .nud2R .pn-now{transform:translateX(calc(-50% + 14px))} .nud2R .pn-75{transform:translateX(calc(-50% - 14px))}
-/* pole nudges: |fill−100|<9% → the count label steps left of the pole total
-   (nudP −10px, nud2P −12px below 3%) */
-.nudP .pn-now{transform:translateX(calc(-50% - 10px))}
-.nud2P .pn-now{transform:translateX(calc(-50% - 12px))}
 /* percentage scale under the bar: threshold marks only (0% start, 75% tick) */
 .pcts{position:relative;height:13px;margin-top:5px;font-size:11.5px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .pct{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
@@ -137,17 +133,11 @@
 .att-table .att-margin{font-weight:600}
 .att-pos{color:oklch(70% 0.10 163)}
 .att-neg{color:oklch(63% 0.11 25)}
-/* view toggle: pressed state reuses the §4.9 selected-tint convention */
 /* quiet cards: estimates + absences (numbers neutral, labels ≤3 words) */
 .qgrid{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:baseline;font-size:12.5px}
 .qgrid .qhead{font-size:10.5px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);text-align:right;margin-bottom:4px}
 .qgrid .qhead:first-child{text-align:left}
 .qgrid .qnum{text-align:right;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
-.qlist{display:flex;flex-direction:column;gap:9px;font-size:12.5px}
-.qlabel{font-size:11.5px;font-weight:600;color:var(--color-base-content);opacity:0.5;margin:10px 0 2px}.qlabel:first-of-type{margin-top:0}
-.qarow{display:flex;align-items:baseline;gap:10px}
-.qdate{flex:0 0 58px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);font-variant-numeric:tabular-nums}
-.qhrs{flex:0 0 auto;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);font-variant-numeric:tabular-nums}
 .att-h{font-size:13px;font-weight:600;margin:18px 0 8px}
 .att-n{font-size:11px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);margin:-4px 0 8px}
 /* absences card: one block per month — bar row + wrapped absence chips under it */
