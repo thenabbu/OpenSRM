@@ -51,7 +51,7 @@ All plain scripts (no pytest), from the repo root with the repo venv:
 
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static checks (incl. doc claims)
-.venv/bin/python tests/test_exams.py        # 24/24 end-sem probe parser
+.venv/bin/python tests/test_exams.py        # 67/67 end-sem probe parser
 .venv/bin/python tests/test_exams_view.py   # exam card view model
 .venv/bin/python tests/test_marks_view.py   # internal-marks view model (fmt, IE derivation)
 # Playwright DUTs need a dev server + PLAYWRIGHT_BROWSERS_PATH set:
