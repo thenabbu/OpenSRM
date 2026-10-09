@@ -231,8 +231,12 @@ check("hall column gone -> hall empty, seat still read",
 DRIFT = ("<table><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>"
          "<tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></table>")
 check("drifted table -> None (preserve, not wipe)", parse_exam_timetable(DRIFT) is None)
-check("drift + scribe rows -> preserved (None), scribe not applied",
-      _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=DRIFT) is None)
+_drift_scribe = _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=DRIFT)
+check("drift + scribe rows -> scribe applied (official broken must not freeze updates)",
+      _drift_scribe is not None and {r["code"] for r in _drift_scribe} >= {"21AAA101J", "21BBB102T"},
+      _drift_scribe)
+check("drift + NO scribe rows -> preserved (None)",
+      _merge_exam_results([], official_html=DRIFT) is None)
 
 # ── 13. transition detector (_exam_events) ──────────────────────────────────
 est = [{"code": "21AAA101J", "date": "25-11-2026", "session": "AN"}]

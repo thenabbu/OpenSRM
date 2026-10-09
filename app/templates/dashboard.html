@@ -286,12 +286,19 @@
         {% set gap = (75 - fill)|abs %}
         {% set dpol = 100 - fill %}
         {% set nudge = 'nud2R' if gap < 3 and fill > 75 else 'nud2L' if gap < 3 else 'nudR' if gap < 9 and fill > 75 else 'nudL' if gap < 9 else '' %}
-        {% set pnudge = 'nud2P' if dpol < 3 else 'nudP' if dpol < 9 else '' %}
-        <div class="mrow {{ nudge }} {{ pnudge }}">
+        {# pole band (dpol < 9): the attended label would print on top of the
+           right-anchored total — a fixed-px nudge can't pay for label width.
+           Render ONE right-anchored `attended / total` cluster instead. #}
+        {% set pole = dpol < 9 %}
+        <div class="mrow {{ nudge }}">
           <div class="mtop"><span class="mname">{{ c.description }}</span><span class="mpct">{{ c.pct_disp }}%</span></div>
           {% set hatch_l = (fill if fill < 75 else 75)|round(2) %}
           {% set hatch_w = ((75 - fill) if fill < 75 else (fill - 75))|round(2) %}
-          <div class="pnums">{% if fill < 99.5 %}<span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span>{% endif %}<span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
+          {% if pole %}
+          <div class="pnums"><span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.attended }} / {{ c.max_hours }}</span></div>
+          {% else %}
+          <div class="pnums"><span class="pn pn-now" style="left:{{ fill|round(2) }}%">{{ c.attended }}</span><span class="pn pn-75" style="left:75%">{{ c.t75 }}</span><span class="pn pn-tot">{{ c.max_hours }}</span></div>
+          {% endif %}
           <div class="meter" role="img" aria-label="{{ c.description }}, {{ c.pct_disp }} percent attended{% if c.attend_now is not none %}, needs {{ c.attend_now }} for 75 percent{% else %}, {{ c.skip_now }} skippable for 75 percent{% endif %}">
             <i class="mz{% if c.tint == 'red' %} mz--red{% elif c.tint == 'warn' %} mz--warn{% endif %}" style="width:{{ fill|round(2) }}%"></i>
             <i class="mhatch" style="left:{{ hatch_l }}%;width:{{ hatch_w }}%"></i>
@@ -334,6 +341,7 @@
       </div>
     </div>
 
+    {% if has_budgets %}
     <div class="att-h">Estimates</div>
     <div class="att-n">can skip: 90 working days (excl. Sat/Sun){% if stop %} · till {{ stop.strftime('%d %b') }} (day before first endsem){% endif %}</div>
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
@@ -350,17 +358,20 @@
         {% endfor %}
       </div>
     </div>
+    {% endif %}
 
     {% if monthly %}
     <div class="att-h">Absences</div>
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5 att-abs-card">
       {% for m in monthly %}
       <div class="att-month">
-        <div class="flex items-center gap-3" title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}">
+        <div class="flex items-center gap-3"{% if m.pct is not none %} title="Present {{ m.present }} · Absent {{ m.absent }} · OD(P) {{ m.od_present }} · OD(A) {{ m.od_absent }} · ML {{ m.ml }}"{% endif %}>
           <span class="text-sm w-20 shrink-0 truncate">{{ m.month }}</span>
-          <progress class="progress flex-1 progress-{{ 'success' if (m.pct or 0) >= 75 else 'warning' if (m.pct or 0) >= 65 else 'error' }}"
-                    value="{{ m.pct or 0 }}" max="100" aria-label="{{ m.month }} attendance"></progress>
-          <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct if m.pct is not none else '–' }}{% if m.pct is not none %}%{% endif %}</span>
+          {% if m.pct is not none %}
+          <progress class="progress flex-1 progress-{{ m.bar }}"
+                    value="{{ m.pct }}" max="100" aria-label="{{ m.month }} attendance"></progress>
+          <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct }}%</span>
+          {% endif %}
         </div>
         {% if m.abs_rows %}
         <div class="flex flex-wrap gap-1.5 mt-2">

@@ -10,6 +10,7 @@ Log format:
 import logging
 import os
 import sys
+import threading
 import time
 import urllib.request
 
@@ -33,12 +34,13 @@ class _Formatter(logging.Formatter):
 
 
 class NtfyHandler(logging.Handler):
-    """POST WARNING+ opensrm lines to an ntfy topic (env NTFY_ALERT_URL).
-    So no error goes unseen: the alerter is the tripwire when nobody is
-    tailing the log. Rate-limited to 1/min — a failure storm must not
-    become a notification storm; ponytail: drops the rest of the storm.
+    """POST real faults to an ntfy topic (env NTFY_ALERT_URL): ERROR+ records
+    or any record whose kv carries status>=500. Routine 4xx (typo'd password,
+    bot 404, portal-busy 429) stays file-only — a tripwire that pages on typos
+    trains the operator to ignore it. Rate-limited to 1/min — a failure storm
+    must not become a notification storm; ponytail: drops the rest of the storm.
     ponytail: best-effort by design — emit() must never raise or log
-    (logging a logging failure recurses); next event retries."""
+    (logging a logging failure recurses)."""
     _MIN_INTERVAL = 60.0
 
     def __init__(self, url):
@@ -47,6 +49,12 @@ class NtfyHandler(logging.Handler):
         self._last = 0.0
 
     def emit(self, record):
+        try:
+            st = int(getattr(record, "kv", {}).get("status", 0))
+        except (TypeError, ValueError):
+            st = 0
+        if record.levelno < logging.ERROR and st < 500:
+            return
         now = time.monotonic()
         if now - self._last < self._MIN_INTERVAL:
             return
@@ -59,9 +67,19 @@ class NtfyHandler(logging.Handler):
                 msg += " " + " ".join(f"{k}={v}" for k, v in record.kv.items())
             msg = msg[:400]
             req = urllib.request.Request(self.url, data=msg.encode("utf-8"), method="POST")
-            urllib.request.urlopen(req, timeout=5).close()
         except Exception:
-            pass
+            return
+        # POST off the logging hot path: Handler.handle() holds self.lock for
+        # the whole emit, so a synchronous 5s urlopen (ntfy outage) stalled
+        # request threads — gunicorn runs 8 threads sharing this lock.
+        # A failed send re-arms the window in 10s instead of eating the next
+        # 60s of alerts, and the 10s floor still bounds a dead-ntfy storm.
+        def _send():
+            try:
+                urllib.request.urlopen(req, timeout=2).close()
+            except Exception:
+                self._last = time.monotonic() - self._MIN_INTERVAL + 10.0
+        threading.Thread(target=_send, daemon=True).start()
 
 
 def setup_logging():

@@ -51,7 +51,10 @@ JSPS = {
     "126": "/students/transaction/StudentExamTimeTable.jsp",  # official Exam Time Table (verified live Oct 7 2026)
 }
 HOT_FORMIDS = {"9", "13", "126"}  # attendance + marks + official exam timetable: every sync
-COLD_FORMIDS = {"1", "17", "7", "32"}  # profile/personal/courses/feedback-form: re-fetch only when stale > COLD_TTL
+# (no "1"/"32": ScribeInner was demoted to the exam probe, and _fb_harvest
+# posts iden=32 itself — nothing reads those batch results; both rode along
+# on every cold sync for nothing)
+COLD_FORMIDS = {"17", "7"}  # personal/courses: re-fetch only when stale > COLD_TTL
 COLD_TTL = 24 * 3600  # seconds
 
 MAX_CAPTCHA_RETRIES = 3
@@ -369,6 +372,11 @@ def _exam_post(opener, base, xheaders, month, year):
         return None
 
 
+# fallback question ids when the live form fragment carries no
+# hiddenQuestionId field (see _fb_question_ids)
+DEFAULT_FB_QIDS = ",".join(str(x) for x in range(23, 37)) + ","
+
+
 def _fb_post(opener, base, xheaders, query):
     """GET MidSemFeedbackInner.jsp with the form's own query contract.
     Returns (final_url, text); raises HttpScraperError on transport fail."""
@@ -415,6 +423,20 @@ def _fb_staff_options(frag):
     """[(staff_id, 'Name-Kind')] from the response's txtCourseStaff select."""
     m = re.search(r'<select[^>]*id="txtCourseStaff".*?</select>', frag, re.S | re.I)
     return re.findall(r'<option[^>]*value="(\d+)"[^>]*>\s*([^<]+?)\s*</option>', m.group(0)) if m else []
+
+
+def _fb_question_ids(frag):
+    """Comma-joined question ids the LIVE form expects (hiddenQuestionId field),
+    or None when the fragment doesn't render them. The submit used to post a
+    hardcoded 23..36 set with zero validation — a portal question change would
+    record ratings against wrong/nonexistent questions while still 'succeeding'.
+    (value may precede the name/id attribute, same trap as _fb_common.)"""
+    m = re.search(r'<input[^>]*(?:name|id)="hiddenQuestionId"[^>]*>', frag, re.I)
+    if not m:
+        return None
+    vm = re.search(r'value="([^"]*)"', m.group(0))
+    val = vm.group(1).strip() if vm else ""
+    return val or None
 
 
 def _fb_registered(frag):
@@ -476,6 +498,16 @@ def _fb_harvest(opener, base, xheaders, netid):
 
     log.info("feedback harvest done netid=%s subjects=%d total_ms=%d",
              netid, len(faculty_map), int((time.monotonic() - t0) * 1000))
+    if faculty_map and all(all(str(s[1]).strip() == "Unknown" for s in e["staff"])
+                           for e in faculty_map.values()):
+        # every subject came back teacherless = one failed staff-list render,
+        # not a genuinely empty map. Storing it would hide the Teachers card
+        # and the autofill CTA until the next clean harvest; None omits the
+        # key upstream and preserves the stored map (README: only a fresh
+        # SUCCESSFUL harvest overwrites).
+        log.warning("feedback harvest netid=%s all subjects teacherless — "
+                    "treating as failed, preserving stored map", netid)
+        return None
     return faculty_map
 
 
@@ -523,8 +555,6 @@ def fill_feedback(netid, plan, cookies_json):
     common = _fb_common(frag)
     live = {" ".join(n.split()).upper(): sid for sid, n in _fb_subjects(frag)}
 
-    qids = ",".join(str(x) for x in range(23, 37)) + ","
-    ans = ",".join(["5"] * 14) + ","
     res = {"filled": [], "already": [], "failed": []}
     for item in plan:
         name, staff_id, comment = item["subject"], item["staff_id"], item["comment"]
@@ -546,6 +576,11 @@ def fill_feedback(netid, plan, cookies_json):
             res["failed"].append([label, "teacher not on the live form — re-sync"])
             time.sleep(0.7)
             continue
+        # question ids: the LIVE set when the form renders it, else the
+        # known 23..36 default; answers must match the id count
+        qids = _fb_question_ids(inner) or DEFAULT_FB_QIDS
+        n_q = len([x for x in qids.split(",") if x.strip()])
+        ans = ",".join(["5"] * n_q) + ","
         sub = "&" + urllib.parse.urlencode(dict(
             subjectId=sid, forWhat="2", staffid=staff_id,
             hiddenQuestionId=qids, hiddenAnswerId=ans,
@@ -588,8 +623,11 @@ def _merge_exam_results(results, official_html=None):
         official = parse_exam_timetable(official_html)
     ok = [r for r in results if r is not None]
     if official is None:
-        log.debug("exam timetable: unparseable table shape — preserving stored value")
-        return None
+        # official table present but unparseable (header drift): degrade to the
+        # scribe rows instead of freezing exam updates forever — the guards
+        # below still preserve stored rows when scribe is empty/unreliable.
+        log.warning("exam timetable: unparseable official table shape — falling back to scribe rows")
+        official = []
     if not ok and not official:
         return None
     rows, blanked = [], False
@@ -861,7 +899,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
              "cold=%s total_ms=%d", netid, len(data["courses"]), len(marks),
              len(personal), cold, int((time.monotonic() - t_start) * 1000))
-    out = {"ok": True, "data": data, "personal": personal, "photo": "",
+    out = {"ok": True, "data": data, "personal": personal,
            "courses": courses, "marks": marks, "subjects": subject_map,
            "fetched": int(time.time())}
     if exams is not None:  # absent key = preserve stored exam_schedule_json
