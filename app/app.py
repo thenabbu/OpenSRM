@@ -1578,11 +1578,11 @@ def index():
     last = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(last_epoch)) if last_epoch else "never"
 
     hours_old = int((time.time() - last_epoch) / 3600) if last_epoch else None
-    # portal sends a "CLASS IN CHARGE" marker row (code CL) alongside subjects — not a subject, drop it
-    raw = [x for x in data.get("courses", [])
-           if (x.get("code") or "").strip().upper() != "CL"
-           and (x.get("description") or "").strip().upper() != "CLASS IN CHARGE"]
-    courses = sorted((_course_view(x) for x in raw), key=lambda c: c["pct"])  # risk-first: lowest % first
+    # CL / CLASS IN CHARGE is kept: it is real portal attendance — its hours
+    # are in the portal's own Total row (7 subjects 289 + CL 5 = 294) and
+    # students asked to see it (Oct 2026). w=0 (absent from the timetable)
+    # keeps it out of the Estimates budgets automatically.
+    courses = sorted((_course_view(x) for x in data.get("courses", [])), key=lambda c: c["pct"])  # risk-first: lowest % first
     # Absences card: one structure per month — the monthly attendance bar with
     # that month's absence chips directly under it (absence rows join by the
     # same normalized label _absences_view produces).
