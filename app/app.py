@@ -207,8 +207,13 @@ def get_current_user():
 def make_session_token(netid):
     token = secrets.token_hex(32)
     c = db()
-    c.execute("DELETE FROM cookies WHERE netid=?", (netid,))
-    # audit: prune expired tokens while we're here
+    # incident 2026-10-10: this previously ran `DELETE FROM cookies WHERE
+    # netid=?` — one session per account, globally. Every login on any device
+    # silently evicted every other device's session: over Sep 22 - Oct 10 the
+    # main account logged in 58 times from 13 IPs, and 41 of those 58 re-logins
+    # were its OWN earlier login killing the current session (33 from a
+    # different IP = cross-device). Sessions are now concurrent per account,
+    # each still bounded by SESSION_MAX_AGE at read time.
     c.execute("DELETE FROM cookies WHERE created < ?", (int(time.time()) - SESSION_MAX_AGE,))
     c.execute("INSERT INTO cookies(token,netid,created) VALUES(?,?,?)", (token, netid, int(time.time())))
     c.commit(); c.close()
@@ -3006,9 +3011,34 @@ def push_receipt():
 
 @app.route("/logout")
 def logout():
+    # incident 2026-10-10: this was a state-changing GET and prod sits behind
+    # Cloudflare Speed Brain's conservative speculation rules (/*), so the
+    # browser could fire GET /logout on mere link intent (touch-start/hover)
+    # with no navigation at all — session died mid-use. Speculative requests
+    # carry Sec-Purpose/Purpose prefetch|prerender: ignore them entirely.
+    # no-store is required: if the user's intent then completes into a real
+    # click, the ignored 302 must NOT be served from the prefetch cache or
+    # the genuine logout would silently no-op.
+    spec = (request.headers.get("Sec-Purpose", "") + " " +
+            request.headers.get("Purpose", "")).lower()
+    if "prefetch" in spec or "prerender" in spec:
+        log_with_kv(log_auth, logging.INFO, "logout ignored",
+                    reason="speculation", ip=_client_ip())
+        resp = make_response(redirect("/login"))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
     token = request.cookies.get("srm_session")
+    netid = None
     if token:
-        c = db(); c.execute("DELETE FROM cookies WHERE token=?", (token,)); c.commit(); c.close()
+        c = db()
+        row = c.execute("SELECT netid FROM cookies WHERE token=?", (token,)).fetchone()
+        netid = row["netid"] if row else None
+        c.execute("DELETE FROM cookies WHERE token=?", (token,))
+        c.commit(); c.close()
+    # incident logging: real logouts previously left no auth line at all —
+    # attribution had to be reconstructed from HTTP 302s + cookie joins.
+    log_with_kv(log_auth, logging.INFO, "logout ok", netid=netid or "-",
+                ip=_client_ip())
     resp = make_response(redirect("/login"))
     # audit F2 fix: same flags on the clearing path — recon saw a bare
     # 'Secure; Path=/' Set-Cookie here because delete_cookie didn't inherit them
