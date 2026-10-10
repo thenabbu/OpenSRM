@@ -2,7 +2,7 @@
 
 Seeds attendance in the SAME DB the gunicorn under test uses (DATA_DIR decides
 both). Payload mirrors the real portal shape: 9-char codes (21CSC201J), ALL-CAPS
-descriptions, plain-string hours ("46"), a CL / CLASS IN CHARGE junk row,
+descriptions, plain-string hours ("46"), a CL / CLASS IN CHARGE row,
 monthly "MMM / YYYY", daily rows DD-MM-YYYY {date, hours} — values fabricated.
 Usage: DATA_DIR=/tmp/x DUT_BASE=http://127.0.0.1:P python tests/test_att_dut.py
 """
@@ -28,7 +28,7 @@ def main():
 
     from tests._seed import mint_token, seed
     seed()
-    # real portal shape (code 9ch / ALL CAPS / string hours / CL junk row / MMM YYYY months)
+    # real portal shape (code 9ch / ALL CAPS / string hours / CL row / MMM YYYY months)
     attendance = {"courses": [
         {"code": "21CSC201J", "description": "DATA STRUCTURES AND ALGORITHMS", "max_hours": "46", "attended": "45", "absent": "1"},
         {"code": "21CSC202J", "description": "OPERATING SYSTEMS", "max_hours": "44", "attended": "39", "absent": "5"},
@@ -204,16 +204,18 @@ def main():
         }""")
         check("no timetable -> Estimates block hidden entirely", not r["estimates"], str(r))
 
-        # 7) portal's CL / CLASS IN CHARGE junk row is filtered from both views
+        # 7) portal's CL / CLASS IN CHARGE row IS listed in both views — it is
+        #    real portal attendance (its hours are in the portal's own Total
+        #    row: 289 subject + 5 CL = 294) and students asked to see it.
         r = page.evaluate("""() => {
           const names = [...document.querySelectorAll('.mrow .mname')].map(e => e.textContent.trim());
           const codes = [...document.querySelectorAll('.att-table tbody tr td:first-child')].map(e => e.textContent.trim());
           return {names, codes, meters: names.length, rows: codes.length};
         }""")
-        junk_names = [n for n in r["names"] if "CLASS IN CHARGE" in n.upper()]
-        junk_codes = [c for c in r["codes"] if c == "CL"]
-        check("CL / CLASS IN CHARGE filtered from meters + table",
-              not junk_names and not junk_codes and r["meters"] == 10 and r["rows"] == 10, str(r))
+        cl_names = [n for n in r["names"] if "CLASS IN CHARGE" in n.upper()]
+        cl_codes = [c for c in r["codes"] if c == "CL"]
+        check("CL / CLASS IN CHARGE listed in meters + table",
+              len(cl_names) == 1 and cl_codes == ["CL"] and r["meters"] == 11 and r["rows"] == 11, str(r))
 
         ctx.close()
         b.close()
