@@ -188,5 +188,51 @@ j = r2.get_json() or {}
 check("no feedback data -> 400", r2.status_code == 400 and not j.get("ok"),
       f"status={r2.status_code} body={j}")
 
+# --- response-body contract: what may be shown to the student --------------
+# CWE-209 / CodeQL py/stack-trace-exposure: an endpoint must never echo text
+# derived from a caught exception (a message can embed nested exception reprs).
+print("== fill endpoint response body (CWE-209) ==")
+import json as _json
+import time as _time
+from app import http_scraper as HS
+from app.http_scraper import HttpScraperError
+
+SEC_NETID = "zz9998"
+c = AA.db()
+c.execute("INSERT OR REPLACE INTO users(netid, password, faculty_map_json) VALUES(?, 'unused-by-tests', ?)",
+          (SEC_NETID, _json.dumps({"DATA STRUCTURES AND ALGORITHMS":
+                                   {"subject_id": "90001",
+                                    "staff": [["50001", "Dr.Test One-Theory"]]}})))
+c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
+          (SEC_NETID, _json.dumps([{"name": "JSESSIONID", "value": "synthetic"}]),
+           int(_time.time())))
+c.commit(); c.close()
+client2 = AA.app.test_client()
+client2.set_cookie("srm_session", AA.make_session_token(SEC_NETID))
+
+_orig_fill = HS.fill_feedback
+
+
+def _raise(*a, **k):
+    raise HttpScraperError("secret-internal-detail-XYZ")
+
+
+HS.fill_feedback = _raise
+r3 = client2.post("/api/feedback/fill")
+body3 = r3.get_data(as_text=True)
+check("exception text never echoed (CWE-209)",
+      r3.status_code == 502 and "secret-internal-detail-XYZ" not in body3
+      and "feedback submission failed" in body3,
+      f"status={r3.status_code} body={body3[:200]}")
+
+HS.fill_feedback = lambda *a, **k: {"error": "portal session expired — sync first"}
+r4 = client2.post("/api/feedback/fill")
+j4 = r4.get_json() or {}
+check("portal-state refusal keeps its own literal",
+      r4.status_code == 502 and j4.get("error") == "portal session expired — sync first",
+      f"status={r4.status_code} body={j4}")
+
+HS.fill_feedback = _orig_fill
+
 print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
