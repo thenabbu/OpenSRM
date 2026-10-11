@@ -47,7 +47,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
 .venv/bin/python tests/test_logging_telemetry.py # 8/8 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
-.venv/bin/python tests/test_layout.py       # 23/23 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
+.venv/bin/python tests/test_layout.py       # 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
 .venv/bin/python tests/test_attendance_view.py # 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 .venv/bin/python tests/test_att_dut.py   # 15/15 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps at 393 AND 320px incl. pole-band boundary seeds, merged absences card + junk-month chip-only degrade, Estimates gate, CL row listed in both views)
 .venv/bin/python tests/test_feedback.py      # 50/50 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration, endpoint 401)
