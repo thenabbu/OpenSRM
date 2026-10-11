@@ -49,7 +49,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_attendance_view.py # 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 .venv/bin/python tests/test_att_dut.py   # 15/15 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps at 393 AND 320px incl. pole-band boundary seeds, merged absences card + junk-month chip-only degrade, Estimates gate, CL row listed in both views)
-.venv/bin/python tests/test_feedback.py      # 50/50 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration, endpoint 401)
+.venv/bin/python tests/test_feedback.py      # 52/52 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration, endpoint 401, CWE-209 response body)
 .venv/bin/python tests/test_feedback_dut.py  # 31/31 DUT (Teachers card + CTA → opt-in explainer modal with BOTH teachers listed, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
@@ -78,7 +78,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
-.venv/bin/python tests/test_navbar.py       # 18/18 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius, page gutter 8px/16px + column alignment)
+.venv/bin/python tests/test_navbar.py       # 19/19 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius, page gutter 8px/16px + column alignment, scrollbar-gutter reservation + navW constant across a marks round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
