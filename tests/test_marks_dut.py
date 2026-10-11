@@ -209,8 +209,8 @@ with sync_playwright() as p:
                     text: nested.innerText.replace(/\\s+/g, ' ').trim()}; })""")
         check(tag + "IE rows nested + indented under their component",
               len(ie) == 3 and all(x["indent"] >= 20 for x in ie), json.dumps(ie))
-        check(tag + "IE-1 converts 11.70/15 -> 39.00/50",
-              any("39.00/50" in x["text"] for x in ie), json.dumps(ie))
+        check(tag + "IE-1 converts 11.7/15 -> 39/50",
+              any("39/50" in x["text"] for x in ie), json.dumps(ie))
         names = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .rounded-box.p-4')]
           .map(c => [...c.querySelectorAll('.py-1 > .flex:first-child span:first-child')].map(s => s.textContent.trim()))""")
         check(tag + "components sorted by name, not date (FT-I before FT-II)",
@@ -270,7 +270,7 @@ with sync_playwright() as p:
         after = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .py-1')]
           .filter(r => /^FT-II/.test((r.querySelector('.bg-base-300') || {}).textContent || ''))
           .map(r => r.innerText.replace(/\\s+/g, ' ').trim())""")
-        check(tag + "confirmed IE-2 renders as 46.80/60", any("46.80/60" in t for t in after),
+        check(tag + "confirmed IE-2 renders as 46.8/60", any("46.8/60" in t for t in after),
               str(after))
         c = db()
         row = [(r[0], r[1], r[2]) for r in

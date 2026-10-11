@@ -448,7 +448,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
 
 ### 4.13 Internal marks card (Marks tab)
 
-`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.20/20` — maxima whole, scores 2 decimals), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns the **3 lowest** subjects for the dashboard glance as `code scored/max` chips (e.g. `21MAB206T 13.40/20` — the values as last synced; **no `%`** on the glance, ordering still risk-first) — there is **no aggregate/overall number anywhere** (brief).
+`_marks_view()` builds the view model: title-cased `title`, `scored_disp`/`max_disp` (`16.2/20` — maxima whole, scores with trailing zeroes stripped), neutral `pct` + one `outlier`, components sorted by **name** with `date_disp` (`04 Sep`, junk passes through), and per component `derived` / `confirmed` / `ie` (converted paper marks). `_marks_summary()` returns **every subject** for the dashboard glance as `code scored/max` chips (e.g. `21MAB206T 13.4/20` — the values as last synced, risk-first order weakest first; **no `%`** on the glance) — there is **no aggregate/overall number anywhere** (brief). A row preserved from an earlier sync (empty fetch, B6) carries `stale=True` and its chip renders faint (`opacity-60` + a `title`, never colour alone).
 
 ```jinja
 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">  <!-- default stretch: side-by-side cards share one height; content stays top-pinned (block flow) -->
@@ -458,13 +458,13 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
       <span class="font-mono font-bold text-lg tabular-nums">81.0%</span>  <!-- + text-secondary once, if outlier -->
     </div>
     <h3 class="text-sm font-semibold leading-snug">Computer Organization And Architecture</h3>
-    <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">16.20/20</div>
+    <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">16.2/20</div>
     <div class="border-t border-base-300 pt-2">
       <div class="py-1">
         <div class="flex items-center gap-2">
           <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">FT-II</span>
           <span class="text-xs font-mono text-base-content/50">09 Sep</span>
-          <span class="font-mono text-xs tabular-nums ml-auto">11.70/15</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">11.7/15</span>
           <details class="relative shrink-0"><summary>{/* pencil, 24px target */}</summary>
             <form method="post" action="/marks/tag" class="absolute end-0 top-full mt-1 z-10 w-60 bg-base-200 border border-base-300 rounded-box p-3 flex flex-col gap-2">…</form>
           </details>
@@ -472,7 +472,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
         <div class="flex items-center gap-2 ps-6 mt-0.5">   <!-- nested IE row: 24px indent -->
           <span class="…chip…">IE-1</span>
           <span class="text-xs text-base-content/50">derived</span>
-          <span class="font-mono text-xs tabular-nums ml-auto">39.00/50</span>
+          <span class="font-mono text-xs tabular-nums ml-auto">39/50</span>
         </div>
       </div>
     </div>
@@ -483,7 +483,7 @@ Meaning map: current class = `success` border + 8% tint (the hero states it — 
 Rules specific to this card:
 
 - **Numbers are neutral.** No status hue on any number — at most ONE `text-secondary`, on the unique lowest subject and only below the 75 target (§2.7). Green/amber/red stay attendance-only (§2.6).
-- **No overall %, no per-component %.** Per-subject `%` + `scored/max` only. Maxima print whole (`/15`, never `/15.00`); scores keep 2 decimals; every figure is `font-mono tabular-nums`. Subject names are title-cased in Python (CSS `capitalize` cannot downcase ALL-CAPS portal data).
+- **No overall %, no per-component %.** Per-subject `%` + `scored/max` only. Maxima print whole (`/15`, never `/15.00`); scores strip trailing zeroes (`16.2`, `5` — never `16.20`/`5.00`); every figure is `font-mono tabular-nums`. Subject names are title-cased in Python (CSS `capitalize` cannot downcase ALL-CAPS portal data).
 - **The component chip is a hand-rolled span, not a `.badge`:** daisyUI badges cannot lose their 1px border (§10.9) and this chip must be solid-fill, borderless. Fixed `w-14` (56px = the widest name, `FML-I`) so `FT-II` can never shift the date column. Fill `bg-base-300`, label `text-base-content/70`.
 - **Dates** are `04 Sep`, muted `/50`, `text-xs` (12px floor).
 - **IE rows** nest under the component they derive from (`ps-6` indent), labelled `derived` or `confirmed`, with marks converted to the paper total (IE-1 → `/50`, IE-2 → `/60`). The portal never labels IEs; `_derive_ie()` guesses `/15` (theory) or `/10` (practical code), and a stored tag always wins.
