@@ -666,6 +666,24 @@ def _merge_exam_results(results, official_html=None):
     return out
 
 
+def _after_login(netid, jar, helpers):
+    """Post-login bookkeeping, shared by EVERY successful-login site: reset the
+    portal fail/cooldown counter and persist the fresh cookie jar. The mid-scrape
+    relogin path used to skip both — its clear_session() then left the DB with no
+    row, so the fresh cookies died with the process and the next sync started
+    sessionless (prod evidence 2026-10-12: 'session reuse hit' ->
+    'session expired mid-scrape — relogin' -> portal_sessions row gone)."""
+    helpers["portal_ok"]()
+    try:
+        helpers["save_session"](netid, json.dumps(
+            [{"name": c.name, "value": c.value, "domain": c.domain,
+              "path": c.path, "secure": c.secure, "httpOnly": "HttpOnly" in (c.get_nonstandard_attr("HttpOnly") or "") or c.has_nonstandard_attr("HttpOnly"),
+              "expires": c.expires} for c in jar]))
+        log.debug("session saved netid=%s cookies=%d", netid, len(jar))
+    except Exception as e:
+        log.debug("session save failed err=%r", e)
+
+
 def fetch(netid, password, helpers, cold=True, prepared=None):
     """Full scrape via pure HTTP. Same contract as _fetch_rich_optimized.
 
@@ -720,14 +738,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
                          on_step=lambda st, pc: _prog(st, pc), prepared=prepared)
         if not ok:
             return {"ok": False, "error": err}
-        helpers["portal_ok"]()
-        try:
-            helpers["save_session"](netid, json.dumps(
-                [{"name": c.name, "value": c.value, "domain": c.domain,
-                  "path": c.path, "secure": c.secure, "httpOnly": "HttpOnly" in (c.get_nonstandard_attr("HttpOnly") or "") or c.has_nonstandard_attr("HttpOnly"),
-                  "expires": c.expires} for c in jar]))
-        except Exception as e:
-            log.debug("session save failed err=%r", e)
+        _after_login(netid, jar, helpers)
     log.debug("login phase done netid=%s total_ms=%d", netid,
               int((time.monotonic() - t_start) * 1000))
 
@@ -759,6 +770,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         ok, err = _login(opener, netid, password, base, xheaders, helpers)
         if not ok:
             return {"ok": False, "error": err}
+        _after_login(netid, jar, helpers)  # persist the relogin too — see _after_login docstring
         fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())  # refetch with same plan
         with ThreadPoolExecutor(max_workers=5) as ex:
             futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
