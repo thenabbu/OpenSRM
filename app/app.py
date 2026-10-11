@@ -1638,7 +1638,9 @@ def index():
     has_budgets = any(c.get("m90") is not None or c.get("m_end") is not None for c in courses)
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
     dash = {
-        "email": personal_data.get("Personal Email ID", "") or netid,
+        # institute mail is NetID@srmist.edu.in (the portal login page states
+        # it verbatim) — the personal Gmail from the profile is NOT shown here
+        "email": f"{netid}@srmist.edu.in",
         "reg_no": personal_data.get("Register No.", ""),
         "today": _today_brief(group_key),
         "week": _week_updates(data.get("daily_absent", {})),
@@ -1971,10 +1973,11 @@ def api_feedback_fill():
     return {"ok": True, **res}
 
 def _fmt_score(v):
-    """Score keeps 2 decimals: 11.7 -> '11.70'. Junk/None -> '?' — a stored
+    """Minimal decimals: 11.7 -> '11.7', 5 -> '5' (trailing zeroes stripped —
+    the '.' keeps whole-number zeros intact). Junk/None -> '?' — a stored
     null score used to TypeError into a 500 (audit B9)."""
     try:
-        return f"{float(v):.2f}"
+        return f"{float(v):.2f}".rstrip("0").rstrip(".")
     except (TypeError, ValueError):
         return "?"
 
@@ -2057,16 +2060,18 @@ def _marks_view(marks, tags=None):
     return out
 
 def _marks_summary(marks):
-    """Dashboard glance: the 3 lowest subjects (risk-first order — the chip
-    shows marks/max, no %, per brief; ordering still surfaces weakest first).
-    None when empty. No aggregate/overall number."""
+    """Dashboard glance: EVERY subject as code scored/max chips in risk-first
+    order (weakest first) — no %, no aggregate/overall number. `stale=True`
+    marks a row preserved from an earlier sync (the widget renders those chips
+    faint). None when empty."""
     if not marks:
         return None
     low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"])
-                 if m.get("max_total") else 1)[:3]
+                 if m.get("max_total") else 1)
     return [{"code": m.get("code", ""),
              "scored": _fmt_score(m.get("scored_total", 0)),
-             "max": _fmt_max(m.get("max_total", 0))} for m in low]
+             "max": _fmt_max(m.get("max_total", 0)),
+             "stale": bool(m.get("stale"))} for m in low]
 
 def _exams_view(rows):
     """Dashboard card: end-sem rows sorted by real date + countdown.
@@ -2292,10 +2297,28 @@ def _merge_fetch_result(existing, res):
             return json.dumps(res[key])
         if existing and existing[col]:
             return existing[col]   # transition events read PRE-write rows
-        return json.dumps({"personal": {}, "marks": [], "subjects": {}}[key])
+        return json.dumps({"personal": {}, "subjects": {}}[key])
     personal_json = _col("personal", "personal_details_json")
-    marks_json = _col("marks", "marks_json")
     subjects_json = _col("subjects", "subjects_json")
+    # marks: preserve-if-empty (B6) AND flag the preserved rows `stale=True`
+    # — the dashboard widget highlights chips whose numbers come from an
+    # earlier sync instead of the latest one (Oct 2026). A real fetch writes
+    # portal rows as-is, which clears any previous flag.
+    if res.get("marks"):
+        marks_json = json.dumps(res["marks"])
+    elif existing and existing["marks_json"]:
+        marks_json = existing["marks_json"]
+        try:
+            stored = json.loads(marks_json)
+            if isinstance(stored, list):
+                for m in stored:
+                    if isinstance(m, dict):
+                        m["stale"] = True
+                marks_json = json.dumps(stored)
+        except (ValueError, TypeError):  # corrupt row: keep the bytes (B1-B4)
+            pass
+    else:
+        marks_json = "[]"
     # exams: key absent (probe unreliable / Playwright fallback) -> preserve stored
     if "exams" in res:
         exams_json = json.dumps(res["exams"])

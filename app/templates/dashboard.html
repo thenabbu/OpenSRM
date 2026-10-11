@@ -129,7 +129,7 @@
               </svg>
             </button>
             {% if dash.reg_no %}
-            <div class="text-xs text-base-content/50 font-mono cursor-copy" data-copy="{{ dash.reg_no }}" title="Click to copy">Reg {{ dash.reg_no }}</div>
+            <div class="text-xs text-base-content/50 font-mono cursor-copy" data-copy="{{ dash.reg_no }}" title="Click to copy">{{ dash.reg_no }}</div>
             {% endif %}
           </div>
         </div>
@@ -184,7 +184,8 @@
             <div class="text-[11px] uppercase tracking-wider text-base-content/50 mb-2">Internal marks</div>
             <div class="flex flex-wrap gap-1.5">
               {% for s in marks_summary %}
-              <span class="badge badge-soft badge-sm font-mono tabular-nums">{{ s.code }} {{ s.scored }}/{{ s.max }}</span>
+              <!-- stale = preserved from an earlier sync: faint (opacity-60, §2.5 ladder) + title, never colour alone -->
+              <span class="badge badge-soft badge-sm font-mono tabular-nums{% if s.stale %} opacity-60{% endif %}"{% if s.stale %} title="Kept from an earlier sync — the latest refresh returned no marks for it"{% endif %}>{{ s.code }} {{ s.scored }}/{{ s.max }}</span>
               {% endfor %}
             </div>
           </div>
