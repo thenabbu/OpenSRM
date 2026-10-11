@@ -62,7 +62,7 @@ def t_jload():
 
 
 def t_fmt():
-    assert A._fmt_score(11.7) == "11.70"
+    assert A._fmt_score(11.7) == "11.7"
     assert A._fmt_max(15.0) == "15"
     assert A._fmt_score(None) == "?", "null score must not TypeError into a 500"
     assert A._fmt_max(None) == "?"
@@ -156,8 +156,9 @@ def t_login_preserves_marks():
     finally:
         A.fetch_attendance = orig
     assert r.status_code == 200, r.data[:200]
-    assert _stored_marks() == STORED, (
-        f"empty-marks login wiped stored marks: {_stored_marks()}")
+    # preserved rows stay AND carry stale=True (widget's faint-highlight flag)
+    assert _stored_marks() == [dict(STORED[0], stale=True)], (
+        f"empty-marks login must preserve stored marks flagged stale: {_stored_marks()}")
 
 
 def t_login_empty_overwrites_with_data():
@@ -192,8 +193,8 @@ def t_refresh_preserves_marks():
         A.fetch_attendance = orig
     assert r.status_code == 200, r.data[:200]
     assert r.get_json().get("ok") is True, r.data[:200]
-    assert _stored_marks() == STORED, (
-        f"empty-marks refresh wiped stored marks: {_stored_marks()}")
+    assert _stored_marks() == [dict(STORED[0], stale=True)], (
+        f"empty-marks refresh must preserve stored marks flagged stale: {_stored_marks()}")
 
 
 for name, fn in [

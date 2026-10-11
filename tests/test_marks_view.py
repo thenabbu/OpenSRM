@@ -17,7 +17,7 @@ assert _fmt_date("21/Sep/2026") == "21 Sep"
 assert _fmt_date("") == "" and _fmt_date(None) == "" and _fmt_date("junk") == "junk"
 assert _fmt_max(15.0) == "15" and _fmt_max(10.0) == "10" and _fmt_max(20.0) == "20"
 assert _fmt_max(15.5) == "15.50", _fmt_max(15.5)      # fractional maxima keep 2 decimals
-assert _fmt_score(11.7) == "11.70" and _fmt_score(5) == "5.00"
+assert _fmt_score(11.7) == "11.7" and _fmt_score(5) == "5"
 
 # ── IE-1 derivation (a guess until confirmed) ─────────────────────────
 assert _derive_ie("21CSS201T", 15.0) == "IE-1"        # the /15 component
@@ -48,7 +48,7 @@ by = {s["code"]: s for s in v}
 
 # ── subject level: title-case, integer maxima, neutral outlier rule ───
 assert by["21CSS201T"]["title"] == "Computer Organization And Architecture"
-assert by["21CSS201T"]["scored_disp"] == "16.20" and by["21CSS201T"]["max_disp"] == "20"
+assert by["21CSS201T"]["scored_disp"] == "16.2" and by["21CSS201T"]["max_disp"] == "20"
 assert by["21CSS201T"]["pct"] == 81.0
 assert [s["pct"] for s in v] == [81.0, 67.0, 87.5, 72.0]
 # exactly one accent: unique lowest (67.0) AND below the 75 target
@@ -61,33 +61,36 @@ assert not any(s["outlier"] for s in v2)
 assert [c["name"] for c in by["21MAB206T"]["components"]] == ["FT-I", "FT-II"]
 assert [c["date_disp"] for c in by["21MAB206T"]["components"]] == ["21 Sep", "07 Sep"]
 coa = {c["name"]: c for c in by["21CSS201T"]["components"]}
-assert coa["FT-I"]["score_disp"] == "4.50" and coa["FT-I"]["max_disp"] == "5"
+assert coa["FT-I"]["score_disp"] == "4.5" and coa["FT-I"]["max_disp"] == "5"
 assert coa["FT-I"]["date_disp"] == "04 Sep" and coa["FT-I"]["ie"] is None
 assert coa["FT-I"]["derived"] == "" and coa["FT-I"]["confirmed"] is None
 
-# ── derived IE row: 11.70/15 -> 39.00/50 ─────────────────────────────
+# ── derived IE row: 11.7/15 -> 39/50 ──────────────────────────────────
 assert coa["FT-II"]["derived"] == "IE-1" and coa["FT-II"]["confirmed"] is None
 assert coa["FT-II"]["ie"]["role"] == "IE-1" and coa["FT-II"]["ie"]["confirmed"] is False
-assert coa["FT-II"]["ie"]["score_disp"] == "39.00" and coa["FT-II"]["ie"]["max_disp"] == "50"
+assert coa["FT-II"]["ie"]["score_disp"] == "39" and coa["FT-II"]["ie"]["max_disp"] == "50"
 pe = by["21LEM201T"]["components"][0]                # Professional Ethics: no tag
 assert pe["ie"] is None and pe["max_disp"] == "20"
-prac = by["21CSC203P"]["components"][0]              # practical /10 -> 7.20/10 = 36.00/50
-assert prac["ie"]["role"] == "IE-1" and prac["ie"]["score_disp"] == "36.00"
+prac = by["21CSC203P"]["components"][0]              # practical /10 -> 7.2/10 = 36/50
+assert prac["ie"]["role"] == "IE-1" and prac["ie"]["score_disp"] == "36"
 
 # ── confirmed tags beat the derivation (incl. 'neither') ─────────────
 tags = {("21CSS201T", "FT-II"): {"role": "IE-2", "raw_max": 60.0, "scaled_max": 15.0}}
 c2 = {c["name"]: c for c in _marks_view(MARKS, tags)[0]["components"]}["FT-II"]
 assert c2["confirmed"] == "IE-2" and c2["ie"]["confirmed"] is True
-assert c2["ie"]["max_disp"] == "60" and c2["ie"]["score_disp"] == "46.80"   # 11.7*60/15
+assert c2["ie"]["max_disp"] == "60" and c2["ie"]["score_disp"] == "46.8"   # 11.7*60/15
 tags_none = {("21CSS201T", "FT-II"): {"role": "none", "raw_max": None, "scaled_max": 15.0}}
 c3 = {c["name"]: c for c in _marks_view(MARKS, tags_none)[0]["components"]}["FT-II"]
 assert c3["ie"] is None and c3["confirmed"] == "none"   # confirmed refusal hides the guess
 
-# ── dashboard glance: 3 lowest (risk-first), marks/max chips, no % ───
+# ── dashboard glance: ALL subjects (risk-first), chips, no % ──────────
 s = _marks_summary(MARKS)
-assert [x["code"] for x in s] == ["21MAB206T", "21CSC203P", "21CSS201T"], s
-assert [(x["scored"], x["max"]) for x in s] == [("13.40", "20"), ("7.20", "10"), ("16.20", "20")], s
+assert [x["code"] for x in s] == ["21MAB206T", "21CSC203P", "21CSS201T", "21LEM201T"], s
+assert [(x["scored"], x["max"]) for x in s] == \
+    [("13.4", "20"), ("7.2", "10"), ("16.2", "20"), ("17.5", "20")], s
 assert all("pct" not in x for x in s)                      # % dropped from the glance
+assert all(x["stale"] is False for x in s)                 # fresh rows never flagged
+assert _marks_summary([dict(MARKS[0], stale=True)])[0]["stale"] is True  # preserved row carries it
 assert _marks_summary([]) is None
 
 # ── class key: year|branch|section (no semester) + per-student fallback ─
