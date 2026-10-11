@@ -520,8 +520,14 @@ def fill_feedback(netid, plan, cookies_json):
     (one portal form per teacher within a subject). Returns
     {"filled": [labels], "already": [labels], "failed": [[label, reason]]}
     where label = "subject · teacher".
-    Raises HttpScraperError when the session or window is unusable (nothing
-    submitted).
+
+    Expected portal-state refusals (session expired, window closed) return
+    {"error": <user-facing literal>} instead of raising, so the caller can put
+    the message straight in front of the student: exception text is never safe
+    to echo into an HTTP response (CWE-209 / CodeQL py/stack-trace-exposure —
+    a message can embed nested exception reprs). Transport and unexpected
+    failures still raise HttpScraperError and are logged server-side by the
+    caller.
     """
     t0 = time.monotonic()
     base, xheaders = _route()
@@ -540,7 +546,8 @@ def fill_feedback(netid, plan, cookies_json):
 
     _u, body = _req(opener, f"{base}{BASE_PATH}/students/template/HRDSystem.jsp", _hdrs(xheaders))
     if "HRDSystem" not in _u and b"HRDSystem" not in body[:4000]:
-        raise HttpScraperError("portal session expired — sync first")
+        # refusal, not a fault: plain literal the caller may show verbatim
+        return {"error": "portal session expired — sync first"}
 
     # fresh main fragment: common hidden fields + the CURRENT subject list
     url = f"{base}{BASE_PATH}/students/Feedback/MidSemFeedback.jsp"
@@ -551,7 +558,8 @@ def fill_feedback(netid, plan, cookies_json):
     _u, body = _req(opener, url, headers, data=data)
     frag = body.decode("utf-8", errors="replace")
     if "youLogin" in frag or "txtCourseTitle" not in frag:
-        raise HttpScraperError("feedback window closed or session dead — nothing submitted")
+        # refusal, not a fault: plain literal the caller may show verbatim
+        return {"error": "feedback window closed or session dead — nothing submitted"}
     common = _fb_common(frag)
     live = {" ".join(n.split()).upper(): sid for sid, n in _fb_subjects(frag)}
 

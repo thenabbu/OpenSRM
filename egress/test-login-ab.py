@@ -53,9 +53,11 @@ print(f"    nonce={nonce} seed={seed} dfield={dfield} cfield={cfield} rdelim={rd
 dp=base64.b64encode(f"{nonce}:{HOST}".encode()).decode()
 img_url=(DIRECT+src) if src.startswith("/") else src
 if img_url.startswith(DIRECT): img_url=img_url.replace(DIRECT, DIRECT)  # same base
-# for worker route, rewrite origin->worker
-if ROUTE=="worker" and img_url.startswith("https://sp.srmist.edu.in"):
-    img_url=img_url.replace("https://sp.srmist.edu.in", DIRECT)
+# for worker route, rewrite origin->worker. The host is compared on the
+# PARSED url: a startswith() on a URL literal is bypassable
+# (https://sp.srmist.edu.in.evil.com/x also matches).
+if ROUTE=="worker" and urllib.parse.urlsplit(img_url).hostname == HOST:
+    img_url=img_url.replace(f"https://{HOST}", DIRECT, 1)
 imgb=opener.open(urllib.request.Request(img_url,headers={**H,"X-Domain-Proof":dp,"Referer":f"https://{HOST}/srmiststudentportal/students/loginManager/youLogin.jsp"}),timeout=20).read()
 open(f"/tmp/g5_{ROUTE}_captcha.png","wb").write(imgb)
 ocr=solve_captcha_b64(base64.b64encode(imgb).decode())

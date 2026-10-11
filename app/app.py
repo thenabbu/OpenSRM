@@ -1960,9 +1960,18 @@ def api_feedback_fill():
     try:
         res = http_scraper.fill_feedback(netid, plan, cookies)
     except http_scraper.HttpScraperError as e:
+        # full detail goes to the log + telemetry only: exception text must
+        # never reach the response body (CWE-209, CodeQL
+        # py/stack-trace-exposure) — it can embed nested exception reprs.
         log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
         _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
-        return {"ok": False, "error": str(e)}, 502
+        return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
+    if "error" in res:
+        # fill_feedback's own portal-state refusal: a literal it built itself,
+        # so it is safe to hand to the student verbatim.
+        log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
+        _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+        return {"ok": False, "error": res["error"]}, 502
     ms = int((time.monotonic() - t0) * 1000)
     log_with_kv(log_portal, logging.INFO, "feedback fill done",
                 netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
