@@ -1649,6 +1649,14 @@ def index():
             for rows in (data.get("daily_absent") or {}).values() for r in rows),
     }
 
+    # card/widget engine: layout registry + derived widget data (route-side
+    # joins — partials consume flat dicts only). Cards whose `when` context
+    # vars are ALL empty are dropped here so no orphan shell renders.
+    _wctx = {"marks_summary": marks_summary, "exams": exams,
+             "budgets": _budget_rows(courses),
+             "teach_groups": _teacher_groups(faculty_view)}
+    layout = [c for c in LAYOUT
+              if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
@@ -1657,6 +1665,11 @@ def index():
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
+        # card/widget engine: layout registry + derived widget data (route-side
+        # joins — partials consume flat dicts only)
+        layout=layout, widget_specs=WIDGETS, notices=NOTICES,
+        ticker=_today_ticker(group_key), budgets=_wctx["budgets"],
+        teach_groups=_wctx["teach_groups"],
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         personal=personal_data)
@@ -1675,6 +1688,116 @@ SLOTS = [
     {"period": 0, "start": "15:50", "end": "16:00", "type": "break", "name": "Break"},
     {"period": 7, "start": "16:00", "end": "16:50", "type": "class"},
 ]
+
+# ── Dashboard card/widget engine ────────────────────────────────────────────
+# Contract (session spec, engine-spec.md): a card is one LAYOUT entry (grid
+# span + widget ids); a widget is one WIDGETS entry pointing at a partial that
+# emits its OWN label + box — no data -> it emits nothing (DESIGN §4.12
+# empty=hidden). Adding/removing a card or widget edits ONLY these dicts:
+# no template, route or test churn beyond the widget's own partial.
+LAYOUT = [
+    {"id": "day", "span": 4, "row_span": 2,
+     "widgets": ["profile", "today", "week", "notices"]},
+    # `when` = route-context vars that must be truthy for the card to render
+    # (all-empty card -> no orphan shell). Missing `when` = always show.
+    {"id": "assess", "span": 8, "when": ["marks_summary", "exams"],
+     "widgets": ["marks", "exams"]},
+    {"id": "people", "span": 8, "when": ["budgets", "teach_groups"],
+     "cols": 2, "widgets": ["attendance", "teachers"]},
+]
+# min_w = measured plateaus (mockup measure_widgets.py): a card's inner width
+# must stay >= min_w for every widget it carries (span math, not vibes).
+WIDGETS = {
+    "profile":    {"partial": "partials/widgets/profile.html",  "min_w": 250},
+    "today":      {"partial": "partials/widgets/today.html",    "min_w": 260},
+    "week":       {"partial": "partials/widgets/week.html",     "min_w": 250},
+    "notices":    {"partial": "partials/widgets/notices.html",  "min_w": 300},
+    "marks":      {"partial": "partials/widgets/marks.html",    "min_w": 560},
+    "exams":      {"partial": "partials/widgets/exams.html",    "min_w": 560},
+    "attendance": {"partial": "partials/widgets/attendance.html", "min_w": 300},
+    "teachers":   {"partial": "partials/widgets/teachers.html", "min_w": 358},
+}
+# Release notices, newest first (append at release time). The New badge rides
+# the head entry only — release notes verbatim from the real CHANGELOG.
+NOTICES = [
+    {"ver": "v1.16.0", "date": "11 Oct", "title": "Card dashboard + notices",
+     "body": "Dashboard rebuilt as cards and widgets: class ticker, skip "
+             "glance, subject-grouped teachers and this notices panel."},
+    {"ver": "v1.15.4", "date": "10 Oct", "title": "Institute email + marks fixes",
+     "body": "Profile shows your @srmist.edu.in address; marks list every "
+             "subject, stale entries flagged, trailing zeroes trimmed."},
+]
+
+
+def _today_ticker(group_key):
+    """Today widget: prev/now/next class rows from the REAL slot grid.
+
+    None = no timetable / no classes today -> widget hidden (empty=hidden).
+    state: "now" (a class is running), "up" (none running, one upcoming —
+    breaks land here naturally), "done" (all classes finished). v1 renders
+    statically; event-driven promotion is a later rung.
+    """
+    day_slots = _day_slots(group_key)
+    if not day_slots:
+        return None
+    todays = day_slots.get(datetime.now().strftime("%A"), {})
+    rows = [{"start": s["start"], "end": s["end"],
+             "code": todays[s["period"]]["code"],
+             "name": todays[s["period"]].get("name") or ""}
+            for s in SLOTS if s["type"] != "break" and s["period"] in todays]
+    if not rows:
+        return None
+    now = datetime.now().hour * 60 + datetime.now().minute
+
+    def _m(t):
+        return int(t[:2]) * 60 + int(t[3:5])
+    for i, r in enumerate(rows):
+        if now < _m(r["end"]):
+            state = "now" if now >= _m(r["start"]) else "up"
+            return {"state": state, "prev": rows[i - 1] if i else None,
+                    "now": r, "next": rows[i + 1] if i + 1 < len(rows) else None}
+    return {"state": "done", "prev": rows[-1], "now": None, "next": None}
+
+
+def _budget_rows(courses):
+    """Attendance widget: (code, value, risk) per subject in COURSES order
+    (already sorted pct-ascending = risk-first). value = classes still
+    skippable at >=75%, or `attend N` / `0` in the alert hue when not —
+    the SAME _bunk_counts numbers the attendance tab shows, one source.
+    (None, None) rows (nothing held) are dropped, never faked as 0.
+    """
+    rows = []
+    for c in courses:
+        skip, attend = c.get("skip_now"), c.get("attend_now")
+        if attend is not None:
+            rows.append((c.get("code", ""), f"attend {attend}", 0))
+        elif skip is not None:
+            rows.append((c.get("code", ""), str(skip), 1 if skip == 0 else 2))
+    return rows
+
+
+def _teacher_groups(faculty):
+    """Faculty rows -> flat teacher-group dicts for the Teachers widget
+    (subject-first grouping is the widget's whole view; initials derived
+    HERE, not in the template). faculty == _faculty_view output."""
+    out = []
+    for f in faculty:
+        staff = []
+        for _sid, tname, kind in f["staff"]:
+            # portal writes "Dr.Priyanka" with no space — normalise for display
+            tname = re.sub(r"^(Dr|Mr|Ms|Mrs|Prof)\.(?=\S)", r"\1. ", tname)
+            parts = tname.split()
+            given = parts[0] if parts else ""
+            # honorifics are not initials: "Dr.Priyanka Gupta" -> PG, not DG
+            m = re.match(r"^(?:Dr|Mr|Ms|Mrs|Prof)\.?(.*)$", given, re.I)
+            if m:
+                given = m.group(1) or (parts[1] if len(parts) > 1 else given)
+            sur = parts[-1] if len(parts) > 1 else ""
+            ini = (given[:1] + sur[:1]) if given else ""
+            staff.append({"name": tname, "mode": kind, "ini": ini.upper()})
+        out.append({"code": f["code"], "name": f["name"], "staff": staff})
+    return out
+
 
 def _now_next_from_slots(day, slots):
     now_mins = datetime.now().hour * 60 + datetime.now().minute

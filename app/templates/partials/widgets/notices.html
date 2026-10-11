@@ -1,0 +1,21 @@
+<!-- Widget: notices — release notes; New badge on the head entry only -->
+{% if notices %}
+<div class="wbox rounded-box p-4">
+  <div class="wlabel">Notices</div>
+  <ul>
+    {% for n in notices %}
+    <li class="py-2 border-t border-base-300 first:border-t-0 first:pt-0">
+      <div class="flex items-center justify-between gap-2 mb-1">
+        <span class="flex items-center gap-1.5 min-w-0">
+          {% if loop.first %}<span class="badge badge-soft badge-success badge-xs font-mono shrink-0">New</span>{% endif %}
+          <span class="font-mono text-xs text-base-content/60 truncate">{{ n.ver }}</span>
+        </span>
+        <span class="shrink-0 text-xs text-base-content/50">{{ n.date }}</span>
+      </div>
+      <div class="text-sm font-semibold">{{ n.title }}</div>
+      <div class="text-xs text-base-content/70 mt-0.5">{{ n.body }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

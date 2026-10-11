@@ -1,0 +1,40 @@
+<!-- Widget: end sem exams — official ETT (label+source) left, countdown
+     right, all on the header line; rows carry slot/hall/seat when real -->
+{% if exams %}
+<div class="wbox rounded-box p-4">
+  <div class="flex items-center justify-between gap-2 mb-2">
+    <span class="flex min-w-0 items-center gap-2 text-[11px] text-base-content/60">
+      <span class="shrink-0">End sem exams</span>
+      <span class="badge badge-soft badge-sm shrink-0">{{ exams.label }}</span>
+      <span class="badge badge-outline badge-sm text-base-content/60 shrink-0">{{ exams.source }}</span>
+    </span>
+    <span class="shrink-0 text-xs text-base-content/70">
+      {% if exams.days_until > 0 %}First exam in <strong>{{ exams.days_until }}</strong> day{{ 's' if exams.days_until != 1 }}
+      {% else %}Exams under way{% endif %}
+    </span>
+  </div>
+  <ul>
+    {% for e in exams.rows %}
+    <li class="flex items-start gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
+      <!-- mobile: day is the landmark; month lives in the header badge -->
+      <span class="w-9 shrink-0 text-center sm:hidden">
+        <span class="block font-mono text-[17px] font-semibold leading-none tabular-nums text-base-content">{{ e.day }}</span>
+        <span class="block mt-1 text-[11px] uppercase tracking-wider text-base-content/60">{{ e.dow }}</span>
+      </span>
+      <span class="min-w-0 flex-1 sm:hidden">
+        <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
+        <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %} &middot; Hall {{ e.hall }}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}{% endif %}</span>
+      </span>
+      <!-- desktop: one dense line, date right -->
+      <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
+        <span class="min-w-0 truncate text-sm">
+          <span class="font-mono text-base-content/60">{{ e.code }}</span>
+          <span class="text-base-content">{{ e.name_disp }}</span>
+        </span>
+        <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %} &middot; Hall {{ e.hall }}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}{% endif %}</span>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

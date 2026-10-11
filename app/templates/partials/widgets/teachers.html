@@ -1,0 +1,33 @@
+<!-- Widget: teachers — subject-grouped scrollable list (grouping IS the
+     view; no toggle in v1); mode tag (Theory/Practical) per staff row from
+     the portal suffix. CTA + caption kept for the opt-in feedback flow. -->
+{% if teach_groups %}
+<div class="wbox rounded-box p-4">
+  <div class="wlabel">Teachers</div>
+  <div class="widget-scroll">
+    <ul>
+      {% for g in teach_groups %}
+      <li class="py-2 border-t border-base-300 first:border-t-0 first:pt-0">
+        <div class="mb-1 flex items-baseline gap-1.5 min-w-0">
+          {% if g.code %}<span class="font-mono text-xs text-base-content/60">{{ g.code }}</span>{% endif %}
+          <span class="truncate text-xs text-base-content/80">{{ g.name }}</span>
+        </div>
+        {% for s in g.staff %}
+        <div class="flex items-center gap-2.5 py-1">
+          <span class="grid size-6 shrink-0 place-items-center rounded-full bg-base-300 font-mono text-[10px] text-base-content/70" aria-hidden="true">{{ s.ini }}</span>
+          <span class="min-w-0 flex-1 truncate text-sm">{{ s.name }}</span>
+          {% if s.mode %}<span class="shrink-0 font-mono text-xs text-base-content/50">{{ s.mode }}</span>{% endif %}
+        </div>
+        {% endfor %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="text-xs text-base-content/70 mt-2">From the mid-sem feedback form</div>
+  {% if fb_plan %}
+  <button id="fb-cta" class="btn btn-sm btn-primary min-h-11" aria-haspopup="dialog">
+    Auto-fill mid-sem feedback
+  </button>
+  {% endif %}
+</div>
+{% endif %}

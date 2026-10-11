@@ -20,6 +20,24 @@
 <link rel="stylesheet" href="/static/timetable.css">
 <link rel="stylesheet" href="/static/motion.css">
 <link rel="stylesheet" href="/static/gaze.css">
+<style>
+/* Card/widget engine styles — the approved mockup's computed values, ported
+   verbatim (spec: engine-spec.md). CSP style-src allows 'unsafe-inline'. */
+.wlabel{font-size:11px;line-height:1.5;margin-bottom:8px;
+  color:color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  text-transform:uppercase;letter-spacing:.05em}
+.wbox{background:color-mix(in oklab, var(--color-base-300) 60%, transparent);
+  border-radius:var(--radius-box)}
+.att-neg{color:color-mix(in oklab, var(--color-error) 70%, white)}
+/* scroll affordance for the teachers list (universal scrollbar pattern) */
+.widget-scroll{max-height:320px;overflow-y:auto;padding-right:4px;
+  scrollbar-width:thin;
+  scrollbar-color:color-mix(in oklab, var(--color-base-content) 25%, transparent) transparent}
+.widget-scroll::-webkit-scrollbar{width:6px}
+.widget-scroll::-webkit-scrollbar-track{background:transparent}
+.widget-scroll::-webkit-scrollbar-thumb{border-radius:9999px;
+  background:color-mix(in oklab, var(--color-base-content) 25%, transparent)}
+</style>
 </head><body class="bg-base-100 text-base-content">
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 hidden lg:flex px-4"
@@ -108,160 +126,28 @@
     <span class="text-sm text-base-content/60">Refreshing attendance...</span>
   </div>
 </dialog>
-<main class="max-w-3xl mx-auto px-2 lg:px-4 py-5 pb-24 lg:pb-5">
+<main class="px-2 lg:px-4 py-5 pb-24 lg:pb-5">
   <div id="tab-dashboard" role="tabpanel" aria-labelledby="tab-dashboard-tab" data-tabpanel style="">
-    <div class="card bg-base-200 border border-base-300 mb-5">
-      <div class="card-body p-5 gap-4">
-        <div class="flex items-center gap-4">
-          <div class="avatar shrink-0">
-            <div class="bg-base-300 w-16 rounded-full overflow-hidden blobatar-gaze">
-              {{ netid | blobatar(size=64, animate="always") | safe }}
-            </div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <h2 class="card-title text-lg truncate">{{ student_name or netid }}</h2>
-            <button type="button" id="copyEmail" data-email="{{ dash.email }}"
-                    class="btn btn-ghost btn-xs px-1 min-h-6 font-mono text-base-content/70 gap-1"
-                    title="Click to copy email">
-              <span class="truncate max-w-[50vw] sm:max-w-xs">{{ dash.email }}</span>
-              <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
-              </svg>
-            </button>
-            {% if dash.reg_no %}
-            <div class="text-xs text-base-content/50 font-mono cursor-copy" data-copy="{{ dash.reg_no }}" title="Click to copy">{{ dash.reg_no }}</div>
-            {% endif %}
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <!-- Today -->
-          <div class="bg-base-300/40 border border-base-300 rounded-box p-4">
-            <div class="text-[11px] uppercase tracking-wider text-base-content/50 mb-2">Today</div>
-            {% if dash.week.today_absent %}
-            <div class="flex items-center gap-2 mb-1">
-              <span class="badge badge-error badge-sm">Absent</span>
-              <span class="text-sm text-base-content/70">marked today</span>
-            </div>
-            {% endif %}
-            {% if dash.today.count %}
-            <div class="text-sm">
-              <strong>{{ dash.today.count }}</strong> class{{ 'es' if dash.today.count != 1 }} scheduled
-              {% if dash.today.next %}
-              <div class="text-base-content/70 mt-1">
-                {% if dash.today.next.kind == 'now' %}
-                <span class="badge badge-success badge-sm align-middle">Now</span>
-                {{ dash.today.next.code }} until {{ dash.today.next.at }}
-                {% else %}
-                <span class="badge badge-soft badge-info badge-sm align-middle">Next</span>
-                {{ dash.today.next.code }} at {{ dash.today.next.at }}
-                {% endif %}
-              </div>
-              {% elif dash.today.day_done %}
-              <div class="text-base-content/50 mt-1">All done for today</div>
-              {% endif %}
-            </div>
-            {% else %}
-            <div class="text-sm text-base-content/50">No timetable for today</div>
-            {% endif %}
-          </div>
-          <!-- This week -->
-          <div class="bg-base-300/40 border border-base-300 rounded-box p-4">
-            <div class="text-[11px] uppercase tracking-wider text-base-content/50 mb-2">This week</div>
-            {% if dash.week.days %}
-            <div class="text-sm"><strong>{{ dash.week.days }}</strong> day{{ 's' if dash.week.days != 1 }} absent · {{ dash.week.hours|int if dash.week.hours == dash.week.hours|int else dash.week.hours }} hrs lost</div>
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              {% for h in dash.week.dates %}
-              <span class="badge badge-soft badge-warning badge-sm font-mono" title="{{ h.hours }} hrs">{{ h.date[:5] }}</span>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="text-sm text-base-content/50">No absences this week</div>
-            {% endif %}
-          </div>
-          {% if marks_summary %}
-          <!-- Internal marks glance: per-subject marks/max as last synced (no %, no overall) -->
-          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
-            <div class="text-[11px] uppercase tracking-wider text-base-content/50 mb-2">Internal marks</div>
-            <div class="flex flex-wrap gap-1.5">
-              {% for s in marks_summary %}
-              <!-- stale = preserved from an earlier sync: faint (opacity-60, §2.5 ladder) + title, never colour alone -->
-              <span class="badge badge-soft badge-sm font-mono tabular-nums{% if s.stale %} opacity-60{% endif %}"{% if s.stale %} title="Kept from an earlier sync — the latest refresh returned no marks for it"{% endif %}>{{ s.code }} {{ s.scored }}/{{ s.max }}</span>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
-          {% if exams %}
-          <!-- End-sem schedule: official Exam Time Table (iden=126) + scribe-leak
-               estimate fallback for subjects the official page leaves pending -->
-          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
-            <div class="flex items-center gap-2 mb-2">
-              <div class="text-[11px] uppercase tracking-wider text-base-content/50">End sem exams</div>
-              <span class="badge badge-soft badge-sm">{{ exams.label }}</span>
-              <span class="badge badge-outline badge-sm text-base-content/60">{{ exams.source }}</span>
-            </div>
-            <ul class="space-y-3 sm:space-y-2">
-              {% for e in exams.rows %}
-              <li class="flex items-start gap-3">
-                <!-- mobile: day is the landmark; month lives in the header badge -->
-                <span class="w-9 shrink-0 text-center sm:hidden">
-                  <span class="block font-mono text-[17px] font-semibold leading-none tabular-nums text-base-content">{{ e.day }}</span>
-                  <span class="block mt-1 text-[11px] uppercase tracking-wider text-base-content/60">{{ e.dow }}</span>
-                </span>
-                <span class="min-w-0 flex-1 sm:hidden">
-                  <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
-                  <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
-                </span>
-                <!-- desktop: one dense line, date right -->
-                <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
-                  <span class="min-w-0 truncate text-sm">
-                    <span class="font-mono text-base-content/60">{{ e.code }}</span>
-                    <span class="text-base-content">{{ e.name_disp }}</span>
-                  </span>
-                  <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} · {{ e.session_disp }}{% if e.slot %} · {{ e.slot }}{% endif %}{% if e.hall %} · Hall {{ e.hall }}{% if e.seat %} · Seat {{ e.seat }}{% endif %}{% endif %}</span>
-                </span>
-              </li>
-              {% endfor %}
-            </ul>
-            <div class="text-xs text-base-content/70 mt-2">
-              {% if exams.days_until > 0 %}First exam in <strong>{{ exams.days_until }}</strong> day{{ 's' if exams.days_until != 1 }}
-              {% else %}Exams under way{% endif %}
-            </div>
-          </div>
-          {% endif %}
-          {% if faculty %}
-          <!-- Faculty map: harvested from the mid-sem feedback form (the portal's only subject->teacher source) -->
-          <div class="bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2">
-            <div class="flex items-center gap-2 mb-2">
-              <div class="text-[11px] uppercase tracking-wider text-base-content/50">Teachers</div>
-              <span class="badge badge-outline badge-sm text-base-content/60">{{ faculty|length }}</span>
-            </div>
-            <ul class="space-y-3 sm:space-y-2">
-              {% for f in faculty %}
-              <li class="flex items-start gap-3">
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ f.name }}</span>
-                  <span class="block mt-0.5 text-xs text-base-content/60">{% for s in f.staff %}{{ s[1] }}{% if s[2] %} <span class="text-base-content/50">({{ s[2] }})</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>
-                </span>
-                {% if f.code %}<span class="shrink-0 mt-0.5 font-mono text-xs text-base-content/60">{{ f.code }}</span>{% endif %}
-              </li>
-              {% endfor %}
-            </ul>
-            <div class="text-xs text-base-content/70 mt-2">From the mid-sem feedback form</div>
-            {% if fb_plan %}
-            <!-- Opt-in auto-fill: CTA opens the explainer modal (what happens,
-                 what gets submitted); ONLY the modal's confirm button writes
-                 to the portal. Sync harvests read-only. -->
-            <button id="fb-cta" class="btn btn-sm btn-primary min-h-11" aria-haspopup="dialog">
-              Auto-fill mid-sem feedback
-            </button>
-            {% endif %}
-          </div>
-          {% endif %}
+    <!-- Card/widget engine: cards come from the LAYOUT registry, widgets from
+         WIDGETS (app.py) — one include loop; each partial owns its label+box
+         and renders NOTHING when empty (DESIGN §4.12). Unknown widget ids
+         render nothing, never 500. Contract: engine-spec.md. -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {% for c in layout %}
+      <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}">
+        <div class="card-body p-4 gap-3">
+          {% if c.cols %}<div class="grid grid-cols-1 sm:grid-cols-{{ c.cols }} gap-3">{% endif %}
+          {% for wid in c.widgets %}
+          {% set spec = widget_specs.get(wid) %}
+          {% if spec %}{% include spec['partial'] %}{% endif %}
+          {% endfor %}
+          {% if c.cols %}</div>{% endif %}
         </div>
       </div>
+      {% endfor %}
     </div>
   </div>
-  <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel style="display:none">
+  <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     <div class="flex items-center justify-between mb-3">
       <h1 class="text-base font-semibold">Subjects</h1>
       <div class="join" role="group" aria-label="Attendance view">
@@ -386,7 +272,7 @@
     </div>
     {% endif %}
   </div>
-  <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel style="display:none">
+  <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
       <!-- audit feature: who edited the shared timetable, when, what changed -->
@@ -442,7 +328,7 @@
       </div>
     </div>
   </div>
-  <div id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-tab" data-tabpanel style="display:none">
+  <div id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     {% if personal %}
     {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER"]),
                      ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"]),
@@ -491,7 +377,7 @@
     <div class="alert alert-soft alert-info">No personal details available.</div>
     {% endif %}
   </div>
-  <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel style="display:none">
+  <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     {% if marks %}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       {% for s in marks %}

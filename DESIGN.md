@@ -32,7 +32,7 @@
 | Page background | `bg-base-100 text-base-content` on `<body>` |
 | Card, navbar, modal, table header, accordion | `bg-base-200 border border-base-300` |
 | Divider, border, progress track, avatar bg | `border-base-300` / `bg-base-300` |
-| Raised strip inside a card | `bg-base-300/50` |
+| Raised strip inside a card | `bg-base-300/50` (widget fill `.wbox` is the /60 step, §4.17) |
 | Body / heading text | inherit (`text-base-content`) |
 | Description, caption | `text-base-content/60` · footnote floor `text-base-content/50` |
 | Good / at-risk / bad number | `text-success` / `text-warning` / `text-error` (by threshold) |
@@ -63,11 +63,16 @@ Anatomy of the dashboard:
 │ logo | name     [Dashboard][Attendance]…[Personal]  [Refresh] (5m ago) [Log out]
 │                ← role=tab, selected = §4.9 tint     ← caption only once ≥5m old
 ├────────────────────────────────────────────────────┤   page: bg-base-100
-│  ┌──────────────────────────────────────────────┐      max-w-3xl mx-auto px-2 lg:px-4 py-5
-│  │ Subjects                                      │   ←  h1, one card of §4.15 meter rows
-│  │ DBMS ▓▓▓▓▓▓░░░│75%  62%  31/38/50  −26        │
-│  └──────────────────────────────────────────────┘
-│  Estimates · Absences (month bar + chips)        ←  quiet cards (§4.15)
+│  main px-2 lg:px-4 py-5 pb-24 lg:pb-5             │   full-width on Dashboard only
+│  ┌─ grid grid-cols-1 lg:grid-cols-12 gap-6 ──────────────────────────┐
+│  │ day  span 4 · row-span 2   │ assess span 8      │  §4.17 engine  │
+│  │   profile · today · week   │   marks · exams    │                │
+│  │   notices                  │ people span 8      │                │
+│  │                            │   attendance ·     │                │
+│  │                            │   teachers         │                │
+│  └────────────────────────────┴────────────────────┘                │
+│  attendance · timetable · marks · personal panels:                  │
+│  each its own `max-w-3xl mx-auto` tabpanel                          │
 └────────────────────────────────────────────────────┘
 ```
 
@@ -112,7 +117,7 @@ daisyUI's docs and the theme-generator preview put cards on `base-100` over a `b
 
 - The steps are tiny (contrast 1.10:1 between `base-200` and `base-100`, 1.28:1 between `base-300` and `base-200`), so the 1px `border-base-300` is what actually draws the edge. A container without its border looks smudged.
 - Inputs inside a card keep daisyUI's default fill (`base-100`), so they sit *lighter* than the card.
-- A raised strip inside a card is `bg-base-300/50` (see the Personal Details section headers). Nest at most two levels: page → container → sub-surface. Never card-in-card-in-card.
+- A raised strip inside a card is `bg-base-300/50` (see the Personal Details section headers); the §4.17 widget fill `.wbox` is the next step up, `base-300/60`. Nest at most two levels: page → container → sub-surface. Never card-in-card-in-card.
 
 ### 2.4 `primary` is black: the trap
 
@@ -206,10 +211,10 @@ So for badges, buttons, and banners that carry small text:
 ## 3. Typography
 
 - **Families:** the system stack only. Default sans (Tailwind `font-sans`) for text, `font-mono` for data. There are no web fonts; the CSP blocks them (§10). `timetable.css` uses the generic `monospace` stack (an earlier `IBM Plex Mono` mention was never loaded and has been removed).
-- **Scale in use:** `text-xs` 12px (meta, captions, stat rows) · `text-sm` 14px (body, values, controls) · `text-base` 16px (section headings, card titles). Nothing larger inside the dashboard. 12px is the floor for new UI.
+- **Scale in use:** `text-xs` 12px (meta, captions, stat rows) · `text-sm` 14px (body, values, controls) · `text-base` 16px (section headings, card titles). Nothing larger inside the dashboard — except the §4.17 widget exceptions: `.wlabel` at 11px (floor, labels only) and the `today` ticker's running-class start time at 22px (the one hero figure, `font-mono font-bold tabular-nums`).
 - **Weights:** 400 body · 500 `font-medium` (field labels, status lines) · 600 `font-semibold` (section headings, names; `btn` is 600 by default) · 700 `font-bold` (percentages only).
 - **Mono is for data:** course codes, percentages, times, counts, dates, NetID. Never for sentences.
-- **Case:** sentence case for new copy. Uppercase micro-labels (`text-xs uppercase tracking-wide`) exist only in the Personal Details list; do not spread them. Portal data arrives in ALL CAPS, so course names are shown with `capitalize`.
+- **Case:** sentence case for new copy. Uppercase micro-labels exist in exactly two places: the Personal Details list (`text-xs uppercase tracking-wide`) and the dashboard widget labels (`.wlabel`, §4.17); do not spread them further. Portal data arrives in ALL CAPS, so course names are shown with `capitalize`.
 - **Alignment:** left-aligned. Centered text appears only on the login screen (card note, status line) and the timetable break dividers. Keep lines under ~70 characters.
 
 ---
@@ -534,17 +539,65 @@ Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.t
 
 ### 4.16 Teachers card (dashboard home, faculty map)
 
+> 2026-10/v1.16.0: the card renders through the §4.17 engine as its `teachers` widget (`.wlabel` header, `.wbox`, subject subheads, initials avatars, mode tags, `.widget-scroll` list). The `#fb-cta` button, the `#fb-modal` opt-in flow, and the plan builder below are unchanged; the old `bg-base-300/40 … p-4 sm:col-span-2` shell and the parenthesised `(Theory)/(Practical)` labels are superseded by §4.17.
+
 Anatomy — copied from the end-sem card (§4.12): `bg-base-300/40 border border-base-300 rounded-box p-4 sm:col-span-2`; header row = `text-[11px] uppercase tracking-wider text-base-content/50` "Teachers" + one `badge-outline badge-sm` count badge; rows = subject name (`text-sm font-semibold`, title-cased) over the staff line (`text-xs text-base-content/60`, names title-cased, kind labels `(Theory)/(Practical)` at `/50` — `/40` measured 3.83:1 and fails WCAG at 12px); optional `font-mono text-xs` code chip right. Source footnote `text-xs text-base-content/70 mt-2` "From the mid-sem feedback form". Below it, when a plan exists, the *Auto-fill mid-sem feedback* CTA (`btn btn-sm btn-primary min-h-11`, 21:1) opens the opt-in explainer modal `<dialog id="fb-modal">` (daisyUI modal, same pattern as add-subject): an "Opt-in — nothing is submitted until you confirm" line, a 3-step mechanics list (every teacher gets their own form — one portal form per teacher within a subject; 5 = EXCELLENT on all 14 questions; comment "none"; live re-verify with honest skips), then the exact PER-TEACHER plan rows (subject `text-xs font-semibold` over `teacher · 5 = EXCELLENT … · comment “none”` at `/70`, `max-h-48` scrollable). The modal's *Fill feedback for N teachers* `btn btn-sm btn-primary min-h-11` is the ONLY element that writes feedback to the portal (sync harvests read-only); result line `#fb-status` inside the modal uses `text-success`/`text-error`, never color alone (counts in text), and hard failures also fire the global `#error-toast`. A `badge-neutral` "new" badge on the CTA was tried and dropped — it measured 1.35:1 on the primary button. Empty map (`{}`) -> the whole card is omitted (no empty-state block — same pattern as §4.12). Card rows live in `_faculty_view()` (app.py); the map is harvested server-side (mid-sem feedback form), never user-edited; the preview and `POST /api/feedback/fill` share ONE plan builder (`_fb_plan()`) so what the student saw IS what gets sent.
+
+### 4.17 Dashboard card/widget engine (v1.16.0)
+
+The Dashboard tab is generated, not hand-written. Three constants in `app/app.py` drive it: **`LAYOUT`** (card registry), **`WIDGETS`** (id → partial + `min_w`), **`NOTICES`** (release notices, newest first). Widget partials live in `app/templates/partials/widgets/*.html`.
+
+Engine invariants — each is a check in `tests/test_layout.py`:
+
+- **Every widget partial owns its own `.wlabel` + `.wbox`, and renders NOTHING when its data is empty.** Empty = hidden: no empty-state sentence, no placeholder (same rule as §4.12/§4.16).
+- **Unknown widget ids render nothing and never 500.**
+- **`when` filter:** a `LAYOUT` entry may carry `when` = a list of route-context variable names; if ALL are falsy the whole card is dropped (no orphan shells). No `when` → the card always renders.
+- **`min_w` contracts** recorded per widget in `WIDGETS` (measured plateaus, px): profile 250 · today 260 · week 250 · notices 300 · marks 560 · exams 560 · attendance 300 · teachers 358.
+
+**Grid:** `grid grid-cols-1 lg:grid-cols-12 gap-6` — the 24px gutter is the top of the ranked gap ladder (§5). `LAYOUT` spans: **day** = `span 4` + `row_span 2` (profile, today, week, notices) · **assess** = `span 8` (marks, exams) · **people** = `span 8` (attendance, teachers). A `LAYOUT` entry may carry **`cols: 2`** — that card's widget row is then a two-up grid (`grid-cols-1 sm:grid-cols-2 gap-3`, so it collapses to a stack below `sm`); the people card uses it (attendance | teachers side-by-side), cards without it stack their widgets vertically. Card shell is §4.1 with `card-body p-4 gap-3`, so the dashboard's tiers read **8 (label gap) < 12 (widget gap) < 16 (card pad) < 24 (grid gutter)**.
+
+**Where the CSS lives:** the widget rules ship in `dashboard.html`'s inline `<style>` block (`style-src 'unsafe-inline'`, §10.2). Inline styles travel with the HTML, so these rules need no `CACHE_NAME` bump.
+
+Recipes (approved mockup values, computed — not eyeballed):
+
+```css
+.wbox     { background: color-mix(in oklab, var(--color-base-300) 60%, transparent);
+            border-radius: var(--radius-box); }   /* sits on the bg-base-200 card, one level down (§2.3) */
+.wlabel   { font-size: 11px; line-height: 1.5; margin-bottom: 8px;
+            text-transform: uppercase; letter-spacing: .05em;
+            color: color-mix(in oklab, var(--color-base-content) 60%, transparent); }  /* 12.9:1 on the card */
+.att-neg  { color: color-mix(in oklab, var(--color-error) 70%, white); }                /* 8.06:1 on the widget fill */
+```
+
+- **`.att-neg` is the only alert hue allowed on a widget surface.** Plain `error` on the widget fill measured **2.67:1 — FAIL**; error + 30% white measures 8.06:1. Same trap on badges: solid `badge badge-warning badge-xs` measured **2.79:1** at 10px (needs 4.5:1) and failed the marks DUT contrast sweep, so the notices "New" chip is `badge-soft badge-success` (§2.8 applies unchanged).
+- **`.widget-scroll`** is the universal scroll box: `max-height: 320px; overflow-y: auto` plus a thin 6px scrollbar, thumb `color-mix(base-content 25% transparent)`, radius `9999px`. Anything expected to outgrow the card goes in it — never let a widget stretch the row.
+
+**The widgets:**
+
+- **profile** — `.wbox` only, **NO `.wlabel`**: the identity is its own label. Blobatar `w-11 h-11` (44px) · name `text-sm font-semibold` · copy-email button `#copyEmail` `text-xs font-mono /70` · reg no `text-xs font-mono /50`, click-to-copy.
+- **today** — a class ticker, three rows. **prev:** faded (`h-7 opacity-50`), start `text-xs font-mono tabular-nums` + code `text-xs`. **bright:** start **22px `font-bold font-mono tabular-nums`** + code `text-sm font-bold` + end time `text-xs /50` appended AFTER the code — white → white → grey on purpose, the end time is deliberately unimportant — with the subject name `text-xs /60` below. **next:** same shape as prev, faded. States: `now` (class running) · `up` (break / before first — the bright row is the *upcoming* class) · `done` (faded last row + `All done for today` `text-xs /50`) · no timetable day → hidden. **v1 renders statically**: event-driven one-shot promotion is explicitly deferred, and the ticker added **no new motion** — §7 rules stand as written.
+- **week** — headline `text-sm` `N days absent · H hrs lost`; per-day `badge badge-soft badge-warning badge-sm font-mono` chips with `title=` carrying the hours; empty text `No absences this week`.
+- **marks** — chips `badge badge-soft badge-sm font-mono tabular-nums` with inner spans: code `text-base-content/70` + score `scored/max font-medium`. Stale entries keep `opacity-60` + a `title` explainer (never colour alone). **No `%`, no overall number** — §4.13's glance rules hold here.
+- **exams** — header row: LEFT = `End sem exams` 11px `/60` + `badge badge-soft badge-sm` label + `badge badge-outline badge-sm text-base-content/60` source; RIGHT = countdown `First exam in N days` `text-xs /70`. The countdown lives **in the header** — the old footer countdown div is gone. Rows keep §4.12's dual mobile/desktop markup, divided `py-2 border-t border-base-300 first:border-t-0 first:pt-0`.
+- **attendance** — a can-skip glance. Header: `Attendance` `.wlabel` + `can skip` 11px `/50` right. Rows: code `w-20 font-mono text-xs text-base-content/60`, value right-aligned mono — neutral skip count = `text-sm tabular-nums base-content`; at-risk value = `.att-neg text-xs` (`attend N` below 75%, `0` exactly at the limit). Row order = courses order = pct-ascending = risk-first. Values are the **same `_bunk_counts` numbers the attendance tab shows** (single source — the glance can never disagree with the page), and rows with `(None, None)` (nothing held) are dropped, never faked as 0. No attendance *detail* is duplicated here; that belongs to §4.15.
+- **teachers** — subject-grouped list inside `.widget-scroll` (the grouping IS the view; no toggle in v1). Subject subhead = code `font-mono text-xs /60` + name `text-xs /80`; staff row = initials avatar `grid size-6 rounded-full bg-base-300 font-mono text-[10px] text-base-content/70` (honorific stripped: `Dr.Priyanka Gupta` → `PG`) + name `text-sm truncate` + mode tag `Theory`/`Practical` (parsed from the portal's `Name-Mode` suffix) `font-mono text-xs /50` right-aligned. Caption `From the mid-sem feedback form` `text-xs /70` + the unchanged `#fb-cta` primary button below the scroll box — the opt-in flow of §4.16 is untouched.
+- **notices** — `.wlabel` + list, same dividers. The head entry only carries `New` = `badge badge-soft badge-success badge-xs font-mono` (see the contrast note above). Entries: version `font-mono text-xs /60` + date `text-xs /50`, title `text-sm font-semibold`, body `text-xs /70`. v1 has no dismissal (localStorage dismissal deferred). `NOTICES` is newest-first and holds real release notes (v1.16.0 engine, v1.15.4 data fixes).
+
+**Tests:** `tests/test_layout.py` — 25 source-level checks (LAYOUT spans, WIDGETS partial existence, `min_w`, `when` filter, unknown-id safety, budget-row derivation, teacher initials/mode, ticker states on a fake clock, CSS block presence, empty=hidden at card level). Run it as its own row in the test matrix:
+
+```bash
+DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
+```
 
 ---
 
 ## 5. Layout and responsive
 
-- **Mobile-first single column.** Dashboard container `max-w-3xl mx-auto px-2 lg:px-4 py-5`. The gutter is **8px below `lg`** because the mobile navbar's own content padding is 8px — the card column then lines up with the logo/icons above it, and the column gains 16px of width on a 393px phone; at `lg` the desktop navbar takes `px-4`, so the gutter steps back to 16px and stays aligned. Both breakpoints keep a real gutter (never `px-0`). Login is a centered card, `w-full max-w-md`, on `min-h-[100dvh]`.
-- **Rhythm (the 4px scale, in use):** `gap-2` / `gap-3` inside and between cards · `mb-5` between blocks · card padding `p-4` (`p-5` for the hero, `p-0` for list cards). Don't introduce new spacing values.
-- **Vertical gaps are RANKED by relationship, never uniform** (Gestalt proximity — equal gaps everywhere give consistency without hierarchy). Same 4px scale, ordered tight → loose: **0** attached (a field and its own hint/error) → **`gap-2` 8px** feedback that reports on one element (status under its button) → **`gap-3` 12px** peers inside a group (field ↔ field) → **group break**, sized per card **and stepped, never pinned**: `mb-5` 20px between content blocks — and in the login card the two group breaks (the brand band, and password → Sign in = 16px reserved Caps row + the button's margin) step *together* with the card's own `p-6 sm:p-8` padding: **24px below `sm`, 36px at `sm`+ — equal to each other at every breakpoint** (same idea as daisyUI's `--card-p`, a token that resizes instead of a fixed pixel) → **section break**, looser than every group break (login card: 40px whitespace + rule + `pt-3`). A card must show ≥3 of these tiers in order. Horizontal gutters stay uniform — the column is one unit — and card padding must stay larger than the gaps inside it. Worked example: the login card, audited at 390/768/1280 as **0 < 8 < 12 < 24|36 < 40** (the `24|36` tier is the adaptive one).
+- **Mobile-first single column.** `<main>` is `px-2 lg:px-4 py-5 pb-24 lg:pb-5` (`pb-24` clears the fixed dock; `lg:pb-5` on desktop). `max-w-3xl mx-auto` is **not** on `main` — it moved onto each of the four non-dashboard tabpanels (attendance, timetable, marks, personal), so only the Dashboard tab renders full-width (§4.17). The gutter is **8px below `lg`** because the mobile navbar's own content padding is 8px — the card column then lines up with the logo/icons above it, and the column gains 16px of width on a 393px phone; at `lg` the desktop navbar takes `px-4`, so the gutter steps back to 16px and stays aligned. Both breakpoints keep a real gutter (never `px-0`). Login is a centered card, `w-full max-w-md`, on `min-h-[100dvh]`.
+- **Rhythm (the 4px scale, in use):** `gap-2` / `gap-3` inside and between cards · `gap-6` (24px) between Dashboard grid cards (§4.17) · `mb-5` between blocks · card padding `p-4` (`p-5` for the hero, `p-0` for list cards). Don't introduce new spacing values.
+- **Vertical gaps are RANKED by relationship, never uniform** (Gestalt proximity — equal gaps everywhere give consistency without hierarchy). Same 4px scale, ordered tight → loose: **0** attached (a field and its own hint/error) → **`gap-2` 8px** feedback that reports on one element (status under its button) → **`gap-3` 12px** peers inside a group (field ↔ field) → **group break**, sized per card **and stepped, never pinned**: `mb-5` 20px between content blocks — and in the login card the two group breaks (the brand band, and password → Sign in = 16px reserved Caps row + the button's margin) step *together* with the card's own `p-6 sm:p-8` padding: **24px below `sm`, 36px at `sm`+ — equal to each other at every breakpoint** (same idea as daisyUI's `--card-p`, a token that resizes instead of a fixed pixel) → **section break**, looser than every group break (login card: 40px whitespace + rule + `pt-3`). A card must show ≥3 of these tiers in order. Horizontal gutters stay uniform — the column is one unit — and card padding must stay larger than the gaps inside it. On the Dashboard grid the tiers read **8 (`.wlabel` margin) < 12 (`gap-3` widget gap) < 16 (`p-4` card pad) < 24 (`gap-6` grid gutter)** — §4.17. Worked example: the login card, audited at 390/768/1280 as **0 < 8 < 12 < 24|36 < 40** (the `24|36` tier is the adaptive one).
 - **Section headings:** `text-base font-semibold mb-3`.
-- **Breakpoints:** design at 375px first. `sm` (640) switches the course grid to 2 columns and reveals the "Refresh" label. `lg` (1024) goes to 3 columns. The content column never grows past `max-w-3xl`.
+- **Breakpoints:** design at 375px first. `sm` (640) switches the course grid to 2 columns and reveals the "Refresh" label. `lg` (1024) goes to 3 columns and flips the Dashboard to `grid-cols-12` (§4.17). No content column grows past `max-w-3xl` — the Dashboard tab is the one full-width exception; every other tabpanel keeps `max-w-3xl mx-auto`.
 - **Touch targets ≥ 44px** for anything a thumb must hit (README requirement). `btn` is 40px and `btn-sm` 32px, which is acceptable for toolbar actions only; use `btn-lg` (48px) or `min-h-11` for main actions and tappable rows.
 - **Safe areas:** the viewport meta includes `viewport-fit=cover`. The sticky navbar pads with `env(safe-area-inset-top)`; anything fixed to the bottom needs `env(safe-area-inset-bottom)`.
 - **Viewport height:** `min-h-[100dvh]`, never `100vh`.
@@ -609,7 +662,7 @@ Anatomy — copied from the end-sem card (§4.12): `bg-base-300/40 border border
 | Pink for status, links, or buttons | Leave it out; if it earns a place, one badge per screen |
 | Light mode, `dark:` variants, theme switching | The single `openSRM` theme |
 | Emoji, icon fonts, icon CDNs, remote images | Inline SVG |
-| Eyebrow labels above every heading, ALL CAPS everywhere, centered data | Sentence case, left aligned; uppercase only for Personal Details labels |
+| Eyebrow labels above every heading, ALL CAPS everywhere, centered data | Sentence case, left aligned; uppercase only for Personal Details labels and dashboard `.wlabel`s (§4.17) |
 | Entrance animations, scroll reveals, hover lift | Motion only in response to an action |
 | `input-bordered`, `form-control`, `label-text` (daisyUI 4) | `fieldset`, `floating-label`, `input`, `label` |
 | `alert()` / `prompt()` in new flows | `modal` or an inline `alert` |
@@ -656,6 +709,7 @@ Pre-flight checklist before you finish:
 - [ ] No inline script, external font, icon library, or remote image
 - [ ] `CACHE_NAME` bumped if anything in `app/static/` changed
 - [ ] Looks right at 375px and 1280px, and keyboard focus is visible on every control I touched
+- [ ] Dashboard engine touched: `DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py` still passes (25 checks, §4.17)
 
 ---
 
@@ -758,7 +812,7 @@ html[data-theme="openSRM"] {
 <body class="bg-base-100 text-base-content">
   <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3"
        style="padding-top:calc(0.75rem + env(safe-area-inset-top))"> … </div>
-  <main class="max-w-3xl mx-auto px-2 lg:px-4 py-5"> … </main>
+  <main class="px-2 lg:px-4 py-5 pb-24 lg:pb-5"> … </main>   <!-- tabpanels carry their own max-w-3xl mx-auto; only Dashboard is full-width (§5) -->
   <script src="/static/your-script.js"></script>   <!-- external file only: CSP blocks inline scripts -->
 </body>
 </html>
