@@ -137,7 +137,9 @@ chk('L52', "login rate: empty-body POSTs don't burn IP budget (M10 companion)", 
 # ---------- docs-audit (13 findings, docs_audit.json) ----------
 DESIGN_T = rd('DESIGN.md'); README_T = rd('README.md')
 chk('D53', "docs1 README/SECURITY CSP claim corrected (jsdelivr)",
-    ("script-src 'self', no external scripts" not in README_T) and ('cdn.jsdelivr.net' in rd('SECURITY.md')))
+    # content check, not URL validation: a bare 'in' on a hostname literal is
+    # what py/incomplete-url-substring-sanitization flags, so match it as text
+    ("script-src 'self', no external scripts" not in README_T) and bool(re.search(r'cdn\.jsdelivr\.net', rd('SECURITY.md'))))
 chk('D54', "docs2 SECURITY healthcheck claim true (compose has healthcheck+logging)",
     ('healthcheck' in rd('SECURITY.md').lower()) and ('healthcheck' in compose) and ('logging:' in compose))
 chk('D55', "docs3 README gunicorn -t 120", '-t 120' in README_T)

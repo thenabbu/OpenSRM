@@ -13,6 +13,11 @@ html[data-theme="openSRM"] {
   --radius-selector: 0.5rem; --radius-field: 0.5rem; --radius-box: 0.5rem;
   --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
   color-scheme: dark;
+  /* Marks is the only tab taller than the viewport: its scrollbar appearing used to
+     shrink the layout viewport ~15px and slide the whole navbar (measured: tab x
+     432.4 -> 424.9, clientW 1280 -> 1265). Reserve the gutter so every tab lays
+     out at one width. Overlay-scrollbar platforms (mobile) reserve nothing. */
+  scrollbar-gutter: stable;
 }
 /* Selected navbar tab — two cues on purpose. The tint is the subtle background
    the bar needs; the 2px currentColor bar is the non-color state signal

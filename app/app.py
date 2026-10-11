@@ -1567,6 +1567,10 @@ def _track(event, target="", detail="", user=""):
 @require_login
 def index():
     netid = get_current_user()
+    if not netid:
+        # race: require_login validated, then the row vanished before this
+        # re-read (logout in another tab mid-request) — redirect, not 500.
+        return redirect("/login")
     c = db()
     # one row read: marks/faculty live on the same users row (was three queries)
     row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
@@ -2085,9 +2089,18 @@ def api_feedback_fill():
     try:
         res = http_scraper.fill_feedback(netid, plan, cookies)
     except http_scraper.HttpScraperError as e:
+        # full detail goes to the log + telemetry only: exception text must
+        # never reach the response body (CWE-209, CodeQL
+        # py/stack-trace-exposure) — it can embed nested exception reprs.
         log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
         _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
-        return {"ok": False, "error": str(e)}, 502
+        return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
+    if "error" in res:
+        # fill_feedback's own portal-state refusal: a literal it built itself,
+        # so it is safe to hand to the student verbatim.
+        log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
+        _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+        return {"ok": False, "error": res["error"]}, 502
     ms = int((time.monotonic() - t0) * 1000)
     log_with_kv(log_portal, logging.INFO, "feedback fill done",
                 netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
@@ -2552,6 +2565,8 @@ def api_login():
 @require_login
 def api_refresh():
     netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
     c = db()
     row = c.execute("SELECT password FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
