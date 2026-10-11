@@ -85,11 +85,44 @@ def t_logout_ignored_on_prefetch():
         "prefetch killed the session — state-changing GET fired without navigation"
 
 
+def t_index_refresh_survive_mid_request_session_loss():
+    """Race: the session row vanishes BETWEEN require_login's read and the
+    handler's own get_current_user() re-read (logout in another tab landing
+    mid-request, same cookie/token). index() must redirect to /login — not
+    500 from a None netid; api_refresh must say "not logged in", not blame
+    missing stored creds (review finding 2026-10-11).
+    """
+    tok = A.make_session_token("zz9999")
+    orig = A.get_current_user
+    state = {"n": 0}
+
+    def racy():
+        state["n"] += 1
+        return orig() if state["n"] == 1 else None
+
+    A.get_current_user = racy
+    try:
+        cl = A.app.test_client()
+        cl.set_cookie("srm_session", tok)   # gotcha: Cookie header in headers= is dropped
+        state["n"] = 0
+        r1 = cl.get("/")
+        state["n"] = 0
+        r2 = cl.post("/api/refresh")
+    finally:
+        A.get_current_user = orig
+    assert r1.status_code in (302, 303), \
+        f"index must redirect when the session vanishes mid-request, got {r1.status_code}"
+    j = r2.get_json()
+    assert r2.status_code == 401 and j and j.get("error") == "not logged in", \
+        f"api_refresh must report 'not logged in', got {r2.status_code} {j!r}"
+
+
 TESTS = [
     ("second login keeps first session (multi-device)", t_second_login_keeps_first_session),
     ("expired token pruned on read", t_expired_token_pruned_on_read),
     ("real GET /logout deletes session", t_logout_real_navigation_deletes),
     ("logout no-op on Sec-Purpose prefetch/prerender", t_logout_ignored_on_prefetch),
+    ("index/refresh survive mid-request session loss", t_index_refresh_survive_mid_request_session_loss),
 ]
 
 if __name__ == "__main__":

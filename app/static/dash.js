@@ -36,7 +36,12 @@ function ref(quiet) {
   document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); });
   if (!quiet) document.getElementById('overlay').showModal();
   fetch('/api/refresh', {method: 'POST'})
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      // dead session: server 302s API calls to /login; fetch() followed it
+      // and r.json() would throw — go to the login page, not "network error".
+      if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+      return r.json();
+    })
     .then(function (d) {
       if (d.ok) { location.reload(); return; }
       document.getElementById('overlay').close();
@@ -228,7 +233,10 @@ if (fbSubmit) {
     status.textContent = 'Submitting to the portal…';
     status.className = 'mt-2 text-xs text-base-content/70';
     fetch('/api/feedback/fill', {method: 'POST'})
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+        return r.json();
+      })
       .then(function(j) {
         if (!j.ok) {
           status.textContent = j.error || 'failed — nothing submitted';

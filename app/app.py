@@ -1567,6 +1567,10 @@ def _track(event, target="", detail="", user=""):
 @require_login
 def index():
     netid = get_current_user()
+    if not netid:
+        # race: require_login validated, then the row vanished before this
+        # re-read (logout in another tab mid-request) — redirect, not 500.
+        return redirect("/login")
     c = db()
     # one row read: marks/faculty live on the same users row (was three queries)
     row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
@@ -2406,6 +2410,8 @@ def api_login():
 @require_login
 def api_refresh():
     netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
     c = db()
     row = c.execute("SELECT password FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
