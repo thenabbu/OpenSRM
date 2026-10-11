@@ -185,6 +185,26 @@ with sync_playwright() as p:
           and ind['on']['left'] == '8px' and ind['on']['right'] == '8px',
           f"bar={bar_w}px paddingBox={ind['padW']}px pill={ind['pillW']}px "
           f"left={ind['on']['left']} right={ind['on']['right']}")
+    # marks is the only panel taller than the viewport; its scrollbar appearing
+    # used to narrow the layout viewport and slide the whole navbar (DESIGN
+    # §10.14). Headless uses overlay scrollbars so it cannot show the shift
+    # itself — assert the gutter reservation that prevents it plus one navW
+    # value across a marks round-trip (headed classic-scrollbar run: navW was
+    # 1280/1265/1280 before the reservation, 1265 on all three after).
+    cycle = page.evaluate("""async () => {
+      const navW = () => +[...document.querySelectorAll('.navbar')].filter(n => n.offsetParent !== null)[0].getBoundingClientRect().width.toFixed(1);
+      const out = {gutter: getComputedStyle(document.documentElement).scrollbarGutter, widths: []};
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (const tab of ['dashboard', 'marks', 'dashboard']) {
+        document.getElementById('tab-' + tab + '-tab').click();
+        await sleep(150);
+        out.widths.push(navW());
+      }
+      return out;
+    }""")
+    check('desktop: gutter reserved + navbar width identical across a marks round-trip',
+          cycle['gutter'] == 'stable' and len(set(cycle['widths'])) == 1,
+          json.dumps(cycle))
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
     # DESIGN.md §5: gutter steps back to 16px beside the px-4 desktop navbar
     check('desktop: page gutter = 16px (lg column, matches navbar px-4)',
