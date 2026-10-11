@@ -86,7 +86,13 @@ def run():
         content = page.content()
 
         check("Teachers header", "Teachers" in content)
-        check("badge count 2 (Unknown hidden)", ">2</span>" in content or "2</span>" in content)
+        # v1.16.0 engine: subject-grouped list replaces the old count badge —
+        # assert the two visible subjects render and the all-Unknown GHOST
+        # subject stays hidden (markup-independent)
+        check("Teachers grouped, Unknown subject hidden",
+              "Data Structures And Algorithms" in content
+              and "Professional Ethics" in content
+              and "GHOST SUBJECT" not in content.upper())
         check("staff name rendered", "Dr.Test Alpha" in content)
         check("second staff rendered", "Dr.Test Beta" in content)
         check("kind label (Practical)", "(Practical)" in content)

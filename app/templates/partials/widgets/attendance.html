@@ -1,0 +1,24 @@
+<!-- Widget: attendance — can-skip glance only (the attendance page owns the
+     detail); rows in courses order = pct-ascending = risk-first. The same
+     _bunk_counts numbers as the tabs, so glance and page never disagree.
+     (None, None) rows (no classes held) are dropped by the route builder. -->
+{% if budgets %}
+<div class="wbox rounded-box p-4">
+  <div class="flex items-baseline justify-between gap-2 mb-2">
+    <span class="wlabel !mb-0">Attendance</span>
+    <span class="text-[11px] text-base-content/50">can skip</span>
+  </div>
+  <ul>
+    {% for code, val, risk in budgets %}
+    <li class="flex items-baseline gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
+      <span class="w-20 shrink-0 font-mono text-xs text-base-content/60">{{ code }}</span>
+      {% if risk < 2 %}
+      <span class="ml-auto att-neg font-mono text-xs">{{ val }}</span>
+      {% else %}
+      <span class="ml-auto font-mono text-sm tabular-nums text-base-content">{{ val }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

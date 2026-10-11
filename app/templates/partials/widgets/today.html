@@ -1,0 +1,39 @@
+<!-- Widget: today — class ticker from the real slot grid (empty day -> nothing).
+     Bright row = current class (state now) or the next one (state up). -->
+{% if ticker %}
+<div class="wbox rounded-box p-4">
+  <div class="wlabel">Today</div>
+  {% if dash.week.today_absent %}
+  <div class="flex items-center gap-2 mb-2">
+    <span class="badge badge-error badge-sm">Absent</span>
+    <span class="text-xs text-base-content/70">marked today</span>
+  </div>
+  {% endif %}
+  {% if ticker.state != 'done' and ticker.prev %}
+  <div class="flex items-center gap-3 h-7 opacity-50">
+    <span class="w-10 shrink-0 font-mono text-xs tabular-nums">{{ ticker.prev.start }}</span>
+    <span class="text-xs">{{ ticker.prev.code }}</span>
+  </div>
+  {% endif %}
+  {% if ticker.now %}
+  <div class="flex flex-col gap-0.5 px-2 py-2">
+    <div class="flex items-baseline gap-2.5 min-w-0">
+      <span class="font-mono text-[22px] font-bold tabular-nums leading-none">{{ ticker.now.start }}</span>
+      <span class="text-sm font-bold">{{ ticker.now.code }}</span>
+      <span class="font-mono text-xs text-base-content/50">&ndash;{{ ticker.now.end }}</span>
+    </div>
+    {% if ticker.now.name %}
+    <div class="text-xs text-base-content/60">{{ ticker.now.name }}</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="text-sm text-base-content/50">All done for today</div>
+  {% endif %}
+  {% if ticker.next %}
+  <div class="flex items-center gap-3 h-7 opacity-50">
+    <span class="w-10 shrink-0 font-mono text-xs tabular-nums">{{ ticker.next.start }}</span>
+    <span class="text-xs">{{ ticker.next.code }}</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}

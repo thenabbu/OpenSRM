@@ -1,0 +1,14 @@
+<!-- Widget: this week — absence headline + per-day hour chips -->
+<div class="wbox rounded-box p-4">
+  <div class="wlabel">This week</div>
+  {% if dash.week.days %}
+  <div class="text-sm"><strong>{{ dash.week.days }}</strong> day{{ 's' if dash.week.days != 1 }} absent &middot; {{ dash.week.hours|int if dash.week.hours == dash.week.hours|int else dash.week.hours }} hrs lost</div>
+  <div class="flex flex-wrap gap-1.5 mt-2">
+    {% for h in dash.week.dates %}
+    <span class="badge badge-soft badge-warning badge-sm font-mono" title="{{ h.hours }} hrs">{{ h.date[:5] }}</span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-sm text-base-content/50">No absences this week</div>
+  {% endif %}
+</div>

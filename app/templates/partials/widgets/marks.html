@@ -1,0 +1,12 @@
+<!-- Widget: internal marks — code + score per subject as last synced; stale
+     entries (kept from an earlier sync) fade + explain, never colour alone -->
+{% if marks_summary %}
+<div class="wbox rounded-box p-4">
+  <div class="wlabel">Internal marks</div>
+  <div class="flex flex-wrap gap-1.5">
+    {% for s in marks_summary %}
+    <span class="badge badge-soft badge-sm font-mono tabular-nums{% if s.stale %} opacity-60{% endif %}"{% if s.stale %} title="Kept from an earlier sync — the latest refresh returned no marks for it"{% endif %}><span class="text-base-content/70">{{ s.code }}</span> <span class="font-medium">{{ s.scored }}/{{ s.max }}</span></span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
