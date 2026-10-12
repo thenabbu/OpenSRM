@@ -7,12 +7,13 @@ with the column flush to the navbar content edge. Server under test: AGENTS.md."
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-navbar')
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 seed(with_payload=False)
 TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18178')
+require_own_server(BASE)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NETID = 'ng2776'
 VERSION = open(os.path.join(REPO, 'VERSION')).read().strip()

@@ -8,6 +8,9 @@ import json, os, sys, time
 from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:8084")
+from _seed import require_own_server
+
+require_own_server(BASE)
 GENERIC = "invalid credentials — check your NetID/password"   # mocked server body
 rows = []
 

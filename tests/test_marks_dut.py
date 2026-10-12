@@ -7,7 +7,7 @@ then the tag round-trip (derived -> confirmed IE-2 -> persisted -> reset).
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-marks")
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 seed(with_payload=False)
@@ -35,6 +35,7 @@ c.execute("DELETE FROM component_tags")
 c.commit(); c.close()
 TOK = mint_token()
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18180")
+require_own_server(BASE)
 results = []
 
 def check(name, ok, detail=""):

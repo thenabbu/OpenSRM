@@ -11,7 +11,7 @@ Known tooling limits (documented, not worked around):
 import base64, json, os, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ['DATA_DIR'] = '/tmp/push-ui'
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from playwright.sync_api import sync_playwright
@@ -20,6 +20,7 @@ seed(with_payload=False)
 TOK = mint_token()
 BASE_UNCONF = os.environ.get('DUT_BASE_UNCONF', 'http://127.0.0.1:18187')
 BASE_CONF = os.environ.get('DUT_BASE_CONF', 'http://127.0.0.1:18186')
+require_own_server(BASE_UNCONF, BASE_CONF)
 results = []
 
 def check(name, ok, detail=""):

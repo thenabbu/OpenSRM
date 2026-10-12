@@ -9,7 +9,7 @@ Server under test: AGENTS.md."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-personal')
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 FULL = {"Student Name": "Aarav Rohan Mehta",
@@ -36,6 +36,7 @@ c.execute("UPDATE users SET personal_details_json=? WHERE netid='ng2776'",
 c.commit()
 TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18179')
+require_own_server(BASE)
 GROUP_TITLES = ['Academic', 'Personal', 'Family', 'Contact']
 GROUP_COUNTS = ['6', '5', '4', '7']
 results = []
