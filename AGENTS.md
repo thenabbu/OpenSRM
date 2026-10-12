@@ -56,8 +56,8 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)
-.venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
-.venv/bin/python tests/test_push_store.py    # 27/27 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
+.venv/bin/python tests/test_push_calc.py     # 33/33 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
+.venv/bin/python tests/test_push_store.py    # 28/28 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
 .venv/bin/python tests/test_push_send.py     # 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
 .venv/bin/python tests/test_push_tick.py     # 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
 .venv/bin/python tests/test_push_api.py      # 37/37 (401 style, validation, DB rate caps, test/receipt flows)
@@ -75,7 +75,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
-.venv/bin/python tests/test_marks_dut.py     # 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, round-trip)
+.venv/bin/python tests/test_marks_dut.py     # 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
 kill %1
 
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside),

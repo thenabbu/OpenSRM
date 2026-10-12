@@ -1790,8 +1790,10 @@ SLOTS = [
 # campus hours (08:30 shown, classes start 09:30; its lunch is mis-sized the
 # same way). These per-period offsets are DERIVED so official+OFFSET == the
 # SLOTS grid above exactly on both edges (tests/test_official_tt pins it).
-# When the portal fixes its clock: set every value to 0 in ONE PR — that is
-# the entire revert; no other code depends on the values.
+# When the portal fixes its clock: set every value to 0 AND refresh the
+# tests/fixtures/timetable_form10.html capture to the corrected portal output
+# (test_official_tt pins raw fixture + offset == SLOTS). Nothing else in the
+# code depends on these values.
 TIMETABLE_TIME_OFFSETS = {1: 60, 2: 60, 3: 60, 4: 60, 5: 40, 6: 40}
 
 # Where the rendered grid comes from: "official" = portal timetable when the

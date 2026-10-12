@@ -27,9 +27,12 @@ tt = A.parse_timetable((REPO / "tests/fixtures/timetable_form10.html").read_text
 A._save_timetable_group("ng2776", {"personal": seed_mod.PERSONAL, "courses": [], "timetable": tt})
 token = seed_mod.mint_token()
 
+GUNICORN = "/opt/data/opensrm-repo/.venv/bin/gunicorn"
+if not os.path.isfile(GUNICORN):
+    raise SystemExit(f"FAIL[guard]: missing {GUNICORN} (an OpenSRM checkout .venv)")
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
 srv = subprocess.Popen(
-    ["/opt/data/opensrm-repo/.venv/bin/gunicorn", "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{port}",
+    [GUNICORN, "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{port}",
      "app.app:app"], cwd=REPO, env={**os.environ, "PYTHONPATH": str(REPO)},
     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 for _ in range(60):
@@ -37,6 +40,9 @@ for _ in range(60):
         socket.create_connection(("127.0.0.1", port), 0.5).close(); break
     except OSError:
         time.sleep(0.5)
+else:
+    raise SystemExit("FAIL[guard]: own server never came up")
+seed_mod.require_own_server(f"http://127.0.0.1:{port}")
 
 from playwright.sync_api import sync_playwright
 
@@ -89,6 +95,8 @@ try:
         pg2.wait_for_timeout(500)
         mbody = pg2.inner_text("#tab-timetable")
         check("mobile: badge renders", "Synced from portal" in mbody)
+        sw = pg2.evaluate("document.documentElement.scrollWidth")
+        check("no horizontal overflow @393", sw <= 393, f"scrollWidth={sw}")
         pg2.screenshot(path=str(OUT / "3-mobile-timetable.png"), full_page=False)
         ctx2.close()
         b.close()

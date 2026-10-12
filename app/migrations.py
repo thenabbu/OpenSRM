@@ -218,8 +218,10 @@ def m004_marks(conn):
 def m015_official_timetable(conn):
     # ALTER-only like m013 — the versioned registry runs on fresh DBs too.
     # source: 'official' (portal formId 10 sync) | 'manual' (archived editor /
-    # legacy import); NULL on pre-existing rows = manual (back-compat: render
-    # precedence and every scoped delete treat NULL as manual).
+    # legacy import); NULL on pre-existing rows = manual (back-compat). It is a
+    # provenance stamp only: rendering precedence lives at group level via
+    # official_times/_tt_grid (UNIQUE(group_id,day,period) = one source at a
+    # time per group, so no reader needs to consult this column).
     # official_times = the portal's RAW per-period time row (pre-offset) so the
     # offset can be re-derived or zeroed without refetching.
     for stmt in (
