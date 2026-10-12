@@ -2269,8 +2269,9 @@ def timetable_html(group_key, attendance=None):
             elif d == today and now_mins < sm and (sm - now_mins) <= 120:
                 hl = "upcoming"
             cls = " tt-row--" + hl if hl else ""
-            # review R6/R9: no Now badge (the hero already says it); Soon stays
-            badge = "<span class=tt-badge tt-badge--soon>Soon</span>" if hl == "upcoming" else ""
+            # Navya 2026-10-12: Soon retired — only the live class carries "Now"
+            # (the hero repeats it; the badge marks the row itself).
+            badge = "<span class=tt-badge>Now</span>" if hl == "current" else ""
             loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
             # attendance glance (review R7): the slim risk rim IS the can-be-missed
             # indicator; the bare number is data. Neutral "no data" for

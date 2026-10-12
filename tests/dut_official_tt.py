@@ -1,5 +1,6 @@
 """DUT for the official-timetable UI: seed official rows, boot, drive the
 browser, DOM-assert the contract, screenshot desktop+mobile for vision QA."""
+import json
 import os
 import signal
 import socket
@@ -25,6 +26,17 @@ import app.app as A
 
 tt = A.parse_timetable((REPO / "tests/fixtures/timetable_form10.html").read_text())
 A._save_timetable_group("ng2776", {"personal": seed_mod.PERSONAL, "courses": [], "timetable": tt})
+# three attendance tiers round-robined over the fixture codes → the rim shows
+# grey (comfortable) / faded yellow (zero margin) / faded red (below 75) at once
+_TIER = [(40, 40), (3, 4), (1, 4)]
+_codes = sorted({c for d in tt["grid"].values() for c in d.values() if c})
+_att = [{"code": c, "description": tt["legend"].get(c, ""),
+         "attended": _TIER[i % 3][0], "max_hours": _TIER[i % 3][1]}
+        for i, c in enumerate(_codes)]
+_cc = A.db()
+_cc.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+            (json.dumps({"courses": _att}),))
+_cc.commit(); _cc.close()
 token = seed_mod.mint_token()
 
 GUNICORN = "/opt/data/opensrm-repo/.venv/bin/gunicorn"
@@ -75,6 +87,11 @@ try:
         check("no raw 08:30 anywhere", "08:30" not in body)
         check("legacy 16:00 gone", "16:00" not in body)
         check("lunch divider present", "Lunch" in body)
+        check("Soon badge retired", "Soon" not in body and pg.locator(".tt-badge--soon").count() == 0)
+        check("rim: grey base (comfortable ≥75)",
+              pg.locator(".tt-riskbar:not(.tt-riskbar--danger):not(.tt-riskbar--warn)").count() > 0)
+        check("rim: faded yellow (zero margin)", pg.locator(".tt-riskbar--warn").count() > 0)
+        check("rim: faded red (below 75)", pg.locator(".tt-riskbar--danger").count() > 0)
 
         # archive contract (default TIMETABLE_EDITOR=archived): no edit entry
         check("edit button archived (absent)", pg.locator("#tt-edit-btn").count() == 0)

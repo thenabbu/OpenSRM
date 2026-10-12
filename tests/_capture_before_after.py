@@ -45,6 +45,14 @@ for day, slots in grid.items():
         name = "SOFTWARE DESIGN PATTERNS" if code == "21CSC101T" else code
         c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
                   "VALUES(?,?,?,?,?,?)", (gid, day, int(p), code, name, ""))
+# three attendance tiers round-robined over the codes → rim colours (grey/
+# faded yellow/faded red) render in BOTH phases' shots (the rim exists on main)
+TIER = [(40, 40), (3, 4), (1, 4)]
+_codes = sorted({s for slots in grid.values() for s in slots.values()})
+c.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+          (json.dumps({"courses": [
+              {"code": cd, "description": cd, "attended": TIER[i % 3][0], "max_hours": TIER[i % 3][1]}
+              for i, cd in enumerate(_codes)]}),))
 c.commit(); c.close()
 from app.app import make_session_token
 
