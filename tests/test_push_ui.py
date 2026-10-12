@@ -1,6 +1,7 @@
-"""Reminders card DUT: placement (Timetable tab), explicit states, no
-console errors, no overflow at 375/1280 — then the enabled-state UI with a
-REAL pywebpush send (FCM round trip, signed + encrypted).
+"""Reminders card DUT: placement (Settings tab — the ONE notification
+surface), explicit states, no console errors, no overflow at 375/1280 —
+then the enabled-state UI with per-type preference round-trips and a REAL
+pywebpush send (FCM round trip, signed + encrypted).
 
 Known tooling limits (documented, not worked around):
 - Playwright's Chromium ships WITHOUT a push service (no Google API keys),
@@ -29,11 +30,11 @@ def check(name, ok, detail=""):
 def b64url(b):
     return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
 
-def open_timetable(page, base):
+def open_settings(page, base):
     page.goto(f"{base}/", wait_until="networkidle")
     # desktop tablist (hidden below lg) and mobile dock (lg:hidden) both carry
     # data-tab; click whichever is visible at this viewport
-    page.locator('button[data-tab="timetable"]:visible').first.click()
+    page.locator('button[data-tab="settings"]:visible').first.click()
     page.wait_for_selector('#push-card', state='visible', timeout=5000)
 
 def new_ctx(pw, viewport, ua=None):
@@ -52,9 +53,12 @@ with sync_playwright() as p:
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     errs = []
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
-    open_timetable(page, BASE_UNCONF)
+    open_settings(page, BASE_UNCONF)
     state = page.text_content('#push-state')
-    check("card renders in Timetable tab", page.is_visible('#push-card'), "")
+    check("card renders in Settings tab", page.is_visible('#push-card'), "")
+    check("card NOT inside the Timetable tab (consolidated to one surface)",
+          page.evaluate("() => !document.getElementById('tab-timetable')"
+                        ".contains(document.getElementById('push-card'))"), "")
     check("unconfigured state is honest", 'not set up' in (state or ''), str(state))
     check("controls hidden when unconfigured", not page.is_visible('#push-controls'), "")
     overflow = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
@@ -66,7 +70,7 @@ with sync_playwright() as p:
     ctx = new_ctx(p, {"width": 1280, "height": 900})
     ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE_UNCONF}])
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
-    open_timetable(page, BASE_UNCONF)
+    open_settings(page, BASE_UNCONF)
     overflow = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
     check("no horizontal overflow at 1280px", overflow <= 1, f"overflow={overflow}px")
     page.screenshot(path="/tmp/push-ui-1280-unconfigured.png", full_page=False)
@@ -105,7 +109,7 @@ with sync_playwright() as p:
     errs2 = []
     page.on("console", lambda m: errs2.append(m.text)
             if m.type == "error" and not m.text.startswith("Failed to load resource") else None)
-    open_timetable(page, BASE_CONF)
+    open_settings(page, BASE_CONF)
     state = page.text_content('#push-state')
     check("enabled state shows lead", state == 'Reminders on · 10 minutes before each class.', str(state))
     check("toggle checked", page.is_checked('#push-toggle'), "")
@@ -122,6 +126,40 @@ with sync_playwright() as p:
     check("lead change saved + re-rendered",
           'Reminders on · 15 minutes before each class.' in (page.text_content('#push-state') or ''),
           str(page.text_content('#push-state')))
+
+    # per-type preferences: block shows with a subscription, defaults on,
+    # each toggle round-trips to /api/push/settings and re-renders state
+    page.wait_for_selector('#push-types', state='visible', timeout=5000)
+    check("type preference toggles visible with a subscription",
+          page.is_checked('#push-type-reminders') and page.is_checked('#push-type-exams'), "")
+    page.click('#push-type-exams')     # uncheck Exam updates
+    fb, sub = '', None
+    for _ in range(20):
+        fb = page.text_content('#push-feedback') or ''
+        sub = (S.list_subscriptions(netid='ng2776') or [{}])[0]
+        if 'Exam updates off.' in fb and not sub.get('notify_exams', 1):
+            break
+        time.sleep(0.5)
+    check("mute exam updates -> feedback + server row + reminders state kept",
+          'Exam updates off.' in fb and sub.get('notify_exams') == 0
+          and 'Reminders on · 15 minutes' in (page.text_content('#push-state') or ''),
+          f"fb={fb!r} exams={sub.get('notify_exams')} state={page.text_content('#push-state')!r}")
+    page.click('#push-type-reminders')  # uncheck Class reminders too
+    for _ in range(20):
+        if 'All notification types are off.' in (page.text_content('#push-state') or ''):
+            break
+        time.sleep(0.5)
+    check("both muted -> state reads 'All notification types are off.'",
+          'All notification types are off.' in (page.text_content('#push-state') or ''),
+          str(page.text_content('#push-state')))
+    page.click('#push-type-reminders'); page.click('#push-type-exams')   # restore
+    for _ in range(20):
+        sub = (S.list_subscriptions(netid='ng2776') or [{}])[0]
+        if sub.get('notify_reminders') and sub.get('notify_exams'):
+            break
+        time.sleep(0.5)
+    check("re-enable both -> server rows back to 1/1",
+          sub.get('notify_reminders') == 1 and sub.get('notify_exams') == 1, str(sub))
     page.screenshot(path="/tmp/push-ui-375-enabled.png", full_page=False)
 
     # REAL send: pywebpush signs (VAPID) + encrypts (RFC 8291) and POSTs to
@@ -157,7 +195,7 @@ with sync_playwright() as p:
     errs3 = []
     page.on("console", lambda m: errs3.append(m.text)
             if m.type == "error" and not m.text.startswith("Failed to load resource") else None)
-    open_timetable(page, BASE_UNCONF)
+    open_settings(page, BASE_UNCONF)
     state = page.text_content('#push-state') or ''
     hint = page.text_content('#push-hint') or ''
     check("iOS-not-installed state shown", 'On iPhone/iPad' in state, str(state))

@@ -39,7 +39,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 ## Test matrix (all green before push)
 ```bash
 .venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
-.venv/bin/python tests/test_exams.py        # 67/67 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
+.venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_sessions.py     # 5/5 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, index/refresh survive mid-request session loss)
@@ -56,9 +56,9 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
-.venv/bin/python tests/test_push_store.py    # 25/25 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
+.venv/bin/python tests/test_push_store.py    # 27/27 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
 .venv/bin/python tests/test_push_send.py     # 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
-.venv/bin/python tests/test_push_tick.py     # 19/19 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
+.venv/bin/python tests/test_push_tick.py     # 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
 .venv/bin/python tests/test_push_api.py      # 37/37 (401 style, validation, DB rate caps, test/receipt flows)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
@@ -84,7 +84,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18179 app.app:app &
-DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # 18/18 personal tab (identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
+DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # 23/23 Settings tab (row list + logout placement, collapsed personal row, identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide
@@ -96,7 +96,7 @@ export DUT_BASE=http://127.0.0.1:18098
 kill %1
 
 # push DUTs boot their own three gunicorn instances (see header)
-.venv/bin/bash tests/run_push_duts.sh        # test_push_sw 8/8 + test_push_ui 15/15 (staggered boots: fresh-DB migrations race)
+.venv/bin/bash tests/run_push_duts.sh        # test_push_sw 8/8 + test_push_ui 25/25 (staggered boots: fresh-DB migrations race)
 ```
 Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the user + payload — and every HTTP suite calls `require_own_server(BASE)` first, so a suite pointed at another agent's server (or a dead one, or a mismatched `DATA_DIR`) exits 1 with `FAIL[guard]: …` before any browser/login work instead of returning a phantom verdict.
 
@@ -138,7 +138,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v24; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v26; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

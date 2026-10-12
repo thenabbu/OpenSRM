@@ -22,8 +22,8 @@ report what you see. Estimated time: 5 minutes + a class period of waiting.
 ## Step 2 — open and enable reminders
 
 1. Tap the **new OpenSRM icon** (not Safari — the icon on the Home Screen).
-2. Go to the **Timetable** tab.
-3. Scroll below "Edit history" to the **Class reminders** card.
+2. Go to the **Settings** tab.
+3. Scroll to the **Notifications** card.
 4. Tap **Enable reminders** → accept the notification permission prompt.
 5. The card should say **"Reminders on · 10 minutes before each class."**
 6. Tap **Send test notification**.
@@ -45,7 +45,7 @@ iOS will never re-ask. Fix: touch and hold the OpenSRM icon → Remove App →
 2. Did the permission prompt appear? (yes / no / already blocked)
 3. Did the test notification appear? If yes: **how many seconds** after
    tapping the button, and did it show while the phone was locked?
-4. One screenshot of the reminders card saying "Reminders on".
+4. One screenshot of the Notifications card saying "Reminders on".
 5. Anything odd you noticed.
 
 The server also records a **delivery receipt** the moment the notification

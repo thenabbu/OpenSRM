@@ -2333,6 +2333,7 @@ def _notify_exam_events(netid, events, conf=None, send_batch=None):
     if not (conf["enabled"] and conf["configured"]):
         return 0
     subs = push_store.list_subscriptions(netid, enabled_only=True)
+    subs = [s for s in subs if s["notify_exams"]]   # per-type pref
     if not subs:
         return 0
     jobs = []
@@ -2930,6 +2931,9 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
     stats["orphaned"] = push_store.finalize_stale_claims(int(time.time()) - STALE_CLAIM_S)
 
     subs_rows = push_store.list_subscriptions(enabled_only=True)
+    # per-type pref: a muted account is dropped before due-calc (its classes
+    # are never computed, so a mute can't leak into stats or claims)
+    subs_rows = [s for s in subs_rows if s["notify_reminders"]]
     groups = _push_groups({s["netid"] for s in subs_rows})
     subs = [push_calc.Sub(id=s["id"], netid=s["netid"], group_key=groups.get(s["netid"]),
                           lead_minutes=s["lead_minutes"]) for s in subs_rows]
@@ -3046,6 +3050,8 @@ def push_status():
             "endpoint_hash": _endpoint_hash(row["endpoint"]) if row else None,
             "subscription": ({"lead_minutes": row["lead_minutes"],
                               "enabled": bool(row["enabled"]),
+                              "notify_reminders": bool(row["notify_reminders"]),
+                              "notify_exams": bool(row["notify_exams"]),
                               "created_at": row["created_at"]} if row else None),
             "lead_choices": list(push_calc.LEAD_CHOICES)}
 
@@ -3098,14 +3104,21 @@ def push_settings():
     d = request.get_json(silent=True)
     if not isinstance(d, dict):
         return _push_bad("invalid request — Content-Type must be application/json")
-    lead, enabled = d.get("lead_minutes"), d.get("enabled")
-    if lead is None and enabled is None:
+    lead = d.get("lead_minutes")
+    enabled = d.get("enabled")
+    n_rem, n_exm = d.get("notify_reminders"), d.get("notify_exams")
+    if lead is None and enabled is None and n_rem is None and n_exm is None:
         return _push_bad("nothing to update")
     if lead is not None and lead not in push_calc.LEAD_CHOICES:
         return _push_bad(f"lead_minutes must be one of {', '.join(map(str, push_calc.LEAD_CHOICES))}")
     if enabled is not None and not isinstance(enabled, bool):
         return _push_bad("enabled must be true or false")
-    n = push_store.set_settings(netid, lead_minutes=lead, enabled=enabled)
+    if n_rem is not None and not isinstance(n_rem, bool):
+        return _push_bad("notify_reminders must be true or false")
+    if n_exm is not None and not isinstance(n_exm, bool):
+        return _push_bad("notify_exams must be true or false")
+    n = push_store.set_settings(netid, lead_minutes=lead, enabled=enabled,
+                                notify_reminders=n_rem, notify_exams=n_exm)
     if n == 0:
         return _push_bad("no subscription for this account", 404)
     return {"ok": True, "updated": n}
