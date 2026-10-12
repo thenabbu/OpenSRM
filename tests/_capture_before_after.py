@@ -122,7 +122,7 @@ with sync_playwright() as p:
     pg.click("button[aria-label='Timetable tab']")
     pg.wait_for_timeout(400)
     body = pg.inner_text("#tab-timetable")
-    print("after mobile badge:", "Synced from portal" in body)
+    print("after mobile: synced badge absent:", "Synced from portal" not in body)
     pg.screenshot(path=str(OUT / "3-mobile-timetable.png"))
     ctx.close(); b.close()
 srv.send_signal(signal.SIGTERM); srv.wait(timeout=10)

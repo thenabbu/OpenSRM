@@ -69,7 +69,8 @@ try:
         pg.wait_for_timeout(400)
 
         body = pg.inner_text("#tab-timetable")
-        check("badge: Synced from portal", "Synced from portal" in body)
+        check("synced badge removed (obsolete)", "Synced from portal" not in body)
+        check("edit history archived (absent)", "Edit history" not in body)
         check("corrected 09:30 rendered", "09:30" in body)
         check("no raw 08:30 anywhere", "08:30" not in body)
         check("legacy 16:00 gone", "16:00" not in body)
@@ -93,7 +94,7 @@ try:
         pg2.click("button[aria-label='Timetable tab']")
         pg2.wait_for_timeout(500)
         mbody = pg2.inner_text("#tab-timetable")
-        check("mobile: badge renders", "Synced from portal" in mbody)
+        check("mobile: synced badge absent", "Synced from portal" not in mbody)
         sw = pg2.evaluate("document.documentElement.scrollWidth")
         check("no horizontal overflow @393", sw <= 393, f"scrollWidth={sw}")
         pg2.screenshot(path=str(OUT / "3-mobile-timetable.png"), full_page=False)

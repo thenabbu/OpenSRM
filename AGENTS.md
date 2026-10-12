@@ -79,10 +79,10 @@ export DATA_DIR=/tmp/osrm-marks
 kill %1
 
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside),
-# DOM-asserts badge/corrected clock/archive contract (edit button absent, save 403),
-# screenshots desktop+mobile
+# DOM-asserts corrected clock + archive contract (no badge, no history, no edit
+# button, save 403), screenshots desktop+mobile
 # (needs PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers)
-.venv/bin/python tests/dut_official_tt.py    # 9/9 (archive contract: edit button absent + save API 403 under default TIMETABLE_EDITOR; guards: require_own_server + missing gunicorn; scrollWidth no-overflow @393)
+.venv/bin/python tests/dut_official_tt.py    # 10/10 (archive contract under default TIMETABLE_EDITOR: synced badge gone, edit history gone, edit button absent, save API 403; guards: require_own_server + missing gunicorn; scrollWidth no-overflow @393)
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
