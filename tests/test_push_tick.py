@@ -70,6 +70,17 @@ res = A._run_tick(now=NOW, conf=dict(CONF_LIVE, dry_run=True), send_batch=fake_b
 check("dry-run mode: same, still unclaimed", res["mode"] == "dry-run" and res["due"] == 1
       and res["claimed"] == 0 and len(sent_jobs) == 0, str(res))
 
+# ── per-type pref: notify_reminders=0 drops the account before due-calc ──
+S.set_settings("ng2776", notify_reminders=False)
+res = A._run_tick(now=NOW, conf=CONF_LIVE, send_batch=fake_batch)
+check("muted reminders: account excluded (0 due/claimed)",
+      res["due"] == 0 and res["claimed"] == 0 and len(sent_jobs) == 0
+      and S.sent_state_for("2026-10-05") == {}, str(res))
+S.set_settings("ng2776", notify_reminders=True)
+res = A._run_tick(now=NOW, conf=CONF_LIVE, send_batch=fake_batch)
+check("unmuted: due returns", res["due"] == 1, str(res))
+reset_log(); sent_jobs.clear()
+
 # ── live: claim + send + record, then idempotent ──────────────────────
 reset_log(); sent_jobs.clear()
 res = A._run_tick(now=NOW, conf=CONF_LIVE, send_batch=fake_batch)

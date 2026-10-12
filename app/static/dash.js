@@ -179,12 +179,14 @@ tabButtons.forEach(function(b) {
   bt.addEventListener('click', function() { apply('table'); try { localStorage.setItem('attView', 'table'); } catch (e) {} });
 })();
 
-// ── Personal groups: all open on desktop (dense fact-sheet scan), first
-//    group only on mobile (compact lookup — matches the design mockup).
+// ── Personal-details groups (Settings tab): all open on desktop (dense
+//    fact-sheet scan), first group only on mobile (compact lookup).
+//    The Personal-details ROW itself stays collapsed on both — it's one
+//    settings row among several now; the group rule applies once opened.
 //    ponytail: evaluated once at load; rotating across the sm breakpoint
 //    keeps whatever state the user has toggled (still fully toggleable).
 (function() {
-  var groups = document.querySelectorAll('#tab-personal .collapse input');
+  var groups = document.querySelectorAll('#personal-details .collapse input');
   if (!groups.length) return;
   var wide = window.matchMedia('(min-width: 640px)').matches;
   groups.forEach(function(g, i) { g.checked = wide || i === 0; });

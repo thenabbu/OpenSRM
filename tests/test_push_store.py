@@ -22,7 +22,8 @@ c = A.db()
 ver = c.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
 tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 c.close()
-check("fresh DATA_DIR migrates to latest (13)", ver == 13, str(ver))  # v13 = faculty_map_json
+check("fresh DATA_DIR migrates to latest registry version",
+      ver == max(m["version"] for m in migrations._registry), str(ver))
 check("push tables exist", {"push_subscriptions", "push_sent_log", "push_events"} <= tables, str(sorted(tables)))
 
 # 2) portable SQL: scan REAL string literals (skip docstrings) of the
@@ -56,6 +57,15 @@ check("disable by netid", S.set_settings("bb2222", enabled=False) == 1, "")
 check("disabled subs hidden", S.list_subscriptions() == [], "")
 check("re-enable + lead", S.set_settings("bb2222", enabled=True, lead_minutes=15) == 1
       and S.list_subscriptions()[0]["lead_minutes"] == 15, "")
+check("type prefs default on after subscribe",
+      S.list_subscriptions()[0]["notify_reminders"] == 1
+      and S.list_subscriptions()[0]["notify_exams"] == 1, "")
+check("mute class reminders only", S.set_settings("bb2222", notify_reminders=False) == 1
+      and S.list_subscriptions()[0]["notify_reminders"] == 0
+      and S.list_subscriptions()[0]["notify_exams"] == 1, "")
+check("mute exam updates only", S.set_settings("bb2222", notify_reminders=True, notify_exams=False) == 1
+      and S.list_subscriptions()[0]["notify_reminders"] == 1
+      and S.list_subscriptions()[0]["notify_exams"] == 0, "")
 check("unsubscribe needs matching netid", S.remove_subscription("aa1111", "https://push.example/ep-1") is False
       and S.remove_subscription("bb2222", "https://push.example/ep-1") is True, "")
 
@@ -99,7 +109,9 @@ check("other kind/netid isolated", S.count_events("cc3333", "receipt", now - 60)
       and S.count_events("zz9999", "test_push", now - 60) == 0, "")
 check("empty window -> 0", S.count_events("cc3333", "test_push", now + 60) == 0, "")
 S.record_event("cc3333", "test_push", "evt", data={"test_id": "abc"})
-S.prune_events(now + 1)
+# re-read the clock: `now` was captured before the inserts above, so a
+# second-tick during them left rows at now+1 (>= prune cutoff) — pre-existing flake
+S.prune_events(int(time.time()) + 1)
 check("prune drops old events", S.count_events("cc3333", "test_push", 0) == 0, "")
 
 print("ok  push store" if not fails else f"FAILURES: {fails}")

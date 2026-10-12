@@ -7,8 +7,8 @@ Usage:
 Adding a new migration:
     from migrations import migration
 
-    @migration(version=14, description="add exam_scores column")
-    def m014_exam_scores(conn):
+    @migration(version=15, description="add exam_scores column")
+    def m015_exam_scores(conn):
         conn.execute("ALTER TABLE users ADD COLUMN exam_scores TEXT DEFAULT '[]'")
 """
 import logging
@@ -224,6 +224,17 @@ def m013_faculty_map(conn):
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
             raise
+
+@migration(version=14, description="push: per-type notification prefs (notify_reminders, notify_exams)")
+def m014_push_type_prefs(conn):
+    # ALTER-only like m002/m004/m008/m013 (idempotent on re-run). Defaults 1
+    # keep every existing subscriber exactly as talkative as before.
+    for col in ("notify_reminders", "notify_exams"):
+        try:
+            conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN {col} INTEGER NOT NULL DEFAULT 1")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
 
 @migration(version=12, description="usage_events (in-app telemetry: event counts per day, no PII)")
 def m012_usage_events(conn):

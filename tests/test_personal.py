@@ -1,8 +1,11 @@
-"""Personal-details panel DUT (18 checks): identity header + 4 checkbox
-collapse groups (V2 structure, V3 density), responsive default state (all
-open on desktop, first group only on mobile), label-above-value grid with
-the 0<8<12 spacing ladder, click-to-copy wiring, and an oklch-aware WCAG
-contrast sweep over the panel. Server under test: AGENTS.md."""
+"""Settings-tab personal-details DUT (23 checks): the Settings row list
+(personal-details row + Notifications card + Log out row), the personal row
+collapsed by default, then the old panel's content inside the row (identity
+header + 4 checkbox collapse groups, responsive group defaults — all open on
+desktop / first on mobile, label-above-value grid with the 0<8<12 spacing
+ladder, click-to-copy wiring, WCAG contrast sweep), plus logout placement:
+exactly one /logout link, inside Settings, none in the navbar.
+Server under test: AGENTS.md."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-personal')
@@ -99,7 +102,7 @@ def rgb(css, over=(0, 0, 0)):
 
 
 SWEEP = """() => {
-  const root = document.getElementById('tab-personal');
+  const root = document.getElementById('tab-settings');
   const seen = new Set(), out = [];
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let n;
@@ -145,15 +148,33 @@ def run_sweep(page, min_pairs, label):
     return len(rows)
 
 
+# ── structure: what the Settings tab itself must contain ───────────────
+STRUCT = """() => {
+  const tab = document.getElementById('tab-settings');
+  const stack = tab.querySelector(':scope > .flex.flex-col');
+  const logout = [...document.querySelectorAll('a[href="/logout"]')];
+  return {
+    stackKids: [...stack.children].map(k => k.id || k.tagName.toLowerCase()),
+    logoutN: logout.length,
+    logoutInSettings: logout.length === 1 && tab.contains(logout[0]),
+    logoutInNavbar: !!document.querySelector('.navbar a[href="/logout"]'),
+    rowChecked: document.querySelector('#personal-details > input').checked,
+    hasPushCard: !!document.getElementById('push-card'),
+  };
+}"""
+
+# content geometry — runs only after the personal row has been opened
 GEO = """() => {
-  const tab = document.getElementById('tab-personal');
-  const wrap = tab.querySelector('.flex.flex-col');
+  const tab = document.getElementById('tab-settings');
+  const row = document.getElementById('personal-details');
+  const wrap = row.querySelector('.collapse-content > .flex.flex-col');
   const cards = [...wrap.children];
   const groups = cards.filter(c => c.classList.contains('collapse'));
   const st = groups.map(g => g.querySelector('input').checked);
   const titles = groups.map(g => g.querySelector('.collapse-title span').textContent);
   const badges = groups.map(g => g.querySelector('.badge').textContent);
   const titleH = groups.map(g => Math.round(g.querySelector('.collapse-title').getBoundingClientRect().height));
+  const rowTitleH = Math.round(row.querySelector('.collapse-title').getBoundingClientRect().height);
   const gaps = [];
   for (let i = 1; i < cards.length; i++)
     gaps.push(+(cards[i].getBoundingClientRect().top - cards[i - 1].getBoundingClientRect().bottom).toFixed(1));
@@ -168,7 +189,7 @@ GEO = """() => {
   const copies = [...tab.querySelectorAll('[data-copy]')];
   const dock = document.querySelector('.dock');
   return {
-    cards: cards.length, st, titles, badges, titleH, gaps,
+    cards: cards.length, st, titles, badges, titleH, rowTitleH, gaps,
     gridCols: gs.gridTemplateColumns.split(' ').filter(Boolean).length,
     rowGap: parseFloat(gs.rowGap), colGap: parseFloat(gs.columnGap),
     labelToValue: +(val.getBoundingClientRect().top - lbl.getBoundingClientRect().bottom).toFixed(1),
@@ -187,17 +208,30 @@ GEO = """() => {
   };
 }"""
 
+OPEN_ROW = "() => { document.querySelector('#personal-details > input').checked = true; }"
+
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--font-render-hinting=none', '--force-color-profile=srgb'])
 
-    # ── desktop 1280x900: V2 structure + V3 density, everything open ──
+    # ── desktop 1280x900: Settings structure, then content with row open ──
     ctx = b.new_context(viewport={'width': 1280, 'height': 900}, device_scale_factor=2,
                         permissions=['clipboard-read', 'clipboard-write'])
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#personal', wait_until='networkidle')
+    page.goto(f'{BASE}/#settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(900)
+    s = page.evaluate(STRUCT)
+
+    check('desktop: Settings = personal row + Notifications card + Log out row',
+          s['stackKids'] == ['personal-details', 'push-card', 'a'], str(s['stackKids']))
+    check('desktop: exactly one /logout link, inside Settings, none in navbar',
+          s['logoutN'] == 1 and s['logoutInSettings'] and not s['logoutInNavbar'] and s['hasPushCard'],
+          f"n={s['logoutN']} inSettings={s['logoutInSettings']} inNavbar={s['logoutInNavbar']}")
+    check('desktop: personal row collapsed by default', s['rowChecked'] is False, str(s['rowChecked']))
+
+    page.evaluate(OPEN_ROW)
+    page.wait_for_timeout(500)
     d = page.evaluate(GEO)
 
     check('desktop: identity header + 4 group cards', d['cards'] == 5, str(d['cards']))
@@ -216,7 +250,9 @@ with sync_playwright() as p:
           and all(abs(w - gw) <= 2 for w, gw in zip(d['spanW'], d['spanGridW']))
           and abs(d['plainW'] * 2 + d['colGap'] - d['gridW']) <= 2,
           f"span={d['spanW']} grids={d['spanGridW']} plain={d['plainW']} grid={d['gridW']}")
-    check('desktop: collapse title >= 44px touch target', min(d['titleH']) >= 44, str(d['titleH']))
+    check('desktop: collapse titles >= 44px touch target (row + groups)',
+          min(d['titleH']) >= 44 and d['rowTitleH'] >= 44,
+          f"groups={d['titleH']} row={d['rowTitleH']}")
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
     check('desktop: 24 data-copy targets, all keyboard-wired',
           d['copies'] == 24 and d['wired'], f"copies={d['copies']} wired={d['wired']}")
@@ -224,25 +260,34 @@ with sync_playwright() as p:
     check('desktop: all 24 field values render', not missing, str(missing))
     run_sweep(page, 50, 'desktop')
 
-    # click-to-copy round trip
-    el = page.query_selector('#tab-personal [data-copy]')
+    # click-to-copy round trip (first data-copy = identity Student Name)
+    el = page.query_selector('#tab-settings [data-copy]')
     el.click()
     page.wait_for_timeout(150)
-    flashed = page.evaluate("() => document.querySelector('#tab-personal [data-copy]').textContent")
+    flashed = page.evaluate("() => document.querySelector('#tab-settings [data-copy]').textContent")
     page.wait_for_timeout(1400)
-    restored = page.evaluate("() => document.querySelector('#tab-personal [data-copy]').textContent")
+    restored = page.evaluate("() => document.querySelector('#tab-settings [data-copy]').textContent")
     check('desktop: copy click flashes Copied! then restores value',
           flashed == 'Copied!' and restored == FULL['Student Name'],
           f'{flashed!r} -> {restored!r}')
     ctx.close()
 
-    # ── mobile 393x851: compact default (first group open) ─────────────
+    # ── mobile 393x851: same structure, first group only inside the row ──
     ctx = b.new_context(viewport={'width': 393, 'height': 851}, device_scale_factor=2.75)
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#personal', wait_until='networkidle')
+    page.goto(f'{BASE}/#settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(900)
+    s = page.evaluate(STRUCT)
+    check('mobile: personal row collapsed by default', s['rowChecked'] is False, str(s['rowChecked']))
+    check('mobile: same Settings row list, logout only there',
+          s['stackKids'] == ['personal-details', 'push-card', 'a']
+          and s['logoutN'] == 1 and s['logoutInSettings'] and not s['logoutInNavbar'],
+          f"kids={s['stackKids']} logoutN={s['logoutN']} navbar={s['logoutInNavbar']}")
+
+    page.evaluate(OPEN_ROW)
+    page.wait_for_timeout(500)
     m = page.evaluate(GEO)
 
     check('mobile: default = first group open, rest collapsed', m['st'] == [True, False, False, False],

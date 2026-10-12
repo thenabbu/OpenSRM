@@ -60,7 +60,7 @@ Anatomy of the dashboard:
 ```text
 ┌────────────────────────────────────────────────────┐
 │ navbar   bg-base-200 · border-b border-base-300 · sticky
-│ logo | name     [Dashboard][Attendance]…[Personal]  [Refresh] (5m ago) [Log out]
+│ logo | name     [Dashboard][Attendance]…[Settings]  [Refresh] (5m ago)
 │                ← role=tab, selected = §4.9 tint     ← caption only once ≥5m old
 ├────────────────────────────────────────────────────┤   page: bg-base-100
 │  main px-2 lg:px-4 py-5 pb-24 lg:pb-5             │   full-width on Dashboard only
@@ -238,7 +238,7 @@ Copy the nearest recipe here or the nearest existing markup in `dashboard.html`.
 | Hero action (max one per screen) | `btn btn-accent btn-lg w-full` | White fill, black label. Login "Sign in" |
 | Standard solid | `btn btn-primary btn-sm hover:bg-base-300 focus-visible:outline-accent` | Black fill, white label. The two extra classes are required because `primary` is black (§2.4) |
 | Secondary | `btn btn-outline btn-sm` | Transparent, `base-content` outline |
-| Tertiary / toolbar | `btn btn-ghost btn-sm` | Add `text-base-content/60` for quiet ones (Log out) |
+| Tertiary / toolbar | `btn btn-ghost btn-sm` | Add `text-base-content/60` for quiet ones |
 | Confirm / save | `btn btn-success btn-sm text-accent-content` | Forces black label; the default label is 1.9:1 (§2.8) |
 | Destructive | `btn btn-error btn-sm` | Pair with a confirm step |
 | Icon only | `btn btn-ghost btn-sm btn-square` + `aria-label` | Inline SVG inside |
@@ -355,7 +355,7 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
   </table>
 </div>
 
-<!-- identity card + grouped detail list (Personal tab) -->
+<!-- identity card + grouped detail list (Settings → Personal details row) -->
 <div class="flex flex-col gap-3">
   <div class="card bg-base-200 border border-base-300">
     <div class="card-body p-4">

@@ -61,7 +61,8 @@ def list_subscriptions(netid=None, enabled_only=True):
     return rows
 
 
-def set_settings(netid, lead_minutes=None, enabled=None):
+def set_settings(netid, lead_minutes=None, enabled=None,
+                 notify_reminders=None, notify_exams=None):
     """Update the caller's subscriptions; returns rows touched."""
     c = get_conn()
     sets, args = [], []
@@ -69,6 +70,10 @@ def set_settings(netid, lead_minutes=None, enabled=None):
         sets.append("lead_minutes=?"); args.append(int(lead_minutes))
     if enabled is not None:
         sets.append("enabled=?"); args.append(1 if enabled else 0)
+    if notify_reminders is not None:
+        sets.append("notify_reminders=?"); args.append(1 if notify_reminders else 0)
+    if notify_exams is not None:
+        sets.append("notify_exams=?"); args.append(1 if notify_exams else 0)
     n = 0
     if sets:
         args.append(netid)
