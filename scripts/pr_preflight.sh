@@ -39,10 +39,12 @@ case $ST in
 esac
 
 # ---- 3. duplicate @migration(version=N) in the registry
-DUP=$(grep -ohE '@migration\(version=[0-9]+' app/migrations.py | sort | uniq -c \
+# (^ anchor: the module docstring's usage example contains a literal
+#  "@migration(version=14" that must not count as a registry entry)
+DUP=$(grep -ohE '^@migration\(version=[0-9]+' app/migrations.py | sort | uniq -c \
       | awk '$1 > 1 {print $2 " x" $1}')
 if [ -z "$DUP" ]; then
-  res PASS migrations "no duplicate @migration version ($(grep -c '@migration(version=' app/migrations.py) decorators)"
+  res PASS migrations "no duplicate migration version ($(grep -c '^@migration(version=' app/migrations.py) decorators)"
 else
   res FAIL migrations "duplicate migration versions (renumber to the next free N):"$'\n'"$(printf '%s\n' "$DUP" | sed 's/^/    /')"
 fi

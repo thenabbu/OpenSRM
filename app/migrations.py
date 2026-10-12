@@ -214,6 +214,26 @@ def m004_marks(conn):
             if "duplicate column name" not in str(e):
                 raise
 
+@migration(version=15, description="official timetable: source on timetable_slots, official_times/tt_fetched_at on timetable_groups")
+def m015_official_timetable(conn):
+    # ALTER-only like m013 — the versioned registry runs on fresh DBs too.
+    # source: 'official' (portal formId 10 sync) | 'manual' (archived editor /
+    # legacy import); NULL on pre-existing rows = manual (back-compat: render
+    # precedence and every scoped delete treat NULL as manual).
+    # official_times = the portal's RAW per-period time row (pre-offset) so the
+    # offset can be re-derived or zeroed without refetching.
+    for stmt in (
+        "ALTER TABLE timetable_slots ADD COLUMN source TEXT",
+        "ALTER TABLE timetable_groups ADD COLUMN official_times TEXT DEFAULT ''",
+        "ALTER TABLE timetable_groups ADD COLUMN tt_fetched_at INTEGER DEFAULT 0",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
+
+
 @migration(version=13, description="faculty_map_json (subject->teacher map, harvested from MidSemFeedback)")
 def m013_faculty_map(conn):
     # ALTER-only like m002/m004/m008 — the versioned registry runs every

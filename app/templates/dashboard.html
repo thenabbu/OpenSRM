@@ -264,7 +264,10 @@
   </div>
   <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
-      <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
+      <div class="flex items-center gap-2 mt-4 flex-wrap">
+        <button class="btn btn-accent btn-sm" id="tt-edit-btn">Edit Timetable</button>
+        {% if tt_fetched_at %}<span class="badge badge-sm badge-success">Synced from portal</span>{% endif %}
+      </div>
       <!-- audit feature: who edited the shared timetable, when, what changed -->
       <details class="collapse collapse-arrow bg-base-200 border border-base-300 mt-4" id="tt-history">
         <summary class="collapse-title text-sm font-semibold min-h-0">Edit history
@@ -276,13 +279,18 @@
     </div>
     <div id="tt-editor" style="display:none">
       <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
-        <h3 class="text-base font-semibold">Edit Timetable</h3>
+        <h3 class="text-base font-semibold">Edit Timetable{% if tt_fetched_at %} <span class="badge badge-warning badge-sm">Archived</span>{% endif %}</h3>
         <div class="flex gap-2 flex-wrap">
           <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
           <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
           <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
         </div>
       </div>
+      <p class="text-xs text-base-content/60 mb-3">
+        {% if tt_fetched_at %}The portal timetable syncs automatically — edits save and show up
+        immediately, but your next sync overwrites them. Kept as a fallback if the portal's copy is
+        ever wrong.{% else %}Legacy manual editor — this section's timetable is entered by hand.{% endif %}
+      </p>
       <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
       <div class="overflow-x-auto tt-grid-wrap">
         <div id="tt-grid-body"></div>

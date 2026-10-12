@@ -22,8 +22,7 @@ c = A.db()
 ver = c.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
 tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 c.close()
-check("fresh DATA_DIR migrates to latest registry version",
-      ver == max(m["version"] for m in migrations._registry), str(ver))
+check("fresh DATA_DIR migrates to latest (15)", ver == 15, str(ver))  # v15 = official timetable columns
 check("push tables exist", {"push_subscriptions", "push_sent_log", "push_events"} <= tables, str(sorted(tables)))
 
 # 2) portable SQL: scan REAL string literals (skip docstrings) of the
