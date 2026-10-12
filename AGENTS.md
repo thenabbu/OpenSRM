@@ -42,6 +42,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
+.venv/bin/python tests/test_official_tt.py    # 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
 .venv/bin/python tests/test_sessions.py     # 5/5 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, index/refresh survive mid-request session loss)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
@@ -55,11 +56,11 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
 
 # push unit suites (no server, no network)
-.venv/bin/python tests/test_push_calc.py     # 32/32 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
-.venv/bin/python tests/test_push_store.py    # 27/27 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
+.venv/bin/python tests/test_push_calc.py     # 33/33 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
+.venv/bin/python tests/test_push_store.py    # 28/28 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
 .venv/bin/python tests/test_push_send.py     # 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
 .venv/bin/python tests/test_push_tick.py     # 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
-.venv/bin/python tests/test_push_api.py      # 37/37 (401 style, validation, DB rate caps, test/receipt flows)
+.venv/bin/python tests/test_push_api.py      # 42/42 (401 style, validation, DB rate caps, test/receipt flows, per-type notification prefs)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -76,6 +77,13 @@ export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
 .venv/bin/python tests/test_marks_dut.py     # 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
 kill %1
+
+# official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside,
+# seeds 3 attendance tiers so the rim colours render), DOM-asserts corrected
+# clock + archive contract (no badges/history/button, save 403) + rim tiers +
+# Soon retired, screenshots desktop+mobile
+# (needs PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers)
+.venv/bin/python tests/dut_official_tt.py    # 14/14 (archive contract under default TIMETABLE_EDITOR: synced badge gone, edit history gone, edit button absent, save API 403; Soon retired + rim tiers grey/yellow/red by attendance; guards: require_own_server + missing gunicorn; scrollWidth no-overflow @393)
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
@@ -138,7 +146,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v26; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v27; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

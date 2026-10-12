@@ -72,19 +72,22 @@ class Reminder:
                 "url": "/#timetable"}
 
 
-def blocks_for_day(day, day_slots, on_date):
+def blocks_for_day(day, day_slots, on_date, group_key=None):
     """day_slots = {period: {'code','name','location'}} -> merged Blocks.
 
-    Merges runs where code+name match and periods are adjacent in the SLOTS
-    grid with no break/lunch row between them. Runs end at a break, a gap,
-    a subject change, or a name change (a lecture and its lab share a code
-    but not a name — the name test keeps them separate).
+    Merges runs where code+name match and periods are adjacent in the
+    resolved grid (official portal grid via _tt_grid(group_key), legacy SLOTS
+    when no group_key — same shape) with no break/lunch row between them.
+    Runs end at a break, a gap, a subject change, or a name change (a lecture
+    and its lab share a code but not a name — the name test keeps them
+    separate).
     """
-    from .app import SLOTS  # lazy: avoids import cycle, reuses THE grid
+    from .app import SLOTS, _tt_grid  # lazy: avoids import cycle, reuses THE grid
+    grid = _tt_grid(group_key) if group_key else SLOTS
     runs = []
     run = None               # {'code','name','location','periods':[p],'end':'HH:MM'}
     after_break = False
-    for s in SLOTS:
+    for s in grid:
         if s["type"] == "break":
             if run:
                 runs.append(run); run = None
@@ -116,7 +119,7 @@ def blocks_for_day(day, day_slots, on_date):
     if run:
         runs.append(run)
 
-    start_of = {s["period"]: s["start"] for s in SLOTS if s["type"] == "class"}
+    start_of = {s["period"]: s["start"] for s in grid if s["type"] == "class"}
     blocks = []
     for r in runs:
         start = datetime.combine(on_date, dtime.fromisoformat(start_of[r["periods"][0]]), tzinfo=IST)
@@ -143,7 +146,7 @@ def due_reminders(now_ist, subscriptions, timetable_by_group, sent):
         day_slots = (timetable_by_group.get(sub.group_key) or {}).get(day)
         if not day_slots:
             continue
-        for block in blocks_for_day(day, day_slots, today):
+        for block in blocks_for_day(day, day_slots, today, sub.group_key):
             lead = timedelta(minutes=sub.lead_minutes)
             if not (block.start - lead <= now_ist < block.start):
                 continue

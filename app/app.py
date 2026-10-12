@@ -157,8 +157,10 @@ def _import_legacy_timetable():
                 per = _slot_start.get(s.get("start", ""))
                 if not per:
                     continue  # break/lunch rows or unknown times
-                c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
-                          "VALUES(?,?,?,?,?,?)", (gid, day, per, s.get("code",""), s.get("name",""), s.get("location","")))
+                c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
+                          "VALUES(?,?,?,?,?,?,'manual')", (gid, day, per, s.get("code",""), s.get("name",""), s.get("location","")))
+        # legacy rows are manual: drop any official stamp (rows+times must agree)
+        c.execute("UPDATE timetable_groups SET official_times='', tt_fetched_at=0 WHERE id=?", (gid,))
         c.commit()
         os.rename(json_path, json_path + ".bak")   # only consume on success
     except Exception:
@@ -739,6 +741,98 @@ def parse_exam_timetable(html):
         log.debug("exam timetable: table present but 0 dated rows parsed (shape drift?)")
         return None
     return out
+
+
+def _tt_norm_clock(h, m):
+    """Portal clock -> 24h minutes. The published time row mixes bands: morning
+    is 24h (08:30) but the afternoon is 12h-style WITHOUT meridiem (01:30 ==
+    13:30). No campus period starts before 08:00, so single-digit hours are
+    always the PM band. Verified live 2026-10-12 (6 periods, 08:30-15:10)."""
+    h = int(h)
+    if h < 8:
+        h += 12
+    return h * 60 + int(m)
+
+
+def parse_timetable(html):
+    """studentTimeTableDetails.jsp (iden=10, official 'Timetable' page)
+    -> weekly grid. LIVE since Oct 2026 (verified 2026-10-12; the endpoint was
+    a hard server-side gap before — 'No Time Table Found..!' for every section).
+
+    Page = two static tables: a grid (row 0 = `Hour/Day order` header with
+    rowspan + period numbers 1..N, row 1 = N time cells — the rowspan keeps
+    them aligned under the periods, there is NO label cell — then one row per
+    weekday) and a Legends table (Code | Description). Breaks are NOT rows:
+    they exist only as gaps between consecutive times.
+
+    Returns:
+      {"times": {period: "HH:MM-HH:MM"}  # RAW as published, 24h-normalized,
+                                          # pre-offset (offsets apply at render)
+       "grid":  {day: {period: code}},
+       "legend":{code: name}}            # may be empty; caller falls back
+                                          # stored name -> code
+      []  — explicit empty marker ('No Time Table Found..!'): section not
+            published, a clean empty callers MAY overwrite.
+      None — preserve-signal (never wipe stored rows): missing/blank html,
+            youLogin bounce (auth state, not data), or a table present that
+            yields 0 day rows / unparseable times (shape drift — the Oct-4
+            exam-parser rule)."""
+    if not html:
+        return None
+    if "No Time Table Found" in html:
+        return []
+    if "youLogin" in html:
+        return None
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S)
+
+    def _tcells(row_html):
+        # _cells() is <td>-only; this page's header + time rows are <th>
+        return [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
+                for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row_html, re.S)]
+
+    period_labels, times, grid, legend = None, None, {}, {}
+    for i, row in enumerate(rows):
+        cells = _tcells(row)
+        if period_labels is None and cells and "Hour/Day" in cells[0]:
+            # header row: label + one <th> per period; row i+1 = the time row
+            period_labels = [c.strip() for c in cells[1:]]
+            if i + 1 < len(rows):
+                tcells = _tcells(rows[i + 1])
+                if len(tcells) != len(period_labels):
+                    return None
+                times = {}
+                for p, t in enumerate(tcells, 1):
+                    tm = re.fullmatch(r"\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*", t)
+                    if not tm:
+                        return None
+                    s = _tt_norm_clock(*tm.group(1).split(":"))
+                    e = _tt_norm_clock(*tm.group(2).split(":"))
+                    if e <= s:
+                        return None  # band-normalization went wrong: preserve
+                    times[p] = "%02d:%02d-%02d:%02d" % (s // 60, s % 60, e // 60, e % 60)
+            continue
+        if period_labels and cells and cells[0] in DAY_ORDER:
+            if len(cells) != len(period_labels) + 1:
+                return None  # day row drifted off the period axis: preserve
+            grid[cells[0]] = {p: cells[p].strip() for p in range(1, len(period_labels) + 1)}
+        elif len(cells) == 2 and cells[0].strip() and cells[0].strip().lower() != "code":
+            legend[cells[0].strip()] = cells[1].strip()
+    if not period_labels or times is None or not grid or not times \
+            or not any(str(v).strip(" -\u2013\u2014\xa0") for d in grid.values() for v in d.values()):
+        # table present but the grid never resolved (structure drift), zero
+        # day rows, or every cell blank/dash (structurally valid but
+        # contentless — a published shell): NOT a clean empty — preserve
+        # stored rows (Oct-4 rule; review #1: a blank grid used to wipe 30 rows)
+        log.debug("timetable: unparseable shape (labels=%s times=%s day_rows=%d)",
+                  bool(period_labels), times is not None, len(grid))
+        return None
+    missing = [d for d in DAY_ORDER if d not in grid]
+    if missing:
+        # a dropped day row is partial drift, not a published 4-day week —
+        # storing it would silently thin every stored weekday slot
+        log.debug("timetable: day rows missing %s (shape drift?)", missing)
+        return None
+    return {"times": times, "grid": grid, "legend": legend}
 
 
 def _ensure_loop():
@@ -1676,6 +1770,8 @@ def index():
         teach_groups=_wctx["teach_groups"],
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
+        tt_fetched_at=_tt_fetched_at(group_key),
+        tt_editor_enabled=_tt_editor_enabled(),
         personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1692,6 +1788,35 @@ SLOTS = [
     {"period": 0, "start": "15:50", "end": "16:00", "type": "break", "name": "Break"},
     {"period": 7, "start": "16:00", "end": "16:50", "type": "class"},
 ]
+
+# The portal's published time row is WRONG (verified live 2026-10-12): its
+# morning block runs -60 min and its afternoon block -40 min against real
+# campus hours (08:30 shown, classes start 09:30; its lunch is mis-sized the
+# same way). These per-period offsets are DERIVED so official+OFFSET == the
+# SLOTS grid above exactly for p1-6 (tests/test_official_tt pins it). Legacy
+# p7 (16:00-16:50) has no portal counterpart: a first official sync drops
+# stored p7 rows (whole-group DELETE+replace is the design), and a future
+# 7-period portal capture gets offset 0 via .get(p, 0) -> corrected overlap
+# -> whole-group SLOTS fallback (safe, log.debug only).
+# ponytail: re-derive the table + SLOTS edge if a 7-period capture exists.
+# When the portal fixes its clock: set every value to 0 AND refresh the
+# tests/fixtures/timetable_form10.html capture to the corrected portal output
+# (test_official_tt pins raw fixture + offset == SLOTS). Nothing else in the
+# code depends on these values.
+TIMETABLE_TIME_OFFSETS = {1: 60, 2: 60, 3: 60, 4: 60, 5: 40, 6: 40}
+
+# Where the rendered grid comes from: "official" = portal timetable when the
+# group has one (legacy SLOTS as per-group fallback); "manual" = always the
+# legacy SLOTS/manual rows — the ops escape hatch if a published official
+# timetable is ever wrong beyond a clock offset.
+TIMETABLE_SOURCE = "official"
+
+# The timetable is fully portal-owned: the manual editor entry + save API are
+# archived (no user input — see the Oct 2026 "portal publishes formId 10"
+# decision). Escape hatch if the portal's copy ever breaks: TIMETABLE_EDITOR
+# =enabled (read per-request so tests can flip it live; restart not needed).
+def _tt_editor_enabled():
+    return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
 
 # ── Dashboard card/widget engine ────────────────────────────────────────────
 # Contract (session spec, engine-spec.md): a card is one LAYOUT entry (grid
@@ -1748,7 +1873,7 @@ def _today_ticker(group_key):
     rows = [{"start": s["start"], "end": s["end"],
              "code": todays[s["period"]]["code"],
              "name": todays[s["period"]].get("name") or ""}
-            for s in SLOTS if s["type"] != "break" and s["period"] in todays]
+            for s in _tt_grid(group_key) if s["type"] != "break" and s["period"] in todays]
     if not rows:
         return None
     now = datetime.now().hour * 60 + datetime.now().minute
@@ -1842,6 +1967,137 @@ def _day_slots(group_key):
     c.close()
     return day_slots
 
+def _tt_grid(group_key):
+    """Resolved weekly TIME grid for a group — same row shape SLOTS has
+    (class rows + period-0 break dividers), so ticker/push/panel consumers
+    swap SLOTS -> _tt_grid(group_key) without other changes.
+
+    official mode (default): the group's RAW published time row
+    (timetable_groups.official_times) + TIMETABLE_TIME_OFFSETS; gaps >= 10 min
+    between corrected periods become dividers (the official page has none —
+    break/lunch exist only as gaps). Fallback to legacy SLOTS whenever there
+    is no official data to trust: group missing, never published, raw JSON
+    corrupt, offsets producing overlap — any anomaly degrades to the grid we
+    know instead of failing the render.
+
+    TIMETABLE_SOURCE = "manual" is the ops escape hatch: always SLOTS."""
+    if TIMETABLE_SOURCE != "official":
+        return SLOTS
+    c = db()
+    row = c.execute("SELECT official_times FROM timetable_groups WHERE group_key=?",
+                    (group_key,)).fetchone()
+    c.close()
+    if not row or not row[0]:
+        return SLOTS
+    try:
+        raw = json.loads(row[0])
+        parsed = []
+        for k in raw:
+            p = int(k)
+            sm, em = raw[k].split("-")
+            s = int(sm.split(":")[0]) * 60 + int(sm.split(":")[1]) + TIMETABLE_TIME_OFFSETS.get(p, 0)
+            e = int(em.split(":")[0]) * 60 + int(em.split(":")[1]) + TIMETABLE_TIME_OFFSETS.get(p, 0)
+            if e <= s:
+                raise ValueError("inverted period %d after offset" % p)
+            parsed.append((p, s, e))
+        parsed.sort(key=lambda t: t[1])
+        if any(parsed[i][1] < parsed[i - 1][2] for i in range(1, len(parsed))):
+            raise ValueError("corrected periods overlap")
+    except Exception as ex:
+        log.debug("timetable grid: official_times unusable (%r) — SLOTS fallback", ex)
+        return SLOTS
+    out = []
+    for i, (p, s, e) in enumerate(parsed):
+        if i:
+            gap = s - parsed[i - 1][2]
+            if gap >= 10:
+                out.append({"period": 0, "start": "%02d:%02d" % divmod(parsed[i - 1][2], 60),
+                            "end": "%02d:%02d" % divmod(s, 60), "type": "break",
+                            "name": "Lunch" if gap >= 30 else "Break"})
+        out.append({"period": p, "start": "%02d:%02d" % divmod(s, 60),
+                    "end": "%02d:%02d" % divmod(e, 60), "type": "class"})
+    return out
+
+
+def _tt_fetched_at(group_key):
+    """Epoch of the last official timetable sync for this group (0 = never)."""
+    c = db()
+    r = c.execute("SELECT tt_fetched_at FROM timetable_groups WHERE group_key=?",
+                  (group_key,)).fetchone()
+    c.close()
+    return int(r[0]) if r and r[0] else 0
+
+def _save_timetable_group(netid, res):
+    """Upsert the student's timetable group + scraped subjects, then persist the
+    official portal timetable (formId 10). Own transaction, warn-only — a
+    timetable write must never fail a sync.
+
+    Called from /api/login AND /api/refresh (refresh had no group/subject
+    upsert before, so subjects and the official grid would only ever update on
+    a fresh login; hot syncs skip formId 17 so the group key comes from stored
+    cold data there).
+
+    Preserve contract: no "timetable" grid in res (section unpublished, shape
+    drift, dead JSP) -> no slot writes, stored rows untouched. A published grid
+    is an atomic whole-group replace stamped source='official' (UNIQUE
+    group/day/period means one source at a time per group — the archived
+    editor does the same replace stamped 'manual'). Locations typed into the
+    editor carry forward: the portal publishes no rooms."""
+    try:
+        personal = dict(res.get("personal") or {})
+        if not personal:
+            c0 = db()
+            prow = c0.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
+            c0.close()
+            try:
+                personal = json.loads(prow[0]) if prow and prow[0] else {}
+            except Exception:
+                personal = {}
+        gk = _group_key(personal)
+        if not gk:
+            return
+        c2 = db()
+        c2.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
+                   "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
+                   (gk, personal.get("Program", ""), int(personal.get("Batch", 0) or 0),
+                    _semester_int(personal.get("Semester", "")), personal.get("Section", "")))
+        gid = c2.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
+        for sub in res.get("courses") or []:
+            c2.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
+                       "VALUES(?,?,?,?,0) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
+                       (gid, sub["code"], sub["name"], sub["credits"]))
+        tt = res.get("timetable")
+        if isinstance(tt, dict) and tt.get("grid"):
+            old_loc = {(r[0], r[1]): (r[2], r[3]) for r in c2.execute(
+                "SELECT day,period,subject_code,location FROM timetable_slots "
+                "WHERE group_id=? AND COALESCE(location,'')!=''", (gid,))}
+            known = {r[0]: r[1] for r in c2.execute(
+                "SELECT code,name FROM timetable_subjects WHERE group_id=?", (gid,))}
+            legend = tt.get("legend") or {}
+            c2.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
+            n = 0
+            for day, slots in tt["grid"].items():
+                for p, code in slots.items():
+                    if not code:
+                        continue
+                    # same rule as the editor path (app.py:~3020): carry the
+                    # room forward only while the slot's CODE is unchanged —
+                    # a swapped subject drops the old room (review #3)
+                    prev = old_loc.get((day, int(p)))
+                    loc = prev[1] if prev and prev[0] == code else ""
+                    c2.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
+                               "VALUES(?,?,?,?,? ,?,'official')",
+                               (gid, day, int(p), code,
+                                legend.get(code) or known.get(code) or code, loc))
+                    n += 1
+            c2.execute("UPDATE timetable_groups SET official_times=?, tt_fetched_at=? WHERE group_key=?",
+                       (json.dumps({str(k): v for k, v in sorted(tt["times"].items())}),
+                        int(time.time()), gk))
+            log.debug("timetable official save netid=%s group=%s rows=%d", netid, gk, n)
+        c2.commit(); c2.close()
+    except Exception as e:
+        log.warning("timetable group/subject save failed netid=%s: %r", netid, e, exc_info=True)
+
 def _today_brief(group_key):
     """Dashboard: today's class count + next class from the timetable."""
     day_slots = _day_slots(group_key)
@@ -1851,7 +2107,7 @@ def _today_brief(group_key):
     today = datetime.now().strftime("%A")
     todays = day_slots.get(today, {})
     out["count"] = len(todays)
-    for s in SLOTS:
+    for s in _tt_grid(group_key):
         if s["type"] == "break" or s["period"] not in todays:
             continue
         sm = int(s["start"].split(":")[0]) * 60 + int(s["start"].split(":")[1])
@@ -1951,12 +2207,13 @@ def timetable_html(group_key, attendance=None):
     # index of the day's LAST filled class slot: a break at/after it is NOT
     # part of today's schedule (otherwise the hero says "Break until 16:00"
     # after the last class instead of "Done for today")
+    grid = _tt_grid(group_key)
     last_cls = -1
-    for i, s in enumerate(SLOTS):
+    for i, s in enumerate(grid):
         if s["type"] == "class" and today in day_slots and s["period"] in day_slots[today]:
             last_cls = i
     today_slots = []
-    for i, s in enumerate(SLOTS):
+    for i, s in enumerate(grid):
         if s["type"] == "break":
             if i < last_cls:
                 today_slots.append(s)
@@ -2003,10 +2260,10 @@ def timetable_html(group_key, attendance=None):
         # which class slots this day actually has — a break divider only makes
         # sense BETWEEN two rendered classes (no trailing "Break" after the
         # day's last class, no orphan divider above the first one)
-        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {}) for s in SLOTS]
+        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {}) for s in grid]
         last_cls = max((i for i, p in enumerate(present) if p), default=-1)
         rows = []
-        for i, s in enumerate(SLOTS):
+        for i, s in enumerate(grid):
             if s["type"] == "break":
                 if any(present[:i]) and i < last_cls:
                     rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
@@ -2024,8 +2281,9 @@ def timetable_html(group_key, attendance=None):
             elif d == today and now_mins < sm and (sm - now_mins) <= 120:
                 hl = "upcoming"
             cls = " tt-row--" + hl if hl else ""
-            # review R6/R9: no Now badge (the hero already says it); Soon stays
-            badge = "<span class=tt-badge tt-badge--soon>Soon</span>" if hl == "upcoming" else ""
+            # Navya 2026-10-12: Soon retired — only the live class carries "Now"
+            # (the hero repeats it; the badge marks the row itself).
+            badge = "<span class=tt-badge>Now</span>" if hl == "current" else ""
             loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
             # attendance glance (review R7): the slim risk rim IS the can-be-missed
             # indicator; the bare number is data. Neutral "no data" for
@@ -2537,24 +2795,8 @@ def api_login():
         threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
                          daemon=True, name="srm-exam-evt").start()
 
-    # Save timetable group and scraped subjects (non-critical, separate tx)
-    try:
-        personal = dict(res.get("personal", {}))
-        gk = _group_key(personal)
-        if gk and res.get("courses"):
-            c2 = db()
-            c2.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
-                       "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
-                       (gk, personal.get("Program",""), int(personal.get("Batch",0)),
-                        _semester_int(personal.get("Semester","")), personal.get("Section","")))
-            gid = c2.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
-            for sub in res.get("courses", []):
-                c2.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
-                           "VALUES(?,?,?,?,0) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
-                           (gid, sub["code"], sub["name"], sub["credits"]))
-            c2.commit(); c2.close()
-    except Exception as e:
-        log.warning("timetable group/subject save failed netid=%s: %r", netid, e, exc_info=True)
+    # timetable group/subjects + official grid (non-critical, separate tx)
+    _save_timetable_group(netid, res)
 
     token = make_session_token(netid)
     resp = make_response({"ok": True})
@@ -2598,6 +2840,8 @@ def api_refresh():
               (json.dumps(res["data"]), res["fetched"], personal_json,
                marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
     c.commit(); c.close()
+    # same timetable save as login: group/subjects + official grid (separate tx)
+    _save_timetable_group(netid, res)
     _track("sync_ok", user=netid)
     # same one-shot exam pushes as login — post-commit, background thread
     if exam_events:
@@ -2749,6 +2993,9 @@ def api_timetable_history():
 def api_save_timetable():
     netid = get_current_user()
     if not netid: return {"ok": False, "error": "not logged in"}, 401
+    if not _tt_editor_enabled():
+        return {"ok": False, "error": "timetable editor is archived — the portal "
+                "owns the timetable (set TIMETABLE_EDITOR=enabled to re-enable)"}, 403
     data = request.get_json(silent=True) or {}
     slots = data.get("slots", {})
     custom = data.get("custom_subjects", [])
@@ -2787,8 +3034,11 @@ def api_save_timetable():
         # drops the old room (it belonged to the old class).
         prev = old_rows.get(key)
         loc = prev["location"] if prev and prev["code"] == val["code"] else ""
-        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
-                  "VALUES(?,?,?,?,?,?)", (gid, day, int(period), val["code"], val["name"], loc))
+        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
+                  "VALUES(?,?,?,?,?,?,'manual')", (gid, day, int(period), val["code"], val["name"], loc))
+    # rows and official_times must never disagree: these rows are manual, so
+    # drop the official stamp (next sync rewrites rows+stamp together)
+    c.execute("UPDATE timetable_groups SET official_times='', tt_fetched_at=0 WHERE id=?", (gid,))
     if changes:  # no-op saves stay out of the log
         c.execute("INSERT INTO timetable_edit_log(group_id,editor_netid,editor_name,changes_json) "
                   "VALUES(?,?,?,?)",
