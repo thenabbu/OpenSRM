@@ -3,12 +3,13 @@ external login.js + Service-Worker-Allowed header. Server under test: AGENTS.md.
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-sw')
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 seed(with_payload=False)
 TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:8084')
+require_own_server(BASE)
 results, console_msgs = [], []
 
 def check(name, ok, detail=""):

@@ -3,12 +3,13 @@
 import asyncio, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-xss')
-from _seed import seed, mint_token, PAYLOAD
+from _seed import seed, mint_token, PAYLOAD, require_own_server
 from playwright.async_api import async_playwright
 
 seed(with_payload=True)
 TOKEN = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18099')
+require_own_server(BASE)
 
 async def main():
     fails, dialogs, js_errors, csp = [], [], [], []
