@@ -1,5 +1,6 @@
-"""Before/after capture for PR #44 body: SAME seeded timetable, two code bases.
-before = origin/main checkout (no feature), after = this worktree."""
+"""Before/after evidence capture: SAME seeded timeline, two code bases.
+AFTER = this checkout (the feature); BEFORE = OSRM_MAIN checkout (feature
+absent, e.g. origin/main). Screenshots land in the caller's cwd/OUT dir."""
 import json
 import os
 import shutil
@@ -10,8 +11,8 @@ import sys
 import time
 from pathlib import Path
 
-WORKTREE = Path("/opt/data/cache/scratch/tt-official/wt")
-MAIN = Path("/opt/data/opensrm-repo")
+WORKTREE = Path(__file__).resolve().parents[1]
+MAIN = Path(os.environ.get("OSRM_MAIN", "/opt/data/opensrm-repo"))
 OUT = Path("/opt/data/cache/scratch/tt-dut")
 DB_DIR = Path("/tmp/osrm-tt-pair")
 shutil.rmtree(DB_DIR, ignore_errors=True)

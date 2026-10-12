@@ -40,7 +40,7 @@ esac
 
 # ---- 3. duplicate @migration(version=N) in the registry
 # (^ anchor: the module docstring's usage example contains a literal
-#  "@migration(version=14" that must not count as a registry entry)
+#  " "@migration(version=15" that must not count as a registry entry)
 DUP=$(grep -ohE '^@migration\(version=[0-9]+' app/migrations.py | sort | uniq -c \
       | awk '$1 > 1 {print $2 " x" $1}')
 if [ -z "$DUP" ]; then

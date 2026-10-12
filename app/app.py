@@ -817,9 +817,12 @@ def parse_timetable(html):
             grid[cells[0]] = {p: cells[p].strip() for p in range(1, len(period_labels) + 1)}
         elif len(cells) == 2 and cells[0].strip() and cells[0].strip().lower() != "code":
             legend[cells[0].strip()] = cells[1].strip()
-    if not period_labels or times is None or not grid or not times:
-        # table present but the grid never resolved (structure drift) or zero
-        # day rows: NOT a clean empty — preserve stored rows (Oct-4 rule)
+    if not period_labels or times is None or not grid or not times \
+            or not any(str(v).strip(" -\u2013\u2014\xa0") for d in grid.values() for v in d.values()):
+        # table present but the grid never resolved (structure drift), zero
+        # day rows, or every cell blank/dash (structurally valid but
+        # contentless — a published shell): NOT a clean empty — preserve
+        # stored rows (Oct-4 rule; review #1: a blank grid used to wipe 30 rows)
         log.debug("timetable: unparseable shape (labels=%s times=%s day_rows=%d)",
                   bool(period_labels), times is not None, len(grid))
         return None
@@ -1790,7 +1793,12 @@ SLOTS = [
 # morning block runs -60 min and its afternoon block -40 min against real
 # campus hours (08:30 shown, classes start 09:30; its lunch is mis-sized the
 # same way). These per-period offsets are DERIVED so official+OFFSET == the
-# SLOTS grid above exactly on both edges (tests/test_official_tt pins it).
+# SLOTS grid above exactly for p1-6 (tests/test_official_tt pins it). Legacy
+# p7 (16:00-16:50) has no portal counterpart: a first official sync drops
+# stored p7 rows (whole-group DELETE+replace is the design), and a future
+# 7-period portal capture gets offset 0 via .get(p, 0) -> corrected overlap
+# -> whole-group SLOTS fallback (safe, log.debug only).
+# ponytail: re-derive the table + SLOTS edge if a 7-period capture exists.
 # When the portal fixes its clock: set every value to 0 AND refresh the
 # tests/fixtures/timetable_form10.html capture to the corrected portal output
 # (test_official_tt pins raw fixture + offset == SLOTS). Nothing else in the
@@ -2060,8 +2068,8 @@ def _save_timetable_group(netid, res):
                        (gid, sub["code"], sub["name"], sub["credits"]))
         tt = res.get("timetable")
         if isinstance(tt, dict) and tt.get("grid"):
-            old_loc = {(r[0], r[1]): r[2] for r in c2.execute(
-                "SELECT day,period,location FROM timetable_slots "
+            old_loc = {(r[0], r[1]): (r[2], r[3]) for r in c2.execute(
+                "SELECT day,period,subject_code,location FROM timetable_slots "
                 "WHERE group_id=? AND COALESCE(location,'')!=''", (gid,))}
             known = {r[0]: r[1] for r in c2.execute(
                 "SELECT code,name FROM timetable_subjects WHERE group_id=?", (gid,))}
@@ -2072,11 +2080,15 @@ def _save_timetable_group(netid, res):
                 for p, code in slots.items():
                     if not code:
                         continue
+                    # same rule as the editor path (app.py:~3020): carry the
+                    # room forward only while the slot's CODE is unchanged —
+                    # a swapped subject drops the old room (review #3)
+                    prev = old_loc.get((day, int(p)))
+                    loc = prev[1] if prev and prev[0] == code else ""
                     c2.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
                                "VALUES(?,?,?,?,? ,?,'official')",
                                (gid, day, int(p), code,
-                                legend.get(code) or known.get(code) or code,
-                                old_loc.get((day, int(p)), "")))
+                                legend.get(code) or known.get(code) or code, loc))
                     n += 1
             c2.execute("UPDATE timetable_groups SET official_times=?, tt_fetched_at=? WHERE group_key=?",
                        (json.dumps({str(k): v for k, v in sorted(tt["times"].items())}),

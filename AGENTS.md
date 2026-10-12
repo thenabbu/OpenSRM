@@ -42,7 +42,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
-.venv/bin/python tests/test_official_tt.py    # 50/50 (portal formId-10 parser + preserve/drift states, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
+.venv/bin/python tests/test_official_tt.py    # 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
 .venv/bin/python tests/test_sessions.py     # 5/5 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, index/refresh survive mid-request session loss)
 .venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
 .venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)

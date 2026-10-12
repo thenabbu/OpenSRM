@@ -78,6 +78,15 @@ check("missing day row -> None (partial drift)", A.parse_timetable(no_fri) is No
 m = re.search(r"(<tr>\s*<td[^>]*>Monday</td>)(.*?)(</tr>)", html, re.S)
 short = html[:m.start()] + m.group(1) + m.group(2).rsplit("<td", 1)[0] + m.group(3) + html[m.end():]
 check("short day row -> None", A.parse_timetable(short) is None)
+# all 5 day rows present but every cell blank: a published SHELL must not
+# wipe stored rows (review #1: contentless grid -> 30 rows deleted)
+blank = html
+for _d in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"):
+    _m = re.search(r"(<tr>\s*<td[^>]*>" + _d + r"</td>)(.*?)(</tr>)", blank, re.S)
+    blank = (blank[:_m.start()] + _m.group(1)
+             + re.sub(r"<td[^>]*>.*?</td>", "<td></td>", _m.group(2), flags=re.S)
+             + _m.group(3) + blank[_m.end():])
+check("contentless grid (all cells blank) -> None (preserve)", A.parse_timetable(blank) is None)
 
 # ── grid resolver: official + offset == SLOTS p1-6 (the offset contract) ─
 PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech]",
@@ -262,6 +271,29 @@ finally:
 check("Now badge renders on the live class (faked clock)", "<span class=tt-badge>Now</span>" in html_now)
 check("Soon badge retired — absent everywhere",
       "Soon" not in html_now and "tt-badge--soon" not in html_out)
+
+# location carry (same rule as the editor path): unchanged code keeps the
+# room, swapped subject drops it (review #3)
+c = A.db()
+gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (GK,)).fetchone()[0]
+c.execute("UPDATE timetable_slots SET location='Room 101' "
+          "WHERE group_id=? AND day='Monday' AND period=1", (gid,))
+c.commit(); c.close()
+A._save_timetable_group("tt0001", res)   # same codes -> room survives
+c = A.db()
+loc_same = c.execute("SELECT location FROM timetable_slots WHERE group_id=? "
+                     "AND day='Monday' AND period=1", (gid,)).fetchone()[0]
+c.execute("UPDATE timetable_slots SET location='Room 101' "
+          "WHERE group_id=? AND day='Monday' AND period=1", (gid,))
+c.commit(); c.close()
+tt_swap = {**tt, "grid": {**tt["grid"], "Monday": {**tt["grid"]["Monday"], 1: "99ZZZ99T"}}}
+A._save_timetable_group("tt0001", {**res, "timetable": tt_swap})  # swapped code -> room dropped
+c = A.db()
+loc_swap = c.execute("SELECT location FROM timetable_slots WHERE group_id=? "
+                     "AND day='Monday' AND period=1", (gid,)).fetchone()[0]
+c.close()
+check("room carried when the code is unchanged", loc_same == "Room 101", str(loc_same))
+check("room dropped when the subject swaps", loc_swap == "", str(loc_swap))
 
 print()
 print("%d/%d passed" % (total - len(fails), total))
