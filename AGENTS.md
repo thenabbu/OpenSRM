@@ -81,7 +81,7 @@ kill %1
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside),
 # DOM-asserts badge/corrected clock/archived editor, screenshots desktop+mobile
 # (needs PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers)
-.venv/bin/python tests/dut_official_tt.py    # 8/8
+.venv/bin/python tests/dut_official_tt.py    # 9/9 (guards: require_own_server + missing gunicorn; scrollWidth no-overflow @393)
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &

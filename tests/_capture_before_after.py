@@ -31,16 +31,7 @@ gk = A._group_key(PERSONAL)
 c.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) VALUES(?,?,?,?,?)",
           (gk, "CSE Cloud Computing", 2025, 3, "A"))
 gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
-# grid codes per day from the sanitized fixture (worktree parser, offline import)
-sys.path.insert(0, str(WORKTREE))
-import importlib.util
-
-spec = importlib.util.spec_from_file_location("wt_app_mod", WORKTREE / "app/app.py")
-# simpler: fixture grid hardcoded from the verified parse (5 days x 6 periods)
-GRID = {
-    "Monday":    [102, 102, 101, 106, 103, 101],   # placeholders replaced below
-}
-# read the fixture's grid through the worktree parser in a child process instead
+# read the fixture's grid through the worktree parser in a child process
 proc = subprocess.run(
     ["/opt/data/opensrm-repo/.venv/bin/python", "-c",
      f"import sys,os;sys.path.insert(0,'{WORKTREE}');os.environ['DATA_DIR']='{DB_DIR}-parse';"
