@@ -19,7 +19,7 @@ app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions in partials/th
 tests/                # verify76.py (71 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (one-time VAPID/tick-secret generator)
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # build.yml (image) + lint.yml; SHA-pinned actions; `uv lock --check`
 ```
@@ -98,7 +98,7 @@ kill %1
 # push DUTs boot their own three gunicorn instances (see header)
 .venv/bin/bash tests/run_push_duts.sh        # test_push_sw 8/8 + test_push_ui 15/15 (staggered boots: fresh-DB migrations race)
 ```
-Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the user + payload.
+Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the user + payload — and every HTTP suite calls `require_own_server(BASE)` first, so a suite pointed at another agent's server (or a dead one, or a mismatched `DATA_DIR`) exits 1 with `FAIL[guard]: …` before any browser/login work instead of returning a phantom verdict.
 
 ## Git & release
 - **Branches: `main` only** (merged feature branches get deleted local+remote — do the same).
@@ -120,6 +120,11 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 # (INSERT INTO cookies) and assert / → 200 with real row data — /login only
 # proves the shell boots, not that stored-data paths render.
 ```
+Then run `bash scripts/post_deploy.sh` from the checkout — it does the whole
+verification chain (prod-image SHA == origin/main, changed-static purge, edge
+MISS + byte-identity, authenticated render, cookie cleanup) in one exit code;
+`bash scripts/pr_preflight.sh` is its pre-merge twin (freshness, merge-tree
+conflicts, duplicate migrations, version trio/race, sw-cache docs).
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 

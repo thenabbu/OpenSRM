@@ -22,6 +22,9 @@ if not BASE or not DATA_DIR:
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
+from _seed import require_own_server
+
+require_own_server(BASE)
 PLAYWRIGHT_BROWSERS_PATH = os.environ.get(
     "PLAYWRIGHT_BROWSERS_PATH", "/opt/data/cache/scratch/pw-browsers")
 
