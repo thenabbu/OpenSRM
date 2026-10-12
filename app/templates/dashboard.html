@@ -266,7 +266,7 @@
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
       <div class="flex items-center gap-2 mt-4 flex-wrap">
         <button class="btn btn-accent btn-sm" id="tt-edit-btn">Edit Timetable</button>
-        {% if tt_fetched_at %}<span class="badge badge-sm badge-success">Synced from portal</span>{% endif %}
+        {% if tt_fetched_at %}<span class="badge badge-sm badge-soft badge-success">Synced from portal</span>{% endif %}
       </div>
       <!-- audit feature: who edited the shared timetable, when, what changed -->
       <details class="collapse collapse-arrow bg-base-200 border border-base-300 mt-4" id="tt-history">
@@ -279,7 +279,7 @@
     </div>
     <div id="tt-editor" style="display:none">
       <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
-        <h3 class="text-base font-semibold">Edit Timetable{% if tt_fetched_at %} <span class="badge badge-warning badge-sm">Archived</span>{% endif %}</h3>
+        <h3 class="text-base font-semibold">Edit Timetable{% if tt_fetched_at %} <span class="badge badge-sm badge-soft badge-warning">Archived</span>{% endif %}</h3>
         <div class="flex gap-2 flex-wrap">
           <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
           <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
