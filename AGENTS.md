@@ -60,7 +60,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_push_store.py    # 28/28 (claims/at-most-once, orphan recovery, AST portable-SQL gate)
 .venv/bin/python tests/test_push_send.py     # 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
 .venv/bin/python tests/test_push_tick.py     # 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
-.venv/bin/python tests/test_push_api.py      # 37/37 (401 style, validation, DB rate caps, test/receipt flows)
+.venv/bin/python tests/test_push_api.py      # 42/42 (401 style, validation, DB rate caps, test/receipt flows, per-type notification prefs)
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
