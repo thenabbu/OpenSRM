@@ -49,8 +49,9 @@ JSPS = {
     "7": "/students/report/studentSubjectLists.jsp",
     "32": "/students/courseReg/studentFeedback.jsp",
     "126": "/students/transaction/StudentExamTimeTable.jsp",  # official Exam Time Table (verified live Oct 7 2026)
+    "10": "/students/report/studentTimeTableDetails.jsp",  # daily Timetable menu (verified live Oct 12 2026; was a server-side "No Time Table Found" gap before)
 }
-HOT_FORMIDS = {"9", "13", "126"}  # attendance + marks + official exam timetable: every sync
+HOT_FORMIDS = {"9", "13", "126", "10"}  # attendance + marks + official exam timetable + daily timetable: every sync
 # (no "1"/"32": ScribeInner was demoted to the exam probe, and _fb_harvest
 # posts iden=32 itself — nothing reads those batch results; both rode along
 # on every cold sync for nothing)
@@ -760,7 +761,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
               {k: len(v) for k, v in parallel_html.items()})
 
-    from app.app import MONTHS, _cells, _parse_component_inner, parse_attendance, parse_marks, parse_personal_details  # deferred
+    from app.app import MONTHS, _cells, _parse_component_inner, parse_attendance, parse_marks, parse_personal_details, parse_timetable  # deferred
     content_html = parallel_html.get("9", "")
     if "youLogin" in content_html or ("captcha" in content_html.lower() and "Login" in content_html[:2000]):
         # Session died mid-scrape → relogin once
@@ -926,4 +927,13 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         out["exams"] = exams
     if fb is not None:  # absent key = feedback window closed / harvest failed
         out["faculty"] = fb
+    # Official daily timetable (formId 10): a real grid ships; [] (section
+    # never published) and None (drift/session/dead JSP) omit the key so the
+    # caller preserves stored rows — same absent==preserve contract as exams.
+    try:
+        tt = parse_timetable(parallel_html.get("10", ""))
+        if tt:  # dict only
+            out["timetable"] = tt
+    except Exception as e:
+        log.debug("timetable parse err=%r", e)
     return out

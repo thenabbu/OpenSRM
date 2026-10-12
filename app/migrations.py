@@ -7,8 +7,8 @@ Usage:
 Adding a new migration:
     from migrations import migration
 
-    @migration(version=14, description="add exam_scores column")
-    def m014_exam_scores(conn):
+    @migration(version=15, description="add exam_scores column")
+    def m015_exam_scores(conn):
         conn.execute("ALTER TABLE users ADD COLUMN exam_scores TEXT DEFAULT '[]'")
 """
 import logging
@@ -214,6 +214,28 @@ def m004_marks(conn):
             if "duplicate column name" not in str(e):
                 raise
 
+@migration(version=15, description="official timetable: source on timetable_slots, official_times/tt_fetched_at on timetable_groups")
+def m015_official_timetable(conn):
+    # ALTER-only like m013 — the versioned registry runs on fresh DBs too.
+    # source: 'official' (portal formId 10 sync) | 'manual' (archived editor /
+    # legacy import); NULL on pre-existing rows = manual (back-compat). It is a
+    # provenance stamp only: rendering precedence lives at group level via
+    # official_times/_tt_grid (UNIQUE(group_id,day,period) = one source at a
+    # time per group, so no reader needs to consult this column).
+    # official_times = the portal's RAW per-period time row (pre-offset) so the
+    # offset can be re-derived or zeroed without refetching.
+    for stmt in (
+        "ALTER TABLE timetable_slots ADD COLUMN source TEXT",
+        "ALTER TABLE timetable_groups ADD COLUMN official_times TEXT DEFAULT ''",
+        "ALTER TABLE timetable_groups ADD COLUMN tt_fetched_at INTEGER DEFAULT 0",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
+
+
 @migration(version=13, description="faculty_map_json (subject->teacher map, harvested from MidSemFeedback)")
 def m013_faculty_map(conn):
     # ALTER-only like m002/m004/m008 — the versioned registry runs every
@@ -224,6 +246,17 @@ def m013_faculty_map(conn):
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
             raise
+
+@migration(version=14, description="push: per-type notification prefs (notify_reminders, notify_exams)")
+def m014_push_type_prefs(conn):
+    # ALTER-only like m002/m004/m008/m013 (idempotent on re-run). Defaults 1
+    # keep every existing subscriber exactly as talkative as before.
+    for col in ("notify_reminders", "notify_exams"):
+        try:
+            conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN {col} INTEGER NOT NULL DEFAULT 1")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e):
+                raise
 
 @migration(version=12, description="usage_events (in-app telemetry: event counts per day, no PII)")
 def m012_usage_events(conn):

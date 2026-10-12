@@ -1,4 +1,4 @@
-// Class reminders (Web Push) — dashboard card in the Timetable tab.
+// Notifications (Web Push) — dashboard card in the Settings tab.
 // Feature-detects, re-syncs browser <-> server subscription, renders one
 // of the explicit states, never throws (a broken card must not break tabs).
 (function () {
@@ -8,6 +8,8 @@
   const toggle = el('push-toggle'), leadSel = el('push-lead');
   const enableBtn = el('push-enable'), testBtn = el('push-test');
   const hintEl = el('push-hint'), fbEl = el('push-feedback');
+  const typesEl = el('push-types'), cbRem = el('push-type-reminders'),
+        cbExm = el('push-type-exams');
   if (!stateEl) return;
 
   const fb = (msg, isErr) => {
@@ -177,6 +179,7 @@
       enableBtn.hidden = false;
       testBtn.hidden = true;
       toggle.checked = false;
+      applyTypes(st);
       showHint(isIOS
         ? 'iOS: this works only in the installed app (Share → Add to Home Screen). iOS unverified so far.'
         : '');
@@ -184,14 +187,34 @@
     }
 
     // ── enabled state ──
-    stateEl.textContent = 'Reminders on · ' + st.subscription.lead_minutes + ' minutes before each class.';
+    const sub = st.subscription || {};
+    if (sub.notify_reminders === false && sub.notify_exams === false) {
+      stateEl.textContent = 'All notification types are off.';
+    } else if (sub.notify_reminders === false) {
+      stateEl.textContent = 'Class reminders off · exam updates on.';
+    } else {
+      stateEl.textContent = 'Reminders on · ' + sub.lead_minutes + ' minutes before each class.';
+    }
     controlsEl.hidden = false;
     toggle.hidden = false;
     enableBtn.hidden = true;
     testBtn.hidden = false;
     toggle.checked = true;
     if (st.subscription) leadSel.value = String(st.subscription.lead_minutes);
+    applyTypes(st);
     showHint('Some phones (Xiaomi, Oppo, Vivo, Samsung) delay notifications in battery-saver mode — take your browser off battery optimisation if a reminder arrives late.');
+  }
+
+  // Type prefs are a server-side subscription property: show the block only
+  // when a subscription row exists (otherwise POST /settings would 404).
+  function applyTypes(st) {
+    if (!typesEl) return;
+    const sub = st && st.subscription;
+    typesEl.hidden = !sub;
+    if (sub && cbRem && cbExm) {
+      cbRem.checked = sub.notify_reminders !== false;
+      cbExm.checked = sub.notify_exams !== false;
+    }
   }
 
   async function refresh(msg, isErr) {
@@ -246,6 +269,22 @@
       await refresh(r.body.error || 'Could not save lead time.', true);
     }
   });
+
+  // per-type opt in/out — each toggle POSTs its own key; refresh() re-syncs
+  // the checkboxes from the server (a failed save visibly rolls back).
+  function wireType(cb, key, label) {
+    if (!cb) return;
+    cb.addEventListener('change', async () => {
+      const r = await api('/api/push/settings', { method: 'POST', body: JSON.stringify({ [key]: cb.checked }) });
+      if (r.status === 200) {
+        await refresh(label + (cb.checked ? ' on.' : ' off.'), false);
+      } else {
+        await refresh(r.body.error || 'Could not save ' + label.toLowerCase() + '.', true);
+      }
+    });
+  }
+  wireType(cbRem, 'notify_reminders', 'Class reminders');
+  wireType(cbExm, 'notify_exams', 'Exam updates');
 
   if (testBtn) testBtn.addEventListener('click', async () => {
     testBtn.disabled = true;

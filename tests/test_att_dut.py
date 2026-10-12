@@ -13,6 +13,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18187")
+from tests._seed import require_own_server
+
+require_own_server(BASE)
 
 FAILS = []
 PASSES = []

@@ -36,7 +36,8 @@ feature can move to Postgres/libSQL on serverless without a full migration.
 
 - `push_subscriptions` — one row per device endpoint (UNIQUE); a re-subscribe
   from the same endpoint **rebinds the netid** (shared phone never notifies
-  the previous user). Holds `lead_minutes`, `enabled`, fail counters, last
+  the previous user). Holds `lead_minutes`, `enabled`, per-type prefs
+  (`notify_reminders`, `notify_exams`), fail counters, last
   push-service status, short UA label.
 - `push_sent_log` — UNIQUE(subscription, local_date, block_start,
   subject_code). Status flow: `claimed → sent | failed (retried ≤3 while the

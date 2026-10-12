@@ -4,12 +4,13 @@ click focuses/opens, handlers wired. Server under test: AGENTS.md (gunicorn)."""
 import json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ['DATA_DIR'] = '/tmp/push-sw2'
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 seed(with_payload=False)
 TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18185')
+require_own_server(BASE)
 results = []
 
 def check(name, ok, detail=""):

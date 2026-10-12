@@ -7,12 +7,13 @@ with the column flush to the navbar content edge. Server under test: AGENTS.md."
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-navbar')
-from _seed import seed, mint_token
+from _seed import seed, mint_token, require_own_server
 from playwright.sync_api import sync_playwright
 
 seed(with_payload=False)
 TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18178')
+require_own_server(BASE)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NETID = 'ng2776'
 VERSION = open(os.path.join(REPO, 'VERSION')).read().strip()
@@ -116,8 +117,8 @@ with sync_playwright() as p:
     r_on, r_off = contrast(rgb(d['onBg'], nav_bg), nav_bg), contrast(rgb(d['offBg'], nav_bg), nav_bg)
     check('desktop: selected tab tint vs navbar >= 1.15:1', r_on >= 1.15, f"{d['onTab']} = {d['onBg']} -> {r_on:.3f}:1")
     check('desktop: unselected tab stays flush with navbar', d['offBg'] in ('rgba(0, 0, 0, 0)', 'transparent'), f"{d['offBg']} -> {r_off:.3f}:1")
-    check('desktop: caption follows the refresh button in the DOM',
-          d['endOrder'] == ['BUTTON', 'SPAN', 'A'], str(d['endOrder']))
+    check('desktop: caption follows the refresh button in the DOM (no logout anchor — it lives in Settings now)',
+          d['endOrder'] == ['BUTTON', 'SPAN'], str(d['endOrder']))
     check('desktop: fresh sync shows no caption', d['syncText'] == '' and d['syncDisplay'] == 'none',
           f"text={d['syncText']!r} display={d['syncDisplay']}")
 
@@ -239,8 +240,8 @@ with sync_playwright() as p:
           m['versionBadges'] == 0 and f'v{VERSION}' not in m['navText'] and VERSION not in m['navText'],
           f"badges={m['versionBadges']} text={m['navText']!r}")
     check('mobile: wordmark radius = 4px (minor, not the 8px box token)', m['logoRadius'] == '4px', m['logoRadius'])
-    check('mobile: caption follows refresh in the DOM and is hidden when fresh',
-          m['endOrder'] == ['BUTTON', 'SPAN', 'A'] and m['syncDisplay'] == 'none',
+    check('mobile: caption follows refresh in the DOM, hidden when fresh, no logout anchor',
+          m['endOrder'] == ['BUTTON', 'SPAN'] and m['syncDisplay'] == 'none',
           f"{m['endOrder']} display={m['syncDisplay']}")
     check('mobile: no horizontal overflow', m['overflow'] <= 0, str(m['overflow']))
     # DESIGN.md §5: 8px below lg (matches the mobile navbar's own 8px content

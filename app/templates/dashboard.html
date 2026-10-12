@@ -57,8 +57,8 @@
               aria-controls="tab-timetable" aria-selected="false" tabindex="-1">Timetable</button>
       <button role="tab" id="tab-marks-tab" class="btn btn-ghost btn-sm" data-tab="marks"
               aria-controls="tab-marks" aria-selected="false" tabindex="-1">Marks</button>
-      <button role="tab" id="tab-personal-tab" class="btn btn-ghost btn-sm" data-tab="personal"
-              aria-controls="tab-personal" aria-selected="false" tabindex="-1">Personal</button>
+      <button role="tab" id="tab-settings-tab" class="btn btn-ghost btn-sm" data-tab="settings"
+              aria-controls="tab-settings" aria-selected="false" tabindex="-1">Settings</button>
     </div>
   </div>
   <div class="navbar-end gap-2">
@@ -68,11 +68,6 @@
       </svg>
     </button>
     <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}"></span>
-    <a class="btn btn-ghost btn-sm btn-square text-base-content/60" href="/logout" aria-label="Log out">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-      </svg>
-    </a>
   </div>
 </div>
 <!-- Mobile: minimal navbar — brand centered; sync + icon actions right -->
@@ -89,11 +84,6 @@
       </svg>
     </button>
     <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap" data-ts="{{ last_epoch }}" data-full="{{ last }}"></span>
-    <a class="btn btn-ghost btn-xs btn-square text-base-content/60" href="/logout" aria-label="Log out">
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-      </svg>
-    </a>
   </div>
 </div>
 <!-- Mobile: dock with all tabs -->
@@ -115,9 +105,9 @@
     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
     <span class="dock-label">Marks</span>
   </button>
-  <button data-tab="personal" aria-label="Personal details tab">
-    <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
-    <span class="dock-label">Personal</span>
+  <button data-tab="settings" aria-label="Settings tab">
+    <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49 l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.52 6.52 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+    <span class="dock-label">Settings</span>
   </button>
 </div>
 <dialog id="overlay" class="modal">
@@ -274,8 +264,13 @@
   </div>
   <div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     <div id="tab-timetable-view" style="">{{ timetable | safe }}
-      <button class="btn btn-accent btn-sm mt-4" id="tt-edit-btn">Edit Timetable</button>
-      <!-- audit feature: who edited the shared timetable, when, what changed -->
+      {% if tt_editor_enabled %}
+      <!-- the whole manual-editing surface (entry + audit log) is archived
+           behind TIMETABLE_EDITOR — the portal owns the timetable; the
+           "Synced from portal" badge was retired as obsolete Oct 2026. -->
+      <div class="flex items-center gap-2 mt-4 flex-wrap">
+        <button class="btn btn-accent btn-sm" id="tt-edit-btn">Edit Timetable</button>
+      </div>
       <details class="collapse collapse-arrow bg-base-200 border border-base-300 mt-4" id="tt-history">
         <summary class="collapse-title text-sm font-semibold min-h-0">Edit history
           <span class="badge badge-sm" id="tt-history-count">0</span></summary>
@@ -283,15 +278,104 @@
           <p class="text-base-content/60">Loading…</p>
         </div>
       </details>
-      <!-- Class reminders (Web Push): lives in the Timetable tab because the
-           feature IS class times — set it next to the schedule it announces.
-           All copy/states rendered by push.js; hidden from the edit screen. -->
-      <div class="card bg-base-200 border border-base-300 mt-4" id="push-card">
+      {% endif %}
+    </div>
+    <div id="tt-editor" style="display:none">
+      <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
+        <h3 class="text-base font-semibold">Edit Timetable{% if tt_fetched_at %} <span class="badge badge-sm badge-soft badge-warning">Archived</span>{% endif %}</h3>
+        <div class="flex gap-2 flex-wrap">
+          <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
+          <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
+          <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/60 mb-3">
+        {% if tt_fetched_at %}The portal timetable syncs automatically — edits save and show up
+        immediately, but your next sync overwrites them. Kept as a fallback if the portal's copy is
+        ever wrong.{% else %}Legacy manual editor — this section's timetable is entered by hand.{% endif %}
+      </p>
+      <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
+      <div class="overflow-x-auto tt-grid-wrap">
+        <div id="tt-grid-body"></div>
+      </div>
+    </div>
+  </div>
+  <div id="tab-settings" role="tabpanel" aria-labelledby="tab-settings-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
+    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER"]),
+                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"]),
+                     ("Family", ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"]),
+                     ("Contact", ["Address", "Pincode", "District", "State", "Personal Email ID",
+                                  "Student Mobile No.", "Alternative Student Mobile No."])] %}
+    {% set nd = namespace(n=0) %}
+    {% if personal %}
+      {% for title, keys in groups %}{% for key in keys %}{% if key in personal %}{% set nd.n = nd.n + 1 %}{% endif %}{% endfor %}{% endfor %}
+      {% if personal.get('Student Name') %}{% set nd.n = nd.n + 1 %}{% endif %}
+      {% if personal.get('Program') %}{% set nd.n = nd.n + 1 %}{% endif %}
+    {% endif %}
+    <div class="flex flex-col gap-3">
+      <!-- Personal details: one settings row that opens the old Personal tab's
+           identity header + grouped detail list (row collapsed by default). -->
+      <div class="collapse collapse-arrow bg-base-200 border border-base-300" id="personal-details">
+        <input type="checkbox" />
+        <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+          <span>Personal details</span>
+          {% if personal %}<span class="badge badge-sm">{{ nd.n }}</span>{% endif %}
+        </div>
+        <div class="collapse-content">
+          {% if personal %}
+          <div class="flex flex-col gap-3">
+            {% if personal.get('Student Name') or personal.get('Program') %}
+            <div class="card bg-base-200 border border-base-300">
+              <div class="card-body p-4">
+                {% if personal.get('Student Name') %}
+                <div class="text-lg font-semibold" data-copy="{{ personal['Student Name'] }}">{{ personal['Student Name'] }}</div>
+                {% endif %}
+                {% if personal.get('Program') %}
+                <div class="text-sm font-mono text-base-content/60 break-words mt-1" data-copy="{{ personal['Program'] }}">{{ personal['Program'] }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endif %}
+            {% for title, keys in groups %}
+              {% set ns = namespace(n=0) %}
+              {% for key in keys %}{% if key in personal %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+              {% if ns.n %}
+              <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+                <input type="checkbox" />
+                <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+                  <span>{{ title }}</span><span class="badge badge-sm">{{ ns.n }}</span>
+                </div>
+                <div class="collapse-content">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-2">
+                    {% for key in keys %}
+                      {% if key in personal %}
+                      <div{% if key in ['Institution', 'Address'] %} class="sm:col-span-2"{% endif %}>
+                        <div class="text-xs uppercase tracking-wide text-base-content/50">{{ key }}</div>
+                        <div class="text-sm font-mono break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
+                      </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="alert alert-soft alert-info">No personal details available.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Notifications (Web Push): the ONE place the whole notification
+           mechanism lives — card, lead time, per-type preferences, test send.
+           Was scattered across the Timetable tab. All states rendered by push.js. -->
+      <div class="card bg-base-200 border border-base-300" id="push-card">
         <div class="card-body p-4 gap-3">
           <div class="flex items-center justify-between flex-wrap gap-2">
-            <h3 class="text-base font-semibold">Class reminders</h3>
+            <h3 class="text-base font-semibold">Notifications</h3>
             <input type="checkbox" id="push-toggle" class="toggle" hidden
-                   aria-label="Turn class reminders on or off">
+                   aria-label="Turn notifications on or off">
           </div>
           <p class="text-sm text-base-content/60" id="push-state">Loading…</p>
           <div id="push-controls" hidden>
@@ -300,6 +384,21 @@
                 <span>Remind me</span>
                 <select id="push-lead" class="select select-sm w-auto"></select>
               </label>
+              <!-- plain div + [hidden]: a display class here would beat the
+                   hidden attribute and show prefs before a subscription exists -->
+              <div id="push-types" hidden>
+                <div class="flex flex-col gap-2">
+                  <div class="text-sm font-semibold">Notify me about</div>
+                  <label class="flex items-center justify-between gap-3 text-sm" for="push-type-reminders">
+                    <span>Class reminders</span>
+                    <input type="checkbox" id="push-type-reminders" class="toggle">
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-sm" for="push-type-exams">
+                    <span>Exam updates</span>
+                    <input type="checkbox" id="push-type-exams" class="toggle">
+                  </label>
+                </div>
+              </div>
               <div class="flex gap-2 flex-wrap items-center">
                 <button id="push-enable" class="btn btn-accent btn-sm">Enable reminders</button>
                 <button id="push-test" class="btn btn-outline btn-sm" hidden>Send test notification</button>
@@ -312,70 +411,18 @@
           <p class="text-sm text-base-content/60" id="push-hint" hidden></p>
         </div>
       </div>
+
+      <!-- Log out: moved out of the navbars — a session action belongs with
+           settings, not next to the sync caption. Server-side Sec-Purpose
+        prefetch guard on /logout still applies. -->
+      <a href="/logout"
+         class="flex items-center justify-between bg-base-200 border border-base-300 rounded-box px-4 py-3.5 text-sm font-semibold hover:bg-base-300 transition-colors">
+        <span>Log out</span>
+        <svg class="w-4 h-4 text-base-content/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+        </svg>
+      </a>
     </div>
-    <div id="tt-editor" style="display:none">
-      <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
-        <h3 class="text-base font-semibold">Edit Timetable</h3>
-        <div class="flex gap-2 flex-wrap">
-          <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
-          <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
-          <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
-        </div>
-      </div>
-      <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
-      <div class="overflow-x-auto tt-grid-wrap">
-        <div id="tt-grid-body"></div>
-      </div>
-    </div>
-  </div>
-  <div id="tab-personal" role="tabpanel" aria-labelledby="tab-personal-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
-    {% if personal %}
-    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER"]),
-                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"]),
-                     ("Family", ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"]),
-                     ("Contact", ["Address", "Pincode", "District", "State", "Personal Email ID",
-                                  "Student Mobile No.", "Alternative Student Mobile No."])] %}
-    <div class="flex flex-col gap-3">
-      {% if personal.get('Student Name') or personal.get('Program') %}
-      <div class="card bg-base-200 border border-base-300">
-        <div class="card-body p-4">
-          {% if personal.get('Student Name') %}
-          <div class="text-lg font-semibold" data-copy="{{ personal['Student Name'] }}">{{ personal['Student Name'] }}</div>
-          {% endif %}
-          {% if personal.get('Program') %}
-          <div class="text-sm font-mono text-base-content/60 break-words mt-1" data-copy="{{ personal['Program'] }}">{{ personal['Program'] }}</div>
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
-      {% for title, keys in groups %}
-        {% set ns = namespace(n=0) %}
-        {% for key in keys %}{% if key in personal %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
-        {% if ns.n %}
-        <div class="collapse collapse-arrow bg-base-200 border border-base-300">
-          <input type="checkbox" />
-          <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
-            <span>{{ title }}</span><span class="badge badge-sm">{{ ns.n }}</span>
-          </div>
-          <div class="collapse-content">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-2">
-              {% for key in keys %}
-                {% if key in personal %}
-                <div{% if key in ['Institution', 'Address'] %} class="sm:col-span-2"{% endif %}>
-                  <div class="text-xs uppercase tracking-wide text-base-content/50">{{ key }}</div>
-                  <div class="text-sm font-mono break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
-                </div>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        {% endif %}
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="alert alert-soft alert-info">No personal details available.</div>
-    {% endif %}
   </div>
   <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     {% if marks %}

@@ -85,6 +85,19 @@ r = cl.post("/api/push/settings", json={"lead_minutes": 15, "enabled": True})
 check("valid settings -> ok", r.get_json() == {"ok": True, "updated": 1}, str(r.get_json()))
 st = cl.get("/api/push/status").get_json()
 check("settings visible in status", st["subscription"]["lead_minutes"] == 15, str(st["subscription"]))
+check("type prefs in status (default on)",
+      st["subscription"]["notify_reminders"] is True and st["subscription"]["notify_exams"] is True,
+      str(st["subscription"]))
+check("bad notify_reminders -> 400",
+      cl.post("/api/push/settings", json={"notify_reminders": "yes"}).status_code == 400, "")
+check("bad notify_exams -> 400",
+      cl.post("/api/push/settings", json={"notify_exams": 1}).status_code == 400, "")
+r = cl.post("/api/push/settings", json={"notify_reminders": False})
+check("mute reminders -> ok", r.get_json() == {"ok": True, "updated": 1}, str(r.get_json()))
+st = cl.get("/api/push/status").get_json()
+check("mute visible in status, exams untouched",
+      st["subscription"]["notify_reminders"] is False and st["subscription"]["notify_exams"] is True,
+      str(st["subscription"]))
 as_user("bb2222")
 check("settings without subscription -> 404", cl.post("/api/push/settings", json={"lead_minutes": 5}).status_code == 404, "")
 

@@ -5,6 +5,9 @@ INCONCLUSIVE = the portal/rate limiter interfered, not a verdict on the guide.
 import json, os, re, statistics, subprocess, sys, time, urllib.error, urllib.request
 
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18186")
+from _seed import require_own_server
+
+require_own_server(BASE)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 rows = []
 

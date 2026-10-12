@@ -289,6 +289,14 @@ check("dry-run did NOT consume the claim -> live send works after",
       _notify_exam_events("zz9999", hv, conf=conf, send_batch=_fake_batch) == 1)
 check("no subscriptions -> nothing sent",
       _notify_exam_events("nobody-here", ev, conf=conf, send_batch=_fake_batch) == 0)
+# per-type pref: notify_exams=0 mutes WITHOUT consuming the one-shot claim
+push_store.set_settings("zz9999", notify_exams=False)
+check("exam updates muted -> 0 sent, claim kept",
+      _notify_exam_events("zz9999", hv2, conf=conf, send_batch=_fake_batch) == 0
+      and len(sent_payloads) == 2, len(sent_payloads))
+push_store.set_settings("zz9999", notify_exams=True)
+check("unmuted -> same event now sends (claim was not consumed)",
+      _notify_exam_events("zz9999", hv2, conf=conf, send_batch=_fake_batch) == 1, "")
 
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

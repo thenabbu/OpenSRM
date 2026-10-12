@@ -50,7 +50,6 @@
         font-family:monospace;font-size:11px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 .tt-sig--none{opacity:.5}
 .tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--color-success);color:var(--color-accent-content);font-weight:600}
-.tt-badge--soon{background:color-mix(in oklab, var(--color-base-content) 14%, transparent);color:color-mix(in oklab, var(--color-base-content) 70%, transparent)}
 .tt-divider{font-size:11px;color:var(--color-base-content);opacity:0.5;text-align:center;padding:4px 0}
 .tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
