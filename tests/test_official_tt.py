@@ -21,6 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-official-tt-")
+# editor POST cases below exercise the TIMETABLE_EDITOR=enabled escape hatch
+# (default is archived — no user input on the portal-owned timetable)
+os.environ["TIMETABLE_EDITOR"] = "enabled"
 
 import app.app as A
 from app.push_calc import blocks_for_day
@@ -159,6 +162,16 @@ c = A.db()
 loc = c.execute("SELECT location FROM timetable_slots WHERE day='Monday' AND period=1").fetchone()[0]
 c.close()
 check("editor-typed location survives official resync", loc == "LT-3", loc)
+
+# ── archive contract: no user input unless ops re-enables it ────────────
+os.environ.pop("TIMETABLE_EDITOR", None)  # unset = the shipped default
+cl = A.app.test_client()
+cl.set_cookie("srm_session", A.make_session_token("tt0001"))
+check("editor archived by default (env unset)", A._tt_editor_enabled() is False)
+r = cl.post("/api/timetable", json={"slots": {}, "custom_subjects": []})
+check("save API 403 while archived", r.status_code == 403, str(r.status_code))
+os.environ["TIMETABLE_EDITOR"] = "enabled"
+check("TIMETABLE_EDITOR=enabled re-opens save", A._tt_editor_enabled() is True)
 
 # ── editor contract: manual stamp + official times cleared (same tx) ────
 cl = A.app.test_client()

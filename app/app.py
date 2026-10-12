@@ -1768,6 +1768,7 @@ def index():
         version=APP_VERSION,
         timetable=timetable_html(group_key, attendance),
         tt_fetched_at=_tt_fetched_at(group_key),
+        tt_editor_enabled=_tt_editor_enabled(),
         personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1801,6 +1802,13 @@ TIMETABLE_TIME_OFFSETS = {1: 60, 2: 60, 3: 60, 4: 60, 5: 40, 6: 40}
 # legacy SLOTS/manual rows — the ops escape hatch if a published official
 # timetable is ever wrong beyond a clock offset.
 TIMETABLE_SOURCE = "official"
+
+# The timetable is fully portal-owned: the manual editor entry + save API are
+# archived (no user input — see the Oct 2026 "portal publishes formId 10"
+# decision). Escape hatch if the portal's copy ever breaks: TIMETABLE_EDITOR
+# =enabled (read per-request so tests can flip it live; restart not needed).
+def _tt_editor_enabled():
+    return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
 
 # ── Dashboard card/widget engine ────────────────────────────────────────────
 # Contract (session spec, engine-spec.md): a card is one LAYOUT entry (grid
@@ -2972,6 +2980,9 @@ def api_timetable_history():
 def api_save_timetable():
     netid = get_current_user()
     if not netid: return {"ok": False, "error": "not logged in"}, 401
+    if not _tt_editor_enabled():
+        return {"ok": False, "error": "timetable editor is archived — the portal "
+                "owns the timetable (set TIMETABLE_EDITOR=enabled to re-enable)"}, 403
     data = request.get_json(silent=True) or {}
     slots = data.get("slots", {})
     custom = data.get("custom_subjects", [])

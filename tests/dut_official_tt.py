@@ -74,15 +74,14 @@ try:
         check("no raw 08:30 anywhere", "08:30" not in body)
         check("legacy 16:00 gone", "16:00" not in body)
         check("lunch divider present", "Lunch" in body)
-        pg.screenshot(path=str(OUT / "1-desktop-timetable.png"))
 
-        pg.click("#tt-edit-btn")
-        pg.wait_for_selector("#tt-editor", state="visible")
-        pg.wait_for_timeout(300)
-        ebody = pg.inner_text("#tt-editor")
-        check("editor: Archived badge", "Archived" in ebody)
-        check("editor: fallback notice", "next sync overwrites" in ebody, ebody[:80])
-        pg.screenshot(path=str(OUT / "2-desktop-editor.png"))
+        # archive contract (default TIMETABLE_EDITOR=archived): no edit entry
+        check("edit button archived (absent)", pg.locator("#tt-edit-btn").count() == 0)
+        resp = ctx.request.post(f"http://127.0.0.1:{port}/api/timetable",
+                                data='{"slots": {}, "custom_subjects": []}',
+                                headers={"Content-Type": "application/json"})
+        check("save API 403 while archived", resp.status == 403, str(resp.status))
+        pg.screenshot(path=str(OUT / "1-desktop-timetable.png"))
         ctx.close()
 
         # mobile 393px (DUT convention)

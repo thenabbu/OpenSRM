@@ -87,9 +87,6 @@ def shots(port, prefix, editor_prefix):
         pg.click("#tab-timetable-tab")
         pg.wait_for_timeout(500)
         pg.screenshot(path=str(OUT / prefix))
-        pg.click("#tt-edit-btn")
-        pg.wait_for_timeout(400)
-        pg.screenshot(path=str(OUT / editor_prefix))
         ctx.close(); b.close()
 
 

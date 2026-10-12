@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # verify76 forbids test-DB files in the repo root / tests dir; mkdtemp (not a
 # `with` block) so the DB dir outlives this module-level test body
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-tt-")
+# this suite exercises the archived editor's save/log path via its escape hatch
+os.environ["TIMETABLE_EDITOR"] = "enabled"
 import app.app as A
 
 PERSONAL_A = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech]",
