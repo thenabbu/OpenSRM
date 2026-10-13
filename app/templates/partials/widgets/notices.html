@@ -2,6 +2,9 @@
 {% if notices %}
 <div class="wbox rounded-box p-4">
   <div class="wlabel">Notices</div>
+  <!-- widget-scroll: 5+ release notices outgrow the day column — the widget
+       caps at 320px (DESIGN §4.17) instead of stretching the row -->
+  <div class="widget-scroll">
   <ul>
     {% for n in notices %}
     <li class="py-2 border-t border-base-300 first:border-t-0 first:pt-0">
@@ -17,5 +20,6 @@
     </li>
     {% endfor %}
   </ul>
+  </div>
 </div>
 {% endif %}

@@ -87,6 +87,11 @@ chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.gith
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no ng2776 references", not grep_repo('ng2776', 'app'))
+_nt_region = region('app/app.py', 'NOTICES = [', 'def _today_ticker')
+_nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
+chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",
+    _nt_head is not None and _nt_head.group(1) == _pyv,
+    ev=f"head={_nt_head.group(1) if _nt_head else None} VERSION={_pyv}")
 
 # ---------- MEDIUM: docs ----------
 chk('D27', "README/SECURITY CSP claim matches reality (jsdelivr allowed)",

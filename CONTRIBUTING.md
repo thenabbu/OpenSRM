@@ -30,7 +30,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 1. **Branch** — create a feature branch from `main`
 2. **Lint** — `uvx ruff check app/` and `uv lock --check` before pushing (both are exactly what CI runs; the lock check fails if `pyproject.toml` changed without `uv lock`)
 3. **Test** — run the suites your change touches (see the test matrix below); everything green before you push
-4. **Version** — for user-visible changes bump all three together: `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches (patch = fix, minor = feature, major = breaking/user-visible redesign; docs/tests-only changes get no bump). The number renders on the login page and dashboard navbar, and `tests/verify76.py` + CI both enforce the trio
+4. **Version** — for user-visible changes bump all three together: `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches (patch = fix, minor = feature, major = breaking/user-visible redesign; docs/tests-only changes get no bump). The number renders on the login page and dashboard navbar, and `tests/verify76.py` + CI both enforce the trio. **Also prepend a release entry to `NOTICES`** in `app/app.py` — verify76 `M27` fails the suite when the head notice's version stops equaling `VERSION`, so releases without notices cannot ship
 5. **Commit** — clear, descriptive messages. One logical change per commit
 6. **Push + PR** — open a PR against `main`. PR CI runs lint only (ruff + `uv lock --check`); the Docker image is built and pushed to `ghcr.io/thenabbu/opensrm:latest` only after the merge lands on `main`, from where the self-hosted deployment picks it up automatically. Merges use merge commits with a `merge: <summary>` subject (no squash), keeping the atomic commits intact
 
@@ -50,7 +50,7 @@ ci: add PR trigger to lint workflow
 All plain scripts (no pytest), from the repo root with the repo venv:
 
 ```bash
-.venv/bin/python tests/verify76.py          # 71/71 static checks (incl. doc claims)
+.venv/bin/python tests/verify76.py          # 72/72 static checks (incl. doc claims)
 .venv/bin/python tests/test_exams.py        # 67/67 end-sem probe parser
 .venv/bin/python tests/test_exams_view.py   # exam card view model
 .venv/bin/python tests/test_marks_view.py   # internal-marks view model (fmt, IE derivation)

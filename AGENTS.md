@@ -16,7 +16,7 @@ app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions in partials/theme.html)
-tests/                # verify76.py (71 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
+tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
 scripts/               # generate_push_keys.py (VAPID/tick-secret) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke)
@@ -38,7 +38,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 
 ## Test matrix (all green before push)
 ```bash
-.venv/bin/python tests/verify76.py          # 71/71 static (findings, docs, pins, versions)
+.venv/bin/python tests/verify76.py          # 72/72 static (findings, docs, pins, versions)
 .venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
@@ -52,9 +52,10 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_layout.py       # 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
 .venv/bin/python tests/test_attendance_view.py # 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
 .venv/bin/python tests/test_att_dut.py   # 15/15 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps at 393 AND 320px incl. pole-band boundary seeds, merged absences card + junk-month chip-only degrade, Estimates gate, CL row listed in both views)
-.venv/bin/python tests/test_feedback.py      # 52/52 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration, endpoint 401, CWE-209 response body)
+.venv/bin/python tests/test_feedback.py      # 71/71 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration + v16 fb_open, endpoint 401, CWE-209 response body, FeedbackWindowClosed vs youLogin classification, _fb_cold state machine (map/closed/degraded), merge contract fb_open learned/preserve/default, fill 409 on closed window, dashboard render gate CTA+modal archived)
 .venv/bin/python tests/test_feedback_dut.py  # 31/31 DUT (Teachers card + CTA → opt-in explainer modal with BOTH teachers listed, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
+.venv/bin/python tests/test_dash_fit.py      # 20/20 dashboard fit + feedback archive DUT (desktop: no page scrollbar, grid == 100dvh−104px chrome, rows auto/1fr fill, zero card-body residue, notices ≤320; fb_open 1→0→1 render toggle; mobile: page still scrolls, no h-overflow) — self-boots
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 33/33 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)

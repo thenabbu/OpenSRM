@@ -170,6 +170,7 @@ conn = sqlite3.connect(db_path)
 cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
 conn.close()
 check("faculty_map_json column", "faculty_map_json" in cols, str(cols))
+check("fb_open column (v16, feedback window availability)", "fb_open" in cols, str(cols))
 
 print("== fill endpoint guards (test client, no server) ==")
 # require_login redirects unauthenticated traffic to /login (repo convention).
@@ -233,6 +234,123 @@ check("portal-state refusal keeps its own literal",
       f"status={r4.status_code} body={j4}")
 
 HS.fill_feedback = _orig_fill
+
+# --- fb_open: portal-window availability archives the CTA (v1.19.0) --------
+print("== feedback window availability (fb_open) ==")
+_orig_req, _orig_harvest = HS._req, HS._fb_harvest
+
+# live capture 2026-10-13: form shell present + info alert "Service closed"
+_CLOSED_FRAG = (b'<form id="feedback1"><input id="txtCourseTitle" value="">'
+                b'<div class="alert alert-info"> Service closed </div></form>')
+HS._req = lambda *a, **k: (None, _CLOSED_FRAG)
+try:
+    HS._fb_harvest(None, "https://x.invalid", {}, "zz9997")
+    check("Service closed fragment -> FeedbackWindowClosed", False, "no raise")
+except HS.FeedbackWindowClosed:
+    check("Service closed fragment -> FeedbackWindowClosed", True)
+except Exception as e:
+    check("Service closed fragment -> FeedbackWindowClosed", False, repr(e))
+finally:
+    HS._req = _orig_req
+check("FeedbackWindowClosed IS an HttpScraperError (shared catch still works)",
+      issubclass(HS.FeedbackWindowClosed, HS.HttpScraperError))
+
+HS._req = lambda *a, **k: (None, b"<html>youLogin bounced</html>")
+try:
+    HS._fb_harvest(None, "https://x.invalid", {}, "zz9997")
+    check("session-dead fragment -> plain HttpScraperError (availability unknown)",
+          False, "no raise")
+except HS.FeedbackWindowClosed:
+    check("session-dead fragment -> plain HttpScraperError (availability unknown)",
+          False, "misclassified as window-closed")
+except HS.HttpScraperError:
+    check("session-dead fragment -> plain HttpScraperError (availability unknown)", True)
+finally:
+    HS._req = _orig_req
+
+def _mk_map():
+    return {"SOME SUBJECT": {"subject_id": "1", "staff": [["5", "Dr. X-Theory"]]}}
+
+def _raise_exc(exc):
+    def _f(*a, **k):
+        raise exc
+    return _f
+
+HS._fb_harvest = lambda *a, **k: _mk_map()
+check("_fb_cold: real map -> (map, 1)",
+      HS._fb_cold(None, "", {}, "n") == (_mk_map(), 1))
+HS._fb_harvest = _raise_exc(HS.FeedbackWindowClosed("closed"))
+check("_fb_cold: window closed -> (None, 0)",
+      HS._fb_cold(None, "", {}, "n") == (None, 0))
+HS._fb_harvest = _raise_exc(HS.HttpScraperError("markup"))
+check("_fb_cold: other harvest failure -> (None, None) preserve stored",
+      HS._fb_cold(None, "", {}, "n") == (None, None))
+HS._fb_harvest = _raise_exc(ValueError("boom"))
+check("_fb_cold: crash -> (None, None), sync still ships",
+      HS._fb_cold(None, "", {}, "n") == (None, None))
+HS._fb_harvest = _orig_harvest
+
+print("== _merge_fetch_result fb_open preserve contract ==")
+from app.app import _merge_fetch_result  # noqa: E402
+_ex = {"personal_details_json": "{}", "subjects_json": "{}", "marks_json": "[]",
+       "exam_schedule_json": "[]", "faculty_map_json": "{}", "fb_open": 0}
+check("res carries fb_open -> written (learned open)",
+      _merge_fetch_result(_ex, {"fb_open": 1})[5] == 1)
+check("res carries fb_open=0 -> written (Service closed)",
+      _merge_fetch_result(dict(_ex, fb_open=1), {"fb_open": 0})[5] == 0)
+check("hot sync (key absent) -> stored 0 preserved (stays archived)",
+      _merge_fetch_result(_ex, {})[5] == 0)
+check("unknown failure (key absent, stored 1) -> preserved open",
+      _merge_fetch_result(dict(_ex, fb_open=1), {})[5] == 1)
+check("first fetch (no row) -> optimistic 1 (column DEFAULT)",
+      _merge_fetch_result(None, {})[5] == 1)
+_ex2 = dict(_ex); del _ex2["fb_open"]
+check("pre-v16 row without the column -> 1, never KeyError",
+      _merge_fetch_result(_ex2, {})[5] == 1)
+
+print("== fill endpoint + render gate on fb_open ==")
+# endpoint: closed window must refuse BEFORE any portal contact (a stale open
+# flag would burn a session rebuild + login just to hear 'Service closed')
+_CLOSED_NETID = "zz9996"
+c = AA.db()
+c.execute("""INSERT OR REPLACE INTO users(netid, password, faculty_map_json, fb_open)
+             VALUES(?, 'unused-by-tests', ?, 0)""",
+          (_CLOSED_NETID,
+           _json.dumps({"DATA STRUCTURES AND ALGORITHMS":
+                        {"subject_id": "90001", "staff": [["50001", "Dr.Test One-Theory"]]}})))
+c.commit(); c.close()
+def _boom(*a, **k):
+    raise AssertionError("portal contacted while the window is closed")
+HS.fill_feedback = _boom
+closed_cli = AA.app.test_client()
+closed_cli.set_cookie("srm_session", AA.make_session_token(_CLOSED_NETID))
+rc = closed_cli.post("/api/feedback/fill")
+jc = rc.get_json() or {}
+check("fb_open=0 -> 409, no portal contact",
+      rc.status_code == 409 and not jc.get("ok") and "closed on the portal" in jc.get("error", ""),
+      f"status={rc.status_code} body={jc}")
+HS.fill_feedback = _orig_fill
+
+# render: CTA + explainer modal follow the flag; Teachers list stays
+_RENDER_NETID = "zz9995"
+c = AA.db()
+c.execute("""INSERT OR REPLACE INTO users(netid, password, faculty_map_json, fb_open)
+             VALUES(?, 'unused-by-tests', ?, 0)""",
+          (_RENDER_NETID,
+           _json.dumps({"DATA STRUCTURES AND ALGORITHMS":
+                        {"subject_id": "90001", "staff": [["50001", "Dr.Test One-Theory"]]}})))
+c.commit(); c.close()
+rc_cli = AA.app.test_client()
+rc_cli.set_cookie("srm_session", AA.make_session_token(_RENDER_NETID))
+h0 = rc_cli.get("/").get_data(as_text=True)
+check("render fb_open=0: no #fb-cta", "fb-cta" not in h0)
+check("render fb_open=0: no #fb-modal", "fb-modal" not in h0)
+check("render fb_open=0: Teachers list still rendered",
+      "Teachers" in h0 and "Dr. Test One" in h0)
+c = AA.db(); c.execute("UPDATE users SET fb_open=1 WHERE netid=?", (_RENDER_NETID,)); c.commit(); c.close()
+h1 = rc_cli.get("/").get_data(as_text=True)
+check("render fb_open=1 (auto-unarchive): CTA + modal back",
+      "fb-cta" in h1 and "fb-modal" in h1)
 
 print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
