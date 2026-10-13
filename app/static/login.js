@@ -13,10 +13,14 @@ document.getElementById("f").onsubmit = function (ev) {
   wrap.classList.remove("hidden");
   bar.value = 3;
   var done = false;
+  // audit run-1 (#13): one random attempt token per submit — progress is
+  // keyed by it server-side, so only this browser can read its own stage
+  var attempt = (function (s) { return (s + "-" + Math.random()).replace(/[^a-z0-9]/gi, "").slice(0, 32); })(
+    (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)));
   var progTimer = setInterval(function () {
     if (done) return;
     fetch("/api/login/progress", {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({netid: f.netid.value.trim().toLowerCase()}), cache: "no-store"})
+      body: JSON.stringify({attempt: attempt}), cache: "no-store"})
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!done && d.step) { status.textContent = d.step; bar.value = d.pct; }
@@ -26,7 +30,7 @@ document.getElementById("f").onsubmit = function (ev) {
   fetch("/api/login", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({netid: this.netid.value, password: this.pw.value})
+    body: JSON.stringify({netid: this.netid.value, password: this.pw.value, attempt: attempt})
   }).then(function (r) { return r.json(); }).then(function (d) {
     done = true;
     clearInterval(progTimer);

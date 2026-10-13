@@ -119,8 +119,8 @@ chk('L37', f"README diagram cache name matches sw.js ({_sw_cache}), no stale nam
     has('README.md', re.escape(_sw_cache))
     and not re.search(r'opensrm-v\d+', rd('README.md').replace(_sw_cache, '')))
 chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has('DESIGN.md', r'Flask 3\.0'))
-chk('L39', "HSTS header present (cf-ray gated)",
-    bool(re.search(r'get\("cf-ray"\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
+chk('L39', "HSTS header present (edge-secret gated, not bare cf-ray — audit #18)",
+    bool(re.search(r'if _behind_cf\(\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
 chk('L40', "rate dict: prune stale keys, no full clear()",
     not bool(re.search(r'\.clear\(\)', region('app/app.py', 'def _check_rate', 'def api_login'))) or has('app/app.py', r'_prune|prune'))
 chk('L41', "dead code: no duplicate threading alias", miss('app/app.py', r'import threading as _tw'))

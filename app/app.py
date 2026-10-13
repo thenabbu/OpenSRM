@@ -230,8 +230,20 @@ def require_login(f):
     return w
 
 # audit: Only trust CF headers when request came through Cloudflare (cf-ray present)
+# audit run-1 (#18): bare cf-ray presence is client-assertable — anyone
+# reaching the origin directly could choose their rate-limit identity and
+# forge the cookie Secure / HSTS decisions. Trust is now an edge-injected
+# shared secret the client can never see (cloudflared
+# originRequest.httpHeaders, or a Worker): X-Edge-Secret must match
+# CF_EDGE_SECRET. Unset -> False: peer-only identity (request.remote_addr),
+# which is the fail-closed position the audit prescribed. OPS DEP step: set
+# CF_EDGE_SECRET in the lab .env AND inject the same value at the tunnel
+# together, or per-IP limits collapse onto the tunnel's peer address.
+CF_EDGE_SECRET = os.environ.get("CF_EDGE_SECRET", "").strip()
+
+
 def _behind_cf():
-    return bool(request.headers.get("cf-ray"))
+    return bool(CF_EDGE_SECRET) and request.headers.get("X-Edge-Secret") == CF_EDGE_SECRET
 
 def _cookie_secure():
     return _behind_cf() and request.headers.get("X-Forwarded-Proto") == "https"
@@ -315,10 +327,14 @@ def _clear_session(netid):
     c.commit(); c.close()
 
 # ── Login progress (in-memory; single worker) ────────────────────────
-_login_progress = {}  # netid -> {"step": str, "ts": int, "pct": int}
+# audit run-1 (#13): keyed by an unforgeable per-browser attempt token (not
+# netid) — /api/login/progress then only answers the browser that started
+# the flow. Flows without a token (refresh, old clients) publish NOTHING.
+_login_progress = {}  # attempt -> {"step", "ts", "pct", "netid"}
 
-def _set_progress(netid, step, pct):
-    _login_progress[netid] = {"step": step, "ts": int(time.time()), "pct": pct}
+def _set_progress(key, step, pct, netid=None):
+    _login_progress[key] = {"step": step, "ts": int(time.time()), "pct": pct,
+                            "netid": netid or "-"}
 
 # ── Rate limiting ──────────────────────────────────────────────────
 # Two independent limits:
@@ -1278,7 +1294,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         # Don't close persistent context — keep alive for next request
         pass
 
-def fetch_attendance(netid, password, authorized=False):
+def fetch_attendance(netid, password, authorized=False, attempt=None):
     global _request_fail_counted
     loop = future = None  # except block references both; may not be reached
     # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
@@ -1317,9 +1333,14 @@ def fetch_attendance(netid, password, authorized=False):
         # per-response by http_scraper._MAX_READ_SECS).
         deadline = time.monotonic() + PIPELINE_DEADLINE
         # ── New pipeline: pure-HTTP first ─────────────────────────────
+        def _progress_pub(_who, step, pct):
+            # audit run-1 (#13): publish only under this flow's attempt token;
+            # no token -> nothing lands in the unauthenticated progress map
+            if attempt:
+                _set_progress(attempt, step, pct, netid=netid)
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
-                   "clear_session": _clear_session, "set_progress": _set_progress}
+                   "clear_session": _clear_session, "set_progress": _progress_pub}
         # Hot/cold split: cold data (personal/courses) re-fetched only when
         # stale >24h; hot (attendance/marks) always.
         c = db()
@@ -1348,7 +1369,8 @@ def fetch_attendance(netid, password, authorized=False):
                     prepared = http_scraper.take_preflight(netid)
                 except Exception as e:
                     log.debug("preflight take failed err=%r", e)
-                _set_progress(netid, "Connecting to SRM portal…", 5)
+                if attempt:
+                    _set_progress(attempt, "Connecting to SRM portal…", 5, netid=netid)
                 res = http_scraper.fetch(netid, password, helpers, cold=cold,
                                          prepared=prepared, deadline=deadline)
                 if res.get("ok"):
@@ -1659,9 +1681,10 @@ def _security_headers(resp):
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-    # audit: HSTS only when the request came through the CF edge (cf-ray) —
-    # plain-HTTP local dev must never receive it
-    if request.headers.get("cf-ray"):
+    # audit: HSTS only when the request came through the VERIFIED CF edge
+    # (audit run-1 #18: bare cf-ray is client-assertable) — plain-HTTP local
+    # dev and direct-origin requests must never receive it
+    if _behind_cf():
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
@@ -2943,6 +2966,12 @@ def api_login():
         return {"ok": False, "error": "invalid NetID format"}, 400
     if len(password) > 128:
         return {"ok": False, "error": "invalid password"}, 400
+    # audit run-1 (#13): this browser's progress token — keying progress by
+    # it (instead of netid) makes /api/login/progress unreadable to anyone
+    # who merely guesses the account name
+    attempt = str(d.get("attempt") or "").strip()
+    if not attempt.isalnum() or len(attempt) > 64:
+        attempt = None
 
     # audit 2026-09-27: count the per-IP budget AFTER validation (was before).
     # Previously 11 trivial `{}` POSTs (valid JSON dict, no credentials) burned
@@ -2953,7 +2982,7 @@ def api_login():
         return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
-    res = fetch_attendance(netid, password)
+    res = fetch_attendance(netid, password, attempt=attempt)
     login_ms = int((time.monotonic() - login_t0) * 1000)
     if not res["ok"]:
         log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
@@ -3047,6 +3076,7 @@ def api_refresh():
 #    while they finish typing. Consumed by /api/login via fetch_attendance.
 _preflight_last = {}   # netid -> ts (30s per-netid cooldown)
 _preflight_ip = {}     # ip -> [ts, ...] (10 per 10 min per IP)
+_progress_ip = {}      # ip -> [ts, ...] (audit #13: 30 reads/60s per IP)
 
 def _run_preflight(netid):
     # audit run-1 (#7): the detached body used to fire portal work + OCR with
@@ -3121,14 +3151,24 @@ def api_login_preflight():
 def api_login_progress():
     # audit: GET put netid in the URL (access logs, history, referrers).
     # Mid-login, session auth can't apply — the body keeps it out of logs.
+    # audit run-1 (#13): reads are keyed by the unforgeable attempt token
+    # minted in this browser's login form, not the bare netid — guessing an
+    # account name now yields 400/empty, never presence or stage. The read
+    # path is also per-IP capped (30/60s) like preflight.
     data = request.get_json(silent=True) or {}
-    netid = str(data.get("netid", "")).strip().lower()
-    if not netid or not NETID_RE.match(netid):
+    attempt = str(data.get("attempt", "")).strip()
+    if not attempt or not attempt.isalnum() or len(attempt) > 64:
         return {"step": "", "pct": 0}, 400
-    p = _login_progress.get(netid)
+    now = time.time()
+    ip = _client_ip()
+    hits = [t for t in _progress_ip.get(ip, []) if now - t < 60]
+    if len(hits) >= 30:
+        return {"step": "", "pct": 0}, 429
+    _progress_ip[ip] = hits + [now]
+    p = _login_progress.get(attempt)
     # ponytail: entries purged when >10min old; fine for a ~5-30s flow
-    if p and time.time() - p["ts"] > 600:
-        _login_progress.pop(netid, None)
+    if p and now - p["ts"] > 600:
+        _login_progress.pop(attempt, None)
         p = None
     return {"step": p["step"], "pct": p["pct"]} if p else {"step": "", "pct": 0}
 
@@ -3710,6 +3750,20 @@ def logout():
     if "prefetch" in spec or "prerender" in spec:
         log_with_kv(log_auth, logging.INFO, "logout ignored",
                     reason="speculation", ip=_client_ip())
+        resp = make_response(redirect("/login"))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    # audit run-1 (#15): SameSite=Lax still SENDS the cookie on a cross-site
+    # TOP-LEVEL GET, so one link/meta-refresh logged the victim out. Reject
+    # cross-site fetch-metadata the same way speculation is rejected;
+    # absent Sec-Fetch-Site (older browsers) falls through to Lax (the
+    # header is a forbidden header name — attacker pages cannot strip it).
+    sfs = request.headers.get("Sec-Fetch-Site", "").lower()
+    origin = request.headers.get("Origin", "")
+    if sfs == "cross-site" or (origin and origin != "null"
+                               and not origin.endswith(request.host)):
+        log_with_kv(log_auth, logging.INFO, "logout ignored",
+                    reason="cross-site", ip=_client_ip())
         resp = make_response(redirect("/login"))
         resp.headers["Cache-Control"] = "no-store"
         return resp

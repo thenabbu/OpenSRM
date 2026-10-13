@@ -201,4 +201,33 @@ for bad in ("file:///etc/passwd", "http://169.254.169.254/x",
     except H.HttpScraperError:
         pass
 
+# ── 7. progress reads are attempt-token bound (audit run-1 #13) ─────────
+r = cl.post("/api/login/progress", json={"netid": "ng2776"})
+assert r.status_code == 400, f"netid-keyed reads must be gone, got {r.status_code}"
+r = cl.post("/api/login/progress", json={"attempt": "abc123"})
+assert r.status_code == 200 and r.get_json() == {"step": "", "pct": 0}, r.data
+A._set_progress("abc123", "Reading captcha…", 60, netid="ng2776")
+r = cl.post("/api/login/progress", json={"attempt": "abc123"})
+assert r.get_json().get("step") == "Reading captcha…", r.data
+r = cl.post("/api/login/progress", json={"attempt": "abc123<script>"})
+assert r.status_code == 400, "attempt must be alnum-only"
+A._login_progress.clear()
+
+# ── 8. CF headers gated by edge secret, not client-assertable (#18) ─────
+A.CF_EDGE_SECRET = ""
+with A.app.test_request_context(headers={"cf-ray": "r1", "CF-Connecting-IP": "6.6.6.6"}):
+    assert A._behind_cf() is False, "bare cf-ray must not confer edge trust"
+    assert A._client_ip() != "6.6.6.6", "client-asserted IP must be ignored"
+    assert A._cookie_secure() is False, "Secure flag must not be client-forgeable"
+A.CF_EDGE_SECRET = "edge-s3cret"
+with A.app.test_request_context(headers={"X-Edge-Secret": "edge-s3cret",
+                                         "CF-Connecting-IP": "6.6.6.6",
+                                         "X-Forwarded-Proto": "https"}):
+    assert A._behind_cf() is True, "matching edge secret must confer trust"
+    assert A._client_ip() == "6.6.6.6"
+    assert A._cookie_secure() is True
+with A.app.test_request_context(headers={"X-Edge-Secret": "wrong", "cf-ray": "r2"}):
+    assert A._behind_cf() is False, "wrong secret must not confer trust"
+A.CF_EDGE_SECRET = ""
+
 print("ok  login rejection classifier + sync quota ordering")
