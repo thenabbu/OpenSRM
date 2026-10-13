@@ -8,6 +8,8 @@
     <span class="wlabel !mb-0">Attendance</span>
     <span class="text-[11px] text-base-content/50">can skip</span>
   </div>
+  <!-- widget-scroll: a long subject list must not stretch the row (DESIGN §4.17) -->
+  <div class="widget-scroll">
   <ul>
     {% for code, val, risk in budgets %}
     <li class="flex items-baseline gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
@@ -20,5 +22,6 @@
     </li>
     {% endfor %}
   </ul>
+  </div>
 </div>
 {% endif %}

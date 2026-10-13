@@ -65,6 +65,14 @@ class HttpScraperError(Exception):
     """Unexpected transport/code failure — caller falls back to Playwright."""
 
 
+class FeedbackWindowClosed(HttpScraperError):
+    """The portal's MidSemFeedback.jsp answers with its `Service closed`
+    info alert — the feedback window itself is shut (verified live 2026-10-13),
+    not a session or markup failure. Raised ONLY by _fb_harvest's fragment
+    check: callers map it to fb_open=0 (archive the CTA) while every other
+    harvest failure leaves stored fb_open untouched (unknown != closed)."""
+
+
 def _route():
     """(base_url, extra_headers) — worker egress if configured, else direct."""
     url = os.environ.get("SRM_EGRESS_URL", "").rstrip("/")
@@ -473,8 +481,16 @@ def _fb_harvest(opener, base, xheaders, netid):
                      "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
     _u, body = _req(opener, url, headers, data=data)
     frag = body.decode("utf-8", errors="replace")
-    if "youLogin" in frag or "txtCourseTitle" not in frag:
-        raise HttpScraperError("feedback form did not load (session dead or window closed)")
+    if "youLogin" in frag:
+        raise HttpScraperError("feedback form did not load (session dead)")
+    if "Service closed" in frag:
+        # the portal's own availability marker (live 2026-10-13: the form
+        # shell still renders txtCourseTitle, but the info alert says the
+        # service is shut and _fb_subjects finds nothing — that used to be
+        # misreported as "portal markup changed").
+        raise FeedbackWindowClosed("feedback window closed on the portal")
+    if "txtCourseTitle" not in frag:
+        raise HttpScraperError("feedback form did not load (unexpected fragment)")
 
     subjects = _fb_subjects(frag)
     if not subjects:
@@ -510,6 +526,31 @@ def _fb_harvest(opener, base, xheaders, netid):
                     "treating as failed, preserving stored map", netid)
         return None
     return faculty_map
+
+
+def _fb_cold(opener, base, xheaders, netid):
+    """One cold-sync harvest, classified for availability.
+
+    Returns (fb, fb_open): fb is the faculty map (None = preserve stored) and
+    fb_open is 1 only after a real map came back, 0 only when the portal
+    itself said `Service closed`, None = unknown (session/markup/other
+    failure) -> the caller preserves stored fb_open. ponytail: one function so
+    the exception->flag mapping is unit-testable without running fetch()."""
+    fb_open = None
+    try:
+        fb = _fb_harvest(opener, base, xheaders, netid)
+        fb_open = 1
+    except FeedbackWindowClosed as e:
+        fb = None
+        fb_open = 0
+        log.info("feedback window closed netid=%s err=%r", netid, e)
+    except HttpScraperError as e:
+        fb = None
+        log.info("feedback harvest skipped netid=%s err=%r", netid, e)
+    except Exception as e:
+        fb = None
+        log.warning("feedback harvest crashed netid=%s err=%r", netid, e)
+    return fb, fb_open
 
 
 def fill_feedback(netid, plan, cookies_json):
@@ -857,15 +898,11 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     # JSP batch (MidSemFeedback.jsp is a portal window — when closed, the whole
     # harvest raises and the sync still ships attendance/marks). Submitting is
     # OPT-IN from the dashboard (fill_feedback) — sync never writes to the portal.
-    fb = None
+    # _fb_cold also classifies availability: fb_open 1/0/None (see its docstring).
+    fb, fb_open = None, None
     if cold:
-        try:
-            _prog("Checking mid-sem feedback…", 85)
-            fb = _fb_harvest(opener, base, xheaders, netid)
-        except HttpScraperError as e:
-            log.info("feedback harvest skipped netid=%s err=%r", netid, e)
-        except Exception as e:
-            log.warning("feedback harvest crashed netid=%s err=%r", netid, e)
+        _prog("Checking mid-sem feedback…", 85)
+        fb, fb_open = _fb_cold(opener, base, xheaders, netid)
 
     courses = []
     try:
@@ -927,6 +964,8 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         out["exams"] = exams
     if fb is not None:  # absent key = feedback window closed / harvest failed
         out["faculty"] = fb
+    if fb_open is not None:  # absent key = availability unknown -> preserve stored
+        out["fb_open"] = fb_open
     # Official daily timetable (formId 10): a real grid ships; [] (section
     # never published) and None (drift/session/dead JSP) omit the key so the
     # caller preserves stored rows — same absent==preserve contract as exams.

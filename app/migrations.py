@@ -247,6 +247,18 @@ def m013_faculty_map(conn):
         if "duplicate column name" not in str(e):
             raise
 
+@migration(version=16, description="fb_open on users (mid-sem feedback window availability, learned per cold sync)")
+def m016_fb_open(conn):
+    # ALTER-only like m013 (idempotent on re-run). DEFAULT 1 = optimistic:
+    # existing users keep today's behaviour (CTA visible) until their next
+    # cold sync learns the real window state (closed -> 0, open -> 1); any
+    # other harvest failure preserves the stored value.
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN fb_open INTEGER NOT NULL DEFAULT 1")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            raise
+
 @migration(version=14, description="push: per-type notification prefs (notify_reminders, notify_exams)")
 def m014_push_type_prefs(conn):
     # ALTER-only like m002/m004/m008/m013 (idempotent on re-run). Defaults 1

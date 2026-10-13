@@ -1667,7 +1667,7 @@ def index():
         return redirect("/login")
     c = db()
     # one row read: marks/faculty live on the same users row (was three queries)
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
     _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
@@ -1719,7 +1719,13 @@ def index():
     faculty_map = _jload(row["faculty_map_json"] if row else None, {})
     faculty_view = _faculty_view(faculty_map, data.get("courses", []))
     # Preview of what the opt-in fill would submit (same builder as the endpoint).
-    fb_plan = _fb_plan(faculty_map)
+    # ARCHIVED while the portal's feedback window is closed (fb_open=0, learned
+    # by the last cold sync): empty plan -> the CTA and the modal both vanish
+    # (empty=hidden, DESIGN §4.12) and come back automatically on the next sync
+    # that finds the window open again. The Teachers list itself is historical
+    # data and stays.
+    fb_open = row["fb_open"] if row and row["fb_open"] is not None else 1
+    fb_plan = _fb_plan(faculty_map) if fb_open else []
 
     # Dashboard home tab: profile + today/week brief
     group_key = _group_key(personal_data) if personal_data else None
@@ -1829,8 +1835,13 @@ LAYOUT = [
      "widgets": ["profile", "today", "week", "notices"]},
     # `when` = route-context vars that must be truthy for the card to render
     # (all-empty card -> no orphan shell). Missing `when` = always show.
+    # `cap` = lg max-height as a fraction of the viewport-fit grid
+    # (calc((100dvh-104px)*cap)) — clamps row 1's content height so a heavy
+    # exams/marks load can't starve row 2 (stress: uncapped auto row 1 = 640px
+    # crushed row 2 to 2px at 1024x768). % rows don't work: maximize-tracks
+    # STRETCHES them to the limit (row 1 ate 65% even with normal data).
     {"id": "assess", "span": 8, "when": ["marks_summary", "exams"],
-     "widgets": ["marks", "exams"]},
+     "cap": "0.65", "widgets": ["marks", "exams"]},
     {"id": "people", "span": 8, "when": ["budgets", "teach_groups"],
      "cols": 2, "widgets": ["attendance", "teachers"]},
 ]
@@ -1849,6 +1860,16 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.19.0", "date": "13 Oct", "title": "Feedback button follows the portal",
+     "body": "Auto-fill hides itself while the portal's mid-sem feedback service is "
+             "closed and comes back when it reopens; the dashboard now fits your "
+             "screen without scrolling on desktop; every release ships a notice here."},
+    {"ver": "v1.18.0", "date": "12 Oct", "title": "Official timetable from the portal",
+     "body": "Timetable syncs straight from the portal's published grid (manual "
+             "editing archived); syncs now keep your session through a mid-scrape relogin."},
+    {"ver": "v1.17.0", "date": "12 Oct", "title": "Settings tab",
+     "body": "Personal details, notification preferences and log out consolidated "
+             "into one Settings tab."},
     {"ver": "v1.16.0", "date": "11 Oct", "title": "Card dashboard + notices",
      "body": "Dashboard rebuilt as cards and widgets: class ticker, skip "
              "glance, subject-grouped teachers and this notices panel."},
@@ -2333,8 +2354,16 @@ def api_feedback_fill():
     if not netid:
         return {"ok": False, "error": "not logged in"}, 401
     c = db()
-    row = c.execute("SELECT faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row = c.execute("SELECT faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
     c.close()
+    # archived while the window is closed: refuse BEFORE any portal contact
+    # (a stale open flag would otherwise burn a session rebuild + login just
+    # to be told "Service closed" by the portal).
+    if row and row["fb_open"] is not None and not row["fb_open"]:
+        log_with_kv(log_portal, logging.INFO, "feedback fill refused (window closed)",
+                    netid=netid, error="fb_open=0")
+        return {"ok": False,
+                "error": "the mid-sem feedback window is closed on the portal — nothing was submitted"}, 409
     fmap = _jload(row["faculty_map_json"] if row else None, {})
     plan = _fb_plan(fmap)
     if not plan:
@@ -2727,7 +2756,22 @@ def _merge_fetch_result(existing, res):
         faculty_json = json.dumps(res["faculty"])
     else:
         faculty_json = (existing["faculty_map_json"] if existing and existing["faculty_map_json"] else "{}")
-    return personal_json, marks_json, subjects_json, exams_json, faculty_json, exam_events
+    # fb_open (feedback window availability): same preserve contract — only a
+    # cold sync that actually classified it (1 open / 0 Service closed) writes;
+    # hot syncs and unknown failures keep the stored flag. Absent row/column
+    # (pre-v16 restore, hand-made test row) = optimistic 1, matching the
+    # column DEFAULT — never let a missing key 500 the login path.
+    if "fb_open" in res:
+        fb_open = res["fb_open"]
+    else:
+        fb_open = 1
+        if existing:
+            try:
+                v = existing["fb_open"]
+            except (IndexError, KeyError):
+                v = None
+            fb_open = v if v is not None else 1
+    return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events
 
 
 @app.route("/api/login", methods=["POST"])
@@ -2778,15 +2822,15 @@ def api_login():
     c = db()
     # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
     # (single shared contract — see _merge_fetch_result)
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     exam_events) = _merge_fetch_result(existing, res)
+     fb_open, exam_events) = _merge_fetch_result(existing, res)
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json) VALUES(?,?,?,?,?,?,?,?,?) "
+    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json",
+              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
               (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
-               personal_json, marks_json, subjects_json, exams_json, faculty_json))
+               personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
     c.commit(); c.close()
     # one-shot exam pushes (official release / room allotment): post-commit,
     # background thread — detection already read pre-write rows, and the
@@ -2833,12 +2877,12 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold + audit B6: same single preserve contract as login
-    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     exam_events) = _merge_fetch_result(row2, res)
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=? WHERE netid=?",
+     fb_open, exam_events) = _merge_fetch_result(row2, res)
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
               (json.dumps(res["data"]), res["fetched"], personal_json,
-               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
+               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, fb_open, netid))
     c.commit(); c.close()
     # same timetable save as login: group/subjects + official grid (separate tx)
     _save_timetable_group(netid, res)
