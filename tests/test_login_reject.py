@@ -124,4 +124,32 @@ cd_txt = A._netid_retry_text(netid)
 assert cd_txt.endswith("seconds") and 50 <= int(cd_txt.split()[0]) <= 60, cd_txt
 assert A._retry_text(time.time() - 3500, 3600) == "2 minutes"
 
+# ── 4. audit run-1: success-only quota charge + budget floor + per-IP share ──
+# admission is check-only: a wrong-password guess can't spend the victim's quota
+A._login_attempts.pop("zzvictim", None)
+assert A._check_rate("zzvictim") is True, "fresh account must be admitted"
+assert "zzvictim" not in A._login_attempts, "admission must not charge (charge = success only)"
+for _ in range(3):
+    A._charge_rate("zzvictim")
+assert A._check_rate("zzvictim") is False, "3 charged syncs must deny the 4th"
+A._login_attempts.pop("zzvictim", None)
+
+A._portal_attempts.clear(); A._portal_attempts_auth.clear(); A._portal_ip.clear()
+# per-IP share: one rotating source can hold at most _PORTAL_IP_CAP tokens
+for _ in range(A._PORTAL_IP_CAP):
+    assert A._check_portal_budget("1.2.3.4") is True
+assert A._check_portal_budget("1.2.3.4") is False, "per-IP share cap must reject"
+assert len(A._portal_attempts) == A._PORTAL_IP_CAP, "rejected attempt must spend no token"
+assert A._check_portal_budget("5.6.7.8") is True, "other IPs must still be admitted"
+A._portal_attempts.clear(); A._portal_ip.clear()
+# auth floor: unauth work can never drain the reserved refresh tokens
+n = 0
+while len(A._portal_attempts) < A._PORTAL_CAP - A._PORTAL_AUTH_FLOOR:
+    assert A._check_portal_budget(f"9.9.9.{n}") is True
+    n += 1
+assert A._check_portal_budget("2.2.2.2") is False, "unauth must stop at CAP-FLOOR"
+assert A._check_portal_budget("3.3.3.3", authorized=True) is True, "refresh floor must stay reachable"
+assert A._check_portal_budget("4.4.4.4", authorized=True) is True, "auth draws from full CAP"
+A._portal_attempts.clear(); A._portal_attempts_auth.clear(); A._portal_ip.clear()
+
 print("ok  login rejection classifier + sync quota ordering")

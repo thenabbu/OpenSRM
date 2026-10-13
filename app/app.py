@@ -39,7 +39,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, make_response, redirect, render_template, request
+from flask import Flask, has_request_context, make_response, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from . import push_calc, push_send, push_store
@@ -314,19 +314,45 @@ _rate_lock = threading.Lock()  # audit: check-and-append is atomic only under on
 # attempts/hour through OUR single egress IP — which is exactly how the portal
 # rate-limits/bans the server and takes every user down with it. Counts jobs
 # that actually reach the pipeline (sync + preflight), not rejected requests.
-_portal_attempts = []  # timestamps, 10-min window
-_PORTAL_CAP = 30       # across all clients, all netids
+# audit run-1 (HIGH): the window is split so rotation cannot lock everyone out —
+# unauthenticated work (login/preflight) is capped at CAP-FLOOR tokens and one
+# source IP holds at most _PORTAL_IP_CAP of them; the floor stays reserved for
+# authenticated owner refreshes, which can never be pre-spent by outsiders.
+_portal_attempts = []        # unauth admitted jobs, 10-min window
+_portal_attempts_auth = []   # authenticated owner syncs, 10-min window
+_portal_ip = {}              # ip -> [unauth timestamps, ...] (same window)
+_PORTAL_CAP = 30             # across all clients, all netids
+_PORTAL_IP_CAP = 6           # one source IP holds at most 6 of the unauth tokens
+_PORTAL_AUTH_FLOOR = 10      # tokens unreachable for unauth work (refresh reserve)
 
-def _check_portal_budget():
+
+def _check_portal_budget(ip=None, authorized=False):
     now = time.time()
     with _rate_lock:
         _portal_attempts[:] = [t for t in _portal_attempts if now - t < 600]
-        if len(_portal_attempts) >= _PORTAL_CAP:
+        _portal_attempts_auth[:] = [t for t in _portal_attempts_auth if now - t < 600]
+        if authorized:
+            if len(_portal_attempts) + len(_portal_attempts_auth) >= _PORTAL_CAP:
+                return False
+            _portal_attempts_auth.append(now)
+            return True
+        # unauth: never spend the reserved floor (audit run-1 #1)
+        if len(_portal_attempts) >= _PORTAL_CAP - _PORTAL_AUTH_FLOOR:
             return False
+        if ip is not None:
+            hold = [t for t in _portal_ip.get(ip, []) if now - t < 600]
+            if len(hold) >= _PORTAL_IP_CAP:
+                return False   # rejected WITHOUT spending a shared token
+            _portal_ip[ip] = hold + [now]
         _portal_attempts.append(now)
         return True
 
+
 def _check_rate(netid):
+    """Sync-quota ADMISSION (check-only, audit run-1 #6): >=3 successful syncs
+    in the 10-min window rejects; rejected requests never append, and the charge
+    only happens in _charge_rate when a sync actually succeeds — so unauth
+    wrong-password guesses can never pre-spend a chosen victim's quota."""
     now = time.time()
     with _rate_lock:
         if len(_login_attempts) > _RATE_CAP:
@@ -336,12 +362,22 @@ def _check_rate(netid):
                 _login_attempts.pop(k, None)
             if len(_login_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard; 20k live netids impossible here
                 _login_attempts.clear()
-        attempts = _login_attempts.get(netid, [])
-        _login_attempts[netid] = [t for t in attempts if now - t < 600]
-        if len(_login_attempts[netid]) >= 3:
-            return False
+        kept = [t for t in _login_attempts.get(netid, []) if now - t < 600]
+        if kept:
+            _login_attempts[netid] = kept
+        else:
+            # never materialize an empty key: a denied admission must leave
+            # the counter state exactly as it was (test_login_reject pins it)
+            _login_attempts.pop(netid, None)
+        return len(kept) < 3
+
+
+def _charge_rate(netid):
+    """Spend one sync token — called only when a sync really succeeded."""
+    now = time.time()
+    with _rate_lock:
+        _login_attempts[netid] = [t for t in _login_attempts.get(netid, []) if now - t < 600]
         _login_attempts[netid].append(now)
-        return True
 
 def _retry_text(oldest, window):
     """Guide §5 core: honest countdown from a window's oldest entry, so the
@@ -421,6 +457,10 @@ def _portal_cooldown_remaining():
 def _client_ip():
     # Only trust CF-Connecting-IP when request came through Cloudflare.
     # Direct access spoofing the header would bypass rate limiting otherwise.
+    # audit run-1: background/test callers (no active request) must not crash —
+    # no request means no asserted identity.
+    if not has_request_context():
+        return "?"
     if _behind_cf():
         return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
     return request.remote_addr or "?"
@@ -1210,7 +1250,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         # Don't close persistent context — keep alive for next request
         pass
 
-def fetch_attendance(netid, password):
+def fetch_attendance(netid, password, authorized=False):
     global _request_fail_counted
     loop = future = None  # except block references both; may not be reached
     # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
@@ -1221,7 +1261,7 @@ def fetch_attendance(netid, password):
     # know it can actually run.
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
-        return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
+        return {"ok": False, "error": "Sync in progress. Try again in about a minute."}
     try:
         # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
         # time). Previously the flag was only reset inside Playwright's _do_login,
@@ -1229,15 +1269,19 @@ def fetch_attendance(netid, password):
         # forever and _portal_fail_once() became a no-op — the portal cooldown
         # could never arm and we'd keep hammering a rate-limiting portal.
         _request_fail_counted = False
-        if not _check_portal_budget():
-            return {"ok": False, "error": ("Too many portal requests from the server "
-                                           "(rate-limit protection). Try again in 10 minutes.")}
+        # audit run-1 (HIGH #1/#6): FREE gates first, budget charged LAST — a
+        # cooldown or quota rejection must never spend a shared portal token,
+        # and unauth wrong-password guesses must never spend the victim's
+        # per-netid sync quota (charged only in _charge_rate on success below).
         cooldown = _portal_cooldown_remaining()
         if cooldown > 0:
             return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
                                            f"Try again in {int(cooldown / 60) + 1} minutes.")}
         if not _check_rate(netid):
             return {"ok": False, "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}
+        if not _check_portal_budget(_client_ip(), authorized=authorized):
+            return {"ok": False, "error": ("Too many portal requests from the server "
+                                           "(rate-limit protection). Try again in 10 minutes.")}
         # ── New pipeline: pure-HTTP first ─────────────────────────────
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
@@ -1272,6 +1316,11 @@ def fetch_attendance(netid, password):
                     log.debug("preflight take failed err=%r", e)
                 _set_progress(netid, "Connecting to SRM portal…", 5)
                 res = http_scraper.fetch(netid, password, helpers, cold=cold, prepared=prepared)
+                if res.get("ok"):
+                    # audit run-1 (#6): the per-netid sync quota is spent only
+                    # when the sync actually succeeded — a failed unauth guess
+                    # can no longer pre-spend a chosen victim's quota
+                    _charge_rate(netid)
                 if res.get("ok") and cold:
                     try:
                         c = db()
@@ -1289,7 +1338,10 @@ def fetch_attendance(netid, password):
         # ── Fallback: Playwright ──────────────────────────────────────
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
-        return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
+        pw_res = future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
+        if isinstance(pw_res, dict) and pw_res.get("ok"):
+            _charge_rate(netid)  # audit run-1: same success-only quota charge as the HTTP path
+        return pw_res
     except Exception:
         # audit: a timeout leaves the coroutine driving the shared page after
         # the lock is released (zombie double-drive) — cancel it. Setting
@@ -2863,8 +2915,8 @@ def api_refresh():
     password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
     if not password:
         log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
-        return {"ok": False, "error": "stored credentials unreadable \u2014 log in again"}, 401
-    res = fetch_attendance(netid, password)
+        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
+    res = fetch_attendance(netid, password, authorized=True)  # owner session: draws the reserved auth floor
     if not res["ok"]:
         # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
         # only "status=503" with no reason anywhere, so the failure class could
@@ -2925,7 +2977,7 @@ def api_login_preflight():
     if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
         log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
-    if not _check_portal_budget():  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does
+    if not _check_portal_budget(ip):  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does (unauth path: floor + per-IP share apply)
         return {"ok": False, "error": "rate"}, 429
     _preflight_ip[ip] = hits + [now]
     _preflight_last[netid] = now
