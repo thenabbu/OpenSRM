@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v27';
+const CACHE_NAME = 'opensrm-v28';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -56,21 +56,18 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // HTML pages: network-first, offline fallback
+  // HTML pages: network-first, NO offline copy of account pages (audit
+  // run-1 #12). Cached HTML holds attendance/marks/PII and the worker
+  // cannot bind a cached entry to the CURRENT session while offline — on a
+  // shared browser profile the previous student's dashboard was served to
+  // the next one. Offline now gets a generic page with zero account data;
+  // static assets above stay offline-ready.
   if (e.request.headers.get('accept')?.includes('text/html')) {
     e.respondWith(
-      fetch(e.request).then(resp => {
-        if (resp.ok) {
-          const cl = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
-        }
-        return resp;
-      }).catch(() =>
-        caches.match(e.request).then(r => r || new Response(
-          '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this page was not cached.</p><p>Connect to the internet and try again.</p></div></body></html>',
-          { headers: { 'Content-Type': 'text/html' } }
-        ))
-      )
+      fetch(e.request).catch(() => new Response(
+        '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline. Your dashboard needs a connection.</p><p>Connect to the internet and try again.</p></div></body></html>',
+        { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      ))
     );
   }
 });

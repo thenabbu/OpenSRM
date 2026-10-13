@@ -2786,9 +2786,14 @@ def static_no_cache(filename):
     # audit: was hardcoded "/app/app/static" — only worked inside the container
     # (local runs 404'd). Derive from __file__ like every other path here.
     resp = send_from_directory(os.path.join(os.path.dirname(__file__), "static"), filename)
-    # Service worker and manifest need cacheable responses; CSS stays no-store
-    if filename.endswith(('.js', '.json')):
+    # Manifest stays cacheable; .js revalidates every load so a deploy can't
+    # leave a stale shell (old API shape) cached for an hour (audit run-1 R1);
+    # everything else stays no-store. The SW itself benefits: no-cache makes
+    # worker updates land on the next navigation instead of after up to 1h.
+    if filename.endswith('.json'):
         resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif filename.endswith('.js'):
+        resp.headers["Cache-Control"] = "no-cache"
     else:
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     if filename == "sw.js":
