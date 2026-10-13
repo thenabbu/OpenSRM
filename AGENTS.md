@@ -42,12 +42,12 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
-.venv/bin/python tests/test_relogin_save.py # 6/6 (mid-scrape relogin persists fresh session + resets portal fail state; stubbed fetch, no network)
+.venv/bin/python tests/test_relogin_save.py # 9/9 (mid-scrape relogin persists fresh session + resets portal fail state; portal_sessions encrypted at rest + legacy plaintext row; stubbed fetch, no network)
 .venv/bin/python tests/test_official_tt.py    # 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
-.venv/bin/python tests/test_sessions.py     # 5/5 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, index/refresh survive mid-request session loss)
-.venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order (offline)
-.venv/bin/python tests/test_fault_handling.py  # 9/9 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, S25 refetch, errorhandler)
-.venv/bin/python tests/test_logging_telemetry.py # 8/8 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough)
+.venv/bin/python tests/test_sessions.py     # 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
+.venv/bin/python tests/test_login_reject.py  # rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) (offline)
+.venv/bin/python tests/test_fault_handling.py # 11/11 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, attendance preserve on partial fetch, S25 refetch, errorhandler)
+.venv/bin/python tests/test_logging_telemetry.py # 10/10 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough, control-char scrub in log+ntfy, non-ASCII X-Push-Tick -> 401 not 500)
 .venv/bin/python tests/test_marks_view.py    # marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_layout.py       # 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
 .venv/bin/python tests/test_attendance_view.py # 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
@@ -148,7 +148,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v27; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v29; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).

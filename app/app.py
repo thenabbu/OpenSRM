@@ -3521,6 +3521,17 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
                     status=status, code=rem.block.code, ttl=job["ttl"])
     stats.pop("due_pass", None)
     push_store.prune_events(int(time.time()) - 3 * 3600)   # keep the rate table tiny
+    # audit R1: usage_events and push_sent_log had no retention at all —
+    # unbounded growth in the one DB file that also holds srm.db backups.
+    # 90d usage / 30d sent-log covers every window the dashboards read.
+    try:
+        c = db()
+        c.execute("DELETE FROM usage_events WHERE ts < ?", (int(time.time()) - 90 * 86400,))
+        c.execute("DELETE FROM push_sent_log WHERE local_date < ?",
+                  (time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)),))
+        c.commit(); c.close()
+    except Exception as e:
+        log_push.warning("log retention prune failed: %r", e)
     stats["took_ms"] = int((time.monotonic() - t0) * 1000)
     log_with_kv(log_push, logging.INFO, "push tick", **stats)
     return {"ok": True, **stats}
