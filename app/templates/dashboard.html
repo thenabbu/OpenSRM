@@ -37,10 +37,42 @@
 .widget-scroll::-webkit-scrollbar-track{background:transparent}
 .widget-scroll::-webkit-scrollbar-thumb{border-radius:9999px;
   background:color-mix(in oklab, var(--color-base-content) 25%, transparent)}
+/* Uniform edge (v1.20): html{scrollbar-gutter:stable} reserves a classic-
+   scrollbar strip on the RIGHT only (the navbar-shift fix, DESIGN §10.14) —
+   it used to render 16px left / 31px right at 1920x1039. dash.js measures
+   the reserved strip into --sbw (0 on overlay scrollbars); the shell's edge
+   is then max(15px, strip) on BOTH sides, so the card column and the navbar
+   read as one uniform 15px frame wherever the scrollbar is <=15px. */
+@media (min-width:1024px){
+  :root{--edge:max(15px,var(--sbw,0px))}
+  main.edge-x,.navbar.edge-x{padding-left:var(--edge);
+    padding-right:calc(var(--edge) - var(--sbw,0px))}
+  #tab-dashboard>.grid{gap:var(--edge)}
+}
+/* Widgets auto-adjust to their cell (v1.20): card-body is a flex column on
+   desktop; wboxes hug their content, but a wbox carrying a .widget-scroll
+   list YIELDS to the cell — the list shrinks and scrolls inside the widget
+   instead of the whole card growing a scrollbar (measured before: the people
+   card resid +26px at 1920x944, +228px at 1366x768, while the teachers list
+   already scrolled internally). card-body keeps overflow-y-auto as the last
+   resort for content with no list under pathological squeeze. */
+@media (min-width:1024px){
+  #tab-dashboard .card-body{display:flex;flex-direction:column}
+  #tab-dashboard .card-body>.wbox{flex:0 0 auto}
+  #tab-dashboard .card-body>.wbox:has(.widget-scroll){flex:0 1 auto;min-height:0}
+  #tab-dashboard .card-body>.grid{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr)}
+  #tab-dashboard .wbox{display:flex;flex-direction:column}
+  #tab-dashboard .wbox>*{flex-shrink:0}
+  #tab-dashboard .wbox>.widget-scroll{flex:0 1 auto;min-height:0}
+  #tab-dashboard .card-body .grid>.wbox{min-height:0}
+}
+/* Faint recent-update ring: a marks chip whose portal "Entered on" is today
+   (grayscale lift — hue stays reserved for the alert states, DESIGN §2.7) */
+.mark-recent{box-shadow:0 0 0 1px color-mix(in oklab, var(--color-base-content) 35%, transparent)}
 </style>
 </head><body class="bg-base-100 text-base-content">
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->
-<div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 hidden lg:flex px-4"
+<div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 hidden lg:flex edge-x"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start items-center gap-2 min-w-0">
     <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
@@ -116,31 +148,34 @@
     <span class="text-sm text-base-content/60">Refreshing attendance...</span>
   </div>
 </dialog>
-<main class="px-2 lg:px-4 py-5 pb-24 lg:pb-5">
+<main class="px-2 py-5 pb-24 lg:pt-[15px] lg:pb-[15px] edge-x">
   <div id="tab-dashboard" role="tabpanel" aria-labelledby="tab-dashboard-tab" data-tabpanel style="">
     <!-- Card/widget engine: cards come from the LAYOUT registry, widgets from
          WIDGETS (app.py) — one include loop; each partial owns its label+box
          and renders NOTHING when empty (DESIGN §4.12). Unknown widget ids
          render nothing, never 500. Contract: engine-spec.md. -->
     <!-- lg: the dashboard fits the viewport EXACTLY — grid height = 100dvh −
-         navbar (64px) − main py-5 (20+20) = 100dvh-104px: no page scrollbar
-         on desktop. Rows: minmax(0,auto) lets row 1 (marks+exams) hug its
-         content, minmax(0,1fr) hands the REST to row 2 (attendance+teachers)
-         — equal 1fr rows starved row 2 by 93px at 1280x900 while row 1 idled
-         with 100px of slack (measured). A %-capped row 1 was rejected too:
-         percentages get STRETCHED to their limit by maximize-tracks (row 1
-         always ate 65% and starved row 2 under normal data), so the 65%
-         ceiling lives on the assess CARD instead (LAYOUT `cap` → max-height
-         on the scrollable card-body): content clamps the track, the track
-         never clamps the content. Stress (14-exam load): row 1 ≤ 65% of the
-         grid, row 2 keeps ≥35%−26px at every display 1024x768 → 3440x1440.
-         Residue (a longer exam list, a class-heavy day column) scrolls
-         INSIDE the card (card-body overflow) — cards stretch to fill,
-         mobile (<lg) keeps normal page flow. Pinned by tests/test_dash_fit.py
-         (scrollHeight <= clientHeight at 1280x900). -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-104px)] gap-6">
+         navbar (64px) − uniform 15px top/bottom edge (15+15) = 100dvh-94px:
+         no page scrollbar on desktop. Rows: minmax(0,auto) lets row 1
+         (marks+exams) hug its content, minmax(0,1fr) hands the REST to row 2
+         (attendance+teachers) — equal 1fr rows starved row 2 by 93px at
+         1280x900 while row 1 idled with 100px of slack (measured). A
+         %-capped row 1 was rejected too: percentages get STRETCHED to their
+         limit by maximize-tracks, so the 65% ceiling lives on the assess
+         CARD instead (LAYOUT `cap` → max-height on the scrollable
+         card-body): content clamps the track, the track never clamps the
+         content. Stress (14-exam load): row 1 ≤ 65% of the grid, row 2
+         keeps ≥35%−26px at every display 1024x768 → 3440x1440. RESIDUE: a
+         shorter cell no longer scrolls the CARD — the flex chain in the
+         style block makes the .widget-scroll list inside the widget absorb
+         the squeeze (widgets auto-adjust to their cell); card-body
+         overflow-y-auto remains only as the last resort for content with
+         no list. Mobile (<lg) keeps normal page flow. Pinned by
+         tests/test_dash_fit.py (zero card-body residue at 1280x900,
+         1920x944 AND 1366x768; uniform edge; no page scrollbar). -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-94px)] gap-6">
       {% for c in layout %}
-      <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}{% if c.cap %} lg:max-h-[calc((100dvh-104px)*{{ c.cap }})]{% endif %} lg:overflow-hidden">
+      <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}{% if c.cap %} lg:max-h-[calc((100dvh-94px)*{{ c.cap }})]{% endif %} lg:overflow-hidden">
         <div class="card-body p-4 gap-3 lg:min-h-0 lg:overflow-y-auto">
           {% if c.cols %}<div class="grid grid-cols-1 sm:grid-cols-{{ c.cols }} gap-3">{% endif %}
           {% for wid in c.widgets %}

@@ -7,6 +7,20 @@ function showError(msg) {
   setTimeout(function() { t.classList.add('hidden'); }, 5000);
 }
 
+// ── Reserved scrollbar strip -> --sbw (dashboard shell CSS consumes it) ──
+// html{scrollbar-gutter:stable} reserves the classic-scrollbar strip on the
+// RIGHT only (the navbar-shift fix, DESIGN §10.14). The shell subtracts it
+// from its right padding so both edges read as one uniform 15px frame;
+// overlay-scrollbar platforms reserve 0 -> untouched. Re-measured on resize
+// (zoom/orientation changes the strip in device CSS px).
+function setSbw() {
+  var w = Math.max(0, window.innerWidth -
+    document.documentElement.getBoundingClientRect().width);
+  document.documentElement.style.setProperty('--sbw', w + 'px');
+}
+setSbw();
+window.addEventListener('resize', setSbw);
+
 // ── Sync lines (navbar): relative age, caption to the right of the sync
 //    button. Fresh (<5min) reads as nothing — the button itself is the status. ──
 function renderSyncLines() {

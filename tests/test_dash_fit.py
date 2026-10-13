@@ -2,11 +2,14 @@
 mobile keeps normal page flow, plus the feedback-CTA archive toggle (fb_open).
 
 Covers two shipped behaviours (v1.19.0):
-  1. lg grid = 100dvh - 104px (navbar 64 + main py-5 20+20) with content-
+  1. lg grid = 100dvh - 94px (navbar 64 + uniform 15px edge top/bottom) with content-
      hugging row 1 + 1fr row 2: document scrollHeight == clientHeight at
      1280x900, cards stretch to fill, residue (if any) scrolls inside the card.
-     The 104px constant is PINNED: grid height must equal innerH - navH -
+     The 94px constant is PINNED: grid height must equal innerH - navH -
      mainPadTop - mainPadBottom, so a navbar-height change fails here first.
+     Plus the v1.20 layout contract: uniform 15px card-column edge on both
+     sides (scrollbar-strip compensated) and ZERO card-body residue at the
+     squeeze viewports 1920x944 / 1366x768 (widgets absorb their cell).
   2. fb_open=0 (portal's feedback service closed) -> #fb-cta AND #fb-modal
      archived from the render, Teachers list kept; fb_open=1 -> both return.
      Auto-unarchive is the flip itself: no code path, just the stored flag.
@@ -153,9 +156,9 @@ try:
         }""")
         check("no page scrollbar on desktop (scrollHeight <= clientHeight)",
               m["docSH"] <= m["docCH"], json.dumps(m))
-        # pins the 104px CSS constant: grid must equal innerH - navH - pads
+        # pins the 94px CSS constant: grid must equal innerH - navH - pads
         expected = m["innerH"] - m["navH"] - m["padT"] - m["padB"]
-        check("grid height == innerH - navH - padTop - padBottom (104px chrome)",
+        check("grid height == innerH - navH - padTop - padBottom (94px chrome)",
               abs(m["gridH"] - expected) <= 2,
               f"gridH={m['gridH']} expected={expected} navH={m['navH']} "
               f"padT={m['padT']} padB={m['padB']}")
@@ -186,6 +189,38 @@ try:
         check("notices widget inside widget-scroll (capped, scrollable)",
               nw is not None and nw["ch"] <= 320 and nw["sh"] >= nw["ch"],
               str(nw))
+
+        # ---- uniform edge (v1.20): the shell compensates the reserved
+        # scrollbar strip so BOTH card-column edges land on 15px (red on the
+        # pre-fix layout: left 16 / right 31 measured at 1920x1039) ----
+        edge = pg.evaluate("""() => {
+          const g = document.querySelector('#tab-dashboard > .grid');
+          const r = g.getBoundingClientRect();
+          const main = document.querySelector('main');
+          const nav = document.querySelector('.navbar.hidden');
+          return {left: Math.round(r.x), right: Math.round(window.innerWidth - r.right),
+                  gap: getComputedStyle(g).gap,
+                  padL: parseFloat(getComputedStyle(main).paddingLeft),
+                  navPadL: parseFloat(getComputedStyle(nav).paddingLeft)}; }""")
+        check("desktop: card column 15px on BOTH sides, gap 15, navbar aligned",
+              edge["left"] == edge["right"] == 15 and edge["gap"] == "15px"
+              and edge["padL"] == edge["navPadL"] == edge["left"],
+              json.dumps(edge))
+
+        # ---- widgets auto-adjust to the cell (v1.20): the two squeeze
+        # viewports where the old fixed-height widgets made cards scroll while
+        # their lists already scrolled internally (people card resid +26px @
+        # 1920x944, +228px @ 1366x768 — this check is red without the flex
+        # chain) ----
+        for vw, vh in [(1920, 944), (1366, 768)]:
+            pg.set_viewport_size({"width": vw, "height": vh})
+            pg.wait_for_timeout(300)
+            res = pg.evaluate("""() => [...document.querySelectorAll('#tab-dashboard .card-body')]
+                .map(b => b.scrollHeight - b.clientHeight)""")
+            check(f"zero card-body residue at {vw}x{vh} (widgets absorb the cell)",
+                  all(x == 0 for x in res), str(res))
+        pg.set_viewport_size({"width": 1280, "height": 900})
+        pg.wait_for_timeout(300)
 
         # ---- task 1: feedback CTA follows fb_open (render-level) ----------
         check("fb_open=1: Auto-fill CTA rendered",

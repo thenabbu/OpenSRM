@@ -13,6 +13,8 @@
       {% else %}Exams under way{% endif %}
     </span>
   </div>
+  <!-- widget-scroll: a long exam list yields to the cell (DESIGN §4.17) -->
+  <div class="widget-scroll">
   <ul>
     {% for e in exams.rows %}
     <li class="flex items-start gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
@@ -36,5 +38,6 @@
     </li>
     {% endfor %}
   </ul>
+  </div>
 </div>
 {% endif %}

@@ -1,19 +1,22 @@
-<!-- Widget: attendance — can-skip glance only (the attendance page owns the
-     detail); rows in courses order = pct-ascending = risk-first. The same
-     _bunk_counts numbers as the tabs, so glance and page never disagree.
+<!-- Widget: attendance — margin-to-75% glance only (the attendance page owns
+     the detail); rows in courses order = pct-ascending = risk-first. Subject
+     NAME title-cased (codes read as jargon here); value is the margin-signed
+     twin of the tab's Margin column: -N = N short of 75% (attend N), +N = N in
+     surplus (can skip N), 0 = exactly at the line. The same _bunk_counts
+     numbers as the tabs, so glance and page never disagree.
      (None, None) rows (no classes held) are dropped by the route builder. -->
 {% if budgets %}
 <div class="wbox rounded-box p-4">
   <div class="flex items-baseline justify-between gap-2 mb-2">
     <span class="wlabel !mb-0">Attendance</span>
-    <span class="text-[11px] text-base-content/50">can skip</span>
+    <span class="text-[11px] text-base-content/50">to 75%</span>
   </div>
   <!-- widget-scroll: a long subject list must not stretch the row (DESIGN §4.17) -->
   <div class="widget-scroll">
   <ul>
-    {% for code, val, risk in budgets %}
+    {% for name, val, risk in budgets %}
     <li class="flex items-baseline gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
-      <span class="w-20 shrink-0 font-mono text-xs text-base-content/60">{{ code }}</span>
+      <span class="min-w-0 truncate text-xs text-base-content/70" title="{{ name }}">{{ name }}</span>
       {% if risk < 2 %}
       <span class="ml-auto att-neg font-mono text-xs">{{ val }}</span>
       {% else %}

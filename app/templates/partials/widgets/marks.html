@@ -5,7 +5,7 @@
   <div class="wlabel">Internal marks</div>
   <div class="flex flex-wrap gap-1.5">
     {% for s in marks_summary %}
-    <span class="badge badge-soft badge-sm font-mono tabular-nums{% if s.stale %} opacity-60{% endif %}"{% if s.stale %} title="Kept from an earlier sync — the latest refresh returned no marks for it"{% endif %}><span class="text-base-content/70">{{ s.code }}</span> <span class="font-medium">{{ s.scored }}/{{ s.max }}</span></span>
+    <span class="badge badge-soft badge-sm font-mono tabular-nums{% if s.stale %} opacity-60{% endif %}{% if s.recent %} mark-recent{% endif %}"{% if s.stale %} title="Kept from an earlier sync — the latest refresh returned no marks for it"{% elif s.recent %} title="Entered {{ s.entered }} — updated in the last 24h"{% endif %}><span class="text-base-content/70">{{ s.code }}</span> <span class="font-medium">{{ s.scored }}/{{ s.max }}</span></span>
     {% endfor %}
   </div>
 </div>

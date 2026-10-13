@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # verify76 forbids test-DB files in the repo root / tests dir
 with tempfile.TemporaryDirectory() as td:
     os.environ["DATA_DIR"] = td
-    from app.app import (_marks_view, _marks_summary, _fmt_date, _fmt_max, _fmt_score,
-                         _derive_ie, _class_key, _group_key)
+    from app.app import (_marks_view, _marks_summary, _week_marks, _fmt_date, _fmt_max,
+                         _fmt_score, _derive_ie, _class_key, _group_key)
 
 # ── formatting ────────────────────────────────────────────────────────
 assert _fmt_date("04/Sep/2026") == "04 Sep"
@@ -92,6 +92,29 @@ assert all("pct" not in x for x in s)                      # % dropped from the 
 assert all(x["stale"] is False for x in s)                 # fresh rows never flagged
 assert _marks_summary([dict(MARKS[0], stale=True)])[0]["stale"] is True  # preserved row carries it
 assert _marks_summary([]) is None
+
+# ── recent: portal "Entered on" is date-only, so last-24h == entered TODAY ──
+from datetime import date as _date
+assert all(x["recent"] is False and x["entered"] == "" for x in s), s  # Sep seeds are never "today"
+_today = _date.today().strftime("%d/%b/%Y")
+fresh = _marks_summary([{"code": "21CSC201J", "title": "DATA STRUCTURES",
+                         "components": [{"name": "FT-I", "entered": _today,
+                                         "scored": 4.0, "max": 5.0}],
+                         "scored_total": 4.0, "max_total": 5.0}])
+assert fresh[0]["recent"] is True and fresh[0]["entered"], fresh  # chip carries the tooltip date
+stale_fresh = _marks_summary([{"code": "21X", "title": "T", "stale": True,
+                               "components": [{"name": "FT-I", "entered": _today,
+                                               "scored": 1.0, "max": 5.0}],
+                               "scored_total": 1.0, "max_total": 5.0}])
+assert stale_fresh[0]["recent"] is False  # stale wins the chip: no fresh entry shown
+
+# ── week widget: components entered this Mon-Sun only ─────────────────────
+_wk = _week_marks([{"code": "21CSC201J", "components": [
+                       {"name": "FT-I", "entered": _today, "scored": 4, "max": 5},
+                       {"name": "CT-1", "entered": (_date.today() - __import__("datetime").timedelta(days=8)).strftime("%d/%b/%Y"),
+                        "scored": 4, "max": 5}]}])
+assert [(r["code"], r["name"]) for r in _wk] == [("21CSC201J", "FT-I")], _wk
+assert _week_marks([]) == [] and _week_marks(None) == []
 
 # ── class key: year|branch|section (no semester) + per-student fallback ─
 PROG = {"Program": "B.Tech.-Computer Science and Engineering with specialization in "

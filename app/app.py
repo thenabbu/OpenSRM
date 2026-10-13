@@ -1865,6 +1865,8 @@ def index():
             r.get("date") == datetime.now().strftime("%d-%m-%Y")
             for rows in (data.get("daily_absent") or {}).values() for r in rows),
     }
+    # week widget's second block: components the portal entered this Mon–Sun
+    dash["week"]["marks"] = _week_marks(marks_raw)
 
     # card/widget engine: layout registry + derived widget data (route-side
     # joins — partials consume flat dicts only). Cards whose `when` context
@@ -1949,7 +1951,7 @@ LAYOUT = [
     # `when` = route-context vars that must be truthy for the card to render
     # (all-empty card -> no orphan shell). Missing `when` = always show.
     # `cap` = lg max-height as a fraction of the viewport-fit grid
-    # (calc((100dvh-104px)*cap)) — clamps row 1's content height so a heavy
+    # (calc((100dvh-94px)*cap)) — clamps row 1's content height so a heavy
     # exams/marks load can't starve row 2 (stress: uncapped auto row 1 = 640px
     # crushed row 2 to 2px at 1024x768). % rows don't work: maximize-tracks
     # STRETCHES them to the limit (row 1 ate 65% even with normal data).
@@ -1973,6 +1975,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.20.0", "date": "14 Oct", "title": "Dashboard layout fixes",
+     "body": "Uniform 15px spacing everywhere (no more 30px gaps or mystery "
+             "19px right gutter); cards no longer scroll when their widgets "
+             "fit; attendance shows subject names with +skip/-attend margins; "
+             "freshly entered marks are faintly highlighted and show up in "
+             "This Week; the profile blobatar is bigger now."},
     {"ver": "v1.19.0", "date": "13 Oct", "title": "Feedback button follows the portal",
      "body": "Auto-fill hides itself while the portal's mid-sem feedback service is "
              "closed and comes back when it reopens; the dashboard now fits your "
@@ -2023,19 +2031,27 @@ def _today_ticker(group_key):
 
 
 def _budget_rows(courses):
-    """Attendance widget: (code, value, risk) per subject in COURSES order
-    (already sorted pct-ascending = risk-first). value = classes still
-    skippable at >=75%, or `attend N` / `0` in the alert hue when not —
-    the SAME _bunk_counts numbers the attendance tab shows, one source.
+    """Attendance widget: (subject name, signed margin, risk) per subject in
+    COURSES order (already sorted pct-ascending = risk-first). Value is the
+    MARGIN-SIGNED form of the same _bunk_counts numbers the attendance tab's
+    Margin column shows: `-N` = N classes short of 75% (attend N), `+N` = N in
+    surplus (can skip N), `0` = exactly at the line — one sign language across
+    tab and glance. Names go through _title_case (codes read as jargon on
+    the dashboard; custom mixed-case names keep their casing).
     (None, None) rows (nothing held) are dropped, never faked as 0.
     """
     rows = []
     for c in courses:
         skip, attend = c.get("skip_now"), c.get("attend_now")
+        if attend is None and skip is None:
+            continue
+        name = _title_case(c.get("description") or c.get("code", ""))
         if attend is not None:
-            rows.append((c.get("code", ""), f"attend {attend}", 0))
-        elif skip is not None:
-            rows.append((c.get("code", ""), str(skip), 1 if skip == 0 else 2))
+            rows.append((name, f"-{attend}", 0))
+        elif skip:
+            rows.append((name, f"+{skip}", 2))
+        else:
+            rows.append((name, "0", 1))
     return rows
 
 
@@ -2621,15 +2637,58 @@ def _marks_summary(marks):
     """Dashboard glance: EVERY subject as code scored/max chips in risk-first
     order (weakest first) — no %, no aggregate/overall number. `stale=True`
     marks a row preserved from an earlier sync (the widget renders those chips
-    faint). None when empty."""
+    faint). `recent` = some component's portal "Entered on" is today — the
+    portal writes a date only (no time), so "changed in the last 24 hrs"
+    resolves to entered-today at day granularity; `entered` carries that date
+    for the chip's tooltip. None when empty."""
     if not marks:
         return None
     low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"])
                  if m.get("max_total") else 1)
-    return [{"code": m.get("code", ""),
-             "scored": _fmt_score(m.get("scored_total", 0)),
-             "max": _fmt_max(m.get("max_total", 0)),
-             "stale": bool(m.get("stale"))} for m in low]
+    today = date.today()
+    out = []
+    for m in low:
+        recent, entered = False, ""
+        for cpt in m.get("components", []):
+            try:
+                d = datetime.strptime(cpt.get("entered", "") or "", "%d/%b/%Y").date()
+            except (ValueError, TypeError):
+                continue
+            if d == today:
+                recent, entered = True, _fmt_date(cpt.get("entered", ""))
+        out.append({"code": m.get("code", ""),
+                    "scored": _fmt_score(m.get("scored_total", 0)),
+                    "max": _fmt_max(m.get("max_total", 0)),
+                    "stale": bool(m.get("stale")),
+                    "recent": recent,
+                    "entered": entered})
+    # stale wins the chip: a preserved row has no fresh entry to show
+    for r in out:
+        if r["stale"]:
+            r["recent"], r["entered"] = False, ""
+    return out
+
+def _week_marks(marks):
+    """Week widget: components whose portal 'Entered on' falls in the current
+    Mon–Sun week (IST server date) — `code · name · date` rows, newest first.
+    The week column's second job: what got ADDED this week, next to what got
+    missed. Empty list = the block stays hidden (empty=hidden, DESIGN §8)."""
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    out = []
+    for m in marks or []:
+        for cpt in m.get("components", []):
+            try:
+                d = datetime.strptime(cpt.get("entered", "") or "", "%d/%b/%Y").date()
+            except (ValueError, TypeError):
+                continue
+            if monday <= d <= today:
+                out.append({"code": m.get("code", ""), "name": cpt.get("name", ""),
+                            "_d": d, "date": d.strftime("%d %b")})
+    out.sort(key=lambda r: r["_d"], reverse=True)
+    for r in out:
+        del r["_d"]
+    return out
 
 def _exams_view(rows):
     """Dashboard card: end-sem rows sorted by real date + countdown.
