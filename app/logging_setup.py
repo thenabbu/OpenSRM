@@ -19,14 +19,33 @@ LOG_FILE = os.path.join(LOG_DIR, "opensrm.log")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 
+def _scrub(s):
+    """Escape control chars and line separators (audit run-1 #16).
+
+    request.path carries PERCENT-DECODED bytes, so %0a/%0d/%00 in any logged
+    path or message used to write raw newlines/controls into opensrm.log
+    (forged log lines) and into the ntfy alert body (spoofed operator
+    notifications). \\xNN keeps the byte visible for forensics without
+    letting it break the line. Applies to the message and every kv value;
+    real traceback newlines are appended AFTER scrubbing and stay intact."""
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if o < 0x20 or 0x7f <= o <= 0x9f or o in (0x2028, 0x2029):
+            out.append(f"\\x{o:02x}" if o <= 0xff else f"\\u{o:04x}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 class _Formatter(logging.Formatter):
     """Compact: TIMESTAMP LEVEL name message key=value ..."""
     def format(self, record):
         ts = self.formatTime(record, "%Y-%m-%dT%H:%M:%S")
-        msg = record.getMessage()
+        msg = _scrub(record.getMessage())
         extra = ""
         if hasattr(record, "kv"):
-            extra = " " + " ".join(f"{k}={v}" for k, v in record.kv.items())
+            extra = " " + " ".join(f"{k}={_scrub(str(v))}" for k, v in record.kv.items())
         out = f"{ts} {record.levelname} {record.name} {msg}{extra}"
         if record.exc_info:
             out += "\n" + self.formatException(record.exc_info)   # never swallow tracebacks
@@ -60,11 +79,11 @@ class NtfyHandler(logging.Handler):
             return
         self._last = now
         try:
-            msg = f"OpenSRM {record.levelname} {record.name}: {record.getMessage()}"
+            msg = f"OpenSRM {record.levelname} {record.name}: {_scrub(record.getMessage())}"
             if hasattr(record, "kv"):
                 # an alert that says only "request" tells nothing — the kv
                 # (path/status/error) IS the cause the tripwire exists for
-                msg += " " + " ".join(f"{k}={v}" for k, v in record.kv.items())
+                msg += " " + " ".join(f"{k}={_scrub(str(v))}" for k, v in record.kv.items())
             msg = msg[:400]
             req = urllib.request.Request(self.url, data=msg.encode("utf-8"), method="POST")
         except Exception:

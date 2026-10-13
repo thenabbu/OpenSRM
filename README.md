@@ -57,7 +57,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Backend | Flask 3.1, Python 3.11, gunicorn (gthread, single worker) |
 | Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback |
 | Captcha | ddddocr (self-contained OCR) |
-| Database | SQLite with a versioned migration registry (7 migrations → schema v8) |
+| Database | SQLite with a versioned migration registry (15 migrations → schema v16) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pinned CDN, no build step), vanilla JS, Jinja2 |
 | PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
 | CI/CD | GitHub Actions → `ghcr.io/thenabbu/opensrm:latest` |
@@ -72,7 +72,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v27<br/>network-first shell"]
+        SW["Service worker opensrm-v29<br/>network-first shell"]
     end
 
     subgraph edge["Cloudflare edge"]
@@ -120,7 +120,7 @@ flowchart TD
 3. **Hot data** — attendance (`funSetFormId(9)`), internal marks (`funSetFormId(13)`, plus per-subject component drilldown), and the official Exam Time Table (`funSetFormId(126)`) fetched on every sync and persisted
 4. **Cold data** — profile/personal details/subject lists (`funSetFormId(1), 17, 7`) re-fetched only when older than 24h; timetable rendered from SQLite
 5. **Exams** — the official Exam Time Table (`iden=126`) rides the same fetch batch as a hot formId; the `ScribeInner.jsp` leak probe (Apr–Jun, Nov–Dec candidate windows) still runs alongside as the pre-release fallback, and the rows are parsed into the dashboard card
-6. **Store** — parsed JSON written to SQLite; if the HTTP pipeline dies (`HttpScraperError`), the login falls back to Playwright (5 captcha retries, 150 s hard cap)
+6. **Store** — parsed JSON written to SQLite; if the HTTP pipeline dies during **login** (`HttpScraperError` from the login phase only), the login falls back to Playwright (5 captcha retries, 150 s hard cap); post-login JSP/portal failures are returned as errors, not retried
 
 ```mermaid
 sequenceDiagram
@@ -163,9 +163,9 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph backend["app/ — backend"]
-        APP["app.py<br/>13 routes · auth · rate limits<br/>parsers · sync · progress tracker"]
+        APP["app.py<br/>21 routes · auth · rate limits<br/>parsers · sync · progress tracker"]
         SCR["http_scraper.py<br/>login · captcha · JSP fetch<br/>exam probe"]
-        MIG["migrations.py<br/>decorator registry → schema v8"]
+        MIG["migrations.py<br/>decorator registry → schema v16"]
         LOG["logging_setup.py<br/>TIMED level + key=value lines"]
     end
 

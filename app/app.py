@@ -39,7 +39,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, make_response, redirect, render_template, request
+from flask import Flask, has_request_context, make_response, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from . import push_calc, push_send, push_store
@@ -230,8 +230,20 @@ def require_login(f):
     return w
 
 # audit: Only trust CF headers when request came through Cloudflare (cf-ray present)
+# audit run-1 (#18): bare cf-ray presence is client-assertable — anyone
+# reaching the origin directly could choose their rate-limit identity and
+# forge the cookie Secure / HSTS decisions. Trust is now an edge-injected
+# shared secret the client can never see (cloudflared
+# originRequest.httpHeaders, or a Worker): X-Edge-Secret must match
+# CF_EDGE_SECRET. Unset -> False: peer-only identity (request.remote_addr),
+# which is the fail-closed position the audit prescribed. OPS DEP step: set
+# CF_EDGE_SECRET in the lab .env AND inject the same value at the tunnel
+# together, or per-IP limits collapse onto the tunnel's peer address.
+CF_EDGE_SECRET = os.environ.get("CF_EDGE_SECRET", "").strip()
+
+
 def _behind_cf():
-    return bool(request.headers.get("cf-ray"))
+    return bool(CF_EDGE_SECRET) and request.headers.get("X-Edge-Secret") == CF_EDGE_SECRET
 
 def _cookie_secure():
     return _behind_cf() and request.headers.get("X-Forwarded-Proto") == "https"
@@ -267,26 +279,46 @@ NETID_RE = re.compile(r"^[a-z0-9]{2,20}$")  # audit: SRM NetIDs are lowercase al
 # must be shared process-wide. Pair with gunicorn -w 1 (Dockerfile CMD)
 # so counters below are also process-wide.
 _scrape_lock = threading.Lock()
+# audit run-1 (#8): total wall-clock budget for one held scrape lock — HTTP
+# phases + Playwright fallback share it (see fetch_attendance)
+PIPELINE_DEADLINE = 150
 
 # ── Session cache: skip login when cookies are still valid ──────────
 _SESSION_CACHE_TTL = 4 * 3600  # 4 hours
 
 def _save_session(netid, cookies_json):
-    """Persist portal cookies for session reuse (portal_sessions table)."""
+    """Persist portal cookies for session reuse — encrypted at rest with the
+    same Fernet control as users.password (audit run-1 #5: live portal
+    cookies sat in plaintext next to the encrypted passwords, so a stolen
+    srm.db + fernet.key pair still handed over authenticated portal
+    sessions)."""
     c = db()
     c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
-              (netid, cookies_json, int(time.time())))
+              (netid, encrypt_pw(cookies_json), int(time.time())))
     c.commit(); c.close()
 
 def _load_session(netid):
-    """Load cached portal cookies if still valid (< TTL)."""
+    """Load cached portal cookies if still valid (< TTL).
+
+    audit run-1: decrypts rows written by _save_session; rows written before
+    the encryption change (plaintext JSON) are returned as-is and become
+    encrypted on their next save, so existing sessions keep working."""
     c = db()
     row = c.execute("SELECT cookies_json, created FROM portal_sessions WHERE netid=?", (netid,)).fetchone()
     c.close()
     if not row: return None
     if time.time() - row["created"] > _SESSION_CACHE_TTL:
-        return None  # expired
-    return row["cookies_json"]
+        _clear_session(netid)  # expired rows are useless — stop storing dead cookie blobs
+        return None
+    blob = row["cookies_json"]
+    if not blob.startswith("gAAAA"):
+        return blob  # legacy plaintext row (pre-encryption); replaced on next save
+    try:
+        return get_fernet().decrypt(blob.encode()).decode()
+    except Exception as e:
+        log.warning("stored portal session unreadable — forcing fresh login netid=%s: %r", netid, e)
+        _clear_session(netid)
+        return None
 
 def _clear_session(netid):
     """Remove cached portal cookies (on failed session restore)."""
@@ -295,10 +327,14 @@ def _clear_session(netid):
     c.commit(); c.close()
 
 # ── Login progress (in-memory; single worker) ────────────────────────
-_login_progress = {}  # netid -> {"step": str, "ts": int, "pct": int}
+# audit run-1 (#13): keyed by an unforgeable per-browser attempt token (not
+# netid) — /api/login/progress then only answers the browser that started
+# the flow. Flows without a token (refresh, old clients) publish NOTHING.
+_login_progress = {}  # attempt -> {"step", "ts", "pct", "netid"}
 
-def _set_progress(netid, step, pct):
-    _login_progress[netid] = {"step": step, "ts": int(time.time()), "pct": pct}
+def _set_progress(key, step, pct, netid=None):
+    _login_progress[key] = {"step": step, "ts": int(time.time()), "pct": pct,
+                            "netid": netid or "-"}
 
 # ── Rate limiting ──────────────────────────────────────────────────
 # Two independent limits:
@@ -314,19 +350,45 @@ _rate_lock = threading.Lock()  # audit: check-and-append is atomic only under on
 # attempts/hour through OUR single egress IP — which is exactly how the portal
 # rate-limits/bans the server and takes every user down with it. Counts jobs
 # that actually reach the pipeline (sync + preflight), not rejected requests.
-_portal_attempts = []  # timestamps, 10-min window
-_PORTAL_CAP = 30       # across all clients, all netids
+# audit run-1 (HIGH): the window is split so rotation cannot lock everyone out —
+# unauthenticated work (login/preflight) is capped at CAP-FLOOR tokens and one
+# source IP holds at most _PORTAL_IP_CAP of them; the floor stays reserved for
+# authenticated owner refreshes, which can never be pre-spent by outsiders.
+_portal_attempts = []        # unauth admitted jobs, 10-min window
+_portal_attempts_auth = []   # authenticated owner syncs, 10-min window
+_portal_ip = {}              # ip -> [unauth timestamps, ...] (same window)
+_PORTAL_CAP = 30             # across all clients, all netids
+_PORTAL_IP_CAP = 6           # one source IP holds at most 6 of the unauth tokens
+_PORTAL_AUTH_FLOOR = 10      # tokens unreachable for unauth work (refresh reserve)
 
-def _check_portal_budget():
+
+def _check_portal_budget(ip=None, authorized=False):
     now = time.time()
     with _rate_lock:
         _portal_attempts[:] = [t for t in _portal_attempts if now - t < 600]
-        if len(_portal_attempts) >= _PORTAL_CAP:
+        _portal_attempts_auth[:] = [t for t in _portal_attempts_auth if now - t < 600]
+        if authorized:
+            if len(_portal_attempts) + len(_portal_attempts_auth) >= _PORTAL_CAP:
+                return False
+            _portal_attempts_auth.append(now)
+            return True
+        # unauth: never spend the reserved floor (audit run-1 #1)
+        if len(_portal_attempts) >= _PORTAL_CAP - _PORTAL_AUTH_FLOOR:
             return False
+        if ip is not None:
+            hold = [t for t in _portal_ip.get(ip, []) if now - t < 600]
+            if len(hold) >= _PORTAL_IP_CAP:
+                return False   # rejected WITHOUT spending a shared token
+            _portal_ip[ip] = hold + [now]
         _portal_attempts.append(now)
         return True
 
+
 def _check_rate(netid):
+    """Sync-quota ADMISSION (check-only, audit run-1 #6): >=3 successful syncs
+    in the 10-min window rejects; rejected requests never append, and the charge
+    only happens in _charge_rate when a sync actually succeeds — so unauth
+    wrong-password guesses can never pre-spend a chosen victim's quota."""
     now = time.time()
     with _rate_lock:
         if len(_login_attempts) > _RATE_CAP:
@@ -336,12 +398,22 @@ def _check_rate(netid):
                 _login_attempts.pop(k, None)
             if len(_login_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard; 20k live netids impossible here
                 _login_attempts.clear()
-        attempts = _login_attempts.get(netid, [])
-        _login_attempts[netid] = [t for t in attempts if now - t < 600]
-        if len(_login_attempts[netid]) >= 3:
-            return False
+        kept = [t for t in _login_attempts.get(netid, []) if now - t < 600]
+        if kept:
+            _login_attempts[netid] = kept
+        else:
+            # never materialize an empty key: a denied admission must leave
+            # the counter state exactly as it was (test_login_reject pins it)
+            _login_attempts.pop(netid, None)
+        return len(kept) < 3
+
+
+def _charge_rate(netid):
+    """Spend one sync token — called only when a sync really succeeded."""
+    now = time.time()
+    with _rate_lock:
+        _login_attempts[netid] = [t for t in _login_attempts.get(netid, []) if now - t < 600]
         _login_attempts[netid].append(now)
-        return True
 
 def _retry_text(oldest, window):
     """Guide §5 core: honest countdown from a window's oldest entry, so the
@@ -421,6 +493,10 @@ def _portal_cooldown_remaining():
 def _client_ip():
     # Only trust CF-Connecting-IP when request came through Cloudflare.
     # Direct access spoofing the header would bypass rate limiting otherwise.
+    # audit run-1: background/test callers (no active request) must not crash —
+    # no request means no asserted identity.
+    if not has_request_context():
+        return "?"
     if _behind_cf():
         return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
     return request.remote_addr or "?"
@@ -487,8 +563,12 @@ def parse_attendance(html):
             if cells[0].lower() == "total" or len(cells) == 7:
                 continue
             # audit: numeric columns must look numeric — a portal column change
-            # would shift text into them and silently poison attendance
-            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n) or n in ("", "-")
+            # would shift text into them and silently poison attendance.
+            # audit run-1: "" and "-" no longer pass (a non-attendance tbody
+            # with blank trailing columns used to substitute junk courses);
+            # a rejected row -> empty courses -> sync fails closed, stored
+            # attendance_json is never touched.
+            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n)
                        for n in (cells[2], cells[3], cells[4])):
                 log.warning("attendance row layout shifted, skipped: %r", cells[:5])
                 continue
@@ -500,7 +580,11 @@ def parse_attendance(html):
     if cum:
         for row in re.findall(r"<tr[^>]*>(.*?)</tr>", cum.group(1), re.S):
             cells = _cells(row)
-            if len(cells) >= 6:
+            # audit run-1: present/absent must parse as integers — column drift
+            # otherwise poisons the monthly bars; a rejected row leaves monthly
+            # empty and the merge preserves stored history instead of wiping it.
+            # od/ml are display-only passthrough (portal may blank them).
+            if len(cells) >= 6 and all(re.fullmatch(r"-?\d+", c) for c in cells[1:3]):
                 out["monthly"].append({
                     "month": cells[0], "present": cells[1], "absent": cells[2],
                     "od_present": cells[3], "od_absent": cells[4], "ml": cells[5],
@@ -1210,7 +1294,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         # Don't close persistent context — keep alive for next request
         pass
 
-def fetch_attendance(netid, password):
+def fetch_attendance(netid, password, authorized=False, attempt=None):
     global _request_fail_counted
     loop = future = None  # except block references both; may not be reached
     # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
@@ -1221,7 +1305,7 @@ def fetch_attendance(netid, password):
     # know it can actually run.
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
-        return {"ok": False, "error": "Sync in progress. Try again in 30 seconds."}
+        return {"ok": False, "error": "Sync in progress. Try again in about a minute."}
     try:
         # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
         # time). Previously the flag was only reset inside Playwright's _do_login,
@@ -1229,19 +1313,34 @@ def fetch_attendance(netid, password):
         # forever and _portal_fail_once() became a no-op — the portal cooldown
         # could never arm and we'd keep hammering a rate-limiting portal.
         _request_fail_counted = False
-        if not _check_portal_budget():
-            return {"ok": False, "error": ("Too many portal requests from the server "
-                                           "(rate-limit protection). Try again in 10 minutes.")}
+        # audit run-1 (HIGH #1/#6): FREE gates first, budget charged LAST — a
+        # cooldown or quota rejection must never spend a shared portal token,
+        # and unauth wrong-password guesses must never spend the victim's
+        # per-netid sync quota (charged only in _charge_rate on success below).
         cooldown = _portal_cooldown_remaining()
         if cooldown > 0:
             return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
                                            f"Try again in {int(cooldown / 60) + 1} minutes.")}
         if not _check_rate(netid):
             return {"ok": False, "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}
+        if not _check_portal_budget(_client_ip(), authorized=authorized):
+            return {"ok": False, "error": ("Too many portal requests from the server "
+                                           "(rate-limit protection). Try again in 10 minutes.")}
+        # audit run-1 (#8): ONE wall-clock budget for the whole critical
+        # section — HTTP phases check it between phases, the Playwright
+        # fallback gets only what's left (150s total matches its documented
+        # 5-retry worst case; the HTTP side is additionally bounded
+        # per-response by http_scraper._MAX_READ_SECS).
+        deadline = time.monotonic() + PIPELINE_DEADLINE
         # ── New pipeline: pure-HTTP first ─────────────────────────────
+        def _progress_pub(_who, step, pct):
+            # audit run-1 (#13): publish only under this flow's attempt token;
+            # no token -> nothing lands in the unauthenticated progress map
+            if attempt:
+                _set_progress(attempt, step, pct, netid=netid)
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
-                   "clear_session": _clear_session, "set_progress": _set_progress}
+                   "clear_session": _clear_session, "set_progress": _progress_pub}
         # Hot/cold split: cold data (personal/courses) re-fetched only when
         # stale >24h; hot (attendance/marks) always.
         c = db()
@@ -1270,8 +1369,15 @@ def fetch_attendance(netid, password):
                     prepared = http_scraper.take_preflight(netid)
                 except Exception as e:
                     log.debug("preflight take failed err=%r", e)
-                _set_progress(netid, "Connecting to SRM portal…", 5)
-                res = http_scraper.fetch(netid, password, helpers, cold=cold, prepared=prepared)
+                if attempt:
+                    _set_progress(attempt, "Connecting to SRM portal…", 5, netid=netid)
+                res = http_scraper.fetch(netid, password, helpers, cold=cold,
+                                         prepared=prepared, deadline=deadline)
+                if res.get("ok"):
+                    # audit run-1 (#6): the per-netid sync quota is spent only
+                    # when the sync actually succeeded — a failed unauth guess
+                    # can no longer pre-spend a chosen victim's quota
+                    _charge_rate(netid)
                 if res.get("ok") and cold:
                     try:
                         c = db()
@@ -1289,7 +1395,13 @@ def fetch_attendance(netid, password):
         # ── Fallback: Playwright ──────────────────────────────────────
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
-        return future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
+        # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed
+        # TimeoutError + zombie retries — bounded by the remaining pipeline
+        # budget instead of a fresh 150s (audit run-1 #8: one deadline total)
+        pw_res = future.result(timeout=max(1, min(150, deadline - time.monotonic())))
+        if isinstance(pw_res, dict) and pw_res.get("ok"):
+            _charge_rate(netid)  # audit run-1: same success-only quota charge as the HTTP path
+        return pw_res
     except Exception:
         # audit: a timeout leaves the coroutine driving the shared page after
         # the lock is released (zombie double-drive) — cancel it. Setting
@@ -1569,9 +1681,10 @@ def _security_headers(resp):
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-    # audit: HSTS only when the request came through the CF edge (cf-ray) —
-    # plain-HTTP local dev must never receive it
-    if request.headers.get("cf-ray"):
+    # audit: HSTS only when the request came through the VERIFIED CF edge
+    # (audit run-1 #18: bare cf-ray is client-assertable) — plain-HTTP local
+    # dev and direct-origin requests must never receive it
+    if _behind_cf():
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
@@ -2371,29 +2484,51 @@ def api_feedback_fill():
     cookies = _load_session(netid)
     if not cookies:
         return {"ok": False, "error": "portal session expired — sync first"}, 400
-    from . import http_scraper
-    t0 = time.monotonic()
+    # audit run-1 (#3): this path reaches the portal like every other — it used
+    # to run with ZERO gates and no scrape lock (92 portal requests fired while
+    # a sync held the lock, budget untouched). Same free gates first, budget
+    # last; the lock is held for the whole submit so fills serialize against
+    # in-flight syncs. Fill is bounded by budget+cooldown+lock; the per-netid
+    # sync quota stays reserved for actual syncs (no charge here).
+    if _portal_cooldown_remaining() > 0:
+        return {"ok": False,
+                "error": "SRM portal temporarily rate-limiting our server — try again in a few minutes."}, 429
+    if not _check_rate(netid):
+        return {"ok": False,
+                "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}, 429
+    if not _scrape_lock.acquire(blocking=False):
+        return {"ok": False, "error": "Sync in progress — try again in about a minute."}, 503
     try:
-        res = http_scraper.fill_feedback(netid, plan, cookies)
-    except http_scraper.HttpScraperError as e:
-        # full detail goes to the log + telemetry only: exception text must
-        # never reach the response body (CWE-209, CodeQL
-        # py/stack-trace-exposure) — it can embed nested exception reprs.
-        log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
-        _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
-        return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
-    if "error" in res:
-        # fill_feedback's own portal-state refusal: a literal it built itself,
-        # so it is safe to hand to the student verbatim.
-        log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
-        _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
-        return {"ok": False, "error": res["error"]}, 502
-    ms = int((time.monotonic() - t0) * 1000)
-    log_with_kv(log_portal, logging.INFO, "feedback fill done",
-                netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
-                failed=len(res.get("failed", [])), total_ms=ms)
-    _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
-    return {"ok": True, **res}
+        if not _check_portal_budget(_client_ip(), authorized=True):
+            return {"ok": False,
+                    "error": "Too many portal requests from the server — try again in 10 minutes."}, 429
+        from . import http_scraper
+        t0 = time.monotonic()
+        try:
+            res = http_scraper.fill_feedback(netid, plan, cookies)
+        except http_scraper.HttpScraperError as e:
+            # full detail goes to the log + telemetry only: exception text must
+            # never reach the response body (CWE-209, CodeQL
+            # py/stack-trace-exposure) — it can embed nested exception reprs.
+            # audit run-1 (#17): reachable only from pre-loop failures now —
+            # mid-loop failures return partial res via the success path below.
+            log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
+            _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
+            return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
+        if "error" in res:
+            # fill_feedback's own portal-state refusal: a literal it built
+            # itself, so it is safe to hand to the student verbatim.
+            log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
+            _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+            return {"ok": False, "error": res["error"]}, 502
+        ms = int((time.monotonic() - t0) * 1000)
+        log_with_kv(log_portal, logging.INFO, "feedback fill done",
+                    netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
+                    failed=len(res.get("failed", [])), total_ms=ms)
+        _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
+        return {"ok": True, **res}
+    finally:
+        _scrape_lock.release()
 
 def _fmt_score(v):
     """Minimal decimals: 11.7 -> '11.7', 5 -> '5' (trailing zeroes stripped —
@@ -2674,9 +2809,14 @@ def static_no_cache(filename):
     # audit: was hardcoded "/app/app/static" — only worked inside the container
     # (local runs 404'd). Derive from __file__ like every other path here.
     resp = send_from_directory(os.path.join(os.path.dirname(__file__), "static"), filename)
-    # Service worker and manifest need cacheable responses; CSS stays no-store
-    if filename.endswith(('.js', '.json')):
+    # Manifest stays cacheable; .js revalidates every load so a deploy can't
+    # leave a stale shell (old API shape) cached for an hour (audit run-1 R1);
+    # everything else stays no-store. The SW itself benefits: no-cache makes
+    # worker updates land on the next navigation instead of after up to 1h.
+    if filename.endswith('.json'):
         resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif filename.endswith('.js'):
+        resp.headers["Cache-Control"] = "no-cache"
     else:
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     if filename == "sw.js":
@@ -2715,7 +2855,9 @@ def _merge_fetch_result(existing, res):
     marks-page failure that preserved marks_json. One copy now.
     `existing` = current users row (dict row, or None on first fetch).
     Returns (personal_json, marks_json, subjects_json, exams_json,
-    faculty_json, exam_events)."""
+    faculty_json, exam_events, attendance_json). attendance_json follows the
+    same absent/empty-equals-preserve contract (audit run-1), with daily_absent
+    merged per month. """
     def _col(key, col):
         if res.get(key):
             return json.dumps(res[key])
@@ -2724,6 +2866,33 @@ def _merge_fetch_result(existing, res):
         return json.dumps({"personal": {}, "subjects": {}}[key])
     personal_json = _col("personal", "personal_details_json")
     subjects_json = _col("subjects", "subjects_json")
+    # attendance: same absent-equals-preserve contract as every sibling (audit
+    # run-1): a partial portal response (missing cumulative table, failed
+    # drilldown months, junk first tbody) must never wipe stored monthly rows,
+    # absence history or the period anchor. Fresh non-empty fields win; empty
+    # fresh fields keep stored; daily_absent merges per month.
+    if res.get("data"):
+        att = dict(res["data"])
+        stored_att = {}
+        raw_att = (existing["attendance_json"]
+                   if existing and "attendance_json" in existing.keys() else None)
+        if raw_att:
+            try:
+                stored_att = json.loads(raw_att) or {}
+            except (ValueError, TypeError):
+                stored_att = {}
+        if isinstance(stored_att, dict):
+            for f in ("courses", "monthly", "period"):
+                if not att.get(f) and stored_att.get(f):
+                    att[f] = stored_att[f]
+            fresh_daily = att.get("daily_absent") or {}
+            if stored_att.get("daily_absent") or fresh_daily:
+                att["daily_absent"] = {**stored_att.get("daily_absent", {}), **fresh_daily}
+        attendance_json = json.dumps(att)
+    elif existing and "attendance_json" in existing.keys() and existing["attendance_json"]:
+        attendance_json = existing["attendance_json"]   # key absent = preserve
+    else:
+        attendance_json = json.dumps({"courses": [], "monthly": [], "period": None, "daily_absent": {}})
     # marks: preserve-if-empty (B6) AND flag the preserved rows `stale=True`
     # — the dashboard widget highlights chips whose numbers come from an
     # earlier sync instead of the latest one (Oct 2026). A real fetch writes
@@ -2771,7 +2940,7 @@ def _merge_fetch_result(existing, res):
             except (IndexError, KeyError):
                 v = None
             fb_open = v if v is not None else 1
-    return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events
+    return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events, attendance_json
 
 
 @app.route("/api/login", methods=["POST"])
@@ -2797,6 +2966,12 @@ def api_login():
         return {"ok": False, "error": "invalid NetID format"}, 400
     if len(password) > 128:
         return {"ok": False, "error": "invalid password"}, 400
+    # audit run-1 (#13): this browser's progress token — keying progress by
+    # it (instead of netid) makes /api/login/progress unreadable to anyone
+    # who merely guesses the account name
+    attempt = str(d.get("attempt") or "").strip()
+    if not attempt.isalnum() or len(attempt) > 64:
+        attempt = None
 
     # audit 2026-09-27: count the per-IP budget AFTER validation (was before).
     # Previously 11 trivial `{}` POSTs (valid JSON dict, no credentials) burned
@@ -2807,7 +2982,7 @@ def api_login():
         return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
-    res = fetch_attendance(netid, password)
+    res = fetch_attendance(netid, password, attempt=attempt)
     login_ms = int((time.monotonic() - login_t0) * 1000)
     if not res["ok"]:
         log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
@@ -2822,14 +2997,14 @@ def api_login():
     c = db()
     # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
     # (single shared contract — see _merge_fetch_result)
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events) = _merge_fetch_result(existing, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res)
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
-              (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
+              (netid, encrypt_pw(password), attendance_json, res["fetched"],
                personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
     c.commit(); c.close()
     # one-shot exam pushes (official release / room allotment): post-commit,
@@ -2863,8 +3038,8 @@ def api_refresh():
     password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
     if not password:
         log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
-        return {"ok": False, "error": "stored credentials unreadable \u2014 log in again"}, 401
-    res = fetch_attendance(netid, password)
+        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
+    res = fetch_attendance(netid, password, authorized=True)  # owner session: draws the reserved auth floor
     if not res["ok"]:
         # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
         # only "status=503" with no reason anywhere, so the failure class could
@@ -2877,12 +3052,15 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold + audit B6: same single preserve contract as login
-    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events) = _merge_fetch_result(row2, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(row2, res)
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
-              (json.dumps(res["data"]), res["fetched"], personal_json,
-               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, fb_open, netid))
+              # audit run-1: attendance goes through the preserve merge (was
+              # json.dumps(res["data"]) — wholesale wipe on partial responses);
+              # subjects_json was ALSO discarded here despite the merge (R1)
+              (attendance_json, res["fetched"], personal_json,
+               marks_json, subjects_json, exams_json, faculty_json, fb_open, netid))
     c.commit(); c.close()
     # same timetable save as login: group/subjects + official grid (separate tx)
     _save_timetable_group(netid, res)
@@ -2898,14 +3076,24 @@ def api_refresh():
 #    while they finish typing. Consumed by /api/login via fetch_attendance.
 _preflight_last = {}   # netid -> ts (30s per-netid cooldown)
 _preflight_ip = {}     # ip -> [ts, ...] (10 per 10 min per IP)
+_progress_ip = {}      # ip -> [ts, ...] (audit #13: 30 reads/60s per IP)
 
 def _run_preflight(netid):
+    # audit run-1 (#7): the detached body used to fire portal work + OCR with
+    # no lock — concurrent with an in-flight sync driving the same portal. It
+    # now serializes through the scrape lock (busy -> skip, the warm login is
+    # an optimization, not a requirement).
+    if not _scrape_lock.acquire(blocking=False):
+        log.debug("preflight skipped netid=%s — scrape lock busy", netid)
+        return
     try:
         from . import http_scraper
         http_scraper.preflight(netid)
     except Exception as e:
         # audit 2026-10-07: warm-login loss was DEBUG-only — now visible at WARNING
         log.warning("preflight failed netid=%s err=%r", netid, e)
+    finally:
+        _scrape_lock.release()
 
 @app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
@@ -2916,19 +3104,44 @@ def api_login_preflight():
         return {"ok": False}, 400
     now = time.time()
     ip = _client_ip()
-    hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
-    if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+    # audit run-1 (#7): the whole admission (ip cap + per-netid cooldown) is a
+    # read-modify-write under _rate_lock — the old unlocked check-then-act let
+    # two gthread workers double-spend the same admission; dicts get aggregate
+    # eviction here so neither can grow without bound. Log AFTER releasing.
+    limited = busy = False
+    with _rate_lock:
+        for k in [k for k, t in _preflight_last.items() if now - t > 600]:
+            _preflight_last.pop(k, None)          # expire cooled-down netids
+        for k in [k for k, v in _preflight_ip.items()
+                  if not [t for t in v if now - t < 600]]:
+            _preflight_ip.pop(k, None)            # expire drained ip buckets
+        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
+        if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+            limited = True
+        elif now - _preflight_last.get(netid, 0) < 30:
+            # cooldown: identical response to a fresh start — no per-netid
+            # discriminator leaks to an unauthenticated caller (audit run-1 #14)
+            return {"ok": True}
+        elif _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+            busy = True
+        else:
+            _preflight_ip[ip] = hits
+    if limited:
         log_with_kv(log_auth, logging.WARNING, "preflight ip limited", netid=netid, ip=ip)
         return {"ok": False, "error": "rate"}, 429
-    if now - _preflight_last.get(netid, 0) < 30:
-        return {"ok": True, "cooldown": True}
-    if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+    if busy:
         log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
-    if not _check_portal_budget():  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does
+    if not _check_portal_budget(ip):  # audit: aggregate egress cap (takes _rate_lock — must run outside the block above)
         return {"ok": False, "error": "rate"}, 429
-    _preflight_ip[ip] = hits + [now]
-    _preflight_last[netid] = now
+    with _rate_lock:  # atomic charge, re-validated — closes the admission race
+        if now - _preflight_last.get(netid, 0) < 30:
+            return {"ok": True}
+        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
+        if len(hits) >= 10:
+            return {"ok": False, "error": "rate"}, 429
+        _preflight_ip[ip] = hits + [now]
+        _preflight_last[netid] = now
     threading.Thread(target=_run_preflight, args=(netid,), daemon=True,
                      name="srm-preflight").start()
     log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
@@ -2938,14 +3151,24 @@ def api_login_preflight():
 def api_login_progress():
     # audit: GET put netid in the URL (access logs, history, referrers).
     # Mid-login, session auth can't apply — the body keeps it out of logs.
+    # audit run-1 (#13): reads are keyed by the unforgeable attempt token
+    # minted in this browser's login form, not the bare netid — guessing an
+    # account name now yields 400/empty, never presence or stage. The read
+    # path is also per-IP capped (30/60s) like preflight.
     data = request.get_json(silent=True) or {}
-    netid = str(data.get("netid", "")).strip().lower()
-    if not netid or not NETID_RE.match(netid):
+    attempt = str(data.get("attempt", "")).strip()
+    if not attempt or not attempt.isalnum() or len(attempt) > 64:
         return {"step": "", "pct": 0}, 400
-    p = _login_progress.get(netid)
+    now = time.time()
+    ip = _client_ip()
+    hits = [t for t in _progress_ip.get(ip, []) if now - t < 60]
+    if len(hits) >= 30:
+        return {"step": "", "pct": 0}, 429
+    _progress_ip[ip] = hits + [now]
+    p = _login_progress.get(attempt)
     # ponytail: entries purged when >10min old; fine for a ~5-30s flow
-    if p and time.time() - p["ts"] > 600:
-        _login_progress.pop(netid, None)
+    if p and now - p["ts"] > 600:
+        _login_progress.pop(attempt, None)
         p = None
     return {"step": p["step"], "pct": p["pct"]} if p else {"step": "", "pct": 0}
 
@@ -3298,6 +3521,17 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
                     status=status, code=rem.block.code, ttl=job["ttl"])
     stats.pop("due_pass", None)
     push_store.prune_events(int(time.time()) - 3 * 3600)   # keep the rate table tiny
+    # audit R1: usage_events and push_sent_log had no retention at all —
+    # unbounded growth in the one DB file that also holds srm.db backups.
+    # 90d usage / 30d sent-log covers every window the dashboards read.
+    try:
+        c = db()
+        c.execute("DELETE FROM usage_events WHERE ts < ?", (int(time.time()) - 90 * 86400,))
+        c.execute("DELETE FROM push_sent_log WHERE local_date < ?",
+                  (time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)),))
+        c.commit(); c.close()
+    except Exception as e:
+        log_push.warning("log retention prune failed: %r", e)
     stats["took_ms"] = int((time.monotonic() - t0) * 1000)
     log_with_kv(log_push, logging.INFO, "push tick", **stats)
     return {"ok": True, **stats}
@@ -3309,7 +3543,17 @@ def push_tick():
     wrong/missing secret => bare 401 with no detail (nothing to probe)."""
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
-    if not conf["tick_secret"] or not hmac.compare_digest(got, conf["tick_secret"]):
+    # audit run-1 (#16): hmac.compare_digest raises TypeError on non-ASCII
+    # str — one byte >= 0x80 in the header turned the documented bare 401
+    # into an unauthenticated 500 + ERROR alert. Compare UTF-8 bytes: a
+    # non-ASCII header can never equal an ASCII secret; a lone surrogate
+    # raises UnicodeEncodeError -> mismatch (fail closed).
+    try:
+        tick_ok = hmac.compare_digest(got.encode("utf-8"),
+                                       conf["tick_secret"].encode("utf-8"))
+    except UnicodeEncodeError:
+        tick_ok = False
+    if not conf["tick_secret"] or not tick_ok:
         log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
         return "", 401
     return _run_tick(conf=conf)
@@ -3325,6 +3569,22 @@ def _push_401():
 
 def _push_bad(msg, code=400):
     return {"ok": False, "error": msg}, code
+
+
+# audit run-1 (#4): client-supplied push endpoints are fetched server-side by
+# pywebpush — scheme+length validation alone made that an SSRF + upstream-status
+# oracle. Known push-service host suffixes only; re-enforced at send time.
+_PUSH_HOST_SUFFIXES = ("fcm.googleapis.com", "web.push.apple.com",
+                       "updates.push.services.mozilla.com")
+MAX_PUSH_SUBSCRIPTIONS = 8   # per netid — one account, a handful of devices
+
+
+def _push_endpoint_allowed(endpoint):
+    from urllib.parse import urlparse
+    host = (urlparse(endpoint).hostname or "").lower()
+    # suffix check only: a DNS pre-check adds latency + a TOCTOU gap and
+    # blocks nothing the suffix list doesn't (attackers can't own a suffix)
+    return any(host == s or host.endswith("." + s) for s in _PUSH_HOST_SUFFIXES)
 
 
 @app.route("/api/push/status")
@@ -3368,8 +3628,14 @@ def push_subscribe():
             or not isinstance(p256dh, str) or not p256dh or len(p256dh) > 512
             or not isinstance(auth, str) or not auth or len(auth) > 512):
         return _push_bad("invalid subscription")
+    if not _push_endpoint_allowed(endpoint):
+        # audit run-1 (#4): the server would POST to whatever host this names
+        return _push_bad("invalid subscription — not a known push service")
     if push_store.count_events(netid, "subscribe", int(time.time()) - 3600) >= 10:
         return _push_bad("too many subscription updates (10/hour)", 429)
+    if push_store.count_subscriptions(netid) >= MAX_PUSH_SUBSCRIPTIONS:
+        # audit run-1 (#11): per-account row cap — N rows = N duplicate sends
+        return _push_bad(f"too many registered devices ({MAX_PUSH_SUBSCRIPTIONS})", 429)
     row = push_store.upsert_subscription(netid, endpoint, p256dh, auth,
                                          str(d.get("ua_label", ""))[:64])
     push_store.record_event(netid, "subscribe", _endpoint_hash(endpoint))
@@ -3457,7 +3723,10 @@ def push_test():
     if oc.get("dead"):
         push_store.delete_subscription_by_id(subs[0]["id"])
         return _push_bad("this device's subscription expired — turn reminders off and on again", 410)
-    return _push_bad(f"push service error (http {oc.get('http_status')})", 502)
+    # audit run-1 (#4): upstream status code must not be reflected — it turns
+    # the server into a status oracle for whatever endpoint was stored.
+    # Full detail goes to the log line above.
+    return _push_bad("push service error — try again later", 502)
 
 
 @app.route("/api/push/receipt", methods=["POST"])
@@ -3492,6 +3761,20 @@ def logout():
     if "prefetch" in spec or "prerender" in spec:
         log_with_kv(log_auth, logging.INFO, "logout ignored",
                     reason="speculation", ip=_client_ip())
+        resp = make_response(redirect("/login"))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    # audit run-1 (#15): SameSite=Lax still SENDS the cookie on a cross-site
+    # TOP-LEVEL GET, so one link/meta-refresh logged the victim out. Reject
+    # cross-site fetch-metadata the same way speculation is rejected;
+    # absent Sec-Fetch-Site (older browsers) falls through to Lax (the
+    # header is a forbidden header name — attacker pages cannot strip it).
+    sfs = request.headers.get("Sec-Fetch-Site", "").lower()
+    origin = request.headers.get("Origin", "")
+    if sfs == "cross-site" or (origin and origin != "null"
+                               and not origin.endswith(request.host)):
+        log_with_kv(log_auth, logging.INFO, "logout ignored",
+                    reason="cross-site", ip=_client_ip())
         resp = make_response(redirect("/login"))
         resp.headers["Cache-Control"] = "no-store"
         return resp

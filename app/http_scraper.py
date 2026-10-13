@@ -100,6 +100,13 @@ def _hdrs(extra=None, referer=None):
     return h
 
 
+# audit run-1 (#10): every portal read funnels through _req — bound BOTH
+# dimensions here so a bad body fails fast instead of growing RSS while the
+# scrape lock is held (32MB/28s drip reproduced under the old unbounded read).
+_MAX_BODY = 8 * 1024 * 1024   # portal pages are KB-scale; raise if a real one exceeds
+_MAX_READ_SECS = 60           # total wall clock per response — drip-proof on top of timeout=25
+
+
 def _req(opener, url, headers, data=None, timeout=25):
     """GET/POST; returns (final_url, body_bytes). Raises HttpScraperError on transport fail."""
     t0 = time.monotonic()
@@ -108,17 +115,42 @@ def _req(opener, url, headers, data=None, timeout=25):
         for k, v in headers.items():
             r.add_header(k, v)
         resp = opener.open(r, timeout=timeout)
-        body = resp.read()
-        log.debug("portal %s %s -> %s %dB %dms", "POST" if data else "GET",
-                  url.replace("https://", "")[:60], resp.status, len(body),
-                  int((time.monotonic() - t0) * 1000))
-        return resp.url, body
     except urllib.error.HTTPError as e:
         log.warning("portal http_error url=%s status=%s", url[:80], e.code)
         raise HttpScraperError(f"HTTP {e.code} from portal") from e
     except Exception as e:
         log.warning("portal transport_error url=%s err=%r", url[:80], e)
         raise HttpScraperError(f"transport: {e!r}") from e
+    clen = resp.headers.get("Content-Length")
+    if clen:
+        try:
+            if int(clen) > _MAX_BODY:
+                raise HttpScraperError(f"portal declared oversized body: {clen}B")
+        except ValueError:
+            pass  # junk header — the read loop still enforces the cap
+    deadline = t0 + _MAX_READ_SECS
+    parts, got = [], 0
+    try:
+        while True:
+            if time.monotonic() > deadline:
+                raise HttpScraperError("portal read deadline exceeded")
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            got += len(chunk)
+            if got > _MAX_BODY:
+                raise HttpScraperError(f"portal body over size cap ({got}B)")
+            parts.append(chunk)
+    except HttpScraperError:
+        raise
+    except Exception as e:
+        log.warning("portal transport_error url=%s err=%r", url[:80], e)
+        raise HttpScraperError(f"transport: {e!r}") from e
+    body = b"".join(parts)
+    log.debug("portal %s %s -> %s %dB %dms", "POST" if data else "GET",
+              url.replace("https://", "")[:60], resp.status, len(body),
+              int((time.monotonic() - t0) * 1000))
+    return resp.url, body
 
 
 def _telemetry_b64(t0):
@@ -139,6 +171,26 @@ def _telemetry_b64(t0):
 #    keyed by netid; consumed by fetch() on the next login for that netid.
 _PREFLIGHT = {}   # netid -> {"opener", "jar", "ctx", "ts"}
 _PREFLIGHT_MAX = 32
+
+
+def _captcha_url(img_path, base):
+    """Resolve the page's data-src captcha image (audit run-1 #9).
+
+    The portal controls data-src, so it decides what the server fetches.
+    Root-relative is built from the configured host; an absolute URL is only
+    accepted when it names the portal host (or the configured egress base).
+    file://, internal hosts, anything else -> HttpScraperError BEFORE any
+    request is issued (the old code fetched it verbatim: SSRF to any scheme
+    urllib would follow)."""
+    if img_path.startswith("/"):
+        img_url = f"https://{PORTAL_HOST}{img_path}"
+    elif img_path.startswith(f"https://{PORTAL_HOST}/") or img_path.startswith(f"{base}/"):
+        img_url = img_path
+    else:
+        raise HttpScraperError("captcha data-src not on the portal host")
+    if base != f"https://{PORTAL_HOST}":
+        img_url = img_url.replace(f"https://{PORTAL_HOST}", base)
+    return img_url
 
 
 def preflight(netid):
@@ -198,9 +250,7 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
 
     # Captcha: the page's OWN image (data-src) with Domain-Proof
     img_path = src.group(1)
-    img_url = f"https://{PORTAL_HOST}{img_path}" if img_path.startswith("/") else img_path
-    if base != f"https://{PORTAL_HOST}":
-        img_url = img_url.replace(f"https://{PORTAL_HOST}", base)
+    img_url = _captcha_url(img_path, base)
     proof = base64.b64encode(f"{nonce}:{PORTAL_HOST}".encode()).decode()
     img_headers = _hdrs({**xheaders, "X-Domain-Proof": proof,
                          "Accept": "image/png, image/jpeg, image/svg+xml, image/*"},
@@ -617,7 +667,16 @@ def fill_feedback(netid, plan, cookies_json):
             continue
         q = "&" + urllib.parse.urlencode(dict(subjectId=sid, forWhat="1", functionId="1",
                                               staffid="0", **common))
-        _u, inner = _fb_post(opener, base, xheaders, q)
+        try:
+            _u, inner = _fb_post(opener, base, xheaders, q)
+        except HttpScraperError as e:
+            # audit run-1 (#17): rows already submitted must survive a later
+            # row's transport failure — record + STOP so the caller reports
+            # the true end state instead of "nothing was submitted"
+            log.warning("feedback fill mid-loop abort netid=%s row=%s err=%s",
+                        netid, label[:40], str(e)[:80])
+            res["failed"].append([label, "portal error after earlier rows were submitted — re-run to see what is already registered"])
+            break
         if _fb_registered(inner):
             res["already"].append(label)
             time.sleep(0.7)
@@ -635,7 +694,13 @@ def fill_feedback(netid, plan, cookies_json):
             subjectId=sid, forWhat="2", staffid=staff_id,
             hiddenQuestionId=qids, hiddenAnswerId=ans,
             commentTextArea=comment[:250], **common))
-        _u, resp = _fb_post(opener, base, xheaders, sub)
+        try:
+            _u, resp = _fb_post(opener, base, xheaders, sub)
+        except HttpScraperError as e:
+            log.warning("feedback fill mid-loop abort netid=%s row=%s err=%s",
+                        netid, label[:40], str(e)[:80])
+            res["failed"].append([label, "portal error after earlier rows were submitted — re-run to see what is already registered"])
+            break
         if _fb_registered(resp):
             res["filled"].append(label)
             log.info("feedback submitted netid=%s subject=%s staff=%s", netid, name[:40], staff_id)
@@ -726,7 +791,7 @@ def _after_login(netid, jar, helpers):
         log.debug("session save failed err=%r", e)
 
 
-def fetch(netid, password, helpers, cold=True, prepared=None):
+def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
     """Full scrape via pure HTTP. Same contract as _fetch_rich_optimized.
 
     helpers: {portal_fail_once, portal_ok, save_session, load_session,
@@ -735,6 +800,10 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     cold=False fetches only hot data (attendance 9 + marks 13).
     prepared: warm login from preflight() (page+captcha done while the
               user typed their password) — skips the prepare phase.
+    deadline: time.monotonic() budget for the whole critical section
+              (audit run-1 #8) — checked between phases; aborting raises the
+              HttpScraperError the caller already handles. None = unbounded
+              (tests/tools).
     Raises HttpScraperError on transport-level failure (caller may fall back
     to the Playwright pipeline).
     """
@@ -744,6 +813,9 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     def _prog(step, pct):
         try: on_step(netid, step, pct)
         except Exception: pass
+    def _chk(phase):
+        if deadline is not None and time.monotonic() > deadline:
+            raise HttpScraperError(f"pipeline deadline exceeded at {phase}")
     opener, jar = _make_opener()
 
     # Session reuse: cached cookies still valid → skip login entirely
@@ -771,6 +843,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
             jar.clear()
             helpers["clear_session"](netid)
 
+    _chk("login")
     if not logged_in:
         if prepared:
             # preflight's opener holds the warm JSESSIONID + solved captcha
@@ -788,6 +861,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())
     log.debug("jsp batch netid=%s formids=%s", netid, sorted(fids))
     _prog("Fetching attendance & marks…", 65)
+    _chk("jsp-batch")
     cands = exam_candidates()
     with ThreadPoolExecutor(max_workers=5) as ex:
         futures = [ex.submit(_jsp_post, opener, base, xheaders, path, fid)
@@ -854,6 +928,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
         targets.append({"mstr": mo["month"], "mon": MONTHS[mm.group(1).upper()],
                         "year": mm.group(2)})
 
+    _chk("drills")
     daily = {}
     if targets:
         def drill(t):
@@ -875,7 +950,10 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
                              for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
                     if len(cells) >= 2 and re.match(r"\d{2}-\d{2}-\d{4}", cells[0]):
                         rows.append({"date": cells[0], "hours": cells[1]})
-                daily[mstr] = rows
+                # audit run-1: failed/empty drilldown months are OMITTED, not
+                # stored as [] — the merge then keeps stored rows for that month
+                if rows:
+                    daily[mstr] = rows
         log.debug("daily drilldown months=%s", [t["mstr"] for t in targets])
     data["daily_absent"] = daily
 
@@ -899,6 +977,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
     # harvest raises and the sync still ships attendance/marks). Submitting is
     # OPT-IN from the dashboard (fill_feedback) — sync never writes to the portal.
     # _fb_cold also classifies availability: fb_open 1/0/None (see its docstring).
+    _chk("harvest")
     fb, fb_open = None, None
     if cold:
         _prog("Checking mid-sem feedback…", 85)

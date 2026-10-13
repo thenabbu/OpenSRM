@@ -148,7 +148,7 @@ def _stored_marks():
 def t_login_preserves_marks():
     _set_stored_marks()
     orig = A.fetch_attendance
-    A.fetch_attendance = lambda n, p: dict(FAKE_EMPTY)
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_EMPTY)
     try:
         r = A.app.test_client().post("/api/login",
                                      json={"netid": "ng2776", "password": "pw"},
@@ -165,7 +165,7 @@ def t_login_empty_overwrites_with_data():
     # preserve must not stick: a real fetch still overwrites
     _set_stored_marks()
     orig = A.fetch_attendance
-    A.fetch_attendance = lambda n, p: dict(FAKE_NEW)
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_NEW)
     try:
         r = A.app.test_client().post("/api/login",
                                      json={"netid": "ng2776", "password": "pw"},
@@ -184,7 +184,7 @@ def t_refresh_preserves_marks():
               (A.encrypt_pw("pw"),))
     c.commit(); c.close()
     orig = A.fetch_attendance
-    A.fetch_attendance = lambda n, p: dict(FAKE_EMPTY)
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_EMPTY)
     cl = A.app.test_client()
     cl.set_cookie("srm_session", mint_token())
     try:
@@ -197,6 +197,72 @@ def t_refresh_preserves_marks():
         f"empty-marks refresh must preserve stored marks flagged stale: {_stored_marks()}")
 
 
+# ── audit run-1: attendance_json gets the same preserve contract (B6 twin) ──
+STORED_ATT = {"courses": [{"code": "1CSC301", "description": "Stored",
+                           "max_hours": "40", "attended": "30", "absent": "10"}],
+              "monthly": [{"month": "SEP 2026", "present": "9", "absent": "1",
+                           "od_present": "0", "od_absent": "0", "ml": "0"}],
+              "period": {"from": "01/09/2026", "to": "30/09/2026"},
+              "daily_absent": {"SEP 2026": [{"date": "05-09-2026", "hours": "1"}]}}
+# the audit repro: fresh course table parses, but the cumulative table and
+# drilldowns are blank — used to wipe monthly/period/daily_absent wholesale
+FAKE_PARTIAL = dict(FAKE_EMPTY, data={"courses": [{"code": "1NEW999", "description": "Fresh",
+                                                   "max_hours": "10", "attended": "8",
+                                                   "absent": "2"}],
+                                      "monthly": [], "period": None})
+
+
+def _set_stored_att():
+    seed()
+    c = A.db()
+    c.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+              (json.dumps(STORED_ATT),))
+    c.commit(); c.close()
+
+
+def _stored_att():
+    c = A.db()
+    row = c.execute("SELECT attendance_json FROM users WHERE netid='ng2776'").fetchone()
+    c.close()
+    return json.loads(row[0])
+
+
+def t_login_preserves_attendance():
+    _set_stored_att()
+    orig = A.fetch_attendance
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_PARTIAL)
+    try:
+        r = A.app.test_client().post("/api/login",
+                                     json={"netid": "ng2776", "password": "pw"},
+                                     content_type="application/json")
+    finally:
+        A.fetch_attendance = orig
+    assert r.status_code == 200, r.data[:200]
+    att = _stored_att()
+    assert att["monthly"] == STORED_ATT["monthly"], f"monthly history wiped: {att['monthly']}"
+    assert att["period"] == STORED_ATT["period"], f"period anchor wiped: {att['period']}"
+    assert att["daily_absent"] == STORED_ATT["daily_absent"], f"drilldown wiped: {att['daily_absent']}"
+    assert att["courses"][0]["code"] == "1NEW999", f"fresh courses must write: {att['courses']}"
+
+
+def t_refresh_attendance_empty_fetch_preserves():
+    _set_stored_att()
+    c = A.db()
+    c.execute("UPDATE users SET password=? WHERE netid='ng2776'",
+              (A.encrypt_pw("pw"),))
+    c.commit(); c.close()
+    orig = A.fetch_attendance
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_EMPTY)
+    cl = A.app.test_client()
+    cl.set_cookie("srm_session", mint_token())
+    try:
+        r = cl.post("/api/refresh")
+    finally:
+        A.fetch_attendance = orig
+    assert r.status_code == 200 and r.get_json().get("ok") is True, r.data[:200]
+    assert _stored_att() == STORED_ATT, f"absent data key must preserve stored attendance: {_stored_att()}"
+
+
 for name, fn in [
     ("_semester_int guards empty/None (B5)", t_semester),
     ("_jload degrades corrupt/shape-mismatched rows (B1-B4,B10)", t_jload),
@@ -207,10 +273,12 @@ for name, fn in [
     ("login preserves stored marks on empty fetch (B6)", t_login_preserves_marks),
     ("login overwrites stored marks on real data (B6)", t_login_empty_overwrites_with_data),
     ("refresh preserves stored marks on empty fetch (B6)", t_refresh_preserves_marks),
+    ("login partial attendance keeps monthly/period/daily (run-1)", t_login_preserves_attendance),
+    ("refresh absent data key preserves stored attendance (run-1)", t_refresh_attendance_empty_fetch_preserves),
 ]:
     check(name, fn)
 
-total = 9
+total = 11
 print(f"\n{total - len(FAILS)}/{total} passed")
 if FAILS:
     print("FAILED:", ", ".join(FAILS))

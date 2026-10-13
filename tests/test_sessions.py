@@ -85,6 +85,25 @@ def t_logout_ignored_on_prefetch():
         "prefetch killed the session — state-changing GET fired without navigation"
 
 
+def t_logout_ignored_on_cross_site():
+    """audit run-1 #15: SameSite=Lax sends the cookie on a cross-site
+    TOP-LEVEL GET — one attacker link/meta-refresh used to kill the session.
+    Sec-Fetch-Site: cross-site (a forbidden header clients can't strip) must
+    be ignored; a same-site navigation still logs out."""
+    tok = A.make_session_token("zz9999")
+    cl = A.app.test_client()
+    cl.set_cookie("srm_session", tok)
+    r = cl.get("/logout", headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code in (302, 303), f"cross-site still gets the redirect, got {r.status_code}"
+    assert _who(tok) == "zz9999", "cross-site logout must NOT delete the session"
+    # same-site (no header / explicit same-origin) still works
+    cl2 = A.app.test_client()
+    cl2.set_cookie("srm_session", tok)
+    r = cl2.get("/logout")
+    assert r.status_code in (302, 303), r.status_code
+    assert _who(tok) is None, "same-site logout must still delete the session"
+
+
 def t_index_refresh_survive_mid_request_session_loss():
     """Race: the session row vanishes BETWEEN require_login's read and the
     handler's own get_current_user() re-read (logout in another tab landing
@@ -122,6 +141,7 @@ TESTS = [
     ("expired token pruned on read", t_expired_token_pruned_on_read),
     ("real GET /logout deletes session", t_logout_real_navigation_deletes),
     ("logout no-op on Sec-Purpose prefetch/prerender", t_logout_ignored_on_prefetch),
+    ("logout no-op on cross-site fetch (audit #15)", t_logout_ignored_on_cross_site),
     ("index/refresh survive mid-request session loss", t_index_refresh_survive_mid_request_session_loss),
 ]
 

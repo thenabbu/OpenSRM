@@ -124,4 +124,110 @@ cd_txt = A._netid_retry_text(netid)
 assert cd_txt.endswith("seconds") and 50 <= int(cd_txt.split()[0]) <= 60, cd_txt
 assert A._retry_text(time.time() - 3500, 3600) == "2 minutes"
 
+# ── 4. audit run-1: success-only quota charge + budget floor + per-IP share ──
+# admission is check-only: a wrong-password guess can't spend the victim's quota
+A._login_attempts.pop("zzvictim", None)
+assert A._check_rate("zzvictim") is True, "fresh account must be admitted"
+assert "zzvictim" not in A._login_attempts, "admission must not charge (charge = success only)"
+for _ in range(3):
+    A._charge_rate("zzvictim")
+assert A._check_rate("zzvictim") is False, "3 charged syncs must deny the 4th"
+A._login_attempts.pop("zzvictim", None)
+
+A._portal_attempts.clear(); A._portal_attempts_auth.clear(); A._portal_ip.clear()
+# per-IP share: one rotating source can hold at most _PORTAL_IP_CAP tokens
+for _ in range(A._PORTAL_IP_CAP):
+    assert A._check_portal_budget("1.2.3.4") is True
+assert A._check_portal_budget("1.2.3.4") is False, "per-IP share cap must reject"
+assert len(A._portal_attempts) == A._PORTAL_IP_CAP, "rejected attempt must spend no token"
+assert A._check_portal_budget("5.6.7.8") is True, "other IPs must still be admitted"
+A._portal_attempts.clear(); A._portal_ip.clear()
+# auth floor: unauth work can never drain the reserved refresh tokens
+n = 0
+while len(A._portal_attempts) < A._PORTAL_CAP - A._PORTAL_AUTH_FLOOR:
+    assert A._check_portal_budget(f"9.9.9.{n}") is True
+    n += 1
+assert A._check_portal_budget("2.2.2.2") is False, "unauth must stop at CAP-FLOOR"
+assert A._check_portal_budget("3.3.3.3", authorized=True) is True, "refresh floor must stay reachable"
+assert A._check_portal_budget("4.4.4.4", authorized=True) is True, "auth draws from full CAP"
+A._portal_attempts.clear(); A._portal_attempts_auth.clear(); A._portal_ip.clear()
+
+# ── 5. preflight admission: atomic, bounded, no discriminator (audit run-1 #7/#14)
+cl = A.app.test_client()
+A._preflight_last.clear(); A._preflight_ip.clear()
+# ip cap: 10 hits in-window -> 429, no thread spawned, no token spent
+A._preflight_ip["127.0.0.1"] = [time.time()] * 10
+r = cl.post("/api/login/preflight", json={"netid": "zzrate"})
+assert r.status_code == 429, r.data
+assert A._portal_attempts == [] and A._portal_attempts_auth == [], "429 must spend no budget token"
+A._preflight_ip.clear()
+# cooldown: identical {ok:true} to a fresh start — no cooldown discriminator
+A._preflight_last["zzpref"] = time.time()
+r = cl.post("/api/login/preflight", json={"netid": "zzpref"})
+assert r.status_code == 200 and r.get_json() == {"ok": True}, r.data
+assert "cooldown" not in r.get_json(), "per-netid discriminator must not leak"
+# busy: scrape lock held -> 503, no thread (all paths here are no-spawn, so
+# this offline suite never reaches the portal)
+got = A._scrape_lock.acquire(blocking=False)
+assert got
+try:
+    r = cl.post("/api/login/preflight", json={"netid": "zzbusy"})
+finally:
+    A._scrape_lock.release()
+assert r.status_code == 503, r.data
+# aggregate eviction: stale buckets die on the next admission sweep
+A._preflight_last["zzold"] = time.time() - 700
+A._preflight_ip["9.9.9.9"] = [time.time() - 700]
+r = cl.post("/api/login/preflight", json={"netid": "zzpref"})  # cooldown path sweeps first
+assert "zzold" not in A._preflight_last, "stale netid keys must be evicted"
+assert "9.9.9.9" not in A._preflight_ip, "drained ip buckets must be evicted"
+A._preflight_last.clear(); A._preflight_ip.clear()
+
+# ── 6. captcha data-src confined to the portal host (audit run-1 #9) ─────
+from app import http_scraper as H  # noqa: E402
+BASE0 = f"https://{H.PORTAL_HOST}"
+assert H._captcha_url("/captcha.jpg", BASE0) == f"https://{H.PORTAL_HOST}/captcha.jpg"
+assert H._captcha_url(f"https://{H.PORTAL_HOST}/captcha.jpg", BASE0) == f"https://{H.PORTAL_HOST}/captcha.jpg"
+# egress rewrite still works for an absolute portal URL (audit's existing behaviour)
+assert H._captcha_url(f"https://{H.PORTAL_HOST}/captcha.jpg", "https://egress.example") \
+    == "https://egress.example/captcha.jpg"
+assert H._captcha_url("https://egress.example/captcha.jpg", "https://egress.example") \
+    == "https://egress.example/captcha.jpg"
+for bad in ("file:///etc/passwd", "http://169.254.169.254/x",
+            "https://attacker.example/HRDSystem.jsp", "captcha.jpg"):
+    try:
+        H._captcha_url(bad, BASE0)
+        raise AssertionError(f"data-src {bad!r} must be rejected")
+    except H.HttpScraperError:
+        pass
+
+# ── 7. progress reads are attempt-token bound (audit run-1 #13) ─────────
+r = cl.post("/api/login/progress", json={"netid": "ng2776"})
+assert r.status_code == 400, f"netid-keyed reads must be gone, got {r.status_code}"
+r = cl.post("/api/login/progress", json={"attempt": "abc123"})
+assert r.status_code == 200 and r.get_json() == {"step": "", "pct": 0}, r.data
+A._set_progress("abc123", "Reading captcha…", 60, netid="ng2776")
+r = cl.post("/api/login/progress", json={"attempt": "abc123"})
+assert r.get_json().get("step") == "Reading captcha…", r.data
+r = cl.post("/api/login/progress", json={"attempt": "abc123<script>"})
+assert r.status_code == 400, "attempt must be alnum-only"
+A._login_progress.clear()
+
+# ── 8. CF headers gated by edge secret, not client-assertable (#18) ─────
+A.CF_EDGE_SECRET = ""
+with A.app.test_request_context(headers={"cf-ray": "r1", "CF-Connecting-IP": "6.6.6.6"}):
+    assert A._behind_cf() is False, "bare cf-ray must not confer edge trust"
+    assert A._client_ip() != "6.6.6.6", "client-asserted IP must be ignored"
+    assert A._cookie_secure() is False, "Secure flag must not be client-forgeable"
+A.CF_EDGE_SECRET = "edge-s3cret"
+with A.app.test_request_context(headers={"X-Edge-Secret": "edge-s3cret",
+                                         "CF-Connecting-IP": "6.6.6.6",
+                                         "X-Forwarded-Proto": "https"}):
+    assert A._behind_cf() is True, "matching edge secret must confer trust"
+    assert A._client_ip() == "6.6.6.6"
+    assert A._cookie_secure() is True
+with A.app.test_request_context(headers={"X-Edge-Secret": "wrong", "cf-ray": "r2"}):
+    assert A._behind_cf() is False, "wrong secret must not confer trust"
+A.CF_EDGE_SECRET = ""
+
 print("ok  login rejection classifier + sync quota ordering")

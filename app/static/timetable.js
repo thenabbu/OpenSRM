@@ -2,6 +2,14 @@
 (function() {
     'use strict';
 
+    // audit R1: dead session 302s API routes to /login; fetch() follows it
+    // and r.json() throws on the HTML — the tab went silently blank. Same
+    // guard dash.js already uses.
+    function ttJson(r) {
+        if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+        return r.json();
+    }
+
     function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
 
     var SLOTS = [
@@ -45,7 +53,7 @@
         var list = document.getElementById('tt-history-list');
         if (!list) return;
         fetch('/api/timetable/history', {credentials: 'same-origin'})
-            .then(function(r) { return r.json(); })
+            .then(ttJson)
             .then(function(data) {
                 var entries = (data && data.ok && data.entries) || [];
                 document.getElementById('tt-history-count').textContent = entries.length;
@@ -153,7 +161,7 @@
 
         // Load current timetable
         fetch('/api/timetable', {credentials: 'same-origin'})
-            .then(function(r) { return r.json(); })
+            .then(ttJson)
             .then(function(data) {
                 if (!data.ok) return;
                 groupKey = data.group_key;
@@ -324,7 +332,7 @@
             credentials: 'same-origin',
             body: JSON.stringify({slots: editorState, custom_subjects: customSubjects})
         })
-        .then(function(r) { return r.json(); })
+        .then(ttJson)
         .then(function(data) {
             if (data.ok) {
                 closeEditor();
@@ -345,3 +353,8 @@
         init();
     }
 })();
+
+// audit R1: drag-drop-touch.js shipped but polyfill() was never called —
+// touch drag was dead on mobile. No-op on desktop (native DnD detected
+// inside polyfill()); dashboard.html loads the lib before this file.
+if (window.MobileDragDrop) MobileDragDrop.polyfill();

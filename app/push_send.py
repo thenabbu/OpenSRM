@@ -18,11 +18,37 @@ log = logging.getLogger("opensrm.push")
 SEND_TIMEOUT = 5.0          # seconds per push-service POST
 DEFAULT_WORKERS = 8         # matches gunicorn --threads 8; period-boundary burst
 
+# audit run-1 (#4): mirrors app._push_endpoint_allowed — second-order guard so
+# a row stored before the allowlist (or an endpoint rebinding) can never aim
+# the server at an arbitrary https target.
+_PUSH_HOST_SUFFIXES = ("fcm.googleapis.com", "web.push.apple.com",
+                       "updates.push.services.mozilla.com")
+
+
+def _destination_ok(endpoint):
+    from urllib.parse import urlparse
+    host = (urlparse(endpoint).hostname or "").lower()
+    return any(host == s or host.endswith("." + s) for s in _PUSH_HOST_SUFFIXES)
+
+
+def _run_one(job, deadline):
+    # audit run-1 (#11): the deadline is enforced at DEQUEUE too — queued jobs
+    # used to start after it and only the submit loop checked (docstring
+    # promised "no send STARTS after deadline"). Deferred to the next tick.
+    if time.monotonic() > deadline:
+        job["outcome"] = {"ok": False, "reason": "deadline"}
+        return job
+    return send_one(job)
+
 
 def send_one(job):
     """One push. `job` = {sub: subscription row, payload: dict, ttl: int, ...}.
     Returns the job with `outcome` attached: {ok, http_status, dead, retryable}."""
     sub = job["sub"]
+    if not _destination_ok(sub["endpoint"]):
+        job["outcome"] = {"ok": False, "http_status": None, "dead": False,
+                          "retryable": False, "error": "endpoint_not_allowed"}
+        return job
     # RFC 8292 `sub` must be a URI: py_vapid 1.9.x strict-checks it and raises
     # "Missing 'sub'" BEFORE any HTTP when it's a bare email — a bare email in
     # the env burned 3 retries in prod on 2026-10-05. Idempotent + .env-safe.
@@ -68,7 +94,7 @@ def send_batch(jobs, deadline, workers=DEFAULT_WORKERS):
                 job["outcome"] = {"ok": False, "reason": "deadline"}
                 done.append(job)
                 continue
-            futures.append(pool.submit(send_one, job))
+            futures.append(pool.submit(_run_one, job, deadline))
         for f in futures:
             done.append(f.result())
     return done
