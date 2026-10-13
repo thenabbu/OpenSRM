@@ -272,21 +272,38 @@ _scrape_lock = threading.Lock()
 _SESSION_CACHE_TTL = 4 * 3600  # 4 hours
 
 def _save_session(netid, cookies_json):
-    """Persist portal cookies for session reuse (portal_sessions table)."""
+    """Persist portal cookies for session reuse — encrypted at rest with the
+    same Fernet control as users.password (audit run-1 #5: live portal
+    cookies sat in plaintext next to the encrypted passwords, so a stolen
+    srm.db + fernet.key pair still handed over authenticated portal
+    sessions)."""
     c = db()
     c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
-              (netid, cookies_json, int(time.time())))
+              (netid, encrypt_pw(cookies_json), int(time.time())))
     c.commit(); c.close()
 
 def _load_session(netid):
-    """Load cached portal cookies if still valid (< TTL)."""
+    """Load cached portal cookies if still valid (< TTL).
+
+    audit run-1: decrypts rows written by _save_session; rows written before
+    the encryption change (plaintext JSON) are returned as-is and become
+    encrypted on their next save, so existing sessions keep working."""
     c = db()
     row = c.execute("SELECT cookies_json, created FROM portal_sessions WHERE netid=?", (netid,)).fetchone()
     c.close()
     if not row: return None
     if time.time() - row["created"] > _SESSION_CACHE_TTL:
-        return None  # expired
-    return row["cookies_json"]
+        _clear_session(netid)  # expired rows are useless — stop storing dead cookie blobs
+        return None
+    blob = row["cookies_json"]
+    if not blob.startswith("gAAAA"):
+        return blob  # legacy plaintext row (pre-encryption); replaced on next save
+    try:
+        return get_fernet().decrypt(blob.encode()).decode()
+    except Exception as e:
+        log.warning("stored portal session unreadable — forcing fresh login netid=%s: %r", netid, e)
+        _clear_session(netid)
+        return None
 
 def _clear_session(netid):
     """Remove cached portal cookies (on failed session restore)."""

@@ -123,6 +123,22 @@ check("portal_ok called after the successful relogin", len(calls["ok"]) >= 1,
 # ordering: save must come AFTER clear (a pre-branch save would be stale data)
 if calls["save"]:
     check("save is post-relogin, not a stale pre-branch write", True)
+# audit run-1 #5: portal_sessions is encrypted at rest; legacy plaintext rows
+# (written before the change) must keep loading until their next save
+A._save_session("zz9999", json.dumps([{"name": "JSESSIONID", "value": "fresh"}]))
+_c = A.db()
+_blob = _c.execute("SELECT cookies_json FROM portal_sessions WHERE netid='zz9999'").fetchone()[0]
+_c.close()
+check("saved portal session is a Fernet blob at rest", _blob.startswith("gAAAA"), _blob[:24])
+check("load decrypts back to the original cookie json",
+      json.loads(A._load_session("zz9999"))[0]["value"] == "fresh", str(A._load_session("zz9999"))[:60])
+_c = A.db()
+_c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES('zz9998', ?, ?)",
+           (json.dumps([{"name": "JSESSIONID", "value": "legacy"}]), int(A.time.time())))
+_c.commit(); _c.close()
+check("legacy plaintext row still loads (gradual migration)",
+      json.loads(A._load_session("zz9998"))[0]["value"] == "legacy", str(A._load_session("zz9998"))[:60])
+
 print()
 print("%d/%d passed" % (TOTAL - len(FAILS), TOTAL))
 raise SystemExit(1 if FAILS else 0)
