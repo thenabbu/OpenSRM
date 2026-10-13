@@ -84,7 +84,7 @@ mark("§5 no vague 'try again later' left in the API", "PASS" if not vague else 
      "source contains 'Try again later.'" if vague else "removed; every lockout message names a time")
 concrete = {
     "per-netid sync cap": "Try again in 10 minutes",
-    "sync in progress": "Try again in 30 seconds",
+    "sync in progress": "Try again in about a minute",
     "portal budget": "Try again in 10 minutes",
     "portal cooldown": "Try again in {int(cooldown / 60) + 1} minutes",
     "per-IP login cap": "Try again in {",

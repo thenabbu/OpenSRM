@@ -103,7 +103,7 @@ export DATA_DIR=/tmp/osrm-guide
 export DUT_BASE=http://127.0.0.1:18098
 .venv/bin/python tests/guide_static.py      # 9/9  Login Flow UX Guide (source level, no server)
 .venv/bin/python tests/guide_check.py       # 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
-.venv/bin/python tests/guide_server.py      # 7/7  7 REAL portal logins — spends the 10/hour IP cap
+.venv/bin/python tests/guide_server.py      # 6 items, green = 0 FAIL (2 come back INCONCLUSIVE when the portal/IP limiter interferes) — 7 live portal probes, NEVER loop it; the wrong-password arm is opt-in via GUIDE_WRONGPASS_NETID=<existing netid>
 kill %1
 
 # push DUTs boot their own three gunicorn instances (see header)
