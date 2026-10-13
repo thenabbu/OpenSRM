@@ -1,3 +1,5 @@
+> **Identifiers were redacted on 2026-10-14.** Real NetIDs in this archive were replaced with fabricated ones; nothing else changed.
+
 # 2026-10-10 — sessions die early, users re-login constantly
 
 **Symptom** (user report): "the user sessions dont last long, like even when i am
@@ -17,7 +19,7 @@ Oct 8/9 rotations concatenated with the current file into
 | Finding | Number | How |
 |---|---|---|
 | Logins in window | 78 across 8 accounts | `opensrm.auth login ok` lines |
-| Main account (ng2776) logins | 58 from 13 distinct IPs | same, grouped by netid+ip |
+| Main account (zz9999) logins | 58 from 13 distinct IPs | same, grouped by netid+ip |
 | Re-logins preceded by the SAME account's own earlier login | 44 of 70 (36 different IP, 8 same IP) | kill-attribution script: for each login, the prior kill-capable event (own login / `/logout` 302) |
 | Re-logins preceded by a real `/logout` 302 | 26 of 70 | same script |
 | Session row age at check | ~1.1 days despite 30-day policy | read-only `SELECT` on `cookies` |

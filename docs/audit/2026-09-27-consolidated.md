@@ -1,3 +1,5 @@
+> **Identifiers were redacted on 2026-10-14.** Real NetIDs in this archive were replaced with fabricated ones; nothing else changed.
+
 # OpenSRM Audit — consolidated 76 findings (commit 2bed463) + resolution
 
 > **Status: ALL FIXED.** Fix batches `394c8ff` → `a8ffccf` (21 commits, pushed, CI green,
@@ -30,7 +32,7 @@ All 6 reports in, every critical/high claim verified against source by me, findi
 → *Fix:* rotate the Worker PROXY_TOKEN, replace literals with `os.environ[...]`, add `egress/` to `.dockerignore`.
 
 **3. ✅ Stored cross-user XSS via shared timetable — `dashboard.html:274` + `app.py:1276-1278`**
-Custom subject code/name/location from `/api/timetable` go into HTML via `str.format` with **zero `html.escape`** (grep confirms none in app.py) behind `{{ timetable | safe }}`. Group is keyed by program/batch/semester/section — **prod has 6 real users** (ag2188, an0750, av5351, ds4647, ng2776, sg2935), so same-section students share one slot set: one student's write renders in classmates' dashboards. CSP doesn't save it: `script-src … https://cdn.jsdelivr.net` allows an attacker-published npm package as script origin.
+Custom subject code/name/location from `/api/timetable` go into HTML via `str.format` with **zero `html.escape`** (grep confirms none in app.py) behind `{{ timetable | safe }}`. Group is keyed by program/batch/semester/section — **prod has 6 real users** (zz9801, zz9802, zz9803, zz9804, zz9999, zz9805), so same-section students share one slot set: one student's write renders in classmates' dashboards. CSP doesn't save it: `script-src … https://cdn.jsdelivr.net` allows an attacker-published npm package as script origin.
 → *Fix:* `markupsafe.escape()` on code/name/location in `timetable_html()`; consider self-hosting CDN assets.
 *(needs-validation: one end-to-end browser payload confirm — the sink + shared path + script origin are all source-verified.)*
 
@@ -67,7 +69,7 @@ Inline `<script>` is blocked by `script-src 'self'` (app.py:1033), *and* `scope:
 - ✅ GitHub Actions pinned by mutable tags not SHAs (build.yml/lint.yml — build has `packages:write`)
 - Docker base images tag-pinned, not digest-pinned; `blobatar` tracks branch `feat/python-sdk` not a commit
 - ✅ **`uv.lock` stale: says version 1.0.0, pyproject says 1.1.0** — my fault from yesterday's amend; no CI runs `uv lock --check`
-- `egress/DEPLOY.md:7` publicly documents the CF token's exact path/line + account ID; `app.py:112` comment contains `ng2776` (both ✅ grepped)
+- `egress/DEPLOY.md:7` publicly documents the CF token's exact path/line + account ID; `app.py:112` comment contains `zz9999` (both ✅ grepped)
 
 **Docs**
 - ✅ README:197 + SECURITY.md:20 claim *"script-src 'self', no external scripts"* — **false**, jsdelivr is allowed (and that allowance is what makes finding #3 executable); SECURITY.md:38 claims healthcheck+log-rotation exist in prod compose — they don't (only dev compose)

@@ -17,7 +17,7 @@ def seed(with_payload=True):
     from app import app as A
     c = A.db()
     c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json, last_fetch)
-                 VALUES('ng2776', 'unused-by-tests', ?, ?)""",
+                 VALUES('zz9999', 'unused-by-tests', ?, ?)""",
               (json.dumps(PERSONAL), int(time.time())))
     gid = None
     if with_payload:
@@ -34,7 +34,7 @@ def seed(with_payload=True):
 
 def mint_token():
     from app.app import make_session_token
-    return make_session_token('ng2776')
+    return make_session_token('zz9999')
 
 
 # ---- phantom-verdict guard: the server under test must be THIS worktree ----

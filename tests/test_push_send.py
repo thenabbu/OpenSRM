@@ -16,7 +16,7 @@ def check(name, ok, detail=""):
     if not ok:
         fails.append(name)
 
-SUB = {"id": 5, "netid": "ng2776", "endpoint": "https://fcm.googleapis.com/x/y",
+SUB = {"id": 5, "netid": "zz9999", "endpoint": "https://fcm.googleapis.com/x/y",
        "p256dh": "BKx", "auth": "au"}
 def job():
     return {"sub": SUB, "row_id": 9, "payload": {"title": "t", "body": "b"}, "ttl": 600}

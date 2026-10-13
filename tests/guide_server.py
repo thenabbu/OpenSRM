@@ -43,14 +43,20 @@ if verdict_for(s):
     rows[-1] = (rows[-1][0], verdict_for(s), f"status={s} {b.get('error')}")
 
 # ── 2 + 3. error parity + timing (guide §5: one generic error, no timing tell)
+# The wrong-password arm needs an account that EXISTS on the portal. A real
+# student NetID is never committed, so it defaults to a fabricated id (the two
+# arms then differ only by id, i.e. shape parity) and the full live check is
+# opt-in:  GUIDE_WRONGPASS_NETID=<existing netid> python tests/guide_server.py
+WP_NETID = os.environ.get("GUIDE_WRONGPASS_NETID", "zz9999")
+wp_note = "" if os.environ.get("GUIDE_WRONGPASS_NETID") else " [fabricated id: shape parity only]"
 tA, tB = [], []
 pairs = []
 for i in range(3):
     pairs.append(("unknown-id",) + post("zznoacc1", "wrongpass" + str(i)))
-    pairs.append(("wrong-pass",) + post("ng2776", "wrongpass" + str(i)))
+    pairs.append(("wrong-pass",) + post(WP_NETID, "wrongpass" + str(i)))
 status_seen = {p[1] for p in pairs}
 if status_seen & {429, 503}:
-    mark("§5 generic error: bad-ID and wrong-password are indistinguishable", "INCONCLUSIVE",
+    mark(f"§5 generic error: bad-ID and wrong-password are indistinguishable{wp_note}", "INCONCLUSIVE",
          f"statuses seen={sorted(status_seen)} (rate limiter or portal cooldown interfered)")
     mark("§5 no timing tell between bad-ID and wrong-password", "INCONCLUSIVE", "blocked by the above")
 else:
@@ -58,7 +64,7 @@ else:
     c = [p for p in pairs if p[0] == "wrong-pass"]
     same_status = {p[1] for p in a} == {p[1] for p in c} and len({p[1] for p in pairs}) == 1
     same_body = {json.dumps(p[2], sort_keys=True) for p in a} == {json.dumps(p[2], sort_keys=True) for p in c}
-    mark("§5 generic error: bad-ID and wrong-password are indistinguishable",
+    mark(f"§5 generic error: bad-ID and wrong-password are indistinguishable{wp_note}",
          "PASS" if same_status and same_body else "FAIL",
          f"both -> {pairs[1][1]} {json.dumps(pairs[1][2])!r} | same_status={same_status} same_body={same_body}")
     tA = [p[3] for p in a]; tB = [p[3] for p in c]

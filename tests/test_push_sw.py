@@ -75,7 +75,7 @@ with sync_playwright() as p:
     receipt_rows = None
     for _ in range(20):
         from app import push_store as S
-        receipt_rows = S.count_events("ng2776", "receipt", 0)
+        receipt_rows = S.count_events("zz9999", "receipt", 0)
         if receipt_rows >= 1:
             break
         time.sleep(0.5)
