@@ -48,6 +48,16 @@ def upsert_subscription(netid, endpoint, p256dh, auth, ua_label, lead_minutes=10
     return dict(row) if row else None
 
 
+def count_subscriptions(netid):
+    """Row count per account — subscribe rejects past MAX_SUBSCRIPTIONS so a
+    single account can't register dozens of endpoints and multiply every due
+    reminder (audit run-1: 32 rows -> 32 duplicate sends)."""
+    c = get_conn()
+    row = c.execute("SELECT COUNT(*) FROM push_subscriptions WHERE netid=?", (netid,)).fetchone()
+    c.close()
+    return int(row[0])
+
+
 def list_subscriptions(netid=None, enabled_only=True):
     c = get_conn()
     q = "SELECT * FROM push_subscriptions WHERE 1=1"

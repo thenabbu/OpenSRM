@@ -74,7 +74,8 @@ for i in range(11):
     codes.append(cl.post("/api/push/subscribe",
                          json={"endpoint": f"https://fcm.googleapis.com/push/{i}",
                                "keys": {"p256dh": "a", "auth": "b"}}).status_code)
-check("10 allowed, 11th -> 429", codes == [200] * 10 + [429], str(codes))
+# audit run-1 #11: 8-device row cap now binds before the 10/hour event cap
+check("8 devices allowed, 9th -> 429", codes == [200] * 8 + [429] * 3, str(codes))
 
 # ── 6) settings: validation + effect ──────────────────────────────────
 as_user("ng2776")

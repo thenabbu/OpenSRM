@@ -3441,6 +3441,22 @@ def _push_bad(msg, code=400):
     return {"ok": False, "error": msg}, code
 
 
+# audit run-1 (#4): client-supplied push endpoints are fetched server-side by
+# pywebpush — scheme+length validation alone made that an SSRF + upstream-status
+# oracle. Known push-service host suffixes only; re-enforced at send time.
+_PUSH_HOST_SUFFIXES = ("fcm.googleapis.com", "web.push.apple.com",
+                       "updates.push.services.mozilla.com")
+MAX_PUSH_SUBSCRIPTIONS = 8   # per netid — one account, a handful of devices
+
+
+def _push_endpoint_allowed(endpoint):
+    from urllib.parse import urlparse
+    host = (urlparse(endpoint).hostname or "").lower()
+    # suffix check only: a DNS pre-check adds latency + a TOCTOU gap and
+    # blocks nothing the suffix list doesn't (attackers can't own a suffix)
+    return any(host == s or host.endswith("." + s) for s in _PUSH_HOST_SUFFIXES)
+
+
 @app.route("/api/push/status")
 def push_status():
     netid = get_current_user()
@@ -3482,8 +3498,14 @@ def push_subscribe():
             or not isinstance(p256dh, str) or not p256dh or len(p256dh) > 512
             or not isinstance(auth, str) or not auth or len(auth) > 512):
         return _push_bad("invalid subscription")
+    if not _push_endpoint_allowed(endpoint):
+        # audit run-1 (#4): the server would POST to whatever host this names
+        return _push_bad("invalid subscription — not a known push service")
     if push_store.count_events(netid, "subscribe", int(time.time()) - 3600) >= 10:
         return _push_bad("too many subscription updates (10/hour)", 429)
+    if push_store.count_subscriptions(netid) >= MAX_PUSH_SUBSCRIPTIONS:
+        # audit run-1 (#11): per-account row cap — N rows = N duplicate sends
+        return _push_bad(f"too many registered devices ({MAX_PUSH_SUBSCRIPTIONS})", 429)
     row = push_store.upsert_subscription(netid, endpoint, p256dh, auth,
                                          str(d.get("ua_label", ""))[:64])
     push_store.record_event(netid, "subscribe", _endpoint_hash(endpoint))
@@ -3571,7 +3593,10 @@ def push_test():
     if oc.get("dead"):
         push_store.delete_subscription_by_id(subs[0]["id"])
         return _push_bad("this device's subscription expired — turn reminders off and on again", 410)
-    return _push_bad(f"push service error (http {oc.get('http_status')})", 502)
+    # audit run-1 (#4): upstream status code must not be reflected — it turns
+    # the server into a status oracle for whatever endpoint was stored.
+    # Full detail goes to the log line above.
+    return _push_bad("push service error — try again later", 502)
 
 
 @app.route("/api/push/receipt", methods=["POST"])
