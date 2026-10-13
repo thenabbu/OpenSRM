@@ -1835,8 +1835,13 @@ LAYOUT = [
      "widgets": ["profile", "today", "week", "notices"]},
     # `when` = route-context vars that must be truthy for the card to render
     # (all-empty card -> no orphan shell). Missing `when` = always show.
+    # `cap` = lg max-height as a fraction of the viewport-fit grid
+    # (calc((100dvh-104px)*cap)) — clamps row 1's content height so a heavy
+    # exams/marks load can't starve row 2 (stress: uncapped auto row 1 = 640px
+    # crushed row 2 to 2px at 1024x768). % rows don't work: maximize-tracks
+    # STRETCHES them to the limit (row 1 ate 65% even with normal data).
     {"id": "assess", "span": 8, "when": ["marks_summary", "exams"],
-     "widgets": ["marks", "exams"]},
+     "cap": "0.65", "widgets": ["marks", "exams"]},
     {"id": "people", "span": 8, "when": ["budgets", "teach_groups"],
      "cols": 2, "widgets": ["attendance", "teachers"]},
 ]

@@ -125,16 +125,22 @@
     <!-- lg: the dashboard fits the viewport EXACTLY — grid height = 100dvh −
          navbar (64px) − main py-5 (20+20) = 100dvh-104px: no page scrollbar
          on desktop. Rows: minmax(0,auto) lets row 1 (marks+exams) hug its
-         content and minmax(0,1fr) hands the REST to row 2 (attendance+
-         teachers) — equal 1fr rows starved row 2 by 93px at 1280x900 while
-         row 1 idled with 100px of slack (measured). Residue (a longer exam
-         list, a class-heavy day column) scrolls INSIDE the card (card-body
-         overflow) — cards stretch to fill, mobile (<lg) keeps normal page
-         flow. Pinned by tests/test_dash_fit.py (scrollHeight <= clientHeight
-         at 1280x900). -->
+         content, minmax(0,1fr) hands the REST to row 2 (attendance+teachers)
+         — equal 1fr rows starved row 2 by 93px at 1280x900 while row 1 idled
+         with 100px of slack (measured). A %-capped row 1 was rejected too:
+         percentages get STRETCHED to their limit by maximize-tracks (row 1
+         always ate 65% and starved row 2 under normal data), so the 65%
+         ceiling lives on the assess CARD instead (LAYOUT `cap` → max-height
+         on the scrollable card-body): content clamps the track, the track
+         never clamps the content. Stress (14-exam load): row 1 ≤ 65% of the
+         grid, row 2 keeps ≥35%−26px at every display 1024x768 → 3440x1440.
+         Residue (a longer exam list, a class-heavy day column) scrolls
+         INSIDE the card (card-body overflow) — cards stretch to fill,
+         mobile (<lg) keeps normal page flow. Pinned by tests/test_dash_fit.py
+         (scrollHeight <= clientHeight at 1280x900). -->
     <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-104px)] gap-6">
       {% for c in layout %}
-      <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %} lg:overflow-hidden">
+      <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}{% if c.cap %} lg:max-h-[calc((100dvh-104px)*{{ c.cap }})]{% endif %} lg:overflow-hidden">
         <div class="card-body p-4 gap-3 lg:min-h-0 lg:overflow-y-auto">
           {% if c.cols %}<div class="grid grid-cols-1 sm:grid-cols-{{ c.cols }} gap-3">{% endif %}
           {% for wid in c.widgets %}
