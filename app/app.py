@@ -267,6 +267,9 @@ NETID_RE = re.compile(r"^[a-z0-9]{2,20}$")  # audit: SRM NetIDs are lowercase al
 # must be shared process-wide. Pair with gunicorn -w 1 (Dockerfile CMD)
 # so counters below are also process-wide.
 _scrape_lock = threading.Lock()
+# audit run-1 (#8): total wall-clock budget for one held scrape lock — HTTP
+# phases + Playwright fallback share it (see fetch_attendance)
+PIPELINE_DEADLINE = 150
 
 # ── Session cache: skip login when cookies are still valid ──────────
 _SESSION_CACHE_TTL = 4 * 3600  # 4 hours
@@ -1307,6 +1310,12 @@ def fetch_attendance(netid, password, authorized=False):
         if not _check_portal_budget(_client_ip(), authorized=authorized):
             return {"ok": False, "error": ("Too many portal requests from the server "
                                            "(rate-limit protection). Try again in 10 minutes.")}
+        # audit run-1 (#8): ONE wall-clock budget for the whole critical
+        # section — HTTP phases check it between phases, the Playwright
+        # fallback gets only what's left (150s total matches its documented
+        # 5-retry worst case; the HTTP side is additionally bounded
+        # per-response by http_scraper._MAX_READ_SECS).
+        deadline = time.monotonic() + PIPELINE_DEADLINE
         # ── New pipeline: pure-HTTP first ─────────────────────────────
         helpers = {"portal_fail_once": _portal_fail_once, "portal_ok": _portal_ok,
                    "save_session": _save_session, "load_session": _load_session,
@@ -1340,7 +1349,8 @@ def fetch_attendance(netid, password, authorized=False):
                 except Exception as e:
                     log.debug("preflight take failed err=%r", e)
                 _set_progress(netid, "Connecting to SRM portal…", 5)
-                res = http_scraper.fetch(netid, password, helpers, cold=cold, prepared=prepared)
+                res = http_scraper.fetch(netid, password, helpers, cold=cold,
+                                         prepared=prepared, deadline=deadline)
                 if res.get("ok"):
                     # audit run-1 (#6): the per-netid sync quota is spent only
                     # when the sync actually succeeded — a failed unauth guess
@@ -1363,7 +1373,10 @@ def fetch_attendance(netid, password, authorized=False):
         # ── Fallback: Playwright ──────────────────────────────────────
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
-        pw_res = future.result(timeout=150)  # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed TimeoutError + zombie retries
+        # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed
+        # TimeoutError + zombie retries — bounded by the remaining pipeline
+        # budget instead of a fresh 150s (audit run-1 #8: one deadline total)
+        pw_res = future.result(timeout=max(1, min(150, deadline - time.monotonic())))
         if isinstance(pw_res, dict) and pw_res.get("ok"):
             _charge_rate(netid)  # audit run-1: same success-only quota charge as the HTTP path
         return pw_res

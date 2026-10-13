@@ -183,4 +183,22 @@ assert "zzold" not in A._preflight_last, "stale netid keys must be evicted"
 assert "9.9.9.9" not in A._preflight_ip, "drained ip buckets must be evicted"
 A._preflight_last.clear(); A._preflight_ip.clear()
 
+# ── 6. captcha data-src confined to the portal host (audit run-1 #9) ─────
+from app import http_scraper as H  # noqa: E402
+BASE0 = f"https://{H.PORTAL_HOST}"
+assert H._captcha_url("/captcha.jpg", BASE0) == f"https://{H.PORTAL_HOST}/captcha.jpg"
+assert H._captcha_url(f"https://{H.PORTAL_HOST}/captcha.jpg", BASE0) == f"https://{H.PORTAL_HOST}/captcha.jpg"
+# egress rewrite still works for an absolute portal URL (audit's existing behaviour)
+assert H._captcha_url(f"https://{H.PORTAL_HOST}/captcha.jpg", "https://egress.example") \
+    == "https://egress.example/captcha.jpg"
+assert H._captcha_url("https://egress.example/captcha.jpg", "https://egress.example") \
+    == "https://egress.example/captcha.jpg"
+for bad in ("file:///etc/passwd", "http://169.254.169.254/x",
+            "https://attacker.example/HRDSystem.jsp", "captcha.jpg"):
+    try:
+        H._captcha_url(bad, BASE0)
+        raise AssertionError(f"data-src {bad!r} must be rejected")
+    except H.HttpScraperError:
+        pass
+
 print("ok  login rejection classifier + sync quota ordering")
