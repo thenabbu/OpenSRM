@@ -217,6 +217,47 @@ def t_usage_env_passthrough():
     assert "LOG_LEVEL=${LOG_LEVEL:-INFO}" in src, "compose default must be INFO"
 
 
+# ── control chars never reach the log line or the ntfy body (audit #16) ──
+def t_control_scrub():
+    lg = logging.getLogger("opensrm.scrubtest")
+    rec = lg.makeRecord(lg.name, logging.INFO, "x", 1,
+                        "GET path=/%sFORGED", ("\n0a",), None)
+    rec.kv = {"path": "/api/x\r\x00\x07evil"}
+    line = LS._Formatter().format(rec)
+    assert line.count("\n") == 0, f"one physical line required: {line!r}"
+    assert "\\x0a" in line and "FORGED" in line, line
+    assert "\\x0d" in line and "\\x00" in line and "\\x07" in line, line
+    # ntfy body: same scrub, asserted on the actual POST payload
+    posts = []
+    h = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    rec2 = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "request", None, None)
+    rec2.kv = {"path": "/p\nFAKE status=200"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h.emit(rec2)
+        end = time.monotonic() + 2.0
+        while time.monotonic() < end and len(posts) < 1:
+            time.sleep(0.01)
+    body = posts[0].data.decode()
+    assert "\\x0aFAKE" in body and "\nFAKE" not in body, body
+
+
+# ── non-ASCII X-Push-Tick: bare 401, never a 500 (audit #16) ─────────
+def t_tick_nonascii_header():
+    old = os.environ.get("PUSH_TICK_SECRET")
+    os.environ["PUSH_TICK_SECRET"] = "s3kr3t-tick"
+    cl = A.app.test_client()
+    try:
+        for hdr in ("wro\u00e9ng", "wrong\u2028x", "\uffff"):
+            r = cl.post("/internal/push/tick", headers={"X-Push-Tick": hdr})
+            assert r.status_code == 401, f"{hdr!r} -> {r.status_code} (want 401, old code gave 500)"
+    finally:
+        if old is None:
+            os.environ.pop("PUSH_TICK_SECRET", None)
+        else:
+            os.environ["PUSH_TICK_SECRET"] = old
+
+
 for name, fn in [
     ("access log: >=400 WARNING+error=, healthcheck suppressed at INFO", t_access_log),
     ("per-IP 429 logs a cause line", t_rate_limit_logged),
@@ -226,6 +267,8 @@ for name, fn in [
     ("ntfy alerter: rate-limited, silent-failure safe, env-gated", t_ntfy),
     ("usage_events table + _track writes", t_usage_events),
     ("compose: LOG_LEVEL INFO default + NTFY_ALERT_URL", t_usage_env_passthrough),
+    ("control chars scrubbed from log lines + ntfy body", t_control_scrub),
+    ("non-ASCII X-Push-Tick -> bare 401, never 500", t_tick_nonascii_header),
 ]:
     check(name, fn)
 

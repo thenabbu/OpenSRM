@@ -3492,7 +3492,17 @@ def push_tick():
     wrong/missing secret => bare 401 with no detail (nothing to probe)."""
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
-    if not conf["tick_secret"] or not hmac.compare_digest(got, conf["tick_secret"]):
+    # audit run-1 (#16): hmac.compare_digest raises TypeError on non-ASCII
+    # str — one byte >= 0x80 in the header turned the documented bare 401
+    # into an unauthenticated 500 + ERROR alert. Compare UTF-8 bytes: a
+    # non-ASCII header can never equal an ASCII secret; a lone surrogate
+    # raises UnicodeEncodeError -> mismatch (fail closed).
+    try:
+        tick_ok = hmac.compare_digest(got.encode("utf-8"),
+                                       conf["tick_secret"].encode("utf-8"))
+    except UnicodeEncodeError:
+        tick_ok = False
+    if not conf["tick_secret"] or not tick_ok:
         log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
         return "", 401
     return _run_tick(conf=conf)
