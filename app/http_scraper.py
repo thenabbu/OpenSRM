@@ -875,7 +875,10 @@ def fetch(netid, password, helpers, cold=True, prepared=None):
                              for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
                     if len(cells) >= 2 and re.match(r"\d{2}-\d{2}-\d{4}", cells[0]):
                         rows.append({"date": cells[0], "hours": cells[1]})
-                daily[mstr] = rows
+                # audit run-1: failed/empty drilldown months are OMITTED, not
+                # stored as [] — the merge then keeps stored rows for that month
+                if rows:
+                    daily[mstr] = rows
         log.debug("daily drilldown months=%s", [t["mstr"] for t in targets])
     data["daily_absent"] = daily
 

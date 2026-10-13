@@ -90,7 +90,7 @@ def t_rate_limit_logged():
     logging.getLogger("opensrm.auth").addHandler(cap)
     cl = A.app.test_client()
     orig = A.fetch_attendance
-    A.fetch_attendance = lambda n, p: {"ok": False, "error": "x"}
+    A.fetch_attendance = lambda n, p, **kw: {"ok": False, "error": "x"}
     A._ip_attempts.clear()  # earlier tests may have burned this IP's budget
     try:
         for _ in range(11):

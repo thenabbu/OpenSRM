@@ -527,8 +527,12 @@ def parse_attendance(html):
             if cells[0].lower() == "total" or len(cells) == 7:
                 continue
             # audit: numeric columns must look numeric — a portal column change
-            # would shift text into them and silently poison attendance
-            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n) or n in ("", "-")
+            # would shift text into them and silently poison attendance.
+            # audit run-1: "" and "-" no longer pass (a non-attendance tbody
+            # with blank trailing columns used to substitute junk courses);
+            # a rejected row -> empty courses -> sync fails closed, stored
+            # attendance_json is never touched.
+            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n)
                        for n in (cells[2], cells[3], cells[4])):
                 log.warning("attendance row layout shifted, skipped: %r", cells[:5])
                 continue
@@ -540,7 +544,11 @@ def parse_attendance(html):
     if cum:
         for row in re.findall(r"<tr[^>]*>(.*?)</tr>", cum.group(1), re.S):
             cells = _cells(row)
-            if len(cells) >= 6:
+            # audit run-1: present/absent must parse as integers — column drift
+            # otherwise poisons the monthly bars; a rejected row leaves monthly
+            # empty and the merge preserves stored history instead of wiping it.
+            # od/ml are display-only passthrough (portal may blank them).
+            if len(cells) >= 6 and all(re.fullmatch(r"-?\d+", c) for c in cells[1:3]):
                 out["monthly"].append({
                     "month": cells[0], "present": cells[1], "absent": cells[2],
                     "od_present": cells[3], "od_absent": cells[4], "ml": cells[5],
@@ -2767,7 +2775,9 @@ def _merge_fetch_result(existing, res):
     marks-page failure that preserved marks_json. One copy now.
     `existing` = current users row (dict row, or None on first fetch).
     Returns (personal_json, marks_json, subjects_json, exams_json,
-    faculty_json, exam_events)."""
+    faculty_json, exam_events, attendance_json). attendance_json follows the
+    same absent/empty-equals-preserve contract (audit run-1), with daily_absent
+    merged per month. """
     def _col(key, col):
         if res.get(key):
             return json.dumps(res[key])
@@ -2776,6 +2786,33 @@ def _merge_fetch_result(existing, res):
         return json.dumps({"personal": {}, "subjects": {}}[key])
     personal_json = _col("personal", "personal_details_json")
     subjects_json = _col("subjects", "subjects_json")
+    # attendance: same absent-equals-preserve contract as every sibling (audit
+    # run-1): a partial portal response (missing cumulative table, failed
+    # drilldown months, junk first tbody) must never wipe stored monthly rows,
+    # absence history or the period anchor. Fresh non-empty fields win; empty
+    # fresh fields keep stored; daily_absent merges per month.
+    if res.get("data"):
+        att = dict(res["data"])
+        stored_att = {}
+        raw_att = (existing["attendance_json"]
+                   if existing and "attendance_json" in existing.keys() else None)
+        if raw_att:
+            try:
+                stored_att = json.loads(raw_att) or {}
+            except (ValueError, TypeError):
+                stored_att = {}
+        if isinstance(stored_att, dict):
+            for f in ("courses", "monthly", "period"):
+                if not att.get(f) and stored_att.get(f):
+                    att[f] = stored_att[f]
+            fresh_daily = att.get("daily_absent") or {}
+            if stored_att.get("daily_absent") or fresh_daily:
+                att["daily_absent"] = {**stored_att.get("daily_absent", {}), **fresh_daily}
+        attendance_json = json.dumps(att)
+    elif existing and "attendance_json" in existing.keys() and existing["attendance_json"]:
+        attendance_json = existing["attendance_json"]   # key absent = preserve
+    else:
+        attendance_json = json.dumps({"courses": [], "monthly": [], "period": None, "daily_absent": {}})
     # marks: preserve-if-empty (B6) AND flag the preserved rows `stale=True`
     # — the dashboard widget highlights chips whose numbers come from an
     # earlier sync instead of the latest one (Oct 2026). A real fetch writes
@@ -2823,7 +2860,7 @@ def _merge_fetch_result(existing, res):
             except (IndexError, KeyError):
                 v = None
             fb_open = v if v is not None else 1
-    return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events
+    return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events, attendance_json
 
 
 @app.route("/api/login", methods=["POST"])
@@ -2874,14 +2911,14 @@ def api_login():
     c = db()
     # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
     # (single shared contract — see _merge_fetch_result)
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events) = _merge_fetch_result(existing, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res)
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
               "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
-              (netid, encrypt_pw(password), json.dumps(res["data"]), res["fetched"],
+              (netid, encrypt_pw(password), attendance_json, res["fetched"],
                personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
     c.commit(); c.close()
     # one-shot exam pushes (official release / room allotment): post-commit,
@@ -2929,12 +2966,15 @@ def api_refresh():
         return {"ok": False, "error": res["error"]}, code
     c = db()
     # Hot/cold + audit B6: same single preserve contract as login
-    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
+    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events) = _merge_fetch_result(row2, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(row2, res)
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
-              (json.dumps(res["data"]), res["fetched"], personal_json,
-               marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, fb_open, netid))
+              # audit run-1: attendance goes through the preserve merge (was
+              # json.dumps(res["data"]) — wholesale wipe on partial responses);
+              # subjects_json was ALSO discarded here despite the merge (R1)
+              (attendance_json, res["fetched"], personal_json,
+               marks_json, subjects_json, exams_json, faculty_json, fb_open, netid))
     c.commit(); c.close()
     # same timetable save as login: group/subjects + official grid (separate tx)
     _save_timetable_group(netid, res)
