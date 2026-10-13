@@ -152,4 +152,35 @@ assert A._check_portal_budget("3.3.3.3", authorized=True) is True, "refresh floo
 assert A._check_portal_budget("4.4.4.4", authorized=True) is True, "auth draws from full CAP"
 A._portal_attempts.clear(); A._portal_attempts_auth.clear(); A._portal_ip.clear()
 
+# ── 5. preflight admission: atomic, bounded, no discriminator (audit run-1 #7/#14)
+cl = A.app.test_client()
+A._preflight_last.clear(); A._preflight_ip.clear()
+# ip cap: 10 hits in-window -> 429, no thread spawned, no token spent
+A._preflight_ip["127.0.0.1"] = [time.time()] * 10
+r = cl.post("/api/login/preflight", json={"netid": "zzrate"})
+assert r.status_code == 429, r.data
+assert A._portal_attempts == [] and A._portal_attempts_auth == [], "429 must spend no budget token"
+A._preflight_ip.clear()
+# cooldown: identical {ok:true} to a fresh start — no cooldown discriminator
+A._preflight_last["zzpref"] = time.time()
+r = cl.post("/api/login/preflight", json={"netid": "zzpref"})
+assert r.status_code == 200 and r.get_json() == {"ok": True}, r.data
+assert "cooldown" not in r.get_json(), "per-netid discriminator must not leak"
+# busy: scrape lock held -> 503, no thread (all paths here are no-spawn, so
+# this offline suite never reaches the portal)
+got = A._scrape_lock.acquire(blocking=False)
+assert got
+try:
+    r = cl.post("/api/login/preflight", json={"netid": "zzbusy"})
+finally:
+    A._scrape_lock.release()
+assert r.status_code == 503, r.data
+# aggregate eviction: stale buckets die on the next admission sweep
+A._preflight_last["zzold"] = time.time() - 700
+A._preflight_ip["9.9.9.9"] = [time.time() - 700]
+r = cl.post("/api/login/preflight", json={"netid": "zzpref"})  # cooldown path sweeps first
+assert "zzold" not in A._preflight_last, "stale netid keys must be evicted"
+assert "9.9.9.9" not in A._preflight_ip, "drained ip buckets must be evicted"
+A._preflight_last.clear(); A._preflight_ip.clear()
+
 print("ok  login rejection classifier + sync quota ordering")

@@ -3031,12 +3031,21 @@ _preflight_last = {}   # netid -> ts (30s per-netid cooldown)
 _preflight_ip = {}     # ip -> [ts, ...] (10 per 10 min per IP)
 
 def _run_preflight(netid):
+    # audit run-1 (#7): the detached body used to fire portal work + OCR with
+    # no lock — concurrent with an in-flight sync driving the same portal. It
+    # now serializes through the scrape lock (busy -> skip, the warm login is
+    # an optimization, not a requirement).
+    if not _scrape_lock.acquire(blocking=False):
+        log.debug("preflight skipped netid=%s — scrape lock busy", netid)
+        return
     try:
         from . import http_scraper
         http_scraper.preflight(netid)
     except Exception as e:
         # audit 2026-10-07: warm-login loss was DEBUG-only — now visible at WARNING
         log.warning("preflight failed netid=%s err=%r", netid, e)
+    finally:
+        _scrape_lock.release()
 
 @app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
@@ -3047,19 +3056,44 @@ def api_login_preflight():
         return {"ok": False}, 400
     now = time.time()
     ip = _client_ip()
-    hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
-    if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+    # audit run-1 (#7): the whole admission (ip cap + per-netid cooldown) is a
+    # read-modify-write under _rate_lock — the old unlocked check-then-act let
+    # two gthread workers double-spend the same admission; dicts get aggregate
+    # eviction here so neither can grow without bound. Log AFTER releasing.
+    limited = busy = False
+    with _rate_lock:
+        for k in [k for k, t in _preflight_last.items() if now - t > 600]:
+            _preflight_last.pop(k, None)          # expire cooled-down netids
+        for k in [k for k, v in _preflight_ip.items()
+                  if not [t for t in v if now - t < 600]]:
+            _preflight_ip.pop(k, None)            # expire drained ip buckets
+        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
+        if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
+            limited = True
+        elif now - _preflight_last.get(netid, 0) < 30:
+            # cooldown: identical response to a fresh start — no per-netid
+            # discriminator leaks to an unauthenticated caller (audit run-1 #14)
+            return {"ok": True}
+        elif _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+            busy = True
+        else:
+            _preflight_ip[ip] = hits
+    if limited:
         log_with_kv(log_auth, logging.WARNING, "preflight ip limited", netid=netid, ip=ip)
         return {"ok": False, "error": "rate"}, 429
-    if now - _preflight_last.get(netid, 0) < 30:
-        return {"ok": True, "cooldown": True}
-    if _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+    if busy:
         log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
-    if not _check_portal_budget(ip):  # audit: per-IP caps don't bind IP rotation — aggregate egress cap does (unauth path: floor + per-IP share apply)
+    if not _check_portal_budget(ip):  # audit: aggregate egress cap (takes _rate_lock — must run outside the block above)
         return {"ok": False, "error": "rate"}, 429
-    _preflight_ip[ip] = hits + [now]
-    _preflight_last[netid] = now
+    with _rate_lock:  # atomic charge, re-validated — closes the admission race
+        if now - _preflight_last.get(netid, 0) < 30:
+            return {"ok": True}
+        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
+        if len(hits) >= 10:
+            return {"ok": False, "error": "rate"}, 429
+        _preflight_ip[ip] = hits + [now]
+        _preflight_last[netid] = now
     threading.Thread(target=_run_preflight, args=(netid,), daemon=True,
                      name="srm-preflight").start()
     log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
