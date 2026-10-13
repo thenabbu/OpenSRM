@@ -2431,29 +2431,51 @@ def api_feedback_fill():
     cookies = _load_session(netid)
     if not cookies:
         return {"ok": False, "error": "portal session expired — sync first"}, 400
-    from . import http_scraper
-    t0 = time.monotonic()
+    # audit run-1 (#3): this path reaches the portal like every other — it used
+    # to run with ZERO gates and no scrape lock (92 portal requests fired while
+    # a sync held the lock, budget untouched). Same free gates first, budget
+    # last; the lock is held for the whole submit so fills serialize against
+    # in-flight syncs. Fill is bounded by budget+cooldown+lock; the per-netid
+    # sync quota stays reserved for actual syncs (no charge here).
+    if _portal_cooldown_remaining() > 0:
+        return {"ok": False,
+                "error": "SRM portal temporarily rate-limiting our server — try again in a few minutes."}, 429
+    if not _check_rate(netid):
+        return {"ok": False,
+                "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}, 429
+    if not _scrape_lock.acquire(blocking=False):
+        return {"ok": False, "error": "Sync in progress — try again in about a minute."}, 503
     try:
-        res = http_scraper.fill_feedback(netid, plan, cookies)
-    except http_scraper.HttpScraperError as e:
-        # full detail goes to the log + telemetry only: exception text must
-        # never reach the response body (CWE-209, CodeQL
-        # py/stack-trace-exposure) — it can embed nested exception reprs.
-        log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
-        _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
-        return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
-    if "error" in res:
-        # fill_feedback's own portal-state refusal: a literal it built itself,
-        # so it is safe to hand to the student verbatim.
-        log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
-        _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
-        return {"ok": False, "error": res["error"]}, 502
-    ms = int((time.monotonic() - t0) * 1000)
-    log_with_kv(log_portal, logging.INFO, "feedback fill done",
-                netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
-                failed=len(res.get("failed", [])), total_ms=ms)
-    _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
-    return {"ok": True, **res}
+        if not _check_portal_budget(_client_ip(), authorized=True):
+            return {"ok": False,
+                    "error": "Too many portal requests from the server — try again in 10 minutes."}, 429
+        from . import http_scraper
+        t0 = time.monotonic()
+        try:
+            res = http_scraper.fill_feedback(netid, plan, cookies)
+        except http_scraper.HttpScraperError as e:
+            # full detail goes to the log + telemetry only: exception text must
+            # never reach the response body (CWE-209, CodeQL
+            # py/stack-trace-exposure) — it can embed nested exception reprs.
+            # audit run-1 (#17): reachable only from pre-loop failures now —
+            # mid-loop failures return partial res via the success path below.
+            log_with_kv(log_portal, logging.WARNING, "feedback fill error", netid=netid, error=str(e)[:80])
+            _track("feedback_fill_fail", detail=str(e)[:60], user=netid)
+            return {"ok": False, "error": "feedback submission failed — nothing was submitted"}, 502
+        if "error" in res:
+            # fill_feedback's own portal-state refusal: a literal it built
+            # itself, so it is safe to hand to the student verbatim.
+            log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
+            _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+            return {"ok": False, "error": res["error"]}, 502
+        ms = int((time.monotonic() - t0) * 1000)
+        log_with_kv(log_portal, logging.INFO, "feedback fill done",
+                    netid=netid, filled=len(res.get("filled", [])), already=len(res.get("already", [])),
+                    failed=len(res.get("failed", [])), total_ms=ms)
+        _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
+        return {"ok": True, **res}
+    finally:
+        _scrape_lock.release()
 
 def _fmt_score(v):
     """Minimal decimals: 11.7 -> '11.7', 5 -> '5' (trailing zeroes stripped —

@@ -617,7 +617,16 @@ def fill_feedback(netid, plan, cookies_json):
             continue
         q = "&" + urllib.parse.urlencode(dict(subjectId=sid, forWhat="1", functionId="1",
                                               staffid="0", **common))
-        _u, inner = _fb_post(opener, base, xheaders, q)
+        try:
+            _u, inner = _fb_post(opener, base, xheaders, q)
+        except HttpScraperError as e:
+            # audit run-1 (#17): rows already submitted must survive a later
+            # row's transport failure — record + STOP so the caller reports
+            # the true end state instead of "nothing was submitted"
+            log.warning("feedback fill mid-loop abort netid=%s row=%s err=%s",
+                        netid, label[:40], str(e)[:80])
+            res["failed"].append([label, "portal error after earlier rows were submitted — re-run to see what is already registered"])
+            break
         if _fb_registered(inner):
             res["already"].append(label)
             time.sleep(0.7)
@@ -635,7 +644,13 @@ def fill_feedback(netid, plan, cookies_json):
             subjectId=sid, forWhat="2", staffid=staff_id,
             hiddenQuestionId=qids, hiddenAnswerId=ans,
             commentTextArea=comment[:250], **common))
-        _u, resp = _fb_post(opener, base, xheaders, sub)
+        try:
+            _u, resp = _fb_post(opener, base, xheaders, sub)
+        except HttpScraperError as e:
+            log.warning("feedback fill mid-loop abort netid=%s row=%s err=%s",
+                        netid, label[:40], str(e)[:80])
+            res["failed"].append([label, "portal error after earlier rows were submitted — re-run to see what is already registered"])
+            break
         if _fb_registered(resp):
             res["filled"].append(label)
             log.info("feedback submitted netid=%s subject=%s staff=%s", netid, name[:40], staff_id)
