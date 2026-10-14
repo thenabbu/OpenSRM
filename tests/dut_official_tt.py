@@ -39,9 +39,11 @@ _cc.execute("UPDATE users SET attendance_json=? WHERE netid='zz9999'",
 _cc.commit(); _cc.close()
 token = seed_mod.mint_token()
 
-GUNICORN = "/opt/data/opensrm-repo/.venv/bin/gunicorn"
+# gunicorn from the SAME venv as the python running this suite (CI has no
+# /opt/data checkout); GUNICORN env var overrides for exotic setups.
+GUNICORN = os.environ.get("GUNICORN") or os.path.join(os.path.dirname(sys.executable), "gunicorn")
 if not os.path.isfile(GUNICORN):
-    raise SystemExit(f"FAIL[guard]: missing {GUNICORN} (an OpenSRM checkout .venv)")
+    raise SystemExit(f"FAIL[guard]: missing {GUNICORN} (run this suite with the repo .venv's python)")
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
 srv = subprocess.Popen(
     [GUNICORN, "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{port}",
@@ -58,7 +60,10 @@ seed_mod.require_own_server(f"http://127.0.0.1:{port}")
 
 from playwright.sync_api import sync_playwright
 
-OUT = Path("/opt/data/cache/scratch/tt-dut"); OUT.mkdir(exist_ok=True)
+# screenshots land beside the suite (worktree-local, exists everywhere);
+# CI uploads them as artifacts, dev keeps them under the worktree
+cd = os.environ.get("DUT_SHOT_DIR") or os.path.join(REPO, "tests", ".shots-tt-dut")
+OUT = Path(cd); OUT.mkdir(parents=True, exist_ok=True)
 fails = []
 
 
