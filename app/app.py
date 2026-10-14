@@ -2904,23 +2904,33 @@ def login():
     if get_current_user(): return redirect("/")
     return render_template("login.html", version=APP_VERSION)
 
-def _merge_fetch_result(existing, res):
+def _merge_fetch_result(existing, res, netid=None):
     """preserve-if-empty merge shared by /api/login and /api/refresh (audit B6).
 
     An absent/empty fetch key must never clobber stored data: parse failures
     return marks=[] / personal={} with ok=True. The two routes had separate
     copies of this contract and drifted — refresh was missing the subjects
     preserve, so a hot-only refresh wiped stored subjects_json on the exact
-    marks-page failure that preserved marks_json. One copy now.
+    marks-page failure that preserved marks_json (R1). One copy now.
     `existing` = current users row (dict row, or None on first fetch).
     Returns (personal_json, marks_json, subjects_json, exams_json,
-    faculty_json, exam_events, attendance_json). attendance_json follows the
-    same absent/empty-equals-preserve contract (audit run-1), with daily_absent
-    merged per month. """
+    faculty_json, fb_open, exam_events, attendance_json). attendance_json follows
+    the same absent/empty-equals-preserve contract (audit run-1), with daily_absent
+    merged per month. Any column kept because the fresh payload was empty/absent
+    is logged once as `preserve kept stored data netid=… columns=…` (INFO) so
+    keeps are visible in opensrm.auth instead of silent.
+    """
+    preserved = []  # columns kept from `existing` because fresh was empty/absent
+
+    def _pres(col):
+        if col not in preserved:
+            preserved.append(col)
+
     def _col(key, col):
         if res.get(key):
             return json.dumps(res[key])
         if existing and existing[col]:
+            _pres(col)
             return existing[col]   # transition events read PRE-write rows
         return json.dumps({"personal": {}, "subjects": {}}[key])
     personal_json = _col("personal", "personal_details_json")
@@ -2944,11 +2954,15 @@ def _merge_fetch_result(existing, res):
             for f in ("courses", "monthly", "period"):
                 if not att.get(f) and stored_att.get(f):
                     att[f] = stored_att[f]
+                    _pres("attendance_json")
             fresh_daily = att.get("daily_absent") or {}
             if stored_att.get("daily_absent") or fresh_daily:
                 att["daily_absent"] = {**stored_att.get("daily_absent", {}), **fresh_daily}
+            if stored_att.get("daily_absent") and not fresh_daily:
+                _pres("attendance_json")
         attendance_json = json.dumps(att)
     elif existing and "attendance_json" in existing.keys() and existing["attendance_json"]:
+        _pres("attendance_json")
         attendance_json = existing["attendance_json"]   # key absent = preserve
     else:
         attendance_json = json.dumps({"courses": [], "monthly": [], "period": None, "daily_absent": {}})
@@ -2959,6 +2973,7 @@ def _merge_fetch_result(existing, res):
     if res.get("marks"):
         marks_json = json.dumps(res["marks"])
     elif existing and existing["marks_json"]:
+        _pres("marks_json")
         marks_json = existing["marks_json"]
         try:
             stored = json.loads(marks_json)
@@ -2978,12 +2993,16 @@ def _merge_fetch_result(existing, res):
                                    res["exams"])
     else:
         exams_json = (existing["exam_schedule_json"] if existing and existing["exam_schedule_json"] else "[]")
+        if existing and existing["exam_schedule_json"]:
+            _pres("exam_schedule_json")
         exam_events = []
     # faculty map: key absent (window closed / harvest failed) -> preserve stored
     if "faculty" in res:
         faculty_json = json.dumps(res["faculty"])
     else:
         faculty_json = (existing["faculty_map_json"] if existing and existing["faculty_map_json"] else "{}")
+        if existing and existing["faculty_map_json"]:
+            _pres("faculty_map_json")
     # fb_open (feedback window availability): same preserve contract — only a
     # cold sync that actually classified it (1 open / 0 Service closed) writes;
     # hot syncs and unknown failures keep the stored flag. Absent row/column
@@ -2999,6 +3018,11 @@ def _merge_fetch_result(existing, res):
             except (IndexError, KeyError):
                 v = None
             fb_open = v if v is not None else 1
+    if preserved and netid:
+        # visibility: a keep because the fresh payload was empty is otherwise
+        # silent — the subjects wipe (R1) shipped with no trace in the logs
+        log_with_kv(log_auth, logging.INFO, "preserve kept stored data",
+                    netid=netid, columns=",".join(preserved))
     return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events, attendance_json
 
 
@@ -3058,7 +3082,7 @@ def api_login():
     # (single shared contract — see _merge_fetch_result)
     existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res, netid=netid)
     # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
     c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
               "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
@@ -3113,7 +3137,7 @@ def api_refresh():
     # Hot/cold + audit B6: same single preserve contract as login
     row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events, attendance_json) = _merge_fetch_result(row2, res)
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(row2, res, netid=netid)
     c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
               # audit run-1: attendance goes through the preserve merge (was
               # json.dumps(res["data"]) — wholesale wipe on partial responses);

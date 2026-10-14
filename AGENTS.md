@@ -41,25 +41,25 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 The trailing `# [runner]` column says which CI job runs that suite — `.github/workflows/tests.yml` runs every `[unit]` and `[e2e]` row on each PR and each push to `main`, so a red suite blocks the merge and blocks the `:latest` publish. `[none]` = local only, never CI (`guide_server.py` performs 7 real portal logins per run; the portal caps 10/hour per IP).
 
 ```bash
-.venv/bin/python tests/verify76.py        # [unit] 72/72 static (findings, docs, pins, versions)
-.venv/bin/python tests/test_exams.py      # [unit] 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
-.venv/bin/python tests/test_exams_view.py # [unit] dashboard card view model (stamps, labels)
-.venv/bin/python tests/test_tt_history.py # [unit] 18/18 (timetable edit log + break-divider fix + location preservation)
-.venv/bin/python tests/test_tt_hero.py    # [unit] 3/3 (the NOW-hero keeps the slot's attendance join `_att` across the dict hop; a missing `_att` is tolerated) — no server
+.venv/bin/python tests/verify76.py  # [unit] 72/72 static (findings, docs, pins, versions)
+.venv/bin/python tests/test_exams.py  # [unit] 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
+.venv/bin/python tests/test_exams_view.py  # [unit] dashboard card view model (stamps, labels)
+.venv/bin/python tests/test_tt_history.py  # [unit] 18/18 (timetable edit log + break-divider fix + location preservation)
+.venv/bin/python tests/test_tt_hero.py  # [unit] 3/3 (the NOW-hero keeps the slot's attendance join `_att` across the dict hop; a missing `_att` is tolerated) — no server
 .venv/bin/python tests/test_relogin_save.py  # [unit] 9/9 (mid-scrape relogin persists fresh session + resets portal fail state; portal_sessions encrypted at rest + legacy plaintext row; stubbed fetch, no network)
 .venv/bin/python tests/test_official_tt.py  # [unit] 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
-.venv/bin/python tests/test_sessions.py   # [unit] 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
+.venv/bin/python tests/test_sessions.py  # [unit] 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
 .venv/bin/python tests/test_login_reject.py  # [unit] rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) (offline)
-.venv/bin/python tests/test_fault_handling.py  # [unit] 11/11 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, attendance preserve on partial fetch, S25 refetch, errorhandler)
+.venv/bin/python tests/test_fault_handling.py  # [unit] 12/12 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, refresh subjects preserve R1 + preserve-visibility log line, attendance preserve on partial fetch, S25 refetch, errorhandler)
 .venv/bin/python tests/test_logging_telemetry.py  # [unit] 10/10 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough, control-char scrub in log+ntfy, non-ASCII X-Push-Tick -> 401 not 500)
-.venv/bin/python tests/test_marks_view.py # [unit] marks view model (fmt, IE derivation/conversion, class key)
-.venv/bin/python tests/test_layout.py     # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
+.venv/bin/python tests/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
+.venv/bin/python tests/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
 .venv/bin/python tests/test_attendance_view.py  # [unit] 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
-.venv/bin/python tests/test_att_dut.py    # [e2e] 15/15 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps at 393 AND 320px incl. pole-band boundary seeds, merged absences card + junk-month chip-only degrade, Estimates gate, CL row listed in both views)
-.venv/bin/python tests/test_feedback.py   # [unit] 71/71 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration + v16 fb_open, endpoint 401, CWE-209 response body, FeedbackWindowClosed vs youLogin classification, _fb_cold state machine (map/closed/degraded), merge contract fb_open learned/preserve/default, fill 409 on closed window, dashboard render gate CTA+modal archived)
+.venv/bin/python tests/test_att_dut.py  # [e2e] 15/15 attendance tab DUT (view toggle + persistence, table columns/colors, label sandwich order, zero overlaps at 393 AND 320px incl. pole-band boundary seeds, merged absences card + junk-month chip-only degrade, Estimates gate, CL row listed in both views)
+.venv/bin/python tests/test_feedback.py  # [unit] 71/71 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration + v16 fb_open, endpoint 401, CWE-209 response body, FeedbackWindowClosed vs youLogin classification, _fb_cold state machine (map/closed/degraded), merge contract fb_open learned/preserve/default, fill 409 on closed window, dashboard render gate CTA+modal archived)
 .venv/bin/python tests/test_feedback_dut.py  # [e2e] 31/31 DUT (Teachers card + CTA → opt-in explainer modal with BOTH teachers listed, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
 .venv/bin/python tests/test_feedback_contrast.py  # [e2e] 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
-.venv/bin/python tests/test_dash_fit.py   # [e2e] 23/23 dashboard fit + feedback archive DUT (desktop: no page scrollbar, grid == 100dvh−94px chrome (navbar 64 + uniform 15px edge), uniform 15px card-column edge on BOTH sides scrollbar-strip-compensated + navbar-aligned, rows auto/1fr with the assess card's LAYOUT `cap` max-height — 65%-of-grid ceiling stress-pinned, uncapped auto crushed row 2 to 2px under 14-exam load at 1024×768, %-rows rejected (maximize-tracks stretches them) —, zero card-body residue at 1920×944/1366×768 (widgets absorb the cell), notices ≤320; fb_open 1→0→1 render toggle; mobile: page still scrolls, no h-overflow) — self-boots
+.venv/bin/python tests/test_dash_fit.py  # [e2e] 23/23 dashboard fit + feedback archive DUT (desktop: no page scrollbar, grid == 100dvh−94px chrome (navbar 64 + uniform 15px edge), uniform 15px card-column edge on BOTH sides scrollbar-strip-compensated + navbar-aligned, rows auto/1fr with the assess card's LAYOUT `cap` max-height — 65%-of-grid ceiling stress-pinned, uncapped auto crushed row 2 to 2px under 14-exam load at 1024×768, %-rows rejected (maximize-tracks stretches them) —, zero card-body residue at 1920×944/1366×768 (widgets absorb the cell), notices ≤320; fb_open 1→0→1 render toggle; mobile: page still scrolls, no h-overflow) — self-boots
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py  # [unit] 33/33 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
@@ -98,7 +98,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18179 app.app:app &
-DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # 23/23 Settings tab (row list + logout placement, collapsed personal row, identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
+DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # [e2e] 23/23 Settings tab (row list + logout placement, collapsed personal row, identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide
