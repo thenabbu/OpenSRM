@@ -65,12 +65,7 @@ class NtfyHandler(logging.Handler):
     def __init__(self, url):
         super().__init__(level=logging.WARNING)
         self.url = url
-        # time.monotonic() counts from HOST BOOT, so 0.0 here would swallow the
-        # first alert on any host younger than _MIN_INTERVAL (fresh CI runner
-        # VMs boot < 60s before tests run — test_logging_telemetry failed on
-        # exactly that). Arm with the current clock instead: the first alert
-        # is always sent.
-        self._last = time.monotonic() - self._MIN_INTERVAL
+        self._last = 0.0  # RED-TEST: the swallowed-first-alert bug, temporarily back
 
     def emit(self, record):
         try:
