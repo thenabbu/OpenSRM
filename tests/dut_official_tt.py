@@ -60,7 +60,10 @@ seed_mod.require_own_server(f"http://127.0.0.1:{port}")
 
 from playwright.sync_api import sync_playwright
 
-OUT = Path("/opt/data/cache/scratch/tt-dut"); OUT.mkdir(exist_ok=True)
+# screenshots land beside the suite (worktree-local, exists everywhere);
+# CI uploads them as artifacts, dev keeps them under the worktree
+cd = os.environ.get("DUT_SHOT_DIR") or os.path.join(REPO, "tests", ".shots-tt-dut")
+OUT = Path(cd); OUT.mkdir(parents=True, exist_ok=True)
 fails = []
 
 
