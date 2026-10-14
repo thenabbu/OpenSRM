@@ -1,39 +1,46 @@
 # 2026-10-14 — `/api/refresh` subjects wipe (R1): regression pin, preserve visibility, prod impact
 
 Follow-up to the2026-10-09 code review (`2026-10-09-pr25-32-review.md` §3),
-opened by a re-check request whose described defect state turned out to match
-the **pre-fix** code, not current main. This record pins the behaviour with a
-regression test, makes preserves visible in the logs, and answers "did this
-ever bite prod" with snapshot evidence.
+opened by a re-check request whose described defect state matched main as it
+was between `e8c8867` (2026-10-09) and `d24f760` (2026-10-13) — by the time of
+this record the write-path fix had already landed. This record pins the
+behaviour with a regression test, makes preserves visible in the logs, and
+answers "did this ever bite prod" with snapshot evidence.
 
 ## Symptom
 
 A hot-only `POST /api/refresh` whose marks-page parse failed returned
 `subjects={}` (`subject_map` comes from `parse_marks`) and wrote it straight
 over `users.subjects_json` — blanking stored subjects on exactly the failure
-that preserved `marks_json`. Pre-fix refresh code (`e8c8867^`, ≤ v1.15.x):
+that preserved `marks_json`. Refresh's UPDATE carried this literal from
+before the shared merge until `d24f760`:
 
 ```python
 # api_refresh UPDATE tuple, 5th value — unconditional, no preserve
 marks_json, json.dumps(res.get("subjects", {})), exams_json, faculty_json, netid))
 ```
 
-while `api_login` preserved inline
-(`if not res.get("subjects") and existing["subjects_json"]: subjects_json = ...`).
-Two hand-copies of the preserve contract; one drifted.
+even after `e8c8867` made the route call `_merge_fetch_result()` — the merged
+`subjects_json` was computed and then discarded at the write. `api_login`
+used the merged value (inline preserve before `e8c8867`, merged after), so
+only refresh wiped.
 
 ## Root cause
 
-Duplicated merge logic between the two write routes (review finding §3). The
-literal appeared twice on `e8c8867^` (`git show e8c8867^:app/app.py | grep -c`
-= 2) and zero times on current main.
+Duplicated merge logic between the two write routes (review finding §3), then
+an incomplete unification: `e8c8867` created `_merge_fetch_result()` and
+switched both call sites to it, but refresh's UPDATE tuple still carried the
+hand-written literal. Literal occurrences in `app/app.py`:
+**2** on `e8c8867^` → **1** on `e8c8867` (the refresh UPDATE, line 2432) →
+**0** since `d24f760`.
 
 ## Fix
 
-- **Write path**: shipped 2026-10-09 in `e8c8867` — both routes now share
-  `_merge_fetch_result()`; released in v1.16.0 (tagged 2026-10-11); prod runs
-  1.20.0. The re-check request's VERIFY-against-main on 2026-10-14 confirmed
-  `api_refresh` UPDATE value #5 is the merged `subjects_json`.
+- **Write path**: shipped 2026-10-13 in `d24f760` (PR #47, whose commit
+  message names it: *"Also fixes api_refresh discarding its merged
+  subjects_json (R1)"*) — refresh's UPDATE writes the merged
+  `subjects_json`; `e8c8867` (2026-10-09) had created the shared merge.
+  Both are in prod's 1.20.0.
 - **Still missing on 2026-10-14, added here**:
   1. No test pinned refresh subjects preservation (the suite covered marks and
      attendance only) — `tests/test_fault_handling.py::t_refresh_preserves_subjects`
@@ -74,7 +81,8 @@ Accounts grew8→9 and non-empty-subjects7→8 over the window (one new account,
 no losses). Durable log (`opensrm.log*`, retained from 2026-10-08): 126
 successful refreshes (44/13/5/15/18/22/9 per day) — consistent with zero
 observed loss. Limits: logs before 2026-10-08 are rotated away, snapshots
-before 2026-09-28 don't exist, and the v1.16.0 deploy time isn't recorded in
+before 2026-09-28 don't exist, and the deploy time of the fix's release
+(v1.20.0, first tag containing `d24f760`) isn't recorded in
 the log, so pre-fix per-day exposure is an upper bound, not an attribution.
 
 ## Standing rule
