@@ -1975,6 +1975,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.20.1", "date": "14 Oct", "title": "Refresh keeps your subjects",
+     "body": "A refresh whose marks page failed to parse used to blank the "
+             "subjects already stored on your account. Stored subjects, marks, "
+             "exam schedule, faculty and attendance are now kept whenever the "
+             "fresh value comes back empty, and every kept value is logged "
+             "instead of being written silently."},
     {"ver": "v1.20.0", "date": "14 Oct", "title": "Dashboard layout fixes",
      "body": "Uniform 15px spacing everywhere (no more 30px gaps or mystery "
              "19px right gutter); cards no longer scroll when their widgets "
