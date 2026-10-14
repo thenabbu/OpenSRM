@@ -2,7 +2,7 @@
 has a perceivable tint (daisyUI .btn-active is a no-op on this dark surface),
 the sync caption is a relative age to the right of the refresh button and
 disappears when fresh, the mobile bar shows no version badge, the wordmark
-carries a 4px minor radius, and the page gutter holds 8px mobile / 16px desktop
+carries a 4px minor radius, and the page gutter holds 8px mobile / 15px desktop
 with the column flush to the navbar content edge. Server under test: AGENTS.md."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -207,9 +207,11 @@ with sync_playwright() as p:
           cycle['gutter'] == 'stable' and len(set(cycle['widths'])) == 1,
           json.dumps(cycle))
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
-    # DESIGN.md §5: gutter steps back to 16px beside the px-4 desktop navbar
-    check('desktop: page gutter = 16px (lg column, matches navbar px-4)',
-          d['gutter'] == 16, f"gutter={d['gutter']}px")
+    # DESIGN.md §5: uniform 15px edge — main and navbar share .edge-x, whose
+    # left inset = max(15px, reserved scrollbar strip) (headless overlay
+    # scrollbars reserve 0 -> 15px; see dashboard.html style block)
+    check('desktop: page gutter = 15px (lg column, matches navbar edge-x)',
+          d['gutter'] == 15, f"gutter={d['gutter']}px")
     ctx.close()
 
     # ── mobile 393x851 ──────────────────────────────────────────────

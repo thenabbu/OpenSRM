@@ -90,9 +90,10 @@ check("assess/people carry `when` guards",
 # ── 2. derivations ─────────────────────────────────────────────────────────
 views = [A._course_view(x) for x in COURSES]
 rows = A._budget_rows(views)
-check("budget rows: risk-first order + dropped empty",
-      rows == [("21CSC201J", "3", 2), ("21LEM201T", "0", 1),
-               ("21CSC202J", "attend 3", 0)], str(rows))
+check("budget rows: risk-first order + dropped empty + names + signed margin",
+      rows == [("Data Structures And Algorithms", "+3", 2),
+               ("Professional Ethics", "0", 1),
+               ("Discrete Structures", "-3", 0)], str(rows))
 tg = A._teacher_groups(A._faculty_view(FACULTY, []))
 staff0 = {s["name"]: s for s in tg[0]["staff"]}
 check("teacher initials + mode parsed (honorific stripped)",
