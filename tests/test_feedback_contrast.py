@@ -42,7 +42,7 @@ now = int(time.time())
 c = A.db()
 c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json,
              attendance_json, faculty_map_json, last_fetch) VALUES(?,?,?,?,?,?)""",
-          ("ng2776", "x", json.dumps(PERSONAL),
+          ("zz9999", "x", json.dumps(PERSONAL),
            json.dumps({"courses": COURSES, "monthly": [], "period": None, "daily_absent": {}}),
            json.dumps(FACULTY), now))
 c.commit(); c.close()
@@ -130,7 +130,7 @@ JS = """
 with sync_playwright() as pw:
     browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
     ctx = browser.new_context(viewport={"width": 1280, "height": 900})
-    ctx.add_cookies([{"name": "srm_session", "value": make_session_token("ng2776"), "url": BASE}])
+    ctx.add_cookies([{"name": "srm_session", "value": make_session_token("zz9999"), "url": BASE}])
     page = ctx.new_page()
     page.goto(BASE + "/", wait_until="networkidle")
     pairs = page.evaluate(JS)

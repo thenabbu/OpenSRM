@@ -1,3 +1,5 @@
+> **Identifiers were redacted on 2026-10-14.** Real NetIDs in this archive were replaced with fabricated ones; nothing else changed.
+
 # Login-rejection incident — observed 2026-09-30, recorded 2026-10-03
 
 > **Status: FIXED and deployed.** PR #16 (fixes) + PR #18 (v1.5.0 trio), both merged;
@@ -43,7 +45,7 @@ consumed 1 of the account's 3 syncs per 10 minutes while touching the portal zer
 
 Evidence: red run against the old code — 3 × `Sync in progress` → `counted=3` → the 4th
 call returned 429 for an account that had **never synced**. Matches prod exactly: busy at
-16:45:10, busy at 16:45:38 (during ng2776's sync, 16:45:32–16:45:39), one success at
+16:45:10, busy at 16:45:38 (during zz9999's sync, 16:45:32–16:45:39), one success at
 16:47:12 — all inside the 600 s window → 429 at 16:53:24 after a single real sync.
 
 The 429 also promised a flat "10 minutes" when the sliding window had ~2 minutes left.
@@ -89,5 +91,5 @@ The 429 also promised a flat "10 minutes" when the sliding window had ~2 minutes
 
 - The portal-budget message still says a flat "10 minutes" — its window genuinely is
   10 minutes and `guide_server` pins that literal.
-- The portal-side account lock on `sg2935` (10 burned submissions) is outside this
+- The portal-side account lock on `zz9805` (10 burned submissions) is outside this
   codebase; the student should check access to the real SRM portal.

@@ -86,7 +86,7 @@ chk('M23', f"versions consistent (pyproject=lock=VERSION={_pyv})",
 chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.github/workflows/build.yml') and 'uv lock --check' in rd('.github/workflows/lint.yml'))
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
-chk('M26', "app.py: no ng2776 references", not grep_repo('ng2776', 'app'))
+chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))
 _nt_region = region('app/app.py', 'NOTICES = [', 'def _today_ticker')
 _nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
 chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",

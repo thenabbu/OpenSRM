@@ -21,7 +21,7 @@ import app.app as A
 
 PERSONAL_A = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech]",
               "Batch": "2025", "Semester": "III SEMESTER", "Section": "A",
-              "Student Name": "Navya Gupta"}
+              "Student Name": "Test Student"}
 PERSONAL_A2 = dict(PERSONAL_A, **{"Student Name": "Class Mate"})
 PERSONAL_B = dict(PERSONAL_A, **{"Section": "B", "Student Name": "Other Section"})
 
@@ -34,20 +34,20 @@ def check(name, ok, detail=""):
 import json
 import time
 c = A.db()
-for netid, pers in (("ng2776", PERSONAL_A), ("aa1111", PERSONAL_A2), ("bb2222", PERSONAL_B)):
+for netid, pers in (("zz9999", PERSONAL_A), ("aa1111", PERSONAL_A2), ("bb2222", PERSONAL_B)):
     c.execute("INSERT OR REPLACE INTO users(netid, password, personal_details_json, last_fetch) "
               "VALUES(?, 'unused-by-tests', ?, ?)", (netid, json.dumps(pers), int(time.time())))
 gk = A._group_key(PERSONAL_A)
 c.commit(); c.close()
 
 cl = A.app.test_client()
-tok = {n: A.make_session_token(n) for n in ("ng2776", "aa1111", "bb2222")}
+tok = {n: A.make_session_token(n) for n in ("zz9999", "aa1111", "bb2222")}
 
 # 1) logged out -> 401
 check("history 401 when logged out", cl.get("/api/timetable/history").status_code == 401)
 
-# 2) first save as ng2776 logs one entry
-cl.set_cookie("srm_session", tok["ng2776"])
+# 2) first save as zz9999 logs one entry
+cl.set_cookie("srm_session", tok["zz9999"])
 SLOTS = {"Monday-1": {"code": "21CSC101T", "name": "DATA STRUCTURES"},
          "Tuesday-6": {"code": "21MAB206T", "name": "NUMERICAL METHODS"}}
 r = cl.post("/api/timetable", json={"slots": SLOTS, "custom_subjects": []})
@@ -60,7 +60,7 @@ ent = e.get("entries") or []
 check("classmate sees 1 entry", len(ent) == 1, str(e))
 if ent:
     ch = ent[0]["changes"]
-    check("editor recorded", ent[0]["netid"] == "ng2776" and ent[0]["name"] == "Navya Gupta", str(ent[0]))
+    check("editor recorded", ent[0]["netid"] == "zz9999" and ent[0]["name"] == "Test Student", str(ent[0]))
     check("2 changes, Monday before Tuesday",
           len(ch) == 2 and ch[0]["day"] == "Monday" and ch[0]["period"] == 1
           and ch[1]["day"] == "Tuesday", str(ch))
@@ -97,7 +97,7 @@ check("other section isolated", e4.get("ok") is True and e4.get("entries") == []
 
 # 6b) location preservation (fix 2026-10-05): the editor has no location
 # field, so every save used to wipe `location` for the whole group.
-cl.set_cookie("srm_session", tok["ng2776"])
+cl.set_cookie("srm_session", tok["zz9999"])
 c = A.db()
 c.execute("UPDATE timetable_slots SET location='Lab C-4/5' "
           "WHERE group_id=(SELECT id FROM timetable_groups WHERE group_key=?) "

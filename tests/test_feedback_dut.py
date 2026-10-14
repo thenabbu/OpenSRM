@@ -61,12 +61,12 @@ def seed():
     c = A.db()
     c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json,
                  attendance_json, faculty_map_json, last_fetch) VALUES(?,?,?,?,?,?)""",
-              ("ng2776", "unused-by-tests", json.dumps(PERSONAL),
+              ("zz9999", "unused-by-tests", json.dumps(PERSONAL),
                json.dumps({"courses": COURSES, "monthly": [], "period": None, "daily_absent": {}}),
                json.dumps(FACULTY), now))
     c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json,
                  attendance_json, faculty_map_json, last_fetch) VALUES(?,?,?,?,?,?)""",
-              ("zz9999", "unused-by-tests", json.dumps(PERSONAL),
+              ("zz9990", "unused-by-tests", json.dumps(PERSONAL),
                json.dumps({"courses": COURSES, "monthly": [], "period": None, "daily_absent": {}}),
                "{}", now))
     c.commit(); c.close()
@@ -76,8 +76,8 @@ def run():
     from playwright.sync_api import sync_playwright
 
     from app.app import make_session_token
-    tok = make_session_token("ng2776")
-    tok2 = make_session_token("zz9999")
+    tok = make_session_token("zz9999")
+    tok2 = make_session_token("zz9990")
     os.makedirs("/tmp/fb-dut-shots", exist_ok=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, executable_path=None,

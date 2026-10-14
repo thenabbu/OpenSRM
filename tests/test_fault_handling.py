@@ -111,7 +111,7 @@ def t_corrupt_rows():
     c = A.db()
     c.execute("UPDATE users SET attendance_json='not json', "
               "personal_details_json='{broken', marks_json='[1,' "
-              "WHERE netid='ng2776'")
+              "WHERE netid='zz9999'")
     c.commit(); c.close()
     cl = A.app.test_client()
     cl.set_cookie("srm_session", mint_token())
@@ -133,14 +133,14 @@ STORED = [{"code": "1CSC301", "name": "Stored"}]
 def _set_stored_marks():
     seed()
     c = A.db()
-    c.execute("UPDATE users SET marks_json=? WHERE netid='ng2776'",
+    c.execute("UPDATE users SET marks_json=? WHERE netid='zz9999'",
               (json.dumps(STORED),))
     c.commit(); c.close()
 
 
 def _stored_marks():
     c = A.db()
-    row = c.execute("SELECT marks_json FROM users WHERE netid='ng2776'").fetchone()
+    row = c.execute("SELECT marks_json FROM users WHERE netid='zz9999'").fetchone()
     c.close()
     return json.loads(row[0])
 
@@ -151,7 +151,7 @@ def t_login_preserves_marks():
     A.fetch_attendance = lambda n, p, **kw: dict(FAKE_EMPTY)
     try:
         r = A.app.test_client().post("/api/login",
-                                     json={"netid": "ng2776", "password": "pw"},
+                                     json={"netid": "zz9999", "password": "pw"},
                                      content_type="application/json")
     finally:
         A.fetch_attendance = orig
@@ -168,7 +168,7 @@ def t_login_empty_overwrites_with_data():
     A.fetch_attendance = lambda n, p, **kw: dict(FAKE_NEW)
     try:
         r = A.app.test_client().post("/api/login",
-                                     json={"netid": "ng2776", "password": "pw"},
+                                     json={"netid": "zz9999", "password": "pw"},
                                      content_type="application/json")
     finally:
         A.fetch_attendance = orig
@@ -180,7 +180,7 @@ def t_login_empty_overwrites_with_data():
 def t_refresh_preserves_marks():
     _set_stored_marks()
     c = A.db()
-    c.execute("UPDATE users SET password=? WHERE netid='ng2776'",
+    c.execute("UPDATE users SET password=? WHERE netid='zz9999'",
               (A.encrypt_pw("pw"),))
     c.commit(); c.close()
     orig = A.fetch_attendance
@@ -215,14 +215,14 @@ FAKE_PARTIAL = dict(FAKE_EMPTY, data={"courses": [{"code": "1NEW999", "descripti
 def _set_stored_att():
     seed()
     c = A.db()
-    c.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+    c.execute("UPDATE users SET attendance_json=? WHERE netid='zz9999'",
               (json.dumps(STORED_ATT),))
     c.commit(); c.close()
 
 
 def _stored_att():
     c = A.db()
-    row = c.execute("SELECT attendance_json FROM users WHERE netid='ng2776'").fetchone()
+    row = c.execute("SELECT attendance_json FROM users WHERE netid='zz9999'").fetchone()
     c.close()
     return json.loads(row[0])
 
@@ -233,7 +233,7 @@ def t_login_preserves_attendance():
     A.fetch_attendance = lambda n, p, **kw: dict(FAKE_PARTIAL)
     try:
         r = A.app.test_client().post("/api/login",
-                                     json={"netid": "ng2776", "password": "pw"},
+                                     json={"netid": "zz9999", "password": "pw"},
                                      content_type="application/json")
     finally:
         A.fetch_attendance = orig
@@ -248,7 +248,7 @@ def t_login_preserves_attendance():
 def t_refresh_attendance_empty_fetch_preserves():
     _set_stored_att()
     c = A.db()
-    c.execute("UPDATE users SET password=? WHERE netid='ng2776'",
+    c.execute("UPDATE users SET password=? WHERE netid='zz9999'",
               (A.encrypt_pw("pw"),))
     c.commit(); c.close()
     orig = A.fetch_attendance

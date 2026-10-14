@@ -85,7 +85,7 @@ with sync_playwright() as p:
     client_pub = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
     from app import push_store as S
-    S.upsert_subscription('ng2776', fake_ep, b64url(client_pub), b64url(os.urandom(16)), 'e2e-stub')
+    S.upsert_subscription('zz9999', fake_ep, b64url(client_pub), b64url(os.urandom(16)), 'e2e-stub')
 
     ctx = new_ctx(p, {"width": 375, "height": 812})
     try:
@@ -136,7 +136,7 @@ with sync_playwright() as p:
     fb, sub = '', None
     for _ in range(20):
         fb = page.text_content('#push-feedback') or ''
-        sub = (S.list_subscriptions(netid='ng2776') or [{}])[0]
+        sub = (S.list_subscriptions(netid='zz9999') or [{}])[0]
         if 'Exam updates off.' in fb and not sub.get('notify_exams', 1):
             break
         time.sleep(0.5)
@@ -154,7 +154,7 @@ with sync_playwright() as p:
           str(page.text_content('#push-state')))
     page.click('#push-type-reminders'); page.click('#push-type-exams')   # restore
     for _ in range(20):
-        sub = (S.list_subscriptions(netid='ng2776') or [{}])[0]
+        sub = (S.list_subscriptions(netid='zz9999') or [{}])[0]
         if sub.get('notify_reminders') and sub.get('notify_exams'):
             break
         time.sleep(0.5)
@@ -177,7 +177,7 @@ with sync_playwright() as p:
     check("real send produced an honest outcome (dead or http error)",
           ('expired' in fb) or ('push service error' in fb), fb)
     if 'expired' in fb:
-        check("dead endpoint cleaned up server-side", S.list_subscriptions(netid='ng2776') == [], "")
+        check("dead endpoint cleaned up server-side", S.list_subscriptions(netid='zz9999') == [], "")
     check("no console errors in configured run", len(errs2) == 0, "; ".join(errs2[:2]))
     ctx.close()
 

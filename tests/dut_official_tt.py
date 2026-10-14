@@ -25,7 +25,7 @@ seed_mod.seed(with_payload=False)
 import app.app as A
 
 tt = A.parse_timetable((REPO / "tests/fixtures/timetable_form10.html").read_text())
-A._save_timetable_group("ng2776", {"personal": seed_mod.PERSONAL, "courses": [], "timetable": tt})
+A._save_timetable_group("zz9999", {"personal": seed_mod.PERSONAL, "courses": [], "timetable": tt})
 # three attendance tiers round-robined over the fixture codes → the rim shows
 # grey (comfortable) / faded yellow (zero margin) / faded red (below 75) at once
 _TIER = [(40, 40), (3, 4), (1, 4)]
@@ -34,7 +34,7 @@ _att = [{"code": c, "description": tt["legend"].get(c, ""),
          "attended": _TIER[i % 3][0], "max_hours": _TIER[i % 3][1]}
         for i, c in enumerate(_codes)]
 _cc = A.db()
-_cc.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+_cc.execute("UPDATE users SET attendance_json=? WHERE netid='zz9999'",
             (json.dumps({"courses": _att}),))
 _cc.commit(); _cc.close()
 token = seed_mod.mint_token()

@@ -15,7 +15,7 @@ TOK = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18178')
 require_own_server(BASE)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NETID = 'ng2776'
+NETID = 'zz9999'
 VERSION = open(os.path.join(REPO, 'VERSION')).read().strip()
 results = []
 
