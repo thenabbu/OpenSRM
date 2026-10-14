@@ -7,6 +7,8 @@ Every check here failed (or could crash prod) on origin/main:
     500'd the dashboard on every load (B1-B4)
   * marks_json had no preserve-if-empty -> a parse failure wiped stored
     marks silently (B6)
+  * api_refresh wrote fresh subjects regardless of the merge -> a hot-only
+    refresh with a failed marks parse wiped stored subjects_json (R1)
   * http_scraper parsed the STALE body after a mid-scrape relogin (S25)
   * no @app.errorhandler existed -> unhandled exceptions left no opensrm line
 
@@ -197,6 +199,60 @@ def t_refresh_preserves_marks():
         f"empty-marks refresh must preserve stored marks flagged stale: {_stored_marks()}")
 
 
+# ── R1: refresh must never overwrite stored subjects with an empty payload ──
+# The _merge_fetch_result docstring's named regression: a hot-only refresh
+# whose marks-page parse failed returned subjects={} and blanked
+# subjects_json on the exact failure that preserved marks_json.
+STORED_SUBJ = {"1CSC301": {"name": "Stored Subject"}}
+
+
+def _set_stored_subjects():
+    seed()
+    c = A.db()
+    c.execute("UPDATE users SET subjects_json=?, password=? WHERE netid='zz9999'",
+              (json.dumps(STORED_SUBJ), A.encrypt_pw("pw")))
+    c.commit(); c.close()
+
+
+def _stored_subjects():
+    c = A.db()
+    row = c.execute("SELECT subjects_json FROM users WHERE netid='zz9999'").fetchone()
+    c.close()
+    return json.loads(row[0])
+
+
+def t_refresh_preserves_subjects():
+    _set_stored_subjects()
+    orig = A.fetch_attendance
+    A.fetch_attendance = lambda n, p, **kw: dict(FAKE_EMPTY)  # subjects={}
+    records = []
+
+    class Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r)
+
+    cap = Cap(level=logging.INFO)
+    lg = logging.getLogger("opensrm.auth")
+    lg.addHandler(cap)
+    try:
+        cl = A.app.test_client()
+        cl.set_cookie("srm_session", mint_token())
+        r = cl.post("/api/refresh")
+    finally:
+        lg.removeHandler(cap)
+        A.fetch_attendance = orig
+    assert r.status_code == 200 and r.get_json().get("ok") is True, r.data[:200]
+    assert _stored_subjects() == STORED_SUBJ, (
+        "empty-subjects refresh must NOT overwrite stored subjects_json "
+        f"(R1 wipe): got {_stored_subjects()}")
+    # the keep must be visible in opensrm.auth: netid + which columns
+    kv_hits = [getattr(x, "kv", {}) for x in records
+               if x.getMessage() == "preserve kept stored data"]
+    assert any(h.get("netid") == "zz9999" and "subjects_json" in str(h.get("columns", ""))
+               for h in kv_hits), (
+        f"preserve must log netid+columns to opensrm.auth, got: {kv_hits}")
+
+
 # ── audit run-1: attendance_json gets the same preserve contract (B6 twin) ──
 STORED_ATT = {"courses": [{"code": "1CSC301", "description": "Stored",
                            "max_hours": "40", "attended": "30", "absent": "10"}],
@@ -273,12 +329,13 @@ for name, fn in [
     ("login preserves stored marks on empty fetch (B6)", t_login_preserves_marks),
     ("login overwrites stored marks on real data (B6)", t_login_empty_overwrites_with_data),
     ("refresh preserves stored marks on empty fetch (B6)", t_refresh_preserves_marks),
+    ("refresh preserves stored subjects on empty fetch (B6/R1)", t_refresh_preserves_subjects),
     ("login partial attendance keeps monthly/period/daily (run-1)", t_login_preserves_attendance),
     ("refresh absent data key preserves stored attendance (run-1)", t_refresh_attendance_empty_fetch_preserves),
 ]:
     check(name, fn)
 
-total = 11
+total = 12
 print(f"\n{total - len(FAILS)}/{total} passed")
 if FAILS:
     print("FAILED:", ", ".join(FAILS))
