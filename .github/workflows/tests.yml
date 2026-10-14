@@ -139,7 +139,11 @@ jobs:
           key: pw-${{ runner.os }}-${{ hashFiles('uv.lock') }}
 
       # Headless shell only — these suites never need a headed browser.
+      # Same PLAYWRIGHT_BROWSERS_PATH as the run steps below: the browser must
+      # land where the suites look for it.
       - name: Install Playwright chromium (headless shell)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: .venv/bin/playwright install --only-shell chromium
 
       # One gunicorn backs all of these; every suite asserts the listener is
