@@ -56,7 +56,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_feedback.py      # 71/71 (harvester parse, live question-id extraction, registered markers, faculty view, fb_plan per-teacher rows preview==payload + literal "none", v13 migration + v16 fb_open, endpoint 401, CWE-209 response body, FeedbackWindowClosed vs youLogin classification, _fb_cold state machine (map/closed/degraded), merge contract fb_open learned/preserve/default, fill 409 on closed window, dashboard render gate CTA+modal archived)
 .venv/bin/python tests/test_feedback_dut.py  # 31/31 DUT (Teachers card + CTA → opt-in explainer modal with BOTH teachers listed, honest no-session error + toast, negative control, overflow) — needs DATA_DIR+DUT_BASE
 .venv/bin/python tests/test_feedback_contrast.py # 8+/8+ WCAG pairs (Teachers card + explainer modal; oklch+oklab parser, decimal-alpha trap) — needs DATA_DIR+DUT_BASE
-.venv/bin/python tests/test_dash_fit.py      # 20/20 dashboard fit + feedback archive DUT (desktop: no page scrollbar, grid == 100dvh−104px chrome, rows auto/1fr with the assess card's LAYOUT `cap` max-height — 65%-of-grid ceiling stress-pinned, uncapped auto crushed row 2 to 2px under 14-exam load at 1024×768, %-rows rejected (maximize-tracks stretches them) —, zero card-body residue, notices ≤320; fb_open 1→0→1 render toggle; mobile: page still scrolls, no h-overflow) — self-boots
+.venv/bin/python tests/test_dash_fit.py      # 23/23 dashboard fit + feedback archive DUT (desktop: no page scrollbar, grid == 100dvh−94px chrome (navbar 64 + uniform 15px edge), uniform 15px card-column edge on BOTH sides scrollbar-strip-compensated + navbar-aligned, rows auto/1fr with the assess card's LAYOUT `cap` max-height — 65%-of-grid ceiling stress-pinned, uncapped auto crushed row 2 to 2px under 14-exam load at 1024×768, %-rows rejected (maximize-tracks stretches them) —, zero card-body residue at 1920×944/1366×768 (widgets absorb the cell), notices ≤320; fb_open 1→0→1 render toggle; mobile: page still scrolls, no h-overflow) — self-boots
 
 # push unit suites (no server, no network)
 .venv/bin/python tests/test_push_calc.py     # 33/33 (due window edges, blocks/rooms, tz-from-UTC, idempotency, TTL)
@@ -90,7 +90,7 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-navbar            # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18178 app.app:app &
-.venv/bin/python tests/test_navbar.py       # 19/19 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius, page gutter 8px/16px + column alignment, scrollbar-gutter reservation + navW constant across a marks round-trip)
+.venv/bin/python tests/test_navbar.py       # 19/19 (netid echo, selected-tab tint + bar geometry, sync caption, mobile badge, logo radius, page gutter 8px/15px + column alignment, scrollbar-gutter reservation + navW constant across a marks round-trip)
 kill %1
 
 export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
