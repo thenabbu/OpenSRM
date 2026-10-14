@@ -27,7 +27,7 @@ PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech
             "Batch": "2025", "Semester": "III SEMESTER", "Section": "A"}
 c = A.db()
 c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json) "
-          "VALUES('ng2776','unused-by-tests','{}',?,?)", (int(time.time()), json.dumps(PERSONAL)))
+          "VALUES('zz9999','unused-by-tests','{}',?,?)", (int(time.time()), json.dumps(PERSONAL)))
 gk = A._group_key(PERSONAL)
 c.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) VALUES(?,?,?,?,?)",
           (gk, "CSE Cloud Computing", 2025, 3, "A"))
@@ -50,14 +50,14 @@ for day, slots in grid.items():
 # faded yellow/faded red) render in BOTH phases' shots (the rim exists on main)
 TIER = [(40, 40), (3, 4), (1, 4)]
 _codes = sorted({s for slots in grid.values() for s in slots.values()})
-c.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'",
+c.execute("UPDATE users SET attendance_json=? WHERE netid='zz9999'",
           (json.dumps({"courses": [
               {"code": cd, "description": cd, "attended": TIER[i % 3][0], "max_hours": TIER[i % 3][1]}
               for i, cd in enumerate(_codes)]}),))
 c.commit(); c.close()
 from app.app import make_session_token
 
-token = make_session_token("ng2776")
+token = make_session_token("zz9999")
 print("seeded:", len(grid), "days; schema:", end=" ")
 import sqlite3
 
@@ -112,7 +112,7 @@ proc = subprocess.run(
      f"import sys,os,json;sys.path.insert(0,'{WORKTREE}');os.environ['DATA_DIR']='{DB_DIR}';"
      "import logging;logging.disable(logging.CRITICAL);import app.app as A;"
      f"tt=A.parse_timetable(open('{WORKTREE}/tests/fixtures/timetable_form10.html').read());"
-     "A._save_timetable_group('ng2776',{'personal':" + json.dumps(PERSONAL) +
+     "A._save_timetable_group('zz9999',{'personal':" + json.dumps(PERSONAL) +
      ",'courses':[],'timetable':tt});print('official rows written')"],
     capture_output=True, text=True)
 print(proc.stdout.strip().splitlines()[-1], proc.stderr[-200:] if proc.returncode else "")

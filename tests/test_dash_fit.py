@@ -74,7 +74,7 @@ FACULTY = {"DATA STRUCTURES AND ALGORITHMS": {"subject_id": "90001", "staff": [[
 _c = A.db()
 _c.execute("""UPDATE users SET personal_details_json=?, attendance_json=?, marks_json=?,
               exam_schedule_json=?, faculty_map_json=?, fb_open=?, last_fetch=?
-              WHERE netid='ng2776'""",
+              WHERE netid='zz9999'""",
            (json.dumps(PERSONAL), json.dumps(ATT), json.dumps(MARKS),
             json.dumps(EXAMS), json.dumps(FACULTY), 1, int(time.time())))
 _c.commit(); _c.close()
@@ -115,7 +115,7 @@ try:
     def set_fb_open(v):
         import sqlite3
         con = sqlite3.connect(os.path.join(DATA, "srm.db"))
-        con.execute("UPDATE users SET fb_open=? WHERE netid='ng2776'", (v,))
+        con.execute("UPDATE users SET fb_open=? WHERE netid='zz9999'", (v,))
         con.commit(); con.close()
 
 
@@ -128,7 +128,7 @@ try:
         ctx.add_cookies([{"name": "srm_session", "value": token, "url": BASE}])
         pg = ctx.new_page()
         pg.goto(BASE + "/", wait_until="networkidle")
-        check("auth (netid in title)", "ng2776" in pg.title(), pg.title())
+        check("auth (netid in title)", "zz9999" in pg.title(), pg.title())
 
         m = pg.evaluate("""() => {
           const de = document.documentElement;

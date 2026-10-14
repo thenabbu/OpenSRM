@@ -23,7 +23,7 @@ PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech
             "Batch": "2025", "Semester": "III SEMESTER", "Section": "A"}
 c = A.db()
 c.execute("INSERT OR REPLACE INTO users(netid, password, personal_details_json, last_fetch) "
-          "VALUES('ng2776', 'unused', ?, 0)", (json.dumps(PERSONAL),))
+          "VALUES('zz9999', 'unused', ?, 0)", (json.dumps(PERSONAL),))
 gk = A._group_key(PERSONAL)
 c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
           "VALUES(?, 'CSE CC', 2025, 3, 'A')", (gk,))
@@ -31,7 +31,7 @@ gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetc
 c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location) "
           "VALUES(?, 'Monday', 1, '21CSC202J', 'Operating Systems', 'Lab C-6/7')", (gid,))
 c.commit(); c.close()
-sub = S.upsert_subscription("ng2776", "https://fcm.googleapis.com/push/abc", "pk", "au", "Chrome")
+sub = S.upsert_subscription("zz9999", "https://fcm.googleapis.com/push/abc", "pk", "au", "Chrome")
 
 NOW = datetime(2026, 10, 5, 9, 25, tzinfo=IST)      # Monday, 5 min before P1
 CONF_LIVE = {"enabled": True, "dry_run": False, "allow": set(), "tick_secret": "s3kr3t-tick",
@@ -71,12 +71,12 @@ check("dry-run mode: same, still unclaimed", res["mode"] == "dry-run" and res["d
       and res["claimed"] == 0 and len(sent_jobs) == 0, str(res))
 
 # ── per-type pref: notify_reminders=0 drops the account before due-calc ──
-S.set_settings("ng2776", notify_reminders=False)
+S.set_settings("zz9999", notify_reminders=False)
 res = A._run_tick(now=NOW, conf=CONF_LIVE, send_batch=fake_batch)
 check("muted reminders: account excluded (0 due/claimed)",
       res["due"] == 0 and res["claimed"] == 0 and len(sent_jobs) == 0
       and S.sent_state_for("2026-10-05") == {}, str(res))
-S.set_settings("ng2776", notify_reminders=True)
+S.set_settings("zz9999", notify_reminders=True)
 res = A._run_tick(now=NOW, conf=CONF_LIVE, send_batch=fake_batch)
 check("unmuted: due returns", res["due"] == 1, str(res))
 reset_log(); sent_jobs.clear()
@@ -96,10 +96,10 @@ check("second tick: idempotent (0 due, 0 sent)", res2["due"] == 0 and res2["clai
 
 # ── allowlist: held without claiming, sends once allowed ──────────────
 reset_log(); sent_jobs.clear()
-res = A._run_tick(now=NOW, conf=dict(CONF_LIVE, allow={"zz9999"}), send_batch=fake_batch)
+res = A._run_tick(now=NOW, conf=dict(CONF_LIVE, allow={"zz9990"}), send_batch=fake_batch)
 check("not allowlisted -> held, unclaimed", res["held"] == 1 and res["claimed"] == 0 and not sent_jobs
       and S.sent_state_for("2026-10-05") == {}, str(res))
-res = A._run_tick(now=NOW, conf=dict(CONF_LIVE, allow={"ng2776"}), send_batch=fake_batch)
+res = A._run_tick(now=NOW, conf=dict(CONF_LIVE, allow={"zz9999"}), send_batch=fake_batch)
 check("allowlisted -> sent (held tick did not consume it)", res["sent"] == 1 and len(sent_jobs) == 1, str(res))
 
 # ── deadline: skip without claiming -> next tick catches up ───────────

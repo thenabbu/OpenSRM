@@ -60,7 +60,7 @@ def main():
             "OCT / 2026": [{"date": "01-10-2026", "hours": "1"}, {"date": "06-10-2026", "hours": "2"}]}}
     from app import app as A
     c = A.db()
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=? WHERE netid='ng2776'",
+    c.execute("UPDATE users SET attendance_json=?, last_fetch=? WHERE netid='zz9999'",
               (json.dumps(attendance), int(time.time())))
     c.commit(); c.close()
     tok = mint_token()
@@ -176,10 +176,10 @@ def main():
         # chips only — never a fake red 0% bar / empty tooltip (DESIGN §4.15)
         import json as _json
         c2u = A.db()  # the seed connection `c` is closed above
-        att2 = _json.loads(c2u.execute("SELECT attendance_json FROM users WHERE netid='ng2776'").fetchone()[0])
+        att2 = _json.loads(c2u.execute("SELECT attendance_json FROM users WHERE netid='zz9999'").fetchone()[0])
         att2["daily_absent"]["NOV / 2026"] = [{"date": "05-11-2026", "hours": "1"}]
         att2["daily_absent"]["JUNK KEY"] = [{"date": "06-11-2026", "hours": "2"}]
-        c2u.execute("UPDATE users SET attendance_json=? WHERE netid='ng2776'", (_json.dumps(att2),))
+        c2u.execute("UPDATE users SET attendance_json=? WHERE netid='zz9999'", (_json.dumps(att2),))
         c2u.commit(); c2u.close()
         page.reload()
         r = page.evaluate("""() => {

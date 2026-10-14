@@ -30,7 +30,7 @@ MARKS = [
      "scored_total": 7.2, "max_total": 10.0},
 ]
 c = db()
-c.execute("UPDATE users SET marks_json=? WHERE netid='ng2776'", (json.dumps(MARKS),))
+c.execute("UPDATE users SET marks_json=? WHERE netid='zz9999'", (json.dumps(MARKS),))
 c.execute("DELETE FROM component_tags")
 c.commit(); c.close()
 TOK = mint_token()

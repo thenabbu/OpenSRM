@@ -42,6 +42,7 @@ Migrations run on import (fresh `DATA_DIR` = fresh DB, boots clean — that's te
 .venv/bin/python tests/test_exams.py        # 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py    # dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py    # 18/18 (timetable edit log + break-divider fix + location preservation)
+.venv/bin/python tests/test_tt_hero.py       # 3/3 (the NOW-hero keeps the slot's attendance join `_att` across the dict hop; a missing `_att` is tolerated) — no server
 .venv/bin/python tests/test_relogin_save.py # 9/9 (mid-scrape relogin persists fresh session + resets portal fail state; portal_sessions encrypted at rest + legacy plaintext row; stubbed fetch, no network)
 .venv/bin/python tests/test_official_tt.py    # 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
 .venv/bin/python tests/test_sessions.py     # 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
@@ -102,7 +103,7 @@ export DATA_DIR=/tmp/osrm-guide
 export DUT_BASE=http://127.0.0.1:18098
 .venv/bin/python tests/guide_static.py      # 9/9  Login Flow UX Guide (source level, no server)
 .venv/bin/python tests/guide_check.py       # 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
-.venv/bin/python tests/guide_server.py      # 7/7  7 REAL portal logins — spends the 10/hour IP cap
+.venv/bin/python tests/guide_server.py      # 6 items, green = 0 FAIL (2 come back INCONCLUSIVE when the portal/IP limiter interferes) — 7 live portal probes, NEVER loop it; the wrong-password arm is opt-in via GUIDE_WRONGPASS_NETID=<existing netid>
 kill %1
 
 # push DUTs boot their own three gunicorn instances (see header)

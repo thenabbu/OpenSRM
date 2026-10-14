@@ -19,13 +19,13 @@ def check(name, ok, detail=""):
 PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech]",
             "Batch": "2025", "Semester": "III SEMESTER", "Section": "A"}
 c = A.db()
-for n in ("ng2776", "aa1111", "bb2222"):
+for n in ("zz9999", "aa1111", "bb2222"):
     c.execute("INSERT OR REPLACE INTO users(netid, password, personal_details_json, last_fetch) "
               "VALUES(?, 'unused', ?, 0)", (n, json.dumps(PERSONAL)))
 c.commit(); c.close()
 
 cl = A.app.test_client()
-TOK = {n: A.make_session_token(n) for n in ("ng2776", "aa1111", "bb2222")}
+TOK = {n: A.make_session_token(n) for n in ("zz9999", "aa1111", "bb2222")}
 def as_user(n): cl.set_cookie("srm_session", TOK[n])
 SUB_OK = {"endpoint": "https://fcm.googleapis.com/push/one", "keys": {"p256dh": "BKx", "auth": "au"},
           "ua_label": "Chrome Android"}
@@ -38,7 +38,7 @@ for path, meth in (("/api/push/status", "GET"), ("/api/push/subscribe", "POST"),
     check(f"{path} 401 when logged out", r.status_code == 401 and r.get_json() == {"ok": False, "error": "not logged in"}, str(r.get_json()))
 
 # ── 2) status before configuration ────────────────────────────────────
-as_user("ng2776")
+as_user("zz9999")
 r = cl.get("/api/push/status").get_json()
 check("unconfigured: says so, no key, not allowlisted flag wrongness",
       r["configured"] is False and r["vapid_public_key"] == "" and r["subscription"] is None, str(r))
@@ -78,7 +78,7 @@ for i in range(11):
 check("8 devices allowed, 9th -> 429", codes == [200] * 8 + [429] * 3, str(codes))
 
 # ── 6) settings: validation + effect ──────────────────────────────────
-as_user("ng2776")
+as_user("zz9999")
 check("bad lead -> 400", cl.post("/api/push/settings", json={"lead_minutes": 7}).status_code == 400, "")
 check("bad enabled -> 400", cl.post("/api/push/settings", json={"enabled": "yes"}).status_code == 400, "")
 check("empty update -> 400", cl.post("/api/push/settings", json={}).status_code == 400, "")
@@ -103,7 +103,7 @@ as_user("bb2222")
 check("settings without subscription -> 404", cl.post("/api/push/settings", json={"lead_minutes": 5}).status_code == 404, "")
 
 # ── 7) unsubscribe ────────────────────────────────────────────────────
-as_user("ng2776")
+as_user("zz9999")
 r = cl.post("/api/push/unsubscribe", json={"endpoint": "https://nope"})
 check("wrong endpoint -> removed false", r.get_json()["removed"] is False, str(r.get_json()))
 r = cl.post("/api/push/unsubscribe", json={"endpoint": SUB_OK["endpoint"]})
@@ -115,14 +115,14 @@ del os.environ["PUSH_ENABLED"]
 r = cl.post("/api/push/test")
 check("feature off -> 403", r.status_code == 403, str(r.get_json()))
 os.environ["PUSH_ENABLED"] = "1"
-os.environ["PUSH_ALLOW_NETIDS"] = "zz9999"
+os.environ["PUSH_ALLOW_NETIDS"] = "zz9990"
 r = cl.post("/api/push/test")
 check("not allowlisted -> 403", r.status_code == 403, str(r.get_json()))
 del os.environ["PUSH_ALLOW_NETIDS"]
 r = cl.post("/api/push/test")
 check("no subscription -> 400", r.status_code == 400, str(r.get_json()))
 
-as_user("ng2776")
+as_user("zz9999")
 cl.post("/api/push/subscribe", json=SUB_OK)
 send_calls = []
 def fake_send(job):
@@ -154,7 +154,7 @@ check("4th test -> 429 (3/hour)", cl.post("/api/push/test").status_code == 429, 
 check("bad test_id -> 400", cl.post("/api/push/receipt", json={"test_id": "xyz"}).status_code == 400, "")
 good_id = "a" * 32
 check("valid receipt -> ok", cl.post("/api/push/receipt", json={"test_id": good_id}).get_json() == {"ok": True}, "")
-check("receipt recorded", S.count_events("ng2776", "receipt", 0) == 1, "")
+check("receipt recorded", S.count_events("zz9999", "receipt", 0) == 1, "")
 for _ in range(29):
     cl.post("/api/push/receipt", json={"test_id": good_id})
 check("30/hour receipt cap -> 429", cl.post("/api/push/receipt", json={"test_id": good_id}).status_code == 429, "")

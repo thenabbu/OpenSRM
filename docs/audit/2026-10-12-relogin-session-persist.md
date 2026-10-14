@@ -1,23 +1,25 @@
+> **Identifiers were redacted on 2026-10-14.** Real NetIDs in this archive were replaced with fabricated ones; nothing else changed.
+
 # 2026-10-12 — mid-scrape relogin never persisted the fresh session
 
 **Symptom.** `portal_sessions` rows vanished after a sync whose log showed a
 successful mid-scrape relogin; the next sync then started sessionless (extra
 full login against the portal — burns the per-IP login budget and the shared
 rate limit). Noticed while probing the timetable endpoint with a cached
-session: `NO_SESSION: no cached session for ng2776` minutes after a
+session: `NO_SESSION: no cached session for zz9999` minutes after a
 successful scrape.
 
 **Evidence** (`docker logs opensrm`, 2026-10-12 00:32 IST):
 
 ```
-DEBUG opensrm.portal session reuse hit netid=ng2776
-DEBUG opensrm.portal jsp fetch done netid=ng2776 sizes={'9': 466, '13': 466, '126': 466}
-INFO  opensrm.portal session expired mid-scrape netid=ng2776 — relogin
+DEBUG opensrm.portal session reuse hit netid=zz9999
+DEBUG opensrm.portal jsp fetch done netid=zz9999 sizes={'9': 466, '13': 466, '126': 466}
+INFO  opensrm.portal session expired mid-scrape netid=zz9999 — relogin
 DEBUG opensrm.portal login attempt=1 step=post final=HRDSystem.jsp hrdsystem=True
 ...   (refetch + full scrape succeed: `http scrape complete ... total_ms=9670`)
 ```
 
-DB check before/after: row existed at 00:20, `SELECT ... WHERE netid='ng2776'`
+DB check before/after: row existed at 00:20, `SELECT ... WHERE netid='zz9999'`
 returned nothing at 00:34.
 
 **Root cause.** `http_scraper.fetch` has two successful-login sites. The

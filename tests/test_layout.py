@@ -48,7 +48,7 @@ c = A.db()
 c.execute("DELETE FROM component_tags")
 c.execute("""INSERT OR REPLACE INTO users(netid, password, personal_details_json,
              marks_json, attendance_json, faculty_map_json, last_fetch)
-             VALUES('ng2776','x',?,?,?,?,?)""",
+             VALUES('zz9999','x',?,?,?,?,?)""",
           (json.dumps(PERSONAL), json.dumps(MARKS),
            json.dumps({"courses": COURSES, "monthly": [], "period": None,
                        "daily_absent": {}}),
@@ -66,7 +66,7 @@ for d in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"):
                      VALUES(?,?,?,?,?,?)""", (gid, d, p, code, "Test Subject", "R1"))
 c.commit(); c.close()
 
-TOKEN = A.make_session_token("ng2776")
+TOKEN = A.make_session_token("zz9999")
 def GET(path="/"):
     cl = A.app.test_client()
     cl.set_cookie("srm_session", TOKEN)
@@ -165,7 +165,7 @@ check("notices: New badge exactly once", html.count('>New<') == 1,
       str(html.count('>New<')))
 check("stylesheet block present (wlabel/wbox/att-neg)",
       all(k in html for k in ('.wlabel{', '.wbox{', '.att-neg{')))
-check("institute email, no Gmail", "ng2776@srmist.edu.in" in html)
+check("institute email, no Gmail", "zz9999@srmist.edu.in" in html)
 
 # unknown widget id renders nothing, never 500
 orig = A.LAYOUT
@@ -179,7 +179,7 @@ check("unknown widget id: 200 and renders nothing",
 # all-empty cards dropped: strip marks+faculty+attendance -> only day card
 c = A.db()
 c.execute("""UPDATE users SET marks_json='[]', faculty_map_json='{}',
-             attendance_json=? WHERE netid='ng2776'""",
+             attendance_json=? WHERE netid='zz9999'""",
           (json.dumps({"courses": [], "monthly": [], "period": None,
                        "daily_absent": {}}),))
 c.commit(); c.close()

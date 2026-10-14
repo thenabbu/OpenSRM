@@ -1,3 +1,5 @@
+> **Identifiers were redacted on 2026-10-14.** Real NetIDs in this archive were replaced with fabricated ones; nothing else changed.
+
 # OpenSRM Incident — end-sem exam card vanished (2026-10-04)
 
 **Status: code fix merged path (PR), prod data restore run separately.**
@@ -8,7 +10,7 @@ Symptom reported: "the dashboard no longer shows the endsem exam dates."
 **1. Portal side (external, Oct 1–3 2026):** `ScribeInner.jsp` window `11_2026`
 still returns the student's subject table, but the **Date and Session cells are
 now empty** (`<td ...></td>`). The dates had been seeded since ~Sep 27 and were
-served until Sep 30. Captured live 2026-10-04 02:28 IST with ng2776's cached
+served until Sep 30. Captured live 2026-10-04 02:28 IST with zz9999's cached
 session (raw captures: `exam_11_2026.html` 8135B, subjects present, 0 dated
 rows; the other three candidate windows return the clean `No subject found`
 1603B marker).
@@ -21,10 +23,10 @@ returned `[]` → both save paths overwrote `users.exam_schedule_json` →
 data instead of preserving it.
 
 Evidence the wipe happened Oct 1–3 (daily snapshots, `exam_schedule_json` byte
-lengths): ng2776 479 → `[]` at the 2026-10-04 02:20 sync; sg2935 479 → 2;
-ag2188 591 → 2; gg9557 477 → 2. na8163 (last synced 09-30) still holds 479 —
+lengths): zz9999 479 → `[]` at the 2026-10-04 02:20 sync; zz9805 479 → 2;
+zz9801 591 → 2; zz9806 477 → 2. zz9807 (last synced 09-30) still holds 479 —
 the only survivor. Prod log line (all that was visible):
-`exam probe netid=ng2776 candidates=[(11, 2026), ...] rows=0` — no per-window
+`exam probe netid=zz9999 candidates=[(11, 2026), ...] rows=0` — no per-window
 detail, which is why diagnosis needed a raw HTML capture.
 
 ## Fix
@@ -69,7 +71,7 @@ stored exam data. When the exam card disappears: capture the raw
   real table (Date & Session + Hall No + Seat No columns) but "No subjects
   found" — not yet published server-side; no params/inner JSPs can force it.
   Candidate second source once the exam cell publishes it.
-- **Users who never held rows** (av5351, ds4647, an0750 — last synced before
+- **Users who never held rows** (zz9803, zz9804, zz9802 — last synced before
   the feature deployed): nothing to restore; they show no card until the portal
   re-seeds dates. Deliberately not fabricated from other students' schedules.
 - **Data restore** for the four wiped users is a live-UPDATE runbook

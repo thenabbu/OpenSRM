@@ -31,7 +31,7 @@ FULL = {"Student Name": "Aarav Rohan Mehta",
 seed(with_payload=False)
 from app import app as A  # noqa: E402  (same DATA_DIR as the server under test)
 c = A.db()
-c.execute("UPDATE users SET personal_details_json=? WHERE netid='ng2776'",
+c.execute("UPDATE users SET personal_details_json=? WHERE netid='zz9999'",
           (json.dumps(FULL),))
 c.commit()
 TOK = mint_token()

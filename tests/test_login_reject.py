@@ -202,11 +202,11 @@ for bad in ("file:///etc/passwd", "http://169.254.169.254/x",
         pass
 
 # ── 7. progress reads are attempt-token bound (audit run-1 #13) ─────────
-r = cl.post("/api/login/progress", json={"netid": "ng2776"})
+r = cl.post("/api/login/progress", json={"netid": "zz9999"})
 assert r.status_code == 400, f"netid-keyed reads must be gone, got {r.status_code}"
 r = cl.post("/api/login/progress", json={"attempt": "abc123"})
 assert r.status_code == 200 and r.get_json() == {"step": "", "pct": 0}, r.data
-A._set_progress("abc123", "Reading captcha…", 60, netid="ng2776")
+A._set_progress("abc123", "Reading captcha…", 60, netid="zz9999")
 r = cl.post("/api/login/progress", json={"attempt": "abc123"})
 assert r.get_json().get("step") == "Reading captcha…", r.data
 r = cl.post("/api/login/progress", json={"attempt": "abc123<script>"})

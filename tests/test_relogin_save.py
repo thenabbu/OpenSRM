@@ -2,8 +2,8 @@
 """Mid-scrape relogin must persist the fresh session (portal_ok + save_session).
 
 Prod evidence 2026-10-12 00:32 IST: log shows 'session reuse hit' ->
-'session expired mid-scrape netid=ng2776 — relogin' (login succeeded, JSPs
-refetched OK) yet portal_sessions had NO ng2776 row afterwards — the relogin
+'session expired mid-scrape netid=zz9999 — relogin' (login succeeded, JSPs
+refetched OK) yet portal_sessions had NO zz9999 row afterwards — the relogin
 branch cleared the cached session and never re-saved it, so the fresh cookies
 died with the process and every following sync started sessionless.
 
