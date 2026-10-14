@@ -83,9 +83,11 @@ _c.execute("""UPDATE users SET personal_details_json=?, attendance_json=?, marks
 _c.commit(); _c.close()
 token = seed_mod.mint_token()
 
-GUNICORN = "/opt/data/opensrm-repo/.venv/bin/gunicorn"
+# gunicorn from the SAME venv as the python running this suite (CI has no
+# /opt/data checkout); GUNICORN env var overrides for exotic setups.
+GUNICORN = os.environ.get("GUNICORN") or os.path.join(os.path.dirname(sys.executable), "gunicorn")
 if not os.path.isfile(GUNICORN):
-    raise SystemExit(f"FAIL[guard]: missing {GUNICORN} (an OpenSRM checkout .venv)")
+    raise SystemExit(f"FAIL[guard]: missing {GUNICORN} (run this suite with the repo .venv's python)")
 _s = socket.socket(); _s.bind(("127.0.0.1", 0)); port = _s.getsockname()[1]; _s.close()
 srv = subprocess.Popen(
     [GUNICORN, "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{port}",

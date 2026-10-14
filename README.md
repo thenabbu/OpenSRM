@@ -60,7 +60,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Database | SQLite with a versioned migration registry (15 migrations → schema v16) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pinned CDN, no build step), vanilla JS, Jinja2 |
 | PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
-| CI/CD | GitHub Actions → `ghcr.io/thenabbu/opensrm:latest` |
+| CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm:latest` |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS |
 
 ---
@@ -185,7 +185,7 @@ flowchart LR
     subgraph ship["deploy"]
         DF["Dockerfile<br/>multi-stage + chromium headless shell"]
         DC["docker-compose.yml<br/>127.0.0.1:8083 + 172.31.0.1:8083"]
-        CI[".github/workflows<br/>Lint · Build & Push → GHCR"]
+        CI[".github/workflows<br/>Lint · Tests · Build & Push → GHCR"]
     end
 
     EGDIR["egress/<br/>CF Worker byte-pipe + PoCs<br/>not in the image"]
