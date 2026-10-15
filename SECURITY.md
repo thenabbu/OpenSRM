@@ -80,11 +80,22 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   while the DB runs the default `delete` journal; with `SQLITE_JOURNAL_MODE=wal`
   recent commits live in `srm.db-wal` and a file-only copy silently misses them
 - Only trusted when `cf-ray` header is present (prevents header spoofing)
-- Docker container runs with healthcheck and log rotation
-- Accepted risk (deliberate): the container runs as root with Chromium
-  `--no-sandbox` — required for headless Playwright in-container; the
-  container is single-purpose and only reachable through the Cloudflare
-  tunnel (compose publishes loopback + the cloudflared bridge gateway only)
+- Docker container runs with healthcheck and log rotation; the healthcheck
+  polls `GET /healthz` (`SELECT 1`, no session, no portal contact, a 16-byte
+  body) and `_log_request` demotes that path to DEBUG, so a 30s poll cannot
+  fill `opensrm.log` — a 5xx from the probe still logs ERROR so ntfy pages
+- The container does **not** run as root. `entrypoint.sh` starts root for
+  exactly two lines — `chown -R opensrm /app/data` (every existing volume
+  predates the change and is root-owned) and the `setpriv` drop that follows
+  — then `exec`s CMD in place, so PID 1 is the app as `opensrm` (uid 10001)
+  with `CapPrm`/`CapEff` zeroed and `NoNewPrivs` set. Compose adds
+  `cap_drop: ALL` with only `CHOWN`/`SETUID`/`SETGID` back, `read_only`
+  rootfs + `/tmp` tmpfs, `no-new-privileges`, and `mem_limit`/`pids_limit`
+  sized from measured RSS and task counts
+- Chromium keeps `--no-sandbox` (headless Playwright in-container) — it no
+  longer needs root for it; the container is single-purpose and only
+  reachable through the Cloudflare tunnel (compose publishes loopback +
+  the cloudflared bridge gateway only)
 
 ### Supply chain
 - Every CI action is SHA-pinned to a 40-char commit; the Dockerfile pins its

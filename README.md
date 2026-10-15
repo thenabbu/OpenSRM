@@ -259,6 +259,7 @@ No cron is installed — run it by hand or wire your own scheduler.
 - Rate limiting per netid, per IP, plus an aggregate portal budget and escalating portal cooldown
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses
+- Container runs non-root (uid 10001) behind a read-only rootfs, `cap_drop: ALL` (only `CHOWN`/`SETUID`/`SETGID` added back for the entrypoint), `no-new-privileges`, and `mem_limit`/`pids_limit` from measured RSS; the healthcheck polls `GET /healthz` (`SELECT 1`, no session, no portal contact)
 
 See [SECURITY.md](SECURITY.md) for details.
 

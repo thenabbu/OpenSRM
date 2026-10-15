@@ -136,6 +136,11 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 #   compose does NOT read the master /docker/.env for interpolation), then
 #   docker compose pull && docker compose up -d opensrm; unset to ride :latest again.
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
+# GET /healthz → 200 {"status":"ok"} — the endpoint the compose healthcheck
+# polls (no session needed); at LOG_LEVEL=INFO its request lines are DEBUG, so
+# they never appear in `docker logs opensrm` — that absence means the LOG
+# LEVEL, not that the probe stopped (docker inspect opensrm --format
+# '{{.State.Health.Status}}' says 'healthy').
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
 # ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
