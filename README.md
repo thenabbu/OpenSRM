@@ -238,7 +238,7 @@ Environment variables:
 ## Security
 
 - Fernet-encrypted passwords at rest; `srm_session` cookie is HttpOnly + SameSite=Lax, Secure flag gated on a real `cf-ray` + HTTPS hop
-- CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts)
+- CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts) with SRI `integrity` sha384 + `crossorigin` on both CDN tags (a tampered CDN payload fails closed)
 - Rate limiting per netid, per IP, plus an aggregate portal budget and escalating portal cooldown
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses
