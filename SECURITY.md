@@ -84,6 +84,17 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   container is single-purpose and only reachable through the Cloudflare
   tunnel (compose publishes loopback + the cloudflared bridge gateway only)
 
+### Supply chain
+- Every CI action is SHA-pinned to a 40-char commit; the Dockerfile pins its
+  base images and the `uv` binary by digest
+- `.github/workflows/scans.yml` runs gitleaks (full git history), pip-audit
+  (locked python deps) and trivy (built image, HIGH/CRITICAL with a fix
+  available) on every PR — **report-only** by design; docs/SCANS.md documents
+  what each would block on and how the maintainer can flip one to blocking
+- The one git dependency (`blobatar`) is pinned to an exact commit hash
+  (`pyproject.toml` + `uv.lock`, enforced by `tests/verify76.py` M22) — a known,
+  documented supply-chain gap (see docs/SCANS.md) reported rather than fixed
+
 ## Key rotation
 
 The encryption key can be replaced without losing stored passwords, and kept off the data volume: `FERNET_KEYS` in `/docker/opensrm/.env` holds comma-separated keys, **the first key encrypts** and every key decrypts. `DATA_DIR/fernet.key` stays the zero-config default. All commands below run on the lab host; the env is read at process start, so every key change needs a container recreate, and `scripts/rotate_fernet_key.py` ships in the image at `/app/scripts/`.

@@ -32,7 +32,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 3. **Test** — run the suites your change touches (see the test matrix below); everything green before you push
 4. **Version** — for user-visible changes bump all three together: `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches (patch = fix, minor = feature, major = breaking/user-visible redesign; docs/tests-only changes get no bump). The number renders on the login page and dashboard navbar, and `tests/verify76.py` + CI both enforce the trio. **Also prepend a release entry to `NOTICES`** in `app/app.py` — verify76 `M27` fails the suite when the head notice's version stops equaling `VERSION`, so releases without notices cannot ship
 5. **Commit** — clear, descriptive messages. One logical change per commit
-6. **Push + PR** — open a PR against `main`. PR CI runs **Lint** (ruff + `uv lock --check`) and **Tests** (`unit` + `docker` + `e2e` — see the matrix below, every suite has a CI runner). The Docker image is built and pushed to `ghcr.io/thenabbu/opensrm:latest` only after the merge lands on `main`, and only if `lint` *and* `tests` are green there; the self-hosted deployment then picks it up manually. Merges use merge commits with a `merge: <summary>` subject (no squash), keeping the atomic commits intact
+6. **Push + PR** — open a PR against `main`. PR CI runs **Lint** (ruff + `uv lock --check`) and **Tests** (`unit` + `docker` + `e2e` — see the matrix below, every suite has a CI runner). The Docker image is built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` only after the merge lands on `main`, and only if `lint` *and* `tests` are green there; the self-hosted deployment then picks it up manually. Merges use merge commits with a `merge: <summary>` subject (no squash), keeping the atomic commits intact
 
 ### Commit format
 
@@ -91,7 +91,8 @@ Key rules:
   - `docker` — builds the image **without pushing**, boots it on an empty volume, then seeds a fabricated user, mints its session cookie inside the container and asserts an authenticated `GET /` is 200 with the seeded data on the page (`/login` alone only proves the shell boots)
   - `e2e` — the Playwright suites, chromium headless shell only: the self-booting ones plus the server-needing ones (one gunicorn behind them, `scripts/ci_e2e_http.sh`); failure logs are uploaded as an artifact
   - `guide_server.py` is deliberately **not** in CI — it performs 7 real portal logins per run and the portal caps 10/hour per IP. `guide_check.py` **is** in CI: it mocks `/api/login` in the browser, so nothing reaches the portal
-- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm:latest`, gated on `needs: [lint, tests]` so a red suite never pushes `:latest`
+- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` **plus `:<VERSION>` and `:<short-sha>`** (with `org.opencontainers.image.version`/`revision` labels), gated on `needs: [lint, tests]` so a red suite never pushes `:latest`. Deployments pin/roll back via `OPENSRM_TAG` (see AGENTS.md "Prod deploy")
+- **Scans** — `.github/workflows/scans.yml` (gitleaks on full history · pip-audit on the locked export · trivy HIGH/CRITICAL on the built image) — **report-only**: findings land in the job summary, never a red check. docs/SCANS.md documents what each would block on and how to flip one to blocking
 - **Deploy** — **manual**, there is no watcher: once CI is green on `main`, `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'` (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
 
 ## Portal rate limits

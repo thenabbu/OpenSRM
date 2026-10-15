@@ -60,7 +60,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Database | SQLite with a versioned migration registry (15 migrations → schema v16) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pinned CDN, no build step), vanilla JS, Jinja2 |
 | PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
-| CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm:latest` |
+| CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` · Scans (gitleaks/pip-audit/trivy, report-only) |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS |
 
 ---
