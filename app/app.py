@@ -1754,6 +1754,10 @@ def _log_request(resp):
     # ERROR (NtfyHandler pages on ERROR/5xx, never on routine 4xx) — every
     # failure carries its cause on the request line itself.
     ua = request.headers.get("user-agent", "")
+    # the compose healthcheck polls /healthz every 30s: same demotion as the
+    # Python-urllib UA so probe traffic can never fill opensrm.log again.
+    # A real fault still page: 5xx stays ERROR whatever the path or UA.
+    probe = ua.startswith("Python-urllib") or request.path == "/healthz"
     if resp.status_code >= 400:
         kv = dict(method=request.method, path=request.path,
                   status=resp.status_code, duration_ms=duration_ms)
@@ -1769,11 +1773,11 @@ def _log_request(resp):
         # 5xx is a real fault: ALWAYS ERROR (NtfyHandler pages on ERROR/5xx),
         # even from a urllib monitor — healthcheck 4xx noise stays DEBUG.
         lvl = (logging.ERROR if resp.status_code >= 500
-               else logging.WARNING if not ua.startswith("Python-urllib")
+               else logging.WARNING if not probe
                else logging.DEBUG)
         log_with_kv(log_http, lvl, "request", **kv)
     else:
-        lvl = logging.DEBUG if ua.startswith("Python-urllib") else logging.INFO
+        lvl = logging.DEBUG if probe else logging.INFO
         log_with_kv(log_http, lvl, "request",
                     method=request.method, path=request.path,
                     status=resp.status_code, duration_ms=duration_ms)
@@ -3987,6 +3991,29 @@ def push_tick():
 
 # ── Internal metrics (Prometheus text, secret-header auth) ──────────
 METRICS_HEADER = "X-Metrics-Token"
+
+@app.route("/healthz")
+def healthz():
+    """Container healthcheck probe: DB round-trip only.
+
+    No session, no portal contact — a probe that touched the portal would
+    spend login attempts and log noise every interval (the 2026-10-07 audit
+    found healthcheck traffic was 86% of opensrm.log). The compose
+    healthcheck and scripts/post_deploy.sh both point here; _log_request
+    demotes it to DEBUG alongside the Python-urllib UA for the same reason.
+    Body stays two words: it is served through the tunnel too.
+    """
+    try:
+        conn = db()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:            # pragma: no cover - failure arm below
+        log_with_kv(log_http, logging.ERROR, "healthz failed", error=type(exc).__name__)
+        return {"status": "error"}, 503
+    return {"status": "ok"}
+
 
 @app.route("/internal/metrics")
 def internal_metrics():
