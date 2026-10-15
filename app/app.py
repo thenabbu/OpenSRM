@@ -2062,6 +2062,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.20.3", "date": "15 Oct", "title": "Sessions hardened at rest",
+     "body": "Session tokens are now stored in the database only as SHA-256 "
+             "digests, so a copied database file can no longer be used to log "
+             "in as you — and your existing session keeps working across this "
+             "update. Requests that try to change your data from another "
+             "website are also refused now."},
     {"ver": "v1.20.2", "date": "15 Oct", "title": "Fewer database-is-locked errors",
      "body": "Concurrent requests used to hit SQLite's 5-second lock wait "
              "limit and show a database-is-locked error; the app now waits "
