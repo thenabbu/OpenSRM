@@ -58,6 +58,11 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 
 ### Infrastructure
 - Cloudflare Tunnel for HTTPS termination
+- **SQLite backups must be online copies.** `sqlite3 <db> ".backup <dest>"` (the
+  method the standing daily snapshot pipeline uses) is safe in every journal
+  mode — it reads through the WAL. A raw `cp` of `srm.db` is only equivalent
+  while the DB runs the default `delete` journal; with `SQLITE_JOURNAL_MODE=wal`
+  recent commits live in `srm.db-wal` and a file-only copy silently misses them
 - Only trusted when `cf-ray` header is present (prevents header spoofing)
 - Docker container runs with healthcheck and log rotation
 - Accepted risk (deliberate): the container runs as root with Chromium

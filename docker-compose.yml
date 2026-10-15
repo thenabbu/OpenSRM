@@ -18,6 +18,8 @@ services:
       - opensrm-data:/app/data
     environment:
       - TZ=Asia/Kolkata
+      # sqlite: delete (default, today's mode) or wal — see README Configuration
+      - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-delete}
       # audit 2026-10-07: compose default DEBUG overrode the Dockerfile INFO —
       # prod ran DEBUG for 15 days (3,366 junk DEBUG lines). Default INFO now;
       # set LOG_LEVEL=DEBUG in /docker/.env to debug.
