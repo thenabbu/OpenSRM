@@ -98,6 +98,7 @@ Key rules:
 
 During testing, be aware:
 - Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a `Sync in progress` / budget / cooldown rejection is free)
+- Refresh cache window: a refresh within `SYNC_MIN_INTERVAL_S` (default 300s, `0` disables) of an account's last completed sync is answered from stored data — no portal request, no quota charge; a second refresh while one is already running waits for and shares that sync instead of erroring
 - Per IP: 10 login attempts per hour
 - Aggregate server→portal budget: 30 requests per 10 minutes
 

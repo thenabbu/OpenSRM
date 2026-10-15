@@ -23,6 +23,11 @@ sys.path.insert(0, REPO)
 
 TMP = tempfile.mkdtemp(prefix="osrm-canary-")
 os.environ["DATA_DIR"] = TMP   # seed + server + cookie helpers share THIS DB
+# server inherits the window: the cache arm below needs SYNC_MIN_INTERVAL_S
+# ON (600s) so a canary run against a just-synced account is served from
+# cache and must FAIL instead of reporting sync=1 (never-synced zz9999/
+# zz9997 rows have last_fetch NULL, so their arms still really sync)
+os.environ["SYNC_MIN_INTERVAL_S"] = "600"
 atexit.register(__import__("shutil").rmtree, TMP, ignore_errors=True)
 
 from app import app as A  # noqa: E402
@@ -123,6 +128,16 @@ try:
           att["courses"][0]["code"] == "TEST101" and marks[0]["code"] == "TEST101",
           f"att={att} marks={marks}")
     check("cookie deleted after success", _cookies("zz9999") == 0, _cookies("zz9999"))
+
+    # ── cache-window arm: zz9999 just synced, so the window serves this
+    #    run from cache — the canary must FAIL loudly (no portal contact)
+    #    instead of reporting sync=1 ───────────────────────────────────
+    p = run_canary("zz9999")
+    check("cached-answer run exits non-zero", p.returncode != 0, p.returncode)
+    check("cached-answer run states no portal contact",
+          "SYNC_MIN_INTERVAL_S cache" in p.stderr,
+          f"stdout={p.stdout} stderr={p.stderr}")
+    check("cookie deleted after cached failure", _cookies("zz9999") == 0, _cookies("zz9999"))
 
     # ── no stored creds arm ─────────────────────────────────────────────
     p = run_canary("zz9996")

@@ -78,6 +78,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_logging_telemetry.py
       - name: test_metrics (observability counters + /internal/metrics auth)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_metrics.py
+      - name: test_sync_cache (refresh cache window + per-netid single flight)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_cache.py
       - name: test_canary_sync (canary_sync.sh end-to-end)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_canary_sync.py
       - name: test_marks_view (marks view model)

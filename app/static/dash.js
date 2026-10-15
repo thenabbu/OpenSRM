@@ -57,11 +57,15 @@ function ref(quiet) {
       return r.json();
     })
     .then(function (d) {
-      if (d.ok) { location.reload(); return; }
+      // cached answer (SYNC_MIN_INTERVAL_S): the server's stored data did
+      // not change, so restore the UI in place — no reload flash, and the
+      // sync-line keeps showing the honest age of the last real sync
+      if (d.ok && !d.cached) { location.reload(); return; }
       document.getElementById('overlay').close();
       btns.forEach(function(b) { b.disabled = false; });
       icons.forEach(function(i) { i.classList.remove('animate-spin'); });
       renderSyncLines();
+      if (d.ok) return;
       if (!quiet) showError(d.error || 'Refresh failed');
       else console.debug('background sync failed:', d.error);
     }).catch(function () {
