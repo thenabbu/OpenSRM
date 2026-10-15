@@ -39,10 +39,10 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, has_request_context, make_response, redirect, render_template, request
+from flask import Flask, g, has_request_context, make_response, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
-from . import push_calc, push_send, push_store
+from . import metrics, push_calc, push_send, push_store
 from .logging_setup import log_with_kv, setup_logging
 from .migrations import migrate_db
 
@@ -81,6 +81,7 @@ log_http = logging.getLogger("opensrm.http")
 log_auth = logging.getLogger("opensrm.auth")
 log_portal = logging.getLogger("opensrm.portal")
 log_db = logging.getLogger("opensrm.db")
+log_metrics = logging.getLogger("opensrm.metrics")
 
 SESSION_MAX_AGE = 60 * 60 * 24 * 30          # 30 days
 
@@ -535,6 +536,10 @@ def _portal_ok():
 def _portal_cooldown_remaining():
     remaining = _portal_cooldown_until - time.time()
     return max(0, remaining)
+
+# observability: live cooldown state for GET /internal/metrics (0 = armed off)
+metrics.gauge("opensrm_portal_cooldown_seconds",
+              lambda: float(max(0, _portal_cooldown_until - time.time())))
 
 def _client_ip():
     # Only trust CF-Connecting-IP when request came through Cloudflare.
@@ -1042,6 +1047,13 @@ async def _get_persistent_page(netid):
 
 # ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
 
+def _pw_login_done(ok, err, attempts):
+    """Record captcha attempts-per-login for the Playwright pipeline, return
+    the (ok, err) passthrough. attempts=0 when rejected before any submit."""
+    metrics.observe("opensrm_captcha_attempts_per_login", attempts, pipeline="playwright")
+    return ok, err
+
+
 async def _do_login(page, ctx, netid, password):
     """Perform login with captcha retry. Returns (ok, fail) — fail is a
     sync_error() result (typed kind + byte-identical message) or None."""
@@ -1050,10 +1062,10 @@ async def _do_login(page, ctx, netid, password):
     # Check global portal cooldown before attempting
     cooldown = _portal_cooldown_remaining()
     if cooldown > 0:
-        return False, sync_error("portal_cooldown",
+        return _pw_login_done(False, sync_error("portal_cooldown",
                                  f"SRM portal temporarily rate-limiting our server. "
                                  f"Try again in {int(cooldown / 60) + 1} minutes.",
-                                 retry_after=int(cooldown))
+                                 retry_after=int(cooldown)), 0)
 
     await page.goto(LOGIN_URL, wait_until="domcontentloaded")
     await page.fill('input[name="username"]', netid)
@@ -1066,11 +1078,11 @@ async def _do_login(page, ctx, netid, password):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
             log.warning("playwright login netid=%s abort=captcha_image_empty (portal served no image)", netid)
-            return False, sync_error("portal_down", "captcha image failed to load — portal may be slow")
+            return _pw_login_done(False, sync_error("portal_down", "captcha image failed to load — portal may be slow"), _ca + 1)
         captcha = solve_captcha_b64(b64)
         if not captcha:
             log.warning("playwright login netid=%s abort=ocr_empty", netid)
-            return False, sync_error("internal", "captcha OCR returned empty")
+            return _pw_login_done(False, sync_error("internal", "captcha OCR returned empty"), _ca + 1)
         await page.click('input[name="captcha"]')
         await page.type('input[name="captcha"]', captcha, delay=10)
         await page.mouse.move(300, 200, steps=3)
@@ -1078,7 +1090,7 @@ async def _do_login(page, ctx, netid, password):
         try:
             await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=8000)
             _portal_ok()
-            return True, None
+            return _pw_login_done(True, None, _ca + 1)
         except Exception:
             # Extract the specific error the portal showed
             try:
@@ -1097,7 +1109,7 @@ async def _do_login(page, ctx, netid, password):
                                 "portal_alert=%r", _ca + 1, MAX_CAPTCHA_RETRIES,
                                 next((ln.strip()[:160] for ln in err_text.splitlines()
                                       if "invalid" in ln.lower()), ""))
-                    return False, sync_error("bad_credentials", "invalid credentials — check your NetID/password")
+                    return _pw_login_done(False, sync_error("bad_credentials", "invalid credentials — check your NetID/password"), _ca + 1)
                 elif "captcha expired" in err_lower:
                     last_err = "captcha expired"
                 elif "invalid captcha" in err_lower:
@@ -1127,11 +1139,11 @@ async def _do_login(page, ctx, netid, password):
                 await page.click('input[name="password"]')
                 await page.type('input[name="password"]', password, delay=10)
                 continue
-            return False, sync_error("bad_credentials",
-                                     f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}")
+            return _pw_login_done(False, sync_error("bad_credentials",
+                                     f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}"), _ca + 1)
     # All retries exhausted via silent-rejection continues
-    return False, sync_error("bad_credentials",
-                             f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}")
+    return _pw_login_done(False, sync_error("bad_credentials",
+                             f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}"), _ca + 1)
 
 async def _fetch_rich_optimized(netid, password, cold=True):
     # Persistent context — reuse across scrapes for speed.
@@ -1223,6 +1235,7 @@ async def _fetch_rich_optimized(netid, password, cold=True):
 
         # Guard: ABC ID gate check
         if not data.get("courses"):
+            metrics.inc("opensrm_parse_empty_total", page="attendance", pipeline="playwright")
             raw = await page.evaluate(
                 '() => (document.getElementById("divMainDetails")||document.body).innerText || ""')
             if "ABC ID" in raw or "Aadhaar" in raw:
@@ -1281,6 +1294,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                 personal = parse_personal_details(personal_html)
         except Exception as e:
             log.warning("personal details parse failed — profile renders empty: %r", e)
+        if cold and not personal:
+            metrics.inc("opensrm_parse_empty_total", page="personal", pipeline="playwright")
 
         # Course list (from parallel fetch)
         courses = []
@@ -1292,6 +1307,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                     courses.append({"code": cells[0], "name": cells[1], "credits": int(cells[2] or 0)})
         except Exception as e:
             log.warning("course list parse failed — subjects missing from dashboard: %r", e)
+        if cold and not courses:
+            metrics.inc("opensrm_parse_empty_total", page="courses", pipeline="playwright")
 
         # Marks (from parallel fetch)
         marks = []
@@ -1329,6 +1346,8 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                                 break
         except Exception as e:
             log.warning("marks/component parse failed — marks render empty: %r", e)
+        if not marks:
+            metrics.inc("opensrm_parse_empty_total", page="marks", pipeline="playwright")
 
         # End-sem schedule: official 126 table wins; scribe rows fill the rest.
         # Key present ONLY when the merge produced rows — same contract as
@@ -1345,8 +1364,49 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         # Don't close persistent context — keep alive for next request
         pass
 
+def _error_class(err):
+    """Low-cardinality failure class for opensrm_sync_total's error label —
+    enough to tell 'the portal changed' (parse) from 'our user typed wrong'
+    (auth) from 'we are rate-limited' (rate) without unbounded cardinality."""
+    e = (err or "").lower()
+    if "captcha" in e:
+        return "captcha"
+    if "invalid credentials" in e or "login failed" in e:
+        return "auth"
+    if "too many" in e or "rate-limit" in e:
+        return "rate"
+    if "deadline" in e:
+        return "deadline"
+    if "in progress" in e:
+        return "busy"
+    if "did not load" in e or "no course table" in e or "abc id" in e:
+        return "parse"
+    if "server-side" in e:
+        return "server"
+    return "other"
+
+
+def _sync_result(pipeline, res, t0):
+    """Record one finished sync (outcome counter + duration timer) and pass
+    the result through unchanged — every fetch_attendance return goes here."""
+    if not isinstance(res, dict):
+        # never seen today; keep the counters total instead of crashing a sync
+        res = sync_error("internal", "pipeline returned a non-dict result")
+    ok = bool(res.get("ok"))
+    metrics.inc("opensrm_sync_total", pipeline=pipeline,
+                result="ok" if ok else "error",
+                # typed results carry kind (the KIND_STATUS vocabulary — that IS
+                # the error class); the message-wording fallback covers bare
+                # dicts/stubs that predate the typed results
+                error="" if ok else (res.get("kind") or _error_class(res.get("error"))))
+    metrics.observe("opensrm_sync_duration_seconds", time.monotonic() - t0,
+                    pipeline=pipeline)
+    return res
+
+
 def fetch_attendance(netid, password, authorized=False, attempt=None):
     global _request_fail_counted
+    t_sync = time.monotonic()   # observability: sync outcome + duration anchor
     loop = future = None  # except block references both; may not be reached
     # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
     # it, so a busy/cooldown/budget rejection still consumed one of the
@@ -1356,6 +1416,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
     # know it can actually run.
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
+        metrics.inc("opensrm_scrape_lock_rejections_total", op="sync")
         return sync_error("busy", "Sync in progress. Try again in about a minute.", retry_after=60)
     try:
         # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
@@ -1440,7 +1501,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                         c.commit(); c.close()
                     except Exception as e:
                         log.debug("cold_fetch update failed err=%r", e)
-                return res
+                return _sync_result("http", res, t_sync)
             except http_scraper.HttpScraperError as e:
                 log.warning("http pipeline failed (%r) — falling back to playwright", e)
                 _portal_fail_once()
@@ -1456,7 +1517,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
         pw_res = future.result(timeout=max(1, min(150, deadline - time.monotonic())))
         if isinstance(pw_res, dict) and pw_res.get("ok"):
             _charge_rate(netid)  # audit run-1: same success-only quota charge as the HTTP path
-        return pw_res
+        return _sync_result("playwright", pw_res, t_sync)
     except Exception:
         # audit: a timeout leaves the coroutine driving the shared page after
         # the lock is released (zombie double-drive) — cancel it. Setting
@@ -1475,7 +1536,9 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
             except Exception:
                 pass  # loop dead too — next launch replaces both anyway
         log.warning("playwright pipeline failed", exc_info=True)
-        return sync_error("internal", "Scrape failed server-side — check the server log, then try again.")
+        return _sync_result("playwright",
+                            sync_error("internal", "Scrape failed server-side — check the server log, then try again."),
+                            t_sync)
     finally:
         _scrape_lock.release()
 
@@ -1670,6 +1733,14 @@ def _month_view(m):
 
 
 # ── Request logging ─────────────────────────────────────────────────
+def _bare(code, reason):
+    """Deliberately bare response body (nothing for a prober to read — used
+    by the internal endpoints' auth); the reason still lands on the status
+    line via _log_request's g._log_reason fallback, so every >=400 line in
+    opensrm.log carries an error= (the logging-gap rule)."""
+    g._log_reason = reason
+    return "", code
+
 @app.before_request
 def _log_request_start():
     request._start_time = time.monotonic()
@@ -1688,8 +1759,13 @@ def _log_request(resp):
                   status=resp.status_code, duration_ms=duration_ms)
         body = resp.get_json(silent=True)
         err = (body or {}).get("error") if isinstance(body, dict) else None
-        if err:
-            kv["error"] = str(err)[:120]
+        if not err:
+            err = getattr(g, "_log_reason", None)   # bare bodies (_bare())
+        if not err:
+            # framework errors (404/405/413) carry no JSON body — the status
+            # class IS the reason; every >=400 line must stay greppable
+            err = f"http_{resp.status_code}"
+        kv["error"] = str(err)[:120]
         # 5xx is a real fault: ALWAYS ERROR (NtfyHandler pages on ERROR/5xx),
         # even from a urllib monitor — healthcheck 4xx noise stays DEBUG.
         lvl = (logging.ERROR if resp.status_code >= 500
@@ -1806,6 +1882,46 @@ def _jload(raw, default):
         return default
     return v
 
+# usage_events retention: env-configurable (USAGE_EVENTS_RETENTION_DAYS,
+# default 365), pruned at most once a day by the next event — no background
+# thread, no per-tick work (the old every-push-tick 90d prune moved here).
+_usage_prune_lock = threading.Lock()
+_usage_prune_last = 0.0
+
+
+def _usage_retention_days():
+    try:
+        return max(1, int(os.environ.get("USAGE_EVENTS_RETENTION_DAYS", "365")))
+    except ValueError:
+        return 365
+
+
+def _prune_usage_events(now=None):
+    """Delete usage_events older than the retention window; at most once per
+    day per process (claimed under the lock BEFORE the delete). Returns rows
+    deleted, or -1 when the slot was already used this day / the delete failed.
+    ponytail: runs on the next _track, so a fully idle process simply prunes
+    on its next event — rows only grow when events are written anyway."""
+    global _usage_prune_last
+    now = time.time() if now is None else now
+    with _usage_prune_lock:
+        if now - _usage_prune_last < 86400:
+            return -1
+        _usage_prune_last = now
+    days = _usage_retention_days()
+    try:
+        c = db()
+        cur = c.execute("DELETE FROM usage_events WHERE ts < ?", (int(now) - days * 86400,))
+        n = cur.rowcount
+        c.commit(); c.close()
+    except Exception as e:
+        log.info("usage_events prune failed error=%r", e)
+        return -1
+    # pruned count logged every time the slot runs, so retention is countable
+    log.info("usage_events pruned rows=%d retention_days=%d", n, days)
+    return n
+
+
 def _track(event, target="", detail="", user=""):
     """One usage-event row: page views, syncs, feature usage. Closed
     vocabulary (usage_events), no PII — user is the netid already stored
@@ -1816,6 +1932,7 @@ def _track(event, target="", detail="", user=""):
         c.execute("INSERT INTO usage_events(day, user, event, target, detail) VALUES(?,?,?,?,?)",
                   (time.strftime("%Y-%m-%d"), user, event, target[:64], detail[:64]))
         c.commit(); c.close()
+        _prune_usage_events()   # at most once a day (no-op otherwise)
     except Exception as e:
         # INFO, not debug: a permanently broken usage_events table (lock
         # errors, missed migration on a restored backup) used to fail forever
@@ -2030,6 +2147,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.21.0", "date": "15 Oct", "title": "Clearer sync errors + sync health monitoring",
+     "body": "A failed sync now says exactly what went wrong (wrong password, "
+             "portal busy, or the portal changed) instead of a generic error. "
+             "We also track sync success, timing and portal failures "
+             "server-side — with a one-command canary check — so a portal "
+             "change is caught before it reaches your dashboard."},
     {"ver": "v1.20.2", "date": "15 Oct", "title": "Fewer database-is-locked errors",
      "body": "Concurrent requests used to hit SQLite's 5-second lock wait "
              "limit and show a database-is-locked error; the app now waits "
@@ -2580,6 +2703,7 @@ def api_feedback_fill():
         return {"ok": False,
                 "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}, 429
     if not _scrape_lock.acquire(blocking=False):
+        metrics.inc("opensrm_scrape_lock_rejections_total", op="feedback")
         return {"ok": False, "error": "Sync in progress — try again in about a minute."}, 503
     try:
         if not _check_portal_budget(_client_ip(), authorized=True):
@@ -3261,6 +3385,7 @@ def _run_preflight(netid):
     # an optimization, not a requirement).
     if not _scrape_lock.acquire(blocking=False):
         log.debug("preflight skipped netid=%s — scrape lock busy", netid)
+        metrics.inc("opensrm_preflight_total", outcome="busy")
         return
     try:
         from . import http_scraper
@@ -3268,6 +3393,7 @@ def _run_preflight(netid):
     except Exception as e:
         # audit 2026-10-07: warm-login loss was DEBUG-only — now visible at WARNING
         log.warning("preflight failed netid=%s err=%r", netid, e)
+        metrics.inc("opensrm_preflight_total", outcome="failed")
     finally:
         _scrape_lock.release()
 
@@ -3277,7 +3403,7 @@ def api_login_preflight():
     netid = ((d.get("netid") or "").strip().lower().split("@")[0]
              if isinstance(d, dict) and isinstance(d.get("netid"), str) else "")
     if not netid or not NETID_RE.match(netid):
-        return {"ok": False}, 400
+        return {"ok": False, "error": "invalid netid"}, 400
     now = time.time()
     ip = _client_ip()
     # audit run-1 (#7): the whole admission (ip cap + per-netid cooldown) is a
@@ -3334,12 +3460,12 @@ def api_login_progress():
     data = request.get_json(silent=True) or {}
     attempt = str(data.get("attempt", "")).strip()
     if not attempt or not attempt.isalnum() or len(attempt) > 64:
-        return {"step": "", "pct": 0}, 400
+        return {"step": "", "pct": 0, "error": "invalid attempt token"}, 400
     now = time.time()
     ip = _client_ip()
     hits = [t for t in _progress_ip.get(ip, []) if now - t < 60]
     if len(hits) >= 30:
-        return {"step": "", "pct": 0}, 429
+        return {"step": "", "pct": 0, "error": "rate"}, 429
     _progress_ip[ip] = hits + [now]
     p = _login_progress.get(attempt)
     # ponytail: entries purged when >10min old; fine for a ~5-30s flow
@@ -3697,12 +3823,11 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
                     status=status, code=rem.block.code, ttl=job["ttl"])
     stats.pop("due_pass", None)
     push_store.prune_events(int(time.time()) - 3 * 3600)   # keep the rate table tiny
-    # audit R1: usage_events and push_sent_log had no retention at all —
-    # unbounded growth in the one DB file that also holds srm.db backups.
-    # 90d usage / 30d sent-log covers every window the dashboards read.
+    # audit R1: push_sent_log retention — 30d covers the window the dashboards
+    # read. usage_events retention moved to _prune_usage_events (env-config,
+    # default 365d, at most once a day) so a per-minute tick stops paying it.
     try:
         c = db()
-        c.execute("DELETE FROM usage_events WHERE ts < ?", (int(time.time()) - 90 * 86400,))
         c.execute("DELETE FROM push_sent_log WHERE local_date < ?",
                   (time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)),))
         c.commit(); c.close()
@@ -3731,8 +3856,30 @@ def push_tick():
         tick_ok = False
     if not conf["tick_secret"] or not tick_ok:
         log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
-        return "", 401
+        return _bare(401, "push tick auth failed — secret missing or wrong")
     return _run_tick(conf=conf)
+
+
+# ── Internal metrics (Prometheus text, secret-header auth) ──────────
+METRICS_HEADER = "X-Metrics-Token"
+
+@app.route("/internal/metrics")
+def internal_metrics():
+    """In-process sync/portal counters as Prometheus text (app/metrics.py).
+
+    Same auth contract as /internal/push/tick: METRICS_SECRET unset -> the
+    endpoint is OFF; wrong/missing/non-ASCII header -> bare 401 with nothing
+    to probe (hmac.compare_digest over UTF-8 bytes, fail closed)."""
+    secret = os.environ.get("METRICS_SECRET", "").strip()
+    got = request.headers.get(METRICS_HEADER, "")
+    try:
+        tok_ok = hmac.compare_digest(got.encode("utf-8"), secret.encode("utf-8"))
+    except UnicodeEncodeError:
+        tok_ok = False
+    if not secret or not tok_ok:
+        log_with_kv(log_metrics, logging.WARNING, "metrics auth failed", ip=_client_ip())
+        return _bare(401, "metrics auth failed — secret missing or wrong")
+    return metrics.render(), 200, {"Content-Type": "text/plain; version=0.0.4"}
 
 
 # ── Web push: user endpoints (JSON, session auth, 401 style) ──────────

@@ -32,6 +32,16 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - `POST /internal/push/tick` is authenticated by the `X-Push-Tick` header
   compared with `hmac.compare_digest`; missing/wrong secret → bare 401, no
   session cookie involved, no detail leaked
+
+### Observability (`GET /internal/metrics`)
+- Same auth contract as the push tick: `METRICS_SECRET` lives in env, the
+  `X-Metrics-Token` header is compared with `hmac.compare_digest` over
+  UTF-8 bytes (non-ASCII fails closed), unset env means the endpoint is
+  off, and any failure returns a bare 401 with an empty body; every failure
+  logs a WARNING (reason only, never the secret)
+- The rendered Prometheus text carries only counters/timers/gauges with
+  low-cardinality labels (pipeline, error class, page, outcome) — no
+  netids, no portal payloads, no PII
 - Push endpoints use **DB-backed** rate limits (survive serverless): 10
   subscribes, 3 test pushes, 30 receipts per netid per hour
 - Reminder payloads contain only timetable facts (subject, time, room) and
