@@ -19,7 +19,7 @@ app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI i
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs)
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image, gated on tests) + lint.yml; SHA-pinned actions; `uv lock --check`
 ```
@@ -53,6 +53,8 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_login_reject.py  # [unit] rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) + typed kind→status differential over every {'ok': False} producer, old-vs-new (9) (offline)
 .venv/bin/python tests/test_fault_handling.py  # [unit] 12/12 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, refresh subjects preserve R1 + preserve-visibility log line, attendance preserve on partial fetch, S25 refetch, errorhandler)
 .venv/bin/python tests/test_logging_telemetry.py  # [unit] 10/10 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough, control-char scrub in log+ntfy, non-ASCII X-Push-Tick -> 401 not 500)
+.venv/bin/python tests/test_metrics.py  # [unit] 10/10 (sync outcome+duration by pipeline/error class, captcha attempts per login, preflight ready/wasted/consumed, scrape-lock rejections, parse-empty per page, /internal/metrics secret-header auth: unset env = off, bare 401, non-ASCII fail-closed; usage_events retention env (365d default, once a day, count logged); every >=400 status line carries error= — offline, red-tested)
+.venv/bin/python tests/test_canary_sync.py  # [unit] 10/10 (scripts/canary_sync.sh against a self-booting local server with the fetch stubbed by netid: success arm writes the payload, no-creds and empty-parse arms exit non-zero with the reason, cookie deleted after every run, exactly ONE sync; needs gunicorn next to sys.executable)
 .venv/bin/python tests/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
 .venv/bin/python tests/test_attendance_view.py  # [unit] 83/83 attendance view model (frozen table, injected today=2026-10-05, budgets, join, degrade cases)
