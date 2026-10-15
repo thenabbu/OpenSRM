@@ -41,6 +41,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
+      # The VERSION file is the single source of release truth (app badge +
+      # pyproject + uv.lock all mirror it) - tag the image with it too so a
+      # deploy can pin/roll back: ghcr.io/thenabbu/opensrm:<VERSION>.
+      - name: Read VERSION
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
@@ -48,7 +55,15 @@ jobs:
           images: ghcr.io/thenabbu/opensrm
           tags: |
             type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.version }}
             type=sha,prefix=
+          # metadata-action derives org.opencontainers.image.version from the
+          # highest-priority tag (latest) - pin the real release number and
+          # the exact commit on the label instead, so `docker inspect` names
+          # the release even on the latest-labeled image.
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4

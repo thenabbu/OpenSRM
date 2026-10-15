@@ -241,14 +241,18 @@ def solve_captcha_b64(b64):
 def get_current_user():
     token = request.cookies.get("srm_session")
     if not token: return None
+    # v1.20.3 (migration 17): rows store sha256(token) — the browser keeps
+    # the raw token, the DB never does, so a leaked srm.db cannot be replayed
+    # as a live session. Every read/prune/delete path hashes to match.
+    digest = hashlib.sha256(token.encode()).hexdigest()
     c = db()
-    row = c.execute("SELECT netid, created FROM cookies WHERE token=?", (token,)).fetchone()
+    row = c.execute("SELECT netid, created FROM cookies WHERE token=?", (digest,)).fetchone()
     if row and time.time() - row["created"] > SESSION_MAX_AGE:
         # audit 2026-09-27: enforce expiry at READ time. Previously pruning
         # happened only inside make_session_token() (i.e. when that same user
         # logged in again), so a leaked srm_session cookie stayed valid
         # server-side indefinitely — the 30-day client cookie was the only cap.
-        c.execute("DELETE FROM cookies WHERE token=?", (token,))
+        c.execute("DELETE FROM cookies WHERE token=?", (digest,))
         c.commit()
         row = None
     c.close()
@@ -265,7 +269,11 @@ def make_session_token(netid):
     # different IP = cross-device). Sessions are now concurrent per account,
     # each still bounded by SESSION_MAX_AGE at read time.
     c.execute("DELETE FROM cookies WHERE created < ?", (int(time.time()) - SESSION_MAX_AGE,))
-    c.execute("INSERT INTO cookies(token,netid,created) VALUES(?,?,?)", (token, netid, int(time.time())))
+    # v1.20.3: store sha256(token); the caller/browser keeps the raw token
+    # (contract: make_session_token still returns it), so the value at rest
+    # is useless to anyone holding the DB but not the cookie.
+    c.execute("INSERT INTO cookies(token,netid,created) VALUES(?,?,?)",
+              (hashlib.sha256(token.encode()).hexdigest(), netid, int(time.time())))
     c.commit(); c.close()
     return token
 
@@ -1947,6 +1955,38 @@ def _log_request(resp):
                     status=resp.status_code, duration_ms=duration_ms)
     return resp
 
+# ── Cross-site request guard ───────────────────────────────────────────────
+# v1.20.3: state-changing methods arriving from another site are refused
+# (403 + error= on the opensrm.http line) instead of trusting SameSite=Lax
+# alone. Sec-Fetch-Site is a forbidden header — a cross-site page can neither
+# strip nor forge it — so it leads; Origin covers older browsers. Neither
+# header present = non-browser client (curl, cron, tests) -> allowed.
+# /internal/push/tick authenticates with its own secret header -> exempt.
+_CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+# session-authenticated POSTs served through the tunnel (see above);
+# the push tick is secret-header auth, same exemption for the same reason.
+_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
+
+@app.before_request
+def _cross_site_guard():
+    if request.method not in _CROSS_SITE_METHODS:
+        return None
+    # exempt: POSTs that authenticate with the session cookie and are served
+    # through the Cloudflare tunnel — the tunnel rewrites the browser's
+    # same-origin fetch metadata (Sec-Fetch-Site/Origin no longer match the
+    # origin host once cloudflared fronts the POST), so a same-site user form
+    # would false-403 behind the tunnel while passing locally.
+    if request.path in _CROSS_SITE_EXEMPT:
+        return None
+    sfs = request.headers.get("Sec-Fetch-Site")
+    if sfs is not None and sfs.lower() not in ("same-origin", "none"):
+        return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
+    origin = request.headers.get("Origin")
+    if origin is not None and urlparse(origin).netloc.lower() != request.host.lower():
+        return {"error": "cross-site request refused (Origin)"}, 403
+    return None
+
+
 # ── Security headers ───────────────────────────────────────────────
 @app.errorhandler(Exception)
 def _unhandled_error(e):
@@ -2320,11 +2360,18 @@ NOTICES = [
              "\"Sync in progress\" — it waits up to 45 seconds for its turn (logins go "
              "ahead of refreshes, and the progress bar shows how many syncs are ahead) "
              "and only gives the busy error if the wait runs out."},
+    {"ver": "v1.22.1", "date": "15 Oct", "title": "Sessions hardened at rest",
+     "body": "Session tokens are now stored in the database only as SHA-256 "
+             "digests, so a copied database file can no longer be used to log "
+             "in as you — and your existing session keeps working across this "
+             "update. Requests that try to change your data from another "
+             "website are also refused now."},
     {"ver": "v1.22.0", "date": "15 Oct", "title": "Smarter syncs — no wasted portal visits",
      "body": "Syncing twice in a row no longer hits the portal twice: a refresh within "
              "5 minutes of your last sync is answered from the data you already have, "
              "and refreshes started while one is already running now wait for and "
              "share that sync instead of showing a \"Sync in progress\" error."},
+
     {"ver": "v1.21.0", "date": "15 Oct", "title": "Clearer sync errors + sync health monitoring",
      "body": "A failed sync now says exactly what went wrong (wrong password, "
              "portal busy, or the portal changed) instead of a generic error. "
@@ -4405,10 +4452,11 @@ def logout():
     token = request.cookies.get("srm_session")
     netid = None
     if token:
+        digest = hashlib.sha256(token.encode()).hexdigest()
         c = db()
-        row = c.execute("SELECT netid FROM cookies WHERE token=?", (token,)).fetchone()
+        row = c.execute("SELECT netid FROM cookies WHERE token=?", (digest,)).fetchone()
         netid = row["netid"] if row else None
-        c.execute("DELETE FROM cookies WHERE token=?", (token,))
+        c.execute("DELETE FROM cookies WHERE token=?", (digest,))
         c.commit(); c.close()
     # incident logging: real logouts previously left no auth line at all —
     # attribution had to be reconstructed from HTTP 302s + cookie joins.

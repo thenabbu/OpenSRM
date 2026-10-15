@@ -1,6 +1,12 @@
 services:
   opensrm:
-    image: ghcr.io/thenabbu/opensrm:latest
+    # OPENSRM_TAG pins the deployed image tag; unset = latest (the only tag
+    # CI published before this change, so the default render is byte-identical).
+    # Rollback: set OPENSRM_TAG=<version> in /docker/opensrm/.env (NOT the
+    # master /docker/.env - compose interpolates from the project env file,
+    # the /docker/opensrm/.env next to this compose file), then
+    #   docker compose pull && docker compose up -d opensrm
+    image: ghcr.io/thenabbu/opensrm:${OPENSRM_TAG:-latest}
     container_name: opensrm
     restart: unless-stopped
     # audit 2026-09-27: stop publishing on ALL interfaces. Access is via the

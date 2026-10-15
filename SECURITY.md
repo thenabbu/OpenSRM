@@ -19,6 +19,8 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - HttpOnly cookies (not accessible via JavaScript) with `SameSite=Lax`
 - Secure flag enabled only when the request carries a real `cf-ray` and arrived over HTTPS
 - 30-day expiry, enforced on every read; expired tokens for an account are pruned when that account logs in again (no background sweeper)
+- **Tokens are stored as a sha256 hex digest** (migration 17): the browser holds the raw token, the database never does, so a leaked `srm.db` cannot be replayed as a live session. Existing rows are hashed inside the migration, so every current session survives the upgrade; the digest is computed over the presented cookie on every read, prune and delete
+- **Cross-site state-changing requests are refused with 403** (`POST`/`PUT`/`PATCH`/`DELETE`): when `Sec-Fetch-Site` is present it must be `same-origin` or `none` (forbidden header — a cross-site page can neither strip nor forge it); otherwise a present `Origin` must match the request host (including `Origin: null`, which fails closed); a client that sends neither header (curl, cron, tests) is not a browser and is allowed. `POST /internal/push/tick` is exempt — it authenticates with its own secret header. Every refusal logs `status=403` with its `error=` on the `opensrm.http` line
 
 ### Push notifications (Web Push)
 - A subscription's **endpoint is a capability URL** — anyone holding it could
@@ -69,7 +71,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 ### Input validation
 - NetID regex: `[a-z0-9]{2,20}` (after stripping email domain)
 - Password max length: 128 characters
-- Request body max: 16KB, and login accepts only a real `application/json` body (no form-encoded CSRF vector); no CSRF token — `SameSite=Lax` + the strict JSON requirement cover it
+- Request body max: 16KB, and login accepts only a real `application/json` body (no form-encoded CSRF vector); no CSRF token — the cross-site 403 guard (Sec-Fetch-Site/Origin, see Sessions) + `SameSite=Lax` + the strict JSON requirement cover it
 
 ### Infrastructure
 - Cloudflare Tunnel for HTTPS termination
@@ -84,6 +86,17 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   `--no-sandbox` — required for headless Playwright in-container; the
   container is single-purpose and only reachable through the Cloudflare
   tunnel (compose publishes loopback + the cloudflared bridge gateway only)
+
+### Supply chain
+- Every CI action is SHA-pinned to a 40-char commit; the Dockerfile pins its
+  base images and the `uv` binary by digest
+- `.github/workflows/scans.yml` runs gitleaks (full git history), pip-audit
+  (locked python deps) and trivy (built image, HIGH/CRITICAL with a fix
+  available) on every PR — **report-only** by design; docs/SCANS.md documents
+  what each would block on and how the maintainer can flip one to blocking
+- The one git dependency (`blobatar`) is pinned to an exact commit hash
+  (`pyproject.toml` + `uv.lock`, enforced by `tests/verify76.py` M22) — a known,
+  documented supply-chain gap (see docs/SCANS.md) reported rather than fixed
 
 ## Key rotation
 
