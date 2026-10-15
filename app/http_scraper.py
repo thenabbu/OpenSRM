@@ -30,6 +30,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
+from . import metrics
+
 log = logging.getLogger("opensrm.portal")
 
 PORTAL_HOST = "sp.srmist.edu.in"
@@ -200,20 +202,26 @@ def preflight(netid):
     ctx = _prepare(opener, base, xheaders)
     if not ctx["ocr"]:
         log.warning("preflight empty ocr netid=%s — not stored", netid)
+        metrics.inc("opensrm_preflight_total", outcome="wasted")  # OCR produced nothing usable
         return
     now = time.time()
     if len(_PREFLIGHT) >= _PREFLIGHT_MAX:  # opportunistic prune of stale entries
         for k in [k for k, v in _PREFLIGHT.items() if now - v["ts"] > 180]:
             _PREFLIGHT.pop(k, None)
     _PREFLIGHT[netid] = {"opener": opener, "jar": jar, "ctx": ctx, "ts": now}
+    metrics.inc("opensrm_preflight_total", outcome="ready")
     log.info("preflight ready netid=%s ocr=%s age=0ms", netid, ctx["ocr"])
 
 
 def take_preflight(netid, max_age=150):
     """Pop the warm login for this netid (single-use). None when stale/absent."""
     p = _PREFLIGHT.pop(netid, None)
-    if not p or time.time() - p["ts"] > max_age:
+    if not p:
         return None
+    if time.time() - p["ts"] > max_age:
+        metrics.inc("opensrm_preflight_total", outcome="wasted")  # stored but never consumed
+        return None
+    metrics.inc("opensrm_preflight_total", outcome="consumed")
     log.debug("preflight consumed netid=%s age_ms=%d", netid, int((time.time() - p["ts"]) * 1000))
     return p
 
@@ -348,10 +356,18 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
                               "rate-limiting). Try again in a few minutes.")
 
 
+def _login_done(ok, err, attempts):
+    """Record captcha attempts-per-login for the HTTP pipeline, return the
+    (ok, err) passthrough. One attempt == one prepared submit (OCR+POST)."""
+    metrics.observe("opensrm_captcha_attempts_per_login", attempts, pipeline="http")
+    return ok, err
+
+
 def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepared=None):
     """Pure-HTTP login. Returns (ok, fail) — fail is a sync_error() result or
     None. Raises HttpScraperError on transport fail."""
     from app.app import sync_error  # deferred: app.app imports this module lazily
+    extra = 1 if prepared else 0   # a pre-solved captcha counts as one attempt
     # Preflight path: warm session + solved captcha from the typing phase.
     if prepared:
         try:
@@ -359,9 +375,9 @@ def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepa
             action, err = _post_login(prepared["opener"], prepared["ctx"], netid,
                                       password, base, xheaders, helpers, on_step, attempt=1)
             if action == "ok":
-                return True, None
+                return _login_done(True, None, 1)
             if action == "fail":
-                return False, err
+                return _login_done(False, err, 1)
             log.info("preflight captcha rejected netid=%s — fetching fresh captcha", netid)
         except HttpScraperError as e:
             log.warning("preflight post failed (%r) — fresh login", e)
@@ -373,16 +389,16 @@ def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepa
             if attempt < MAX_CAPTCHA_RETRIES:
                 time.sleep(2)
                 continue
-            return False, sync_error("internal", "captcha OCR failed — try again")
+            return _login_done(False, sync_error("internal", "captcha OCR failed — try again"), extra + attempt)
         action, err = _post_login(opener, ctx, netid, password, base, xheaders,
                                   helpers, on_step, attempt)
         if action == "ok":
-            return True, None
+            return _login_done(True, None, extra + attempt)
         if action == "retry":
             time.sleep(2)
             continue
-        return False, err
-    return False, sync_error("bad_credentials", "login failed — captcha retries exhausted")
+        return _login_done(False, err, extra + attempt)
+    return _login_done(False, sync_error("bad_credentials", "login failed — captcha retries exhausted"), extra + MAX_CAPTCHA_RETRIES)
 
 
 def _jsp_post(opener, base, xheaders, path, form_id):
@@ -909,6 +925,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
 
     data = parse_attendance(content_html)
     if not data.get("courses"):
+        metrics.inc("opensrm_parse_empty_total", page="attendance", pipeline="http")
         if "ABC ID" in content_html or "Aadhaar" in content_html:
             return sync_error("markup_changed", "Portal requires ABC ID Generation first — "
                                                 "log in at sp.srmist.edu.in and complete the "
@@ -965,6 +982,8 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
     # End-sem schedule: official 126 table wins; scribe rows fill the rest.
     # None (both unreliable) -> key omitted -> stored value preserved upstream.
     exams = _merge_exam_results(exam_results, official_html=parallel_html.get("126", ""))
+    if not exams:   # [] = clean empty window, None = unreliable — both worth counting
+        metrics.inc("opensrm_parse_empty_total", page="exams", pipeline="http")
     log.debug("exam probe netid=%s candidates=%s rows=%s", netid, cands,
               len(exams) if exams is not None else None)
 
@@ -976,6 +995,8 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
             personal = parse_personal_details(ph)
     except Exception as e:
         log.debug("personal parse err=%r", e)
+    if cold and not personal:
+        metrics.inc("opensrm_parse_empty_total", page="personal", pipeline="http")
 
     # Faculty map: read-only harvest rides the same logged-in session after the
     # JSP batch (MidSemFeedback.jsp is a portal window — when closed, the whole
@@ -1001,6 +1022,8 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
                     pass
     except Exception as e:
         log.debug("courses parse err=%r", e)
+    if cold and not courses:
+        metrics.inc("opensrm_parse_empty_total", page="courses", pipeline="http")
 
     # Marks + parallel component drilldowns
     marks, subject_map = [], {}
@@ -1036,6 +1059,8 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
             _prog("Reading personal details & timetable…", 80)
     except Exception as e:
         log.warning("marks parse err — marks return empty (stored marks now preserved by caller): %r", e)
+    if not marks:
+        metrics.inc("opensrm_parse_empty_total", page="marks", pipeline="http")
 
     _prog("Preparing your dashboard…", 92)
     log.info("http scrape complete netid=%s courses=%d marks=%d personal=%d "
@@ -1057,6 +1082,9 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
         tt = parse_timetable(parallel_html.get("10", ""))
         if tt:  # dict only
             out["timetable"] = tt
+        else:
+            metrics.inc("opensrm_parse_empty_total", page="timetable", pipeline="http")
     except Exception as e:
         log.debug("timetable parse err=%r", e)
+        metrics.inc("opensrm_parse_empty_total", page="timetable", pipeline="http")
     return out
