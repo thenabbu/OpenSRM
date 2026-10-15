@@ -37,8 +37,8 @@ chk('H3a', "XSS: timetable values escaped at render (_hesc on code/name/location
 chk('H4a', "SW: no inline register in login.html", miss('app/templates/login.html', r'navigator\.serviceWorker'))
 chk('H4b', "SW: register lives in login.js", has('app/static/login.js', r'serviceWorker\.register'))
 chk('H4c', "SW: Service-Worker-Allowed header set", has('app/app.py', r'Service-Worker-Allowed'))
-chk('H5',  "cooldown: _request_fail_counted reset per request (init + reset)",
-    len(re.findall(r'_request_fail_counted = False', rd('app/app.py'))) >= 2)
+chk('H5',  "cooldown: per-sync fail-counted context reset per request (init + reset)",
+    len(re.findall(r'fail_counted = False', rd('app/app.py'))) >= 2)
 
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",

@@ -98,10 +98,11 @@ Key rules:
 ## Portal rate limits
 
 During testing, be aware:
-- Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a `Sync in progress` / budget / cooldown rejection is free)
+- Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a queue-wait timeout / `Sync in progress` / budget / cooldown rejection is free)
 - Refresh cache window: a refresh within `SYNC_MIN_INTERVAL_S` (default 300s, `0` disables) of an account's last completed sync is answered from stored data — no portal request, no quota charge; a second refresh while one is already running waits for and shares that sync instead of erroring
+- Sync queue: a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) for a running one, logins ahead of refreshes, before it gets the busy 503; `SYNC_MAX_CONCURRENCY` (default 1) is how many pipelines may run at once, and the Playwright fallback stays serialized at any value
 - Per IP: 10 login attempts per hour
-- Aggregate server→portal budget: 30 requests per 10 minutes
+- Aggregate server→portal budget: 30 requests per 10 minutes (full logins + preflights share 20, preflight capped at its own 10, refresh floor 10)
 
 Don't hammer the portal during testing.
 

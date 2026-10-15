@@ -214,9 +214,11 @@ flowchart LR
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Port | 8083 | Web interface port (compose maps loopback + cloudflared gateway → container 8080) |
-| Rate limit (netid) | 3 per 10 min | Scrapes per account — counted only once the sync actually runs (a busy/cooldown/budget rejection costs nothing) |
+| Rate limit (netid) | 3 per 10 min | Scrapes per account — counted only once the sync actually runs (a queue-timeout, busy, cooldown or budget rejection costs nothing) |
 | Rate limit (IP) | 10 per hour | Login attempts per IP |
-| Portal budget | 30 per 10 min | Aggregate server→portal requests |
+| Portal budget | 30 per 10 min | Aggregate server→portal requests, in three buckets: full logins + preflights share 20 (preflight capped at 10), refreshes hold a reserved floor of 10; one IP at most 6 unauth tokens |
+| Sync queue wait | 45 s | How long a sync waits for a running one before it returns "Sync in progress" (`SYNC_QUEUE_WAIT_S`; `0` = refuse immediately). Logins queue ahead of refreshes; waiters show "Waiting for N ahead…" on the login progress bar |
+| Sync concurrency | 1 | Portal pipelines allowed to run at once (`SYNC_MAX_CONCURRENCY`, read at startup). The Playwright fallback stays serialized at any value |
 | Portal cooldown | 5 → 30 min | After 3 consecutive portal failures: 5 min, doubling, capped at 30 |
 | Session | 30 days | Cookie lifetime |
 | DB lock wait | 10 s | How long a SQLite statement waits for a lock before failing (was Python’s 5 s default) |
@@ -228,6 +230,8 @@ Environment variables:
 - `CHROMIUM_PATH` — Chromium executable path (Playwright fallback)
 - `LOG_LEVEL` — Logging verbosity: DEBUG, INFO (default), WARNING, ERROR
 - `SYNC_MIN_INTERVAL_S` — refresh cache window in seconds (default 300; `0` disables). A `POST /api/refresh` inside the window of the account's last completed sync returns `{ok: true, cached: true, age_s}` from stored data — no portal contact, no per-account quota charge — and a second refresh for an account already syncing waits for and shares that sync's result instead of returning "Sync in progress". Values above 600 also answer the dashboard's background auto-sync from cache; the canary (`scripts/canary_sync.sh`) fails loudly if served a cached answer, since a canary run must really touch the portal
+- `SYNC_QUEUE_WAIT_S` — seconds a sync waits in the queue for a running sync to finish before returning the busy "Sync in progress" error (default 45; `0` restores the old refuse-immediately behaviour; read per-request, so it can be flipped without a restart). While waiting, the login progress bar shows "Waiting for N ahead…", and logins queue ahead of refreshes
+- `SYNC_MAX_CONCURRENCY` — how many portal pipelines may run at once (default 1, read at startup). Values above 1 are accepted but untested end-to-end; the Playwright fallback stays serialized on one browser at any value
 - `TZ` — Timezone (default: `Asia/Kolkata`)
 - `SRM_EGRESS_URL` + `SRM_PROXY_TOKEN` — optional: route portal traffic through the Cloudflare egress worker instead of direct egress (both must be set, otherwise direct)
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
@@ -256,7 +260,7 @@ No cron is installed — run it by hand or wire your own scheduler.
 
 - Fernet-encrypted passwords at rest; session tokens stored as sha256 digests at rest (raw value only in the browser's cookie); cross-site state-changing requests refused by the Sec-Fetch-Site/Origin guard; `srm_session` cookie is HttpOnly + SameSite=Lax, Secure flag gated on a real `cf-ray` + HTTPS hop
 - CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts) with SRI `integrity` sha384 + `crossorigin` on both CDN tags (a tampered CDN payload fails closed)
-- Rate limiting per netid, per IP, plus an aggregate portal budget and escalating portal cooldown
+- Rate limiting per netid, per IP, plus an aggregate portal budget (bucketed: login / refresh / preflight), a bounded sync queue (waiters queue with logins ahead of refreshes) and escalating portal cooldown
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses
 
