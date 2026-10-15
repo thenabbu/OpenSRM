@@ -42,7 +42,7 @@ chk('H5',  "cooldown: _request_fail_counted reset per request (init + reset)",
 
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",
-    bool(re.search(r'invalid credentials', region('app/app.py', 'def _login_error_code', 'def api_login'))) or has('app/app.py', r'invalid credentials'))
+    has('app/app.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
 _pm = region('app/app.py', 'def parse_marks', '\ndef ')
 chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks)",
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))

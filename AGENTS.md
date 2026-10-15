@@ -15,11 +15,11 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
-app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions in partials/theme.html)
+app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs)
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image :latest+:VERSION+:sha, gated on tests) + lint.yml + scans.yml (gitleaks/pip-audit/trivy, report-only); SHA-pinned actions; `uv lock --check`
 ```
@@ -47,9 +47,10 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_tt_history.py  # [unit] 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_tt_hero.py  # [unit] 3/3 (the NOW-hero keeps the slot's attendance join `_att` across the dict hop; a missing `_att` is tolerated) — no server
 .venv/bin/python tests/test_relogin_save.py  # [unit] 9/9 (mid-scrape relogin persists fresh session + resets portal fail state; portal_sessions encrypted at rest + legacy plaintext row; stubbed fetch, no network)
+.venv/bin/python tests/test_fernet_rotation.py  # [unit] 39/39 (FERNET_KEYS -> MultiFernet first-key-encrypts + file-mode default unchanged, rotate script dry-run default / refuse-unreadable-with-count / --skip-unreadable / apply verifies+commits one transaction / idempotent, wrong key -> "" unreadable-creds path, invalid env names FERNET_KEYS without echoing it, no key material in tool output; fabricated keys only)
 .venv/bin/python tests/test_official_tt.py  # [unit] 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
 .venv/bin/python tests/test_sessions.py  # [unit] 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
-.venv/bin/python tests/test_login_reject.py  # [unit] rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) (offline)
+.venv/bin/python tests/test_login_reject.py  # [unit] rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) + typed kind→status differential over every {'ok': False} producer, old-vs-new (9) (offline)
 .venv/bin/python tests/test_fault_handling.py  # [unit] 12/12 (corrupt-row degradation B1-B4, _semester_int B5, marks preserve B6, refresh subjects preserve R1 + preserve-visibility log line, attendance preserve on partial fetch, S25 refetch, errorhandler)
 .venv/bin/python tests/test_logging_telemetry.py  # [unit] 10/10 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough, control-char scrub in log+ntfy, non-ASCII X-Push-Tick -> 401 not 500)
 .venv/bin/python tests/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
@@ -106,6 +107,7 @@ export DATA_DIR=/tmp/osrm-guide
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18098 app.app:app &
 export DUT_BASE=http://127.0.0.1:18098
 .venv/bin/python tests/guide_static.py    # [unit] 9/9  Login Flow UX Guide (source level, no server)
+.venv/bin/python tests/test_db_concurrency.py  # [unit] 14/14 (db() policy: 10s busy timeout survives a 6s lock hold where the old 5s default failed, thread stress zero locked, SQLITE_JOURNAL_MODE delete/wal/flip-back/invalid fallback via child-process boots)
 .venv/bin/python tests/guide_check.py     # [e2e] 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
 .venv/bin/python tests/guide_server.py    # [none] 6 items, green = 0 FAIL (2 come back INCONCLUSIVE when the portal/IP limiter interferes) — 7 live portal probes, NEVER loop it; the wrong-password arm is opt-in via GUIDE_WRONGPASS_NETID=<existing netid>
 kill %1
@@ -157,8 +159,9 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v29; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v31; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
+- SQLite: every connection funnels through `app.app.db()` (10s busy timeout, `SQLITE_JOURNAL_MODE` env, default `delete`). Forensic `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when WAL is on — or use `sqlite3 “.backup”` (the daily snapshot pipeline already does; it is WAL-safe). Raw `cp` under WAL silently misses recent commits.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
 - The portal login page markup itself contains `captcha` (x17) and `invalid` (Bootstrap `.invalid-feedback`) — never classify a rejection on those tokens or EVERY failure reads as "invalid captcha" (this hid a wrong password behind 3 captcha retries and burned the portal's own 3-attempts-per-NetID lockout). Classify on the portal's `<h6 class="alert-heading">Alert</h6>` text; `tests/test_login_reject.py` holds the verbatim strings.

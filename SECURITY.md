@@ -7,9 +7,13 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 ## What we protect
 
 ### Passwords
-- Fernet encryption at rest (AES-128-CBC)
-- Key stored at `DATA_DIR/fernet.key` (`/app/data/fernet.key` in the container, mode 600, generated on first boot if absent)
-- Never logged or transmitted in plaintext
+- Fernet encryption at rest (AES-128-CBC); when `FERNET_KEYS` is set, reads go through `MultiFernet`, so every listed key decrypts while only the **first** key encrypts (old ciphertext stays readable through a rotation)
+- Key location, in precedence order:
+  - `FERNET_KEYS` env — comma-separated base64 keys, first key = the encrypting key. It belongs in `/docker/opensrm/.env` (the compose project env, interpolated into the container's `environment:`), **not `/docker/.env`** (the lab master registry — compose never reads it for this project) and never inside `DATA_DIR`
+  - default (unset or empty): `DATA_DIR/fernet.key` (`/app/data/fernet.key` in the container, mode 600, generated on first boot if absent)
+- Never logged or transmitted in plaintext — `scripts/rotate_fernet_key.py` prints counts only, never key material, ciphertext, plaintext or netids
+- A decrypt failure keeps today's behaviour: the credentials read as unreadable and the user is asked to log in again (no crash)
+- How to replace the key without losing stored passwords: see [Key rotation](#key-rotation)
 
 ### Sessions
 - HttpOnly cookies (not accessible via JavaScript) with `SameSite=Lax`
@@ -37,6 +41,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - `default-src 'self'` — everything falls back to same-origin
 - `script-src 'self' https://cdn.jsdelivr.net` — no inline scripts; the only external origin is the Tailwind/daisyUI CDN (both pages load it via `partials/theme.html`)
 - `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net` — Tailwind/daisyUI loaded at runtime from jsDelivr
+- **Subresource Integrity on both CDN assets** — the Tailwind and daisyUI tags in `partials/theme.html` carry `integrity="sha384-…"` + `crossorigin="anonymous"`, so the browser refuses to execute or apply either file unless its bytes hash exactly to the pinned digest (a changed or tampered CDN response fails closed; the page renders unstyled instead of compromised). The digests were computed from the exact pinned URLs and confirmed against independent fetches; a locally served tampered copy is rejected by the browser while the untampered control loads.
 - `img-src 'self' data:` — no remote image hosts
 - `connect-src 'self'` — no external API calls from the browser
 - `frame-ancestors 'none'` — cannot be embedded in iframes
@@ -57,6 +62,11 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 
 ### Infrastructure
 - Cloudflare Tunnel for HTTPS termination
+- **SQLite backups must be online copies.** `sqlite3 <db> ".backup <dest>"` (the
+  method the standing daily snapshot pipeline uses) is safe in every journal
+  mode — it reads through the WAL. A raw `cp` of `srm.db` is only equivalent
+  while the DB runs the default `delete` journal; with `SQLITE_JOURNAL_MODE=wal`
+  recent commits live in `srm.db-wal` and a file-only copy silently misses them
 - Only trusted when `cf-ray` header is present (prevents header spoofing)
 - Docker container runs with healthcheck and log rotation
 - Accepted risk (deliberate): the container runs as root with Chromium
@@ -74,6 +84,30 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - The one git dependency (`blobatar`) is pinned to an exact commit hash
   (`pyproject.toml` + `uv.lock`, enforced by `tests/verify76.py` M22) — a known,
   documented supply-chain gap (see docs/SCANS.md) reported rather than fixed
+
+## Key rotation
+
+The encryption key can be replaced without losing stored passwords, and kept off the data volume: `FERNET_KEYS` in `/docker/opensrm/.env` holds comma-separated keys, **the first key encrypts** and every key decrypts. `DATA_DIR/fernet.key` stays the zero-config default. All commands below run on the lab host; the env is read at process start, so every key change needs a container recreate, and `scripts/rotate_fernet_key.py` ships in the image at `/app/scripts/`.
+
+1. **Snapshot first** — an online `.backup`, the same WAL-safe method the daily snapshot pipeline uses (the image has no `sqlite3` CLI, so use its python):
+   ```bash
+   docker exec opensrm python -c 'import sqlite3; s=sqlite3.connect("/app/data/srm.db"); d=sqlite3.connect("/app/data/srm.pre-rotation.snapshot.db"); s.backup(d); d.close(); s.close(); print("snapshot ok")'
+   docker cp opensrm:/app/data/srm.pre-rotation.snapshot.db ./srm.pre-rotation.snapshot.db
+   ```
+   Keep the copy until step 4's dry run is green. To restore: stop the container, `docker cp ./srm.pre-rotation.snapshot.db opensrm:/app/data/srm.db`, start it again.
+2. **Generate the new key** on the lab host — it never passes through chat, logs or the repo:
+   ```bash
+   docker exec opensrm python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+   ```
+3. **Edit `/docker/opensrm/.env`** (only ever this file — compose does not read `/docker/.env` for this project): set one line `FERNET_KEYS=<new-key>,<current-key>`. The current key is `docker exec opensrm cat /app/data/fernet.key` while you still run file mode; if `FERNET_KEYS` is already in use, keep its keys after the new one. **When first moving off the file key it must appear in the list — a key left out makes its rows unreadable.**
+4. **Recreate, then re-encrypt history** (dry run is the default and prints counts only, never key material):
+   ```bash
+   cd /docker/opensrm && docker compose up -d opensrm
+   docker exec opensrm python /app/scripts/rotate_fernet_key.py          # dry run: expect "to re-encrypt: N", "unreadable: 0"
+   docker exec opensrm python /app/scripts/rotate_fernet_key.py --apply  # one transaction; verifies by decrypting every row; rolls back if any fails
+   ```
+   Any unreadable row stops the run **before a single write** with the count printed (fix the key list — usually a missing old key); `--skip-unreadable` continues and leaves exactly those rows untouched. Safe against the running app: one short transaction on a small DB, both sides wait up to 10s for the lock. Re-running is a no-op (`to re-encrypt: 0`).
+5. **Drop the old key** once the dry run reports `to re-encrypt: 0` and logins look healthy: remove it from `FERNET_KEYS` (new key stays first), recreate again, dry-run once more. Rows still on a dropped key surface as the existing "stored credentials unreadable — log in again" path; portal-session rows have a 4h TTL, so they just force one fresh login. The app's own decrypt-failure behaviour is unchanged throughout.
 
 ## Scope
 

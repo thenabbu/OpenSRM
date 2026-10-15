@@ -2,7 +2,7 @@
 """SRM Attendance — Flask app (multi-user, security-hardened, Sep 2026 audit).
 
 Audit fixes (Sep 16 2026):
-  - Passwords encrypted at rest (Fernet, key in /app/data/fernet.key)
+  - Passwords encrypted at rest (Fernet — FERNET_KEYS env, else /app/data/fernet.key)
   - get_json(silent=True) — requires application/json, no force=True
   - Per-IP login rate limit (CF-Connecting-IP aware) + per-netid scrape limit
   - Security headers (CSP, nosniff, frame-deny, referrer)
@@ -86,20 +86,47 @@ SESSION_MAX_AGE = 60 * 60 * 24 * 30          # 30 days
 
 # ── Crypto: passwords at rest ──────────────────────────────────────
 _fernet = None
+
+def fernet_keys():
+    """Key bytes get_fernet() is built from, shared with
+    scripts/rotate_fernet_key.py so the tool and the app can never
+    disagree about which keys are live.
+
+    Returns (keys, from_env): FERNET_KEYS env (comma-separated, FIRST key
+    is the primary/encrypting key) wins when set — rotation keeps keys off
+    the data volume; otherwise the single persisted DATA_DIR/fernet.key
+    (generated on first use), exactly as before."""
+    from cryptography.fernet import Fernet
+    parts = [k.strip().encode() for k in os.environ.get("FERNET_KEYS", "").split(",") if k.strip()]
+    if parts:
+        return parts, True
+    key_path = os.path.join(DATA_DIR, "fernet.key")
+    if os.path.exists(key_path):
+        return [open(key_path, "rb").read()], False
+    key = Fernet.generate_key()
+    with open(key_path, "wb") as f:
+        f.write(key)
+    os.chmod(key_path, 0o600)
+    return [key], False
+
 def get_fernet():
-    """Lazy-init Fernet from a persisted key file so restarts don't lose data."""
+    """Lazy-init the data-at-rest cipher so restarts don't lose data.
+
+    FERNET_KEYS set -> MultiFernet: the FIRST key encrypts, every key
+    decrypts (old ciphertext stays readable during/after rotation).
+    Otherwise -> single Fernet from DATA_DIR/fernet.key, default unchanged."""
     global _fernet
     if _fernet is None:
-        from cryptography.fernet import Fernet
-        key_path = os.path.join(DATA_DIR, "fernet.key")
-        if os.path.exists(key_path):
-            key = open(key_path, "rb").read()
+        from cryptography.fernet import Fernet, MultiFernet
+        keys, from_env = fernet_keys()
+        if from_env:
+            try:
+                _fernet = MultiFernet([Fernet(k) for k in keys])
+            except ValueError as e:
+                # config error, not corrupt data: name the env var, never echo a key
+                raise RuntimeError("FERNET_KEYS contains an invalid key (%s)" % e) from None
         else:
-            key = Fernet.generate_key()
-            with open(key_path, "wb") as f:
-                f.write(key)
-            os.chmod(key_path, 0o600)
-        _fernet = Fernet(key)
+            _fernet = Fernet(keys[0])
     return _fernet
 
 def encrypt_pw(pw):
@@ -167,10 +194,29 @@ def _import_legacy_timetable():
         log.exception("legacy timetable import failed")
     c.close()
 
-def db():
+# sqlite: every connection in the app funnels through db() (migrations and
+# push_store.get_conn() both call it). One knob pair here therefore covers
+# all three connection sites. timeout is sqlite3's per-statement lock wait;
+# busy_timeout is the PRAGMA twin — set both so the value holds even for
+# statements sqlite3's timeout does not cover.
+SQLITE_TIMEOUT_SECS = 10
+_journal_mode = os.environ.get("SQLITE_JOURNAL_MODE", "delete").strip().lower()
+if _journal_mode not in ("delete", "wal", "truncate", "persist", "off", "memory"):
+    _journal_mode = "delete"  # unknown value -> today's default, never fail boot
 
-    c = sqlite3.connect(DB_PATH)
+def db():
+    c = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT_SECS)
     c.row_factory = sqlite3.Row
+    c.execute(f"PRAGMA busy_timeout={SQLITE_TIMEOUT_SECS * 1000}")
+    # journal_mode persists in the DB file; set it explicitly on every
+    # connect so an env flip (wal<->delete) takes effect on the next boot
+    # without a manual sqlite3 shell session.
+    mode = c.execute(f"PRAGMA journal_mode={_journal_mode}").fetchone()[0]
+    if mode.lower() != _journal_mode:
+        log.warning("sqlite journal_mode %r requested but active mode is %r",
+                    _journal_mode, mode)
+    if _journal_mode == "wal":
+        c.execute("PRAGMA synchronous=NORMAL")  # WAL-safe durability trade
     return c
 
 def init_db():
@@ -997,14 +1043,17 @@ async def _get_persistent_page(netid):
 # ── Speed-optimized scraper ──────────────────────────────────────── ────────────────────────────────────────
 
 async def _do_login(page, ctx, netid, password):
-    """Perform login with captcha retry. Returns (ok, error_or_none)."""
+    """Perform login with captcha retry. Returns (ok, fail) — fail is a
+    sync_error() result (typed kind + byte-identical message) or None."""
     global _request_fail_counted
     _request_fail_counted = False  # one portal-fail per request, not per retry
     # Check global portal cooldown before attempting
     cooldown = _portal_cooldown_remaining()
     if cooldown > 0:
-        return False, (f"SRM portal temporarily rate-limiting our server. "
-                       f"Try again in {int(cooldown / 60) + 1} minutes.")
+        return False, sync_error("portal_cooldown",
+                                 f"SRM portal temporarily rate-limiting our server. "
+                                 f"Try again in {int(cooldown / 60) + 1} minutes.",
+                                 retry_after=int(cooldown))
 
     await page.goto(LOGIN_URL, wait_until="domcontentloaded")
     await page.fill('input[name="username"]', netid)
@@ -1017,11 +1066,11 @@ async def _do_login(page, ctx, netid, password):
         b64 = await page.evaluate(CAPTCHA_JS)
         if not b64:
             log.warning("playwright login netid=%s abort=captcha_image_empty (portal served no image)", netid)
-            return False, "captcha image failed to load — portal may be slow"
+            return False, sync_error("portal_down", "captcha image failed to load — portal may be slow")
         captcha = solve_captcha_b64(b64)
         if not captcha:
             log.warning("playwright login netid=%s abort=ocr_empty", netid)
-            return False, "captcha OCR returned empty"
+            return False, sync_error("internal", "captcha OCR returned empty")
         await page.click('input[name="captcha"]')
         await page.type('input[name="captcha"]', captcha, delay=10)
         await page.mouse.move(300, 200, steps=3)
@@ -1048,7 +1097,7 @@ async def _do_login(page, ctx, netid, password):
                                 "portal_alert=%r", _ca + 1, MAX_CAPTCHA_RETRIES,
                                 next((ln.strip()[:160] for ln in err_text.splitlines()
                                       if "invalid" in ln.lower()), ""))
-                    return False, "invalid credentials — check your NetID/password"
+                    return False, sync_error("bad_credentials", "invalid credentials — check your NetID/password")
                 elif "captcha expired" in err_lower:
                     last_err = "captcha expired"
                 elif "invalid captcha" in err_lower:
@@ -1078,9 +1127,11 @@ async def _do_login(page, ctx, netid, password):
                 await page.click('input[name="password"]')
                 await page.type('input[name="password"]', password, delay=10)
                 continue
-            return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}"
+            return False, sync_error("bad_credentials",
+                                     f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err}")
     # All retries exhausted via silent-rejection continues
-    return False, f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}"
+    return False, sync_error("bad_credentials",
+                             f"login failed after {MAX_CAPTCHA_RETRIES} attempts — last: {last_err or 'silent rejection'}")
 
 async def _fetch_rich_optimized(netid, password, cold=True):
     # Persistent context — reuse across scrapes for speed.
@@ -1106,9 +1157,9 @@ async def _fetch_rich_optimized(netid, password, cold=True):
                     _clear_session(netid)
 
         if not logged_in:
-            ok, err = await _do_login(page, ctx, netid, password)
+            ok, fail = await _do_login(page, ctx, netid, password)
             if not ok:
-                return {"ok": False, "error": err}
+                return fail
             # Save session for next time
             try:
                 cookies = await ctx.cookies()
@@ -1147,9 +1198,9 @@ async def _fetch_rich_optimized(netid, password, cold=True):
         if "youLogin" in content_html or ("Login" in content_html[:2000] and "captcha" in content_html.lower()):
             # Session silently expired mid-scrape — relogin and refetch
             _clear_session(netid)
-            ok, err = await _do_login(page, ctx, netid, password)
+            ok, fail = await _do_login(page, ctx, netid, password)
             if not ok:
-                return {"ok": False, "error": err}
+                return fail
             try:
                 cookies = await ctx.cookies()
                 _save_session(netid, json.dumps(cookies))
@@ -1175,12 +1226,12 @@ async def _fetch_rich_optimized(netid, password, cold=True):
             raw = await page.evaluate(
                 '() => (document.getElementById("divMainDetails")||document.body).innerText || ""')
             if "ABC ID" in raw or "Aadhaar" in raw:
-                return {"ok": False, "error": "Portal requires ABC ID Generation first — "
-                                              "log in at sp.srmist.edu.in and complete the "
-                                              "Aadhaar/ABC ID form, then try again."}
-            return {"ok": False, "error": "Attendance page did not load (portal returned no "
-                                          "course table). The portal may be slow or your "
-                                          "account may be restricted."}
+                return sync_error("markup_changed", "Portal requires ABC ID Generation first — "
+                                                    "log in at sp.srmist.edu.in and complete the "
+                                                    "Aadhaar/ABC ID form, then try again.")
+            return sync_error("portal_down", "Attendance page did not load (portal returned no "
+                                             "course table). The portal may be slow or your "
+                                             "account may be restricted.")
 
         # Daily absence drill-downs (unchanged — already parallel)
         targets = []
@@ -1305,7 +1356,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
     # know it can actually run.
     # audit F1 fix: blocking acquire in the worker thread; no try/except race
     if not _scrape_lock.acquire(blocking=False):
-        return {"ok": False, "error": "Sync in progress. Try again in about a minute."}
+        return sync_error("busy", "Sync in progress. Try again in about a minute.", retry_after=60)
     try:
         # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
         # time). Previously the flag was only reset inside Playwright's _do_login,
@@ -1319,13 +1370,17 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
         # per-netid sync quota (charged only in _charge_rate on success below).
         cooldown = _portal_cooldown_remaining()
         if cooldown > 0:
-            return {"ok": False, "error": (f"SRM portal temporarily rate-limiting our server. "
-                                           f"Try again in {int(cooldown / 60) + 1} minutes.")}
+            return sync_error("portal_cooldown",
+                              f"SRM portal temporarily rate-limiting our server. "
+                              f"Try again in {int(cooldown / 60) + 1} minutes.",
+                              retry_after=int(cooldown))
         if not _check_rate(netid):
-            return {"ok": False, "error": f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}."}
+            return sync_error("rate_limited",
+                              f"Too many sync attempts for this account. Try again in {_netid_retry_text(netid)}.")
         if not _check_portal_budget(_client_ip(), authorized=authorized):
-            return {"ok": False, "error": ("Too many portal requests from the server "
-                                           "(rate-limit protection). Try again in 10 minutes.")}
+            return sync_error("rate_limited", "Too many portal requests from the server "
+                                              "(rate-limit protection). Try again in 10 minutes.",
+                              retry_after=600)
         # audit run-1 (#8): ONE wall-clock budget for the whole critical
         # section — HTTP phases check it between phases, the Playwright
         # fallback gets only what's left (150s total matches its documented
@@ -1420,7 +1475,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
             except Exception:
                 pass  # loop dead too — next launch replaces both anyway
         log.warning("playwright pipeline failed", exc_info=True)
-        return {"ok": False, "error": "Scrape failed server-side — check the server log, then try again."}
+        return sync_error("internal", "Scrape failed server-side — check the server log, then try again.")
     finally:
         _scrape_lock.release()
 
@@ -1975,6 +2030,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.20.2", "date": "15 Oct", "title": "Fewer database-is-locked errors",
+     "body": "Concurrent requests used to hit SQLite's 5-second lock wait "
+             "limit and show a database-is-locked error; the app now waits "
+             "up to 10 seconds, and operators can switch to WAL journaling "
+             "with the SQLITE_JOURNAL_MODE setting for smoother concurrent "
+             "access. Nothing changes for existing installs by default."},
     {"ver": "v1.20.1", "date": "14 Oct", "title": "Refresh keeps your subjects",
      "body": "A refresh whose marks page failed to parse used to blank the "
              "subjects already stored on your account. Stored subjects, marks, "
@@ -2893,17 +2954,37 @@ def static_no_cache(filename):
         resp.headers["Service-Worker-Allowed"] = "/"
     return resp
 
-def _login_error_code(err):
-    """Audit: explicit status mapping — 401 auth, 429 rate/cooldown, 503 backend/portal.
-    The old check keyed on the substring 'login failed', which the most common
-    error string ('invalid credentials — check your NetID/password') never
-    contains: every wrong-password attempt came back 503 instead of 401."""
-    e = err.lower()
-    if "invalid credentials" in e or "login failed" in e:
-        return 401
-    if "too many" in e or "rate-limit" in e:  # per-netid cap, per-IP cap, portal cooldown
-        return 429
-    return 503
+# ── Typed sync results ─────────────────────────────────────────────────
+# A failed sync carries a `kind`; its HTTP status comes from this table —
+# the replacement for the old status classifier, which substring-matched
+# the message text (wrong password vs captcha failure was told apart by
+# wording). 401 auth · 429 rate/cooldown · 503 busy/portal/internal.
+# Every status and user-visible string is byte-identical to the old
+# mapping; tests/test_login_reject.py runs the old classifier against the
+# new table over every {'ok': False} producer in app.py + http_scraper.py.
+KIND_STATUS = {
+    "bad_credentials": 401,
+    "rate_limited": 429,
+    "portal_cooldown": 429,
+    "busy": 503,
+    "portal_down": 503,
+    "markup_changed": 503,
+    "internal": 503,
+}
+
+def sync_error(kind, user_message, retry_after=None):
+    """One failed sync result (the SyncError result type): typed kind, the
+    byte-identical user-visible message, optional retry seconds — filled in
+    only where the window is already computed (the portal cooldown),
+    None otherwise. Routes rebuild the response as {ok, error}, so kind and
+    retry_after never reach the client."""
+    return {"ok": False, "error": user_message, "kind": kind, "retry_after": retry_after}
+
+def sync_status(res):
+    """HTTP status for a failed sync — from its kind, never from message
+    text. A failure without a kind (a bare test stub) keeps the old
+    fallback: 503."""
+    return KIND_STATUS.get(res.get("kind"), 503)
 
 @app.route("/login")
 def login():
@@ -3032,6 +3113,45 @@ def _merge_fetch_result(existing, res, netid=None):
     return personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open, exam_events, attendance_json
 
 
+def persist_sync(netid, res, password=None):
+    """Persist one sync — the single copy of what /api/login and /api/refresh
+    each did: users upsert through _merge_fetch_result, then (post-commit) the
+    exam-event thread, the timetable group and the sync_ok telemetry row.
+    Login passes the password (INSERT ... ON CONFLICT: first fetch creates the
+    row, later logins rotate the stored password); refresh passes None
+    (UPDATE in place, stored password untouched). Ordering and the
+    post-commit thread start are kept from both routes.
+    """
+    c = db()
+    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
+    (personal_json, marks_json, subjects_json, exams_json, faculty_json,
+     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res, netid=netid)
+    if password is None:
+        c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
+                  # audit run-1: attendance goes through the preserve merge (was
+                  # json.dumps(res["data"]) — wholesale wipe on partial responses);
+                  # subjects_json was ALSO discarded here despite the merge (R1)
+                  (attendance_json, res["fetched"], personal_json,
+                   marks_json, subjects_json, exams_json, faculty_json, fb_open, netid))
+    else:
+        # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
+        c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
+                  "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
+                  "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
+                  (netid, encrypt_pw(password), attendance_json, res["fetched"],
+                   personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
+    c.commit(); c.close()
+    # one-shot exam pushes (official release / room allotment): post-commit,
+    # background thread — detection already read pre-write rows, and the
+    # single gunicorn worker must not wait on a push round-trip
+    if exam_events:
+        threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
+                         daemon=True, name="srm-exam-evt").start()
+    # timetable group/subjects + official grid (non-critical, separate tx)
+    _save_timetable_group(netid, res)
+    _track("sync_ok", user=netid)
+
+
 @app.route("/api/login", methods=["POST"])
 def api_login():
     # audit: no force=True — require real application/json content-type
@@ -3078,33 +3198,16 @@ def api_login():
                     error=res["error"][:80], duration_ms=login_ms)
         _track("login_fail", detail=res["error"][:60], user=netid)
         # audit F4: auth failures are 401; busy/rate are 429/503
-        code = _login_error_code(res["error"])
+        code = sync_status(res)
         return {"ok": False, "error": res["error"]}, code
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
-    c = db()
     # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
-    # (single shared contract — see _merge_fetch_result)
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
-    (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res, netid=netid)
-    # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-    c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
-              "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-              "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
-              (netid, encrypt_pw(password), attendance_json, res["fetched"],
-               personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
-    c.commit(); c.close()
-    # one-shot exam pushes (official release / room allotment): post-commit,
-    # background thread — detection already read pre-write rows, and the
-    # single gunicorn worker must not wait on a push round-trip
-    if exam_events:
-        threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
-                         daemon=True, name="srm-exam-evt").start()
-
-    # timetable group/subjects + official grid (non-critical, separate tx)
-    _save_timetable_group(netid, res)
+    # (single shared contract — see _merge_fetch_result); the one copy of
+    # the upsert now lives in persist_sync, password passed so the row is
+    # created/rotated exactly as before
+    persist_sync(netid, res, password=password)
 
     token = make_session_token(netid)
     resp = make_response({"ok": True})
@@ -3137,27 +3240,11 @@ def api_refresh():
                     error=res["error"][:80])
         _track("sync_fail", detail=res["error"][:60], user=netid)
         # audit F4: match /api/login's status-code discipline
-        code = _login_error_code(res["error"])
+        code = sync_status(res)
         return {"ok": False, "error": res["error"]}, code
-    c = db()
-    # Hot/cold + audit B6: same single preserve contract as login
-    row2 = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
-    (personal_json, marks_json, subjects_json, exams_json, faculty_json,
-     fb_open, exam_events, attendance_json) = _merge_fetch_result(row2, res, netid=netid)
-    c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
-              # audit run-1: attendance goes through the preserve merge (was
-              # json.dumps(res["data"]) — wholesale wipe on partial responses);
-              # subjects_json was ALSO discarded here despite the merge (R1)
-              (attendance_json, res["fetched"], personal_json,
-               marks_json, subjects_json, exams_json, faculty_json, fb_open, netid))
-    c.commit(); c.close()
-    # same timetable save as login: group/subjects + official grid (separate tx)
-    _save_timetable_group(netid, res)
-    _track("sync_ok", user=netid)
-    # same one-shot exam pushes as login — post-commit, background thread
-    if exam_events:
-        threading.Thread(target=_notify_exam_events, args=(netid, exam_events),
-                         daemon=True, name="srm-exam-evt").start()
+    # same single persistence path as login — no password arg: refresh
+    # never rotates the stored credential
+    persist_sync(netid, res)
     return {"ok": True}
 
 # ── Login preflight: browser fires this when the user focuses the

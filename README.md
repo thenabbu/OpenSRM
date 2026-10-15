@@ -219,9 +219,12 @@ flowchart LR
 | Portal budget | 30 per 10 min | Aggregate server→portal requests |
 | Portal cooldown | 5 → 30 min | After 3 consecutive portal failures: 5 min, doubling, capped at 30 |
 | Session | 30 days | Cookie lifetime |
+| DB lock wait | 10 s | How long a SQLite statement waits for a lock before failing (was Python’s 5 s default) |
 
 Environment variables:
 - `DATA_DIR` — SQLite data directory (default: `/app/data`; holds `srm.db`, `fernet.key`, `secret`)
+- `FERNET_KEYS` — optional comma-separated Fernet keys for data at rest: the **first key encrypts**, every key decrypts (key rotation without data loss). Unset/empty → the single `DATA_DIR/fernet.key` (default, unchanged). On the lab, set it in `/docker/opensrm/.env` and run the runbook in [SECURITY.md](SECURITY.md#key-rotation)
+- `SQLITE_JOURNAL_MODE` — SQLite journal mode, `delete` (default, rollback journal) or `wal`. WAL lets readers proceed during a write and pairs with `synchronous=NORMAL`; `delete` keeps today’s exact behaviour. The mode is set explicitly on every connection, so flipping the env takes effect on the next boot — including flipping back. **Backups:** if you switch to `wal`, a raw file copy of `srm.db` is not a safe backup (recent commits sit in `srm.db-wal` until a checkpoint) — copy the `-wal` and `-shm` sidecars too, or use `sqlite3 srm.db ".backup dest"`, which reads through the WAL and is safe in either mode
 - `CHROMIUM_PATH` — Chromium executable path (Playwright fallback)
 - `LOG_LEVEL` — Logging verbosity: DEBUG, INFO (default), WARNING, ERROR
 - `TZ` — Timezone (default: `Asia/Kolkata`)
@@ -236,7 +239,7 @@ Environment variables:
 ## Security
 
 - Fernet-encrypted passwords at rest; `srm_session` cookie is HttpOnly + SameSite=Lax, Secure flag gated on a real `cf-ray` + HTTPS hop
-- CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts)
+- CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts) with SRI `integrity` sha384 + `crossorigin` on both CDN tags (a tampered CDN payload fails closed)
 - Rate limiting per netid, per IP, plus an aggregate portal budget and escalating portal cooldown
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses

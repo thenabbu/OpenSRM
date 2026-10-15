@@ -64,6 +64,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_tt_hero.py
       - name: test_relogin_save (mid-scrape relogin)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_relogin_save.py
+      - name: test_fernet_rotation (FERNET_KEYS MultiFernet + rotate script)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_fernet_rotation.py
       - name: test_official_tt (portal formId-10 parser + contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_official_tt.py
       - name: test_sessions (session lifecycle contract)
@@ -96,6 +98,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/guide_static.py
       - name: test_supply_chain (image tags + scan workflow pins)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_supply_chain.py
+      - name: test_db_concurrency (db() lock timeout + journal mode)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_concurrency.py
 
   docker:
     runs-on: ubuntu-latest

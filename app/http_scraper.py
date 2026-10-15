@@ -294,7 +294,9 @@ def _portal_alert(rhtml):
 
 def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=None, attempt=1):
     """POST LoginServlet with a prepared ctx. Returns (action, err):
-    action: "ok" | "retry" (fresh captcha needed) | "fail" (fatal)."""
+    action: "ok" | "retry" (fresh captcha needed) | "fail" (fatal — err is a
+    sync_error() result: typed kind + byte-identical message)."""
+    from app.app import sync_error  # deferred: app.app imports this module lazily
     # POST login
     dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
     elapsed = str(max(5, int(time.time() - ctx["t0"])))
@@ -330,23 +332,26 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     if ("invalid login credentials" in low or "invalid credentials" in low
             or "invalid username" in low or "invalid password" in low):
         log.warning("login attempt=%d reject=credentials portal_alert=%r", attempt, alert)
-        return "fail", "invalid credentials — check your NetID/password"
+        return "fail", sync_error("bad_credentials", "invalid credentials — check your NetID/password")
     if "invalid captcha" in low:
         log.info("login attempt=%d invalid_captcha ocr=%s portal_alert=%r",
                  attempt, ctx["ocr"], alert)
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
-        return "fail", "login failed after 3 attempts — captcha unreadable"
+        return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
     # Silent rejection: login page again, no error text → portal rate-limiting
     log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text) "
                 "portal_alert=%r bytes=%d", attempt, alert, len(rhtml))
     helpers["portal_fail_once"]()
-    return "fail", ("SRM portal rejected the login without an error (likely "
-                    "rate-limiting). Try again in a few minutes.")
+    return "fail", sync_error("portal_cooldown",
+                              "SRM portal rejected the login without an error (likely "
+                              "rate-limiting). Try again in a few minutes.")
 
 
 def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepared=None):
-    """Pure-HTTP login. Returns (ok, err). Raises HttpScraperError on transport fail."""
+    """Pure-HTTP login. Returns (ok, fail) — fail is a sync_error() result or
+    None. Raises HttpScraperError on transport fail."""
+    from app.app import sync_error  # deferred: app.app imports this module lazily
     # Preflight path: warm session + solved captcha from the typing phase.
     if prepared:
         try:
@@ -368,7 +373,7 @@ def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepa
             if attempt < MAX_CAPTCHA_RETRIES:
                 time.sleep(2)
                 continue
-            return False, "captcha OCR failed — try again"
+            return False, sync_error("internal", "captcha OCR failed — try again")
         action, err = _post_login(opener, ctx, netid, password, base, xheaders,
                                   helpers, on_step, attempt)
         if action == "ok":
@@ -377,7 +382,7 @@ def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepa
             time.sleep(2)
             continue
         return False, err
-    return False, "login failed — captcha retries exhausted"
+    return False, sync_error("bad_credentials", "login failed — captcha retries exhausted")
 
 
 def _jsp_post(opener, base, xheaders, path, form_id):
@@ -849,10 +854,10 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
             # preflight's opener holds the warm JSESSIONID + solved captcha
             opener, jar = prepared["opener"], prepared["jar"]
             log.debug("using preflight session netid=%s", netid)
-        ok, err = _login(opener, netid, password, base, xheaders, helpers,
-                         on_step=lambda st, pc: _prog(st, pc), prepared=prepared)
+        ok, fail = _login(opener, netid, password, base, xheaders, helpers,
+                          on_step=lambda st, pc: _prog(st, pc), prepared=prepared)
         if not ok:
-            return {"ok": False, "error": err}
+            return fail
         _after_login(netid, jar, helpers)
     log.debug("login phase done netid=%s total_ms=%d", netid,
               int((time.monotonic() - t_start) * 1000))
@@ -876,16 +881,16 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
               {k: len(v) for k, v in parallel_html.items()})
 
-    from app.app import MONTHS, _cells, _parse_component_inner, parse_attendance, parse_marks, parse_personal_details, parse_timetable  # deferred
+    from app.app import MONTHS, _cells, _parse_component_inner, parse_attendance, parse_marks, parse_personal_details, parse_timetable, sync_error  # deferred
     content_html = parallel_html.get("9", "")
     if "youLogin" in content_html or ("captcha" in content_html.lower() and "Login" in content_html[:2000]):
         # Session died mid-scrape → relogin once
         log.info("session expired mid-scrape netid=%s — relogin", netid)
         helpers["clear_session"](netid)
         jar.clear()
-        ok, err = _login(opener, netid, password, base, xheaders, helpers)
+        ok, fail = _login(opener, netid, password, base, xheaders, helpers)
         if not ok:
-            return {"ok": False, "error": err}
+            return fail
         _after_login(netid, jar, helpers)  # persist the relogin too — see _after_login docstring
         fids = HOT_FORMIDS | (COLD_FORMIDS if cold else set())  # refetch with same plan
         with ThreadPoolExecutor(max_workers=5) as ex:
@@ -905,12 +910,12 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
     data = parse_attendance(content_html)
     if not data.get("courses"):
         if "ABC ID" in content_html or "Aadhaar" in content_html:
-            return {"ok": False, "error": "Portal requires ABC ID Generation first — "
-                                           "log in at sp.srmist.edu.in and complete the "
-                                           "Aadhaar/ABC ID form, then try again."}
-        return {"ok": False, "error": "Attendance page did not load (portal returned no "
-                                      "course table). The portal may be slow or your "
-                                      "account may be restricted."}
+            return sync_error("markup_changed", "Portal requires ABC ID Generation first — "
+                                                "log in at sp.srmist.edu.in and complete the "
+                                                "Aadhaar/ABC ID form, then try again.")
+        return sync_error("portal_down", "Attendance page did not load (portal returned no "
+                                         "course table). The portal may be slow or your "
+                                         "account may be restricted.")
 
     # Photo: removed Sep 25 2026 — portal photo unused in any workflow (blobatar avatars instead)
 
