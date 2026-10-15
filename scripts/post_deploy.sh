@@ -136,7 +136,9 @@ if [ "$DO_SMOKE" = 1 ]; then
   BODY=$(mktemp)
   CODE=$(curl -s -o "$BODY" -w '%{http_code}' -b "srm_session=$TOK" "$BASE_URL/")
   HITS=$(grep -c "$NETID" "$BODY" || true)
-  CLEAN=$(ssh lab "docker exec opensrm python -c \"import sqlite3;c=sqlite3.connect('/app/data/srm.db');n=c.execute('delete from cookies where token=?',('$TOK',)).rowcount;c.commit();left=c.execute('select count(*) from cookies where token=?',('$TOK',)).fetchone()[0];print(n,left)\"")
+  # since v1.20.3 rows store sha256(token) (migration 17) — the raw $TOK is
+  # what the cookie holds, so hash it before addressing the row.
+  CLEAN=$(ssh lab "docker exec opensrm python -c \"import hashlib,sqlite3;t=hashlib.sha256('$TOK'.encode()).hexdigest();c=sqlite3.connect('/app/data/srm.db');n=c.execute('delete from cookies where token=?',(t,)).rowcount;c.commit();left=c.execute('select count(*) from cookies where token=?',(t,)).fetchone()[0];print(n,left)\"")
   rm -f "$BODY"
   set -- $CLEAN
   if [ "$CODE" = "200" ] && [ "${HITS:-0}" -gt 0 ] && [ "${1:-0}" = "1" ] && [ "${2:-0}" = "0" ]; then

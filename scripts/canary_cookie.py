@@ -34,8 +34,12 @@ def main(argv):
         return
     from app.app import db
     if cmd == "drop":
+        # rows store sha256(token) since migration 17 — the canary holds the
+        # raw token from `mint`, so hash before addressing the row
+        import hashlib
         c = db()
-        n = c.execute("DELETE FROM cookies WHERE token=?", (arg,)).rowcount
+        n = c.execute("DELETE FROM cookies WHERE token=?",
+                      (hashlib.sha256(arg.encode()).hexdigest(),)).rowcount
         c.commit(); c.close()
         print(f"dropped={n}")
         return
