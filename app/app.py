@@ -2191,6 +2191,13 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.24.0", "date": "15 Oct", "title": "Server health check + hardening",
+     "body": "The server now answers a small health endpoint that is checked "
+             "every 30 seconds, so a broken server is noticed immediately "
+             "instead of timing out in your dashboard. The app also runs in a "
+             "locked-down container (no root, read-only filesystem, capped "
+             "memory and process limits), so a fault inside it stays inside "
+             "it. Nothing changes in how you use the app."},
     {"ver": "v1.22.1", "date": "15 Oct", "title": "Sessions hardened at rest",
      "body": "Session tokens are now stored in the database only as SHA-256 "
              "digests, so a copied database file can no longer be used to log "
