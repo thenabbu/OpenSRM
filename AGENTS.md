@@ -19,7 +19,7 @@ app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI i
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs)
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image, gated on tests) + lint.yml; SHA-pinned actions; `uv lock --check`
 ```
@@ -47,6 +47,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_tt_history.py  # [unit] 18/18 (timetable edit log + break-divider fix + location preservation)
 .venv/bin/python tests/test_tt_hero.py  # [unit] 3/3 (the NOW-hero keeps the slot's attendance join `_att` across the dict hop; a missing `_att` is tolerated) — no server
 .venv/bin/python tests/test_relogin_save.py  # [unit] 9/9 (mid-scrape relogin persists fresh session + resets portal fail state; portal_sessions encrypted at rest + legacy plaintext row; stubbed fetch, no network)
+.venv/bin/python tests/test_fernet_rotation.py  # [unit] 39/39 (FERNET_KEYS -> MultiFernet first-key-encrypts + file-mode default unchanged, rotate script dry-run default / refuse-unreadable-with-count / --skip-unreadable / apply verifies+commits one transaction / idempotent, wrong key -> "" unreadable-creds path, invalid env names FERNET_KEYS without echoing it, no key material in tool output; fabricated keys only)
 .venv/bin/python tests/test_official_tt.py  # [unit] 53/53 (portal formId-10 parser + preserve/drift states incl. contentless-grid wipe guard, offset contract official==SLOTS, save/editor stamp round trip + archive gate 403, location carry per code-swap, push+render wiring, rim tiers grey/warn/danger by attendance, Now badge + Soon retired under a faked clock; committed sanitized fixture)
 .venv/bin/python tests/test_sessions.py  # [unit] 6/6 (multi-device session survives a second login, expiry prunes at read, real logout deletes, prefetch logout is a no-op, cross-site logout ignored, index/refresh survive mid-request session loss)
 .venv/bin/python tests/test_login_reject.py  # [unit] rejection classifier + sync-quota order + free-gates-before-budget (section 4) + preflight atomic admission (5) + captcha data-src confinement (6) + attempt-token progress + edge-secret CF trust (7-8) + typed kind→status differential over every {'ok': False} producer, old-vs-new (9) (offline)
