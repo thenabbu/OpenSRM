@@ -13,10 +13,19 @@ link can prefetch it and kill the session without any navigation.
 
 Fix: keep sibling sessions alive (expiry still bounds them), and make
 /logout a no-op for Sec-Purpose: prefetch|prerender requests.
+
+v1.20.3 (migration 17) adds: cookies.token stores sha256(token) — the
+browser keeps the raw token, the DB never does, so a leaked srm.db cannot
+be replayed as a live session — and a before_request guard refuses
+cross-site POST/PUT/PATCH/DELETE (403 + error= on the opensrm.http line).
 """
 import atexit
+import hashlib
+import logging
 import os
+import secrets
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
@@ -50,15 +59,18 @@ def t_second_login_keeps_first_session():
 
 
 def t_expired_token_pruned_on_read():
-    """30-day expiry still enforced at read time (audit 2026-09-27 contract)."""
+    """30-day expiry still enforced at read time (audit 2026-09-27 contract).
+    Rows are keyed by sha256(token) since migration 17, so the UPDATE and
+    the count both address the digest."""
     tok = A.make_session_token("zz9999")
+    digest = hashlib.sha256(tok.encode()).hexdigest()
     c = A.db()
     c.execute("UPDATE cookies SET created=? WHERE token=?",
-              (int(time.time()) - A.SESSION_MAX_AGE - 60, tok))
+              (int(time.time()) - A.SESSION_MAX_AGE - 60, digest))
     c.commit(); c.close()
     assert _who(tok) is None, "expired token must not authenticate"
     c = A.db()
-    n = c.execute("SELECT COUNT(*) FROM cookies WHERE token=?", (tok,)).fetchone()[0]
+    n = c.execute("SELECT COUNT(*) FROM cookies WHERE token=?", (digest,)).fetchone()[0]
     c.close()
     assert n == 0, "expired token row must be deleted at read time"
 
@@ -136,6 +148,192 @@ def t_index_refresh_survive_mid_request_session_loss():
         f"api_refresh must report 'not logged in', got {r2.status_code} {j!r}"
 
 
+def t_token_stored_hashed_raw_never_at_rest():
+    """make_session_token still RETURNS the raw token (contract), but the DB
+    row must be sha256(token): a leaked srm.db yields digests, never a value
+    the /login cookie can replay. Read path hashes the presented value."""
+    tok = A.make_session_token("zz9999")
+    digest = hashlib.sha256(tok.encode()).hexdigest()
+    c = A.db()
+    row = c.execute("SELECT token FROM cookies WHERE token=?", (digest,)).fetchone()
+    raw_rows = c.execute("SELECT COUNT(*) FROM cookies WHERE token=?", (tok,)).fetchone()[0]
+    c.close()
+    assert row is not None, f"row keyed by sha256(raw) missing — stored value is not the digest"
+    assert raw_rows == 0, "raw token found verbatim in the DB — token leaked at rest"
+    assert _who(tok) == "zz9999", "raw cookie must still authenticate (read path hashes to match)"
+
+
+def t_pre_migration_rows_hashed_and_session_survives():
+    """Pre-migration fixture: a DB exactly as prod stood BEFORE this release
+    (schema v16, cookies.token holding the RAW token) must come out of
+    migration 17 with the row hashed AND the browser's existing raw cookie
+    still authenticating — current sessions survive the deploy."""
+    import app.migrations as M
+    fx = Path(_td) / "pre-migration.db"
+    conn = sqlite3.connect(fx)
+    saved = M._registry[:]
+    try:
+        # state BEFORE this release: every migration except 17 registered
+        M._registry[:] = [m for m in saved if m["version"] != 17]
+        M.migrate_db(conn)
+        ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        assert ver == 16, f"fixture must stand at schema v16 before the migration, got v{ver}"
+        raw = secrets.token_hex(32)   # prod-shaped: pre-17 rows held the raw token
+        conn.execute("INSERT INTO cookies(token,netid,created) VALUES(?,?,?)",
+                     (raw, "zz9999", int(time.time())))
+        conn.commit()
+    finally:
+        M._registry[:] = saved
+    # the deploy: migration 17 runs, in Python, over the existing rows
+    M.migrate_db(conn)
+    stored = conn.execute("SELECT token FROM cookies").fetchone()[0]
+    assert stored == hashlib.sha256(raw.encode()).hexdigest(), \
+        "migration 17 must store sha256(raw) for the pre-existing row"
+    assert stored != raw, "pre-migration row still holds the raw token"
+    ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    assert ver == 17, f"schema_version must record 17 after the migration, got {ver}"
+    # the session survives: the browser still holds `raw` — it must resolve
+    old_path = A.DB_PATH
+    A.DB_PATH = str(fx)
+    try:
+        who = _who(raw)
+    finally:
+        A.DB_PATH = old_path
+        conn.close()
+    assert who == "zz9999", \
+        f"session died across the deploy migration — raw cookie now resolves to {who!r}"
+
+
+_CROSS = {"Sec-Fetch-Site": "cross-site"}
+
+
+def t_guard_refuses_cross_site_state_changing():
+    """Sec-Fetch-Site is a forbidden header (cross-site pages can neither
+    strip nor forge it): cross-site and same-site POSTs must be refused with
+    403 + error= before any view logic runs."""
+    cl = A.app.test_client()
+    for sfs in ("cross-site", "same-site"):
+        r = cl.post("/api/refresh", headers={"Sec-Fetch-Site": sfs})
+        j = r.get_json(silent=True)
+        assert r.status_code == 403, \
+            f"Sec-Fetch-Site: {sfs} POST must be 403, got {r.status_code}"
+        assert j and "error" in j, f"403 must carry an error body, got {j!r}"
+
+
+def t_guard_refuses_origin_mismatch():
+    """Without Sec-Fetch-Site: an Origin whose host differs from the request
+    host is refused (incl. the sandboxed 'null' origin — fails closed)."""
+    cl = A.app.test_client()
+    for origin in ("https://evil.example", "null", "http://localhost:1"):
+        r = cl.post("/api/refresh", headers={"Origin": origin})
+        j = r.get_json(silent=True)
+        assert r.status_code == 403, f"Origin {origin!r} POST must be 403, got {r.status_code}"
+        assert j and "error" in j, f"403 must carry an error body, got {j!r}"
+
+
+def t_guard_allows_non_browser_and_same_origin():
+    """Allowed branches: neither header (curl/cron/tests — non-browser), a
+    matching Origin, Sec-Fetch-Site same-origin / none. GET is never guarded
+    (state-changing methods only), even cross-site."""
+    cl = A.app.test_client()
+    allowed = {
+        "no headers (non-browser)": cl.post("/api/refresh"),
+        "Origin same host": cl.post("/api/refresh", headers={"Origin": "http://localhost"}),
+        "SFS same-origin": cl.post("/api/refresh", headers={"Sec-Fetch-Site": "same-origin"}),
+        "SFS none": cl.post("/api/refresh", headers={"Sec-Fetch-Site": "none"}),
+        "GET cross-site": cl.get("/", headers=_CROSS),
+    }
+    for name, r in allowed.items():
+        assert r.status_code != 403, f"{name} must pass the guard, got 403"
+
+
+def t_guard_covers_put_patch_delete():
+    """PUT/PATCH/DELETE are refused too — and the refusal comes from the
+    guard (403), not from routing: the same PUT with clean headers is a
+    plain 405 Method Not Allowed."""
+    cl = A.app.test_client()
+    for method in (cl.put, cl.patch, cl.delete):
+        r = method("/api/refresh", headers=_CROSS)
+        assert r.status_code == 403, \
+            f"{method.__name__.upper()} cross-site must be 403, got {r.status_code}"
+    r = cl.put("/api/refresh")
+    assert r.status_code == 405, \
+        f"clean PUT must reach routing (405), got {r.status_code} — guard over-blocking?"
+
+
+def t_guard_exempts_push_tick():
+    """POST /internal/push/tick authenticates with its own secret header, so
+    the cross-site guard is exempt: it must reach the tick auth (bare 401),
+    never the guard's 403."""
+    cl = A.app.test_client()
+    r = cl.post("/internal/push/tick", headers=_CROSS)
+    assert r.status_code == 401, \
+        f"push tick must reach its own secret-header auth (401), got {r.status_code}"
+
+
+def t_guard_exempts_marks_tag():
+    """/marks/tag is a session-authenticated browser form POST. Behind the
+    Cloudflare tunnel the proxy rewrites the browser's fetch metadata, so the
+    guard would false-403 a same-site user's save in prod while passing
+    locally (caught by the CI e2e suite's marks DUT): the path is exempt and
+    must reach the route's own auth (302 to /login without a session), not
+    the guard's 403."""
+    cl = A.app.test_client()
+    r = cl.post("/marks/tag", headers=_CROSS,
+                data={"code": "21CSC203P", "component": "FT-II", "role": "IE-2"})
+    assert r.status_code != 403, \
+        f"/marks/tag must be guard-exempt, got 403"
+    assert r.status_code in (302, 303), \
+        f"no-session /marks/tag must redirect to login, got {r.status_code}"
+
+
+def _capture(logger_name):
+    """Attach a collecting handler to a named logger; returns (handler, detach)."""
+    h = logging.Handler()
+    h.setLevel(logging.DEBUG)
+    h.emit = lambda rec: h.records.append(rec)  # type: ignore[attr-defined]
+    h.records = []  # type: ignore[attr-defined]
+    lg = logging.getLogger(logger_name)
+    lg.addHandler(h)
+    return h, lambda: lg.removeHandler(h)
+
+
+def t_guard_403_logged_with_error():
+    """A refusal must be countable from logs: the opensrm.http request line
+    carries status=403 and error= (v1.15.x 4xx-on-one-line contract)."""
+    h, detach = _capture("opensrm.http")
+    try:
+        A.app.test_client().post("/api/refresh", headers=_CROSS)
+    finally:
+        detach()
+    # log_with_kv renders kv on the record (the formatter prints them as
+    # `status=403 … error=…`); getMessage() alone is just "request".
+    seen = [(r.getMessage(), getattr(r, "kv", {})) for r in h.records]
+    hit = [(m, kv) for m, kv in seen if str(kv.get("status")) == "403"]
+    assert hit, f"no status=403 record on opensrm.http for the refusal; got: {seen!r}"
+    assert hit[0][1].get("error"), \
+        f"403 record must carry error=, got kv={hit[0][1]!r}"
+
+
+def t_logout_emits_auth_line():
+    """Session mutations keep emitting their opensrm.auth line: a real
+    logout logs 'logout ok' with the netid (incident 2026-10-10 contract)."""
+    tok = A.make_session_token("zz9999")
+    h, detach = _capture("opensrm.auth")
+    try:
+        cl = A.app.test_client()
+        cl.set_cookie("srm_session", tok)
+        r = cl.get("/logout")
+    finally:
+        detach()
+    assert r.status_code in (302, 303), f"logout must redirect, got {r.status_code}"
+    seen = [(r.getMessage(), getattr(r, "kv", {})) for r in h.records]
+    hit = [(m, kv) for m, kv in seen if m == "logout ok"]
+    assert hit, f"no opensrm.auth 'logout ok' record on real logout; got: {seen!r}"
+    assert hit[0][1].get("netid") == "zz9999", \
+        f"logout auth record must name the netid, got kv={hit[0][1]!r}"
+
+
 TESTS = [
     ("second login keeps first session (multi-device)", t_second_login_keeps_first_session),
     ("expired token pruned on read", t_expired_token_pruned_on_read),
@@ -143,6 +341,16 @@ TESTS = [
     ("logout no-op on Sec-Purpose prefetch/prerender", t_logout_ignored_on_prefetch),
     ("logout no-op on cross-site fetch (audit #15)", t_logout_ignored_on_cross_site),
     ("index/refresh survive mid-request session loss", t_index_refresh_survive_mid_request_session_loss),
+    ("token stored as sha256 digest, raw never at rest", t_token_stored_hashed_raw_never_at_rest),
+    ("pre-migration rows hashed, session survives deploy", t_pre_migration_rows_hashed_and_session_survives),
+    ("guard refuses cross-site POST (Sec-Fetch-Site)", t_guard_refuses_cross_site_state_changing),
+    ("guard refuses Origin host mismatch", t_guard_refuses_origin_mismatch),
+    ("guard allows non-browser/same-origin/GET", t_guard_allows_non_browser_and_same_origin),
+    ("guard covers PUT/PATCH/DELETE (403, not 405)", t_guard_covers_put_patch_delete),
+    ("guard exempts /internal/push/tick", t_guard_exempts_push_tick),
+    ("guard exempts /marks/tag (tunnel rewrites fetch metadata)", t_guard_exempts_marks_tag),
+    ("refusal logged on opensrm.http with error=", t_guard_403_logged_with_error),
+    ("real logout emits opensrm.auth line", t_logout_emits_auth_line),
 ]
 
 if __name__ == "__main__":
