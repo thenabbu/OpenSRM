@@ -43,6 +43,11 @@ services:
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-}
+      # Key rotation (SECURITY.md "Key rotation"): comma-separated Fernet
+      # keys, FIRST encrypts, every key decrypts. Set it in
+      # /docker/opensrm/.env (this project's compose env) - NOT /docker/.env.
+      # Unset/empty -> DATA_DIR/fernet.key, exactly today's behaviour.
+      - FERNET_KEYS=${FERNET_KEYS:-}
     # healthcheck + log rotation: SECURITY.md documents both; the live lab
     # compose already had them — this repo copy had drifted from live.
     healthcheck:
