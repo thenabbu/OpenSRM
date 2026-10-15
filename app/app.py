@@ -2147,6 +2147,11 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.22.0", "date": "15 Oct", "title": "Smarter syncs — no wasted portal visits",
+     "body": "Syncing twice in a row no longer hits the portal twice: a refresh within "
+             "5 minutes of your last sync is answered from the data you already have, "
+             "and refreshes started while one is already running now wait for and "
+             "share that sync instead of showing a \"Sync in progress\" error."},
     {"ver": "v1.21.0", "date": "15 Oct", "title": "Clearer sync errors + sync health monitoring",
      "body": "A failed sync now says exactly what went wrong (wrong password, "
              "portal busy, or the portal changed) instead of a generic error. "
@@ -3339,6 +3344,82 @@ def api_login():
                     samesite="Lax", secure=_cookie_secure())
     return resp
 
+# ── Sync cache window + per-netid single flight ──────────────────────
+# A refresh answered from the last sync never reaches the portal, so it
+# spends neither the account's 3-in-10-min quota (only _charge_rate spends
+# that) nor the aggregate portal budget. A second refresh for an account
+# already syncing waits for that sync and returns ITS result instead of
+# "Sync in progress" — joiners never enter fetch_attendance either, so the
+# per-netid limit still moves only once, by the runner.
+#
+# SYNC_MIN_INTERVAL_S default = 300s, chosen from the durable log: 212
+# completed syncs / 9 accounts (opensrm.log 2026-10-08..15, `http scrape
+# complete netid=`) give 203 per-account consecutive-sync gaps — p10 299s,
+# p25 2009s, median 9852s; a 300s window absorbs 21/203 (10.3% — the
+# double-click / reload bursts) while 89.7% of real syncs sit further apart
+# than the window and pass through untouched. Maintainer decision: 0 keeps
+# always-sync; 900 would absorb 18.2% but also answers the dashboard's
+# 600s background auto-sync from cache.
+SYNC_MIN_INTERVAL_DEFAULT = 300
+
+# ponytail: a joiner waits at most one pipeline deadline + slack, then
+# falls back to today's busy 503 — raise only if queued multi-account
+# syncs ever outlive it (leader time is bounded by PIPELINE_DEADLINE only
+# once it holds the scrape lock; queue time behind other syncs is not).
+_SYNC_FLIGHT_WAIT_S = PIPELINE_DEADLINE + 30
+_sync_flights = {}   # netid -> {"done": Event, "res": dict|None} (res = the runner's full result)
+_flights_lock = threading.Lock()
+
+
+def _sync_min_interval_s():
+    """SYNC_MIN_INTERVAL_S in seconds, read per-request (like
+    TIMETABLE_EDITOR, so tests/ops can flip it without a restart):
+    0 or negative disables the cache window; a non-integer value falls
+    back to the data-derived default."""
+    raw = os.environ.get("SYNC_MIN_INTERVAL_S")
+    if raw is None:
+        return SYNC_MIN_INTERVAL_DEFAULT
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return SYNC_MIN_INTERVAL_DEFAULT
+
+
+def _last_sync_age(netid):
+    """Seconds since the last completed sync (users.last_fetch, written by
+    persist_sync from the fetch completion time). None = never synced or
+    unreadable → no cache, always sync."""
+    try:
+        c = db()
+        row = c.execute("SELECT last_fetch FROM users WHERE netid=?", (netid,)).fetchone()
+        c.close()
+        fetched = int(row["last_fetch"] or 0) if row else 0
+    except Exception as e:
+        log.debug("last_fetch read failed netid=%s err=%r", netid, e)
+        return None
+    if fetched <= 0:
+        return None
+    return max(0.0, time.time() - fetched)
+
+
+def _cached_sync_answer(netid, window):
+    """The cached-refresh response when the last sync is younger than the
+    window, else None. Single emit point: every cached answer logs one
+    key=value line, bumps opensrm_sync_cached_total and records a
+    sync_cached usage event, so the portal traffic actually saved stays
+    observable (/internal/metrics + usage_events + opensrm.auth)."""
+    if window <= 0:
+        return None
+    age = _last_sync_age(netid)
+    if age is None or age >= window:
+        return None
+    metrics.inc("opensrm_sync_cached_total")
+    log_with_kv(log_auth, logging.INFO, "sync cached",
+                netid=netid, age_s=int(age), window_s=window)
+    _track("sync_cached", user=netid)
+    return {"ok": True, "cached": True, "age_s": int(age)}
+
+
 @app.route("/api/refresh", methods=["POST"])
 @require_login
 def api_refresh():
@@ -3355,21 +3436,65 @@ def api_refresh():
     if not password:
         log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
         return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
-    res = fetch_attendance(netid, password, authorized=True)  # owner session: draws the reserved auth floor
-    if not res["ok"]:
-        # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
-        # only "status=503" with no reason anywhere, so the failure class could
-        # not be diagnosed after the fact. Same KV line as /api/login.
-        log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
-                    error=res["error"][:80])
-        _track("sync_fail", detail=res["error"][:60], user=netid)
-        # audit F4: match /api/login's status-code discipline
-        code = sync_status(res)
-        return {"ok": False, "error": res["error"]}, code
-    # same single persistence path as login — no password arg: refresh
-    # never rotates the stored credential
-    persist_sync(netid, res)
-    return {"ok": True}
+    # single flight: join the sync already running for this account, or
+    # become its runner (only the runner ever reaches fetch_attendance, so
+    # joiners cost nothing against the per-netid limit)
+    with _flights_lock:
+        flight = _sync_flights.get(netid)
+        leader = flight is None
+        if leader:
+            flight = _sync_flights[netid] = {"done": threading.Event(),
+                                             "res": None}
+    if not leader:
+        metrics.inc("opensrm_sync_joined_total")
+        t_join = time.monotonic()
+        shared = flight["done"].wait(_SYNC_FLIGHT_WAIT_S) and flight["res"] is not None
+        log_with_kv(log_auth, logging.INFO, "sync joined", netid=netid,
+                    waited_ms=int((time.monotonic() - t_join) * 1000),
+                    outcome="shared" if shared else "timeout")
+        if shared:
+            # the runner's exact result: success/cached payloads verbatim,
+            # failures rebuilt {ok, error} with the same typed status — kind
+            # and retry_after stay server-side (routes never expose them)
+            jr = flight["res"]
+            if jr.get("ok"):
+                return jr
+            return {"ok": False, "error": jr["error"]}, sync_status(jr)
+        # runner outlived the join wait — today's busy answer, also free
+        err = sync_error("busy", "Sync in progress. Try again in about a minute.", retry_after=60)
+        return {"ok": False, "error": err["error"]}, sync_status(err)
+    try:
+        # cache window: inside SYNC_MIN_INTERVAL_S of the last completed
+        # sync nothing can be new — answer from it, portal untouched.
+        # (A joiner that raced this runner's completion shares its answer
+        # or, after the flight drops, runs one ordinary sync — the window
+        # re-check under leadership keeps that gap at sub-millisecond.)
+        cached = _cached_sync_answer(netid, _sync_min_interval_s())
+        if cached is not None:
+            flight["res"] = cached
+            return cached
+        res = fetch_attendance(netid, password, authorized=True)  # owner session: draws the reserved auth floor
+        if not res["ok"]:
+            # audit 2026-09-30: refresh failures were invisible — prod 07:43 logged
+            # only "status=503" with no reason anywhere, so the failure class could
+            # not be diagnosed after the fact. Same KV line as /api/login.
+            log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
+                        error=res["error"][:80])
+            _track("sync_fail", detail=res["error"][:60], user=netid)
+            # audit F4: match /api/login's status-code discipline
+            flight["res"] = res   # typed result — joiners rebuild {ok, error} + typed status
+            return {"ok": False, "error": res["error"]}, sync_status(res)
+        # same single persistence path as login — no password arg: refresh
+        # never rotates the stored credential
+        persist_sync(netid, res)
+        flight["res"] = {"ok": True}
+        return {"ok": True}
+    finally:
+        # publish the result before the flight leaves the map: a joiner
+        # holding this flight while it finished still shares the answer
+        with _flights_lock:
+            _sync_flights.pop(netid, None)
+        flight["done"].set()
 
 # ── Login preflight: browser fires this when the user focuses the
 #    password field — warms the portal session + solves the captcha

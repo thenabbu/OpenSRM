@@ -72,7 +72,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v31<br/>network-first shell"]
+        SW["Service worker opensrm-v32<br/>network-first shell"]
     end
 
     subgraph edge["Cloudflare edge"]
@@ -227,12 +227,13 @@ Environment variables:
 - `SQLITE_JOURNAL_MODE` — SQLite journal mode, `delete` (default, rollback journal) or `wal`. WAL lets readers proceed during a write and pairs with `synchronous=NORMAL`; `delete` keeps today’s exact behaviour. The mode is set explicitly on every connection, so flipping the env takes effect on the next boot — including flipping back. **Backups:** if you switch to `wal`, a raw file copy of `srm.db` is not a safe backup (recent commits sit in `srm.db-wal` until a checkpoint) — copy the `-wal` and `-shm` sidecars too, or use `sqlite3 srm.db ".backup dest"`, which reads through the WAL and is safe in either mode
 - `CHROMIUM_PATH` — Chromium executable path (Playwright fallback)
 - `LOG_LEVEL` — Logging verbosity: DEBUG, INFO (default), WARNING, ERROR
+- `SYNC_MIN_INTERVAL_S` — refresh cache window in seconds (default 300; `0` disables). A `POST /api/refresh` inside the window of the account's last completed sync returns `{ok: true, cached: true, age_s}` from stored data — no portal contact, no per-account quota charge — and a second refresh for an account already syncing waits for and shares that sync's result instead of returning "Sync in progress". Values above 600 also answer the dashboard's background auto-sync from cache; the canary (`scripts/canary_sync.sh`) fails loudly if served a cached answer, since a canary run must really touch the portal
 - `TZ` — Timezone (default: `Asia/Kolkata`)
 - `SRM_EGRESS_URL` + `SRM_PROXY_TOKEN` — optional: route portal traffic through the Cloudflare egress worker instead of direct egress (both must be set, otherwise direct)
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
 - `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
-- `METRICS_SECRET` — secret header (`X-Metrics-Token`) for `GET /internal/metrics` (Prometheus text: sync outcomes/durations by pipeline and error class, captcha attempts per login, preflight fates, scrape-lock rejections, portal cooldown, parse-empty counts; no PII in labels); unset → endpoint off (401), wrong/missing/non-ASCII → bare 401
+- `METRICS_SECRET` — secret header (`X-Metrics-Token`) for `GET /internal/metrics` (Prometheus text: sync outcomes/durations by pipeline and error class, sync cache hits and single-flight joins, captcha attempts per login, preflight fates, scrape-lock rejections, portal cooldown, parse-empty counts; no PII in labels); unset → endpoint off (401), wrong/missing/non-ASCII → bare 401
 - `USAGE_EVENTS_RETENTION_DAYS` — `usage_events` retention in days (default 365); pruned at most once a day by the next recorded event (no background thread), pruned count logged as `usage_events pruned rows=N retention_days=N`
 - `NTFY_ALERT_URL` — optional: an [ntfy](https://ntfy.sh) topic URL; when set, ERROR-level faults (5xx/unhandled — never routine 4xx) POST there with their kv cause (rate-limited to 1/min, a failed send re-arms after 10s) so no real failure goes unseen
 
