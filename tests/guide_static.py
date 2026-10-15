@@ -29,7 +29,7 @@ ck("§5 zero account-existence wording anywhere in app.py", not exist, f"matches
 
 # §5 the credential rejection is ONE fixed generic string (portal text is never relayed)
 ck("§5 credential failure is a single fixed generic message",
-   'return False, "invalid credentials — check your NetID/password"' in app)
+   'sync_error("bad_credentials", "invalid credentials — check your NetID/password")' in app)
 # api_login must return res['error'] without branching on the netid's existence
 body = app[app.find("def api_login("):]
 body = body[:body.find("\n@app.route", 10)]
