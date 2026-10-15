@@ -2147,6 +2147,11 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.22.0", "date": "15 Oct", "title": "Smarter syncs — no wasted portal visits",
+     "body": "Syncing twice in a row no longer hits the portal twice: a refresh within "
+             "5 minutes of your last sync is answered from the data you already have, "
+             "and refreshes started while one is already running now wait for and "
+             "share that sync instead of showing a \"Sync in progress\" error."},
     {"ver": "v1.21.0", "date": "15 Oct", "title": "Clearer sync errors + sync health monitoring",
      "body": "A failed sync now says exactly what went wrong (wrong password, "
              "portal busy, or the portal changed) instead of a generic error. "
