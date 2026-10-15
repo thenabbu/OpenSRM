@@ -2,7 +2,7 @@
 """SRM Attendance — Flask app (multi-user, security-hardened, Sep 2026 audit).
 
 Audit fixes (Sep 16 2026):
-  - Passwords encrypted at rest (Fernet, key in /app/data/fernet.key)
+  - Passwords encrypted at rest (Fernet — FERNET_KEYS env, else /app/data/fernet.key)
   - get_json(silent=True) — requires application/json, no force=True
   - Per-IP login rate limit (CF-Connecting-IP aware) + per-netid scrape limit
   - Security headers (CSP, nosniff, frame-deny, referrer)
@@ -86,20 +86,47 @@ SESSION_MAX_AGE = 60 * 60 * 24 * 30          # 30 days
 
 # ── Crypto: passwords at rest ──────────────────────────────────────
 _fernet = None
+
+def fernet_keys():
+    """Key bytes get_fernet() is built from, shared with
+    scripts/rotate_fernet_key.py so the tool and the app can never
+    disagree about which keys are live.
+
+    Returns (keys, from_env): FERNET_KEYS env (comma-separated, FIRST key
+    is the primary/encrypting key) wins when set — rotation keeps keys off
+    the data volume; otherwise the single persisted DATA_DIR/fernet.key
+    (generated on first use), exactly as before."""
+    from cryptography.fernet import Fernet
+    parts = [k.strip().encode() for k in os.environ.get("FERNET_KEYS", "").split(",") if k.strip()]
+    if parts:
+        return parts, True
+    key_path = os.path.join(DATA_DIR, "fernet.key")
+    if os.path.exists(key_path):
+        return [open(key_path, "rb").read()], False
+    key = Fernet.generate_key()
+    with open(key_path, "wb") as f:
+        f.write(key)
+    os.chmod(key_path, 0o600)
+    return [key], False
+
 def get_fernet():
-    """Lazy-init Fernet from a persisted key file so restarts don't lose data."""
+    """Lazy-init the data-at-rest cipher so restarts don't lose data.
+
+    FERNET_KEYS set -> MultiFernet: the FIRST key encrypts, every key
+    decrypts (old ciphertext stays readable during/after rotation).
+    Otherwise -> single Fernet from DATA_DIR/fernet.key, default unchanged."""
     global _fernet
     if _fernet is None:
-        from cryptography.fernet import Fernet
-        key_path = os.path.join(DATA_DIR, "fernet.key")
-        if os.path.exists(key_path):
-            key = open(key_path, "rb").read()
+        from cryptography.fernet import Fernet, MultiFernet
+        keys, from_env = fernet_keys()
+        if from_env:
+            try:
+                _fernet = MultiFernet([Fernet(k) for k in keys])
+            except ValueError as e:
+                # config error, not corrupt data: name the env var, never echo a key
+                raise RuntimeError("FERNET_KEYS contains an invalid key (%s)" % e) from None
         else:
-            key = Fernet.generate_key()
-            with open(key_path, "wb") as f:
-                f.write(key)
-            os.chmod(key_path, 0o600)
-        _fernet = Fernet(key)
+            _fernet = Fernet(keys[0])
     return _fernet
 
 def encrypt_pw(pw):
