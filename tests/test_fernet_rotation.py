@@ -167,9 +167,10 @@ check("apply without --skip-unreadable refuses (exit 1)", rc == 1, "rc=%d" % rc)
 check("refused apply wrote nothing", get_blob("zz9992") == blob_old)
 rc, out = run_script("--apply", "--skip-unreadable")
 check("apply --skip-unreadable exits 0", rc == 0, "rc=%d %s" % (rc, out[-300:]))
+_b = get_blob("zz9992")
 check("rotation landed: zz9992 decrypts under the NEW primary alone",
-      _can(Fernet(K_NEW), get_blob("zz9992")) and not _can(Fernet(K_OLD), get_blob("zz9992")),
-      get_blob("zz9992")[:20])
+      _can(Fernet(K_NEW), _b) and not _can(Fernet(K_OLD), _b),
+      "new-key:%s old-key:%s" % (_can(Fernet(K_NEW), _b), _can(Fernet(K_OLD), _b)))
 _got = A.decrypt_pw(get_blob("zz9992"))
 check("old key no longer needed for zz9992", _got == "old-key-pw",
       _diag(_got, "old-key-pw"))
@@ -192,9 +193,10 @@ check("clean dry run reports the one stale row", "to re-encrypt: 1" in out, out)
 check("clean dry run did not write", _can(Fernet(K_OLD), get_blob("zz9994")))
 rc, out = run_script("--apply")
 check("clean apply exits 0", rc == 0, "rc=%d %s" % (rc, out[-300:]))
+_b = get_blob("zz9994")
 check("clean apply rotated zz9994 under the primary",
-      _can(Fernet(K_NEW), get_blob("zz9994")) and not _can(Fernet(K_OLD), get_blob("zz9994")),
-      get_blob("zz9994")[:20])
+      _can(Fernet(K_NEW), _b) and not _can(Fernet(K_OLD), _b),
+      "new-key:%s old-key:%s" % (_can(Fernet(K_NEW), _b), _can(Fernet(K_OLD), _b)))
 check("clean apply committed in one transaction", "committed in one transaction" in out, out)
 rc, out = run_script()
 check("final dry run: 0 to re-encrypt", "to re-encrypt: 0" in out, out)
