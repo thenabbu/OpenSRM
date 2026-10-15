@@ -20,6 +20,9 @@ sys.path.insert(0, os.path.join(REPO, "tests"))
 
 TMP = tempfile.mkdtemp(prefix="osrm-metrics-")
 os.environ["DATA_DIR"] = TMP   # verify76: no test DBs in-tree
+# A10: offline — the held-slot test must refuse instantly (busy), never sit
+# out the real SYNC_QUEUE_WAIT_S default (read per-request by fetch)
+os.environ.setdefault("SYNC_QUEUE_WAIT_S", "0")
 atexit.register(shutil.rmtree, TMP, ignore_errors=True)
 
 from app import app as A           # noqa: E402

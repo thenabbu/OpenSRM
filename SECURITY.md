@@ -59,9 +59,10 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and HSTS (`max-age=31536000; includeSubDomains`) on `cf-ray` responses only
 
 ### Rate limiting
-- Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (scrape lock held, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed; a refresh served from the last completed sync (`SYNC_MIN_INTERVAL_S`, default 300s) or shared from an already-running sync likewise never reaches the portal
+- Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (sync queue wait exhausted, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed; a refresh served from the last completed sync (`SYNC_MIN_INTERVAL_S`, default 300s) or shared from an already-running sync likewise never reaches the portal
 - Per IP: 10 login attempts per hour (counted only after credentials pass format validation)
-- Aggregate server→portal budget: 30 requests per 10 minutes
+- Aggregate server→portal budget: 30 requests per 10 minutes, split into three buckets — full logins and preflights share 20 (preflight additionally capped at its own 10 so warm-logins can't drain the login pool), refreshes hold a reserved floor of 10 that unauthenticated work can never spend; one source IP holds at most 6 unauth tokens
+- Sync serialization: one portal pipeline at a time (`SYNC_MAX_CONCURRENCY`, default 1); a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) with logins queued ahead of refreshes, then gets the busy 503 — the wait is free, never charged against the account quota. The Playwright fallback stays serialized on one browser at any concurrency setting
 - Portal cooldown: 3 consecutive portal failures arm a cooldown (5 min, doubling, capped at 30 min)
 - Memory exhaustion guard: rate-limit dicts are pruned once they pass 10,000 entries (hard clear at 2× as the blowout backstop)
 

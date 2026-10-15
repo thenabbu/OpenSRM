@@ -20,6 +20,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# A10: offline — a held slot must refuse instantly (busy), never sit out the
+# real SYNC_QUEUE_WAIT_S default; read per-request by fetch_attendance.
+os.environ.setdefault("SYNC_QUEUE_WAIT_S", "0")
+
 with tempfile.TemporaryDirectory() as td:   # verify76 forbids test DBs in-tree
     os.environ["DATA_DIR"] = td
     from app import app as A
@@ -166,22 +170,25 @@ A._preflight_last.clear(); A._preflight_ip.clear()
 A._preflight_ip["127.0.0.1"] = [time.time()] * 10
 r = cl.post("/api/login/preflight", json={"netid": "zzrate"})
 assert r.status_code == 429, r.data
-assert A._portal_attempts == [] and A._portal_attempts_auth == [], "429 must spend no budget token"
+assert A._portal_attempts == [] and A._portal_attempts_auth == [] \
+    and A._portal_attempts_pf == [], "429 must spend no budget token"
 A._preflight_ip.clear()
 # cooldown: identical {ok:true} to a fresh start — no cooldown discriminator
 A._preflight_last["zzpref"] = time.time()
 r = cl.post("/api/login/preflight", json={"netid": "zzpref"})
 assert r.status_code == 200 and r.get_json() == {"ok": True}, r.data
 assert "cooldown" not in r.get_json(), "per-netid discriminator must not leak"
-# busy: scrape lock held -> 503, no thread (all paths here are no-spawn, so
-# this offline suite never reaches the portal)
-got = A._scrape_lock.acquire(blocking=False)
-assert got
+# busy: a parked waiter makes the queue non-empty -> 503, no thread (all
+# paths here are no-spawn, so this offline suite never reaches the portal).
+# A10 redefined the refusal from `_scrape_lock.locked()` to queue depth > 0.
+A._sync_queue.append(A._QueueWaiter(1))
 try:
     r = cl.post("/api/login/preflight", json={"netid": "zzbusy"})
 finally:
-    A._scrape_lock.release()
+    A._sync_queue.pop()
 assert r.status_code == 503, r.data
+assert "zzbusy" not in A._preflight_last, "a refused preflight must not be recorded"
+assert A._portal_attempts_pf == [], "the 503 must spend no preflight budget token"
 # aggregate eviction: stale buckets die on the next admission sweep
 A._preflight_last["zzold"] = time.time() - 700
 A._preflight_ip["9.9.9.9"] = [time.time() - 700]

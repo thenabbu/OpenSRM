@@ -20,6 +20,7 @@ Kept from prior work:
 """
 import asyncio
 import base64
+import contextvars
 import hashlib
 import hmac
 import json
@@ -325,7 +326,32 @@ NETID_RE = re.compile(r"^[a-z0-9]{2,20}$")  # audit: SRM NetIDs are lowercase al
 # runs views in a thread pool, so the guard must be thread-safe, and it
 # must be shared process-wide. Pair with gunicorn -w 1 (Dockerfile CMD)
 # so counters below are also process-wide.
-_scrape_lock = threading.Lock()
+# A10: the binary lock became a permit pool with a bounded wait queue in
+# front — callers QUEUE (login ahead of refresh, position published to the
+# progress tracker) and wait up to SYNC_QUEUE_WAIT_S instead of being
+# refused the instant a sync is running. SYNC_MAX_CONCURRENCY sizes the
+# pool (read at import, default 1 = today's one-at-a-time); >1 lets the
+# pure-HTTP pipelines overlap but is untested end-to-end — see the PR's
+# what-to-watch list before raising it. The Playwright fallback ignores
+# the pool size and serializes on _pw_lock (one shared browser context).
+def _sync_max_concurrency():
+    """SYNC_MAX_CONCURRENCY — read at import (the permit pool is sized once):
+    an integer >= 1, else the default 1."""
+    try:
+        return max(1, int(str(os.environ.get("SYNC_MAX_CONCURRENCY") or "").strip()))
+    except (TypeError, ValueError):
+        return 1
+
+SYNC_MAX_CONCURRENCY = _sync_max_concurrency()
+SYNC_QUEUE_WAIT_DEFAULT = 45   # seconds a queued sync waits before today's busy 503
+
+_scrape_lock = threading.BoundedSemaphore(max(1, SYNC_MAX_CONCURRENCY))
+_pw_lock = threading.Lock()          # Playwright fallback: one browser, whatever the pool size
+_queue_cond = threading.Condition()  # guards _sync_queue + handoff wakeups
+_sync_queue = []                     # parked waiters, ordered: login before refresh, FIFO inside
+# ponytail: SYNC_QUEUE_WAIT_S read per-request (same as SYNC_MIN_INTERVAL_S)
+# so ops/tests can flip it without a boot; SYNC_MAX_CONCURRENCY is boot-time
+# because the semaphore pool is sized once.
 # audit run-1 (#8): total wall-clock budget for one held scrape lock — HTTP
 # phases + Playwright fallback share it (see fetch_attendance)
 PIPELINE_DEADLINE = 150
@@ -383,6 +409,88 @@ def _set_progress(key, step, pct, netid=None):
     _login_progress[key] = {"step": step, "ts": int(time.time()), "pct": pct,
                             "netid": netid or "-"}
 
+# ── Sync queue: bounded wait for a portal slot (A10) ────────────────
+def _sync_queue_wait_s():
+    """SYNC_QUEUE_WAIT_S in seconds, read per-request (like
+    SYNC_MIN_INTERVAL_S): how long a queued sync waits for a free portal
+    slot before returning the busy 503. 0 = refuse instantly (old
+    behaviour); a non-integer falls back to the default."""
+    raw = os.environ.get("SYNC_QUEUE_WAIT_S")
+    if raw is None:
+        return SYNC_QUEUE_WAIT_DEFAULT
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return SYNC_QUEUE_WAIT_DEFAULT
+
+
+class _QueueWaiter:
+    """One parked sync. Identity equality so list.index() finds ME, not a
+    same-priority neighbour with an identical prio."""
+    __slots__ = ("prio",)
+
+    def __init__(self, prio):
+        self.prio = prio
+
+
+def _sync_queue_depth():
+    """How many syncs are parked waiting for a slot — the preflight
+    refusal signal (a single running sync no longer refuses preflight;
+    the runner thread's non-blocking try covers that case)."""
+    with _queue_cond:
+        return len(_sync_queue)
+
+
+def _scrape_admit(prio, attempt, netid, wait_s):
+    """Take one portal-pipeline slot, waiting up to wait_s in the queue
+    instead of refusing the instant a sync is running (A10: bounded wait).
+    Order: login (prio 0) ahead of refresh (prio 1), FIFO inside a
+    priority — a wall of refreshes can never starve a login. Each parked
+    waiter publishes its position through the login progress map
+    ('Waiting for N ahead…'); flows without an attempt token publish
+    nothing (same contract as _set_progress's other callers). True =
+    admitted — the caller must _scrape_release(); False = the wait timed
+    out, nothing held, caller answers busy 503.
+    ponytail: SYNC_MAX_CONCURRENCY > 1 admits overlap but is untested
+    end-to-end; the Playwright fallback serializes on _pw_lock anyway."""
+    deadline = time.monotonic() + wait_s
+    me = _QueueWaiter(prio)
+    with _queue_cond:
+        idx = 0
+        while idx < len(_sync_queue) and _sync_queue[idx].prio <= prio:
+            idx += 1
+        _sync_queue.insert(idx, me)  # higher prio jumps ahead; equal prio stays FIFO
+        try:
+            while True:
+                # only the head of the queue may claim a slot — that is what
+                # keeps admission in queue order when a slot frees up
+                if _sync_queue[0] is me and _scrape_lock.acquire(blocking=False):
+                    _sync_queue.remove(me)
+                    return True
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    _sync_queue.remove(me)
+                    return False
+                if attempt:
+                    # ahead = waiters in front + the slot-holder blocking the
+                    # head (a queued waiter never exists without a holder)
+                    pos = _sync_queue.index(me)
+                    _set_progress(attempt, f"Waiting for {pos + 1} ahead…", 1, netid=netid)
+                # 1s wake cap: a release that bypasses _scrape_release (a test
+                # poking the semaphore directly) is still picked up promptly
+                _queue_cond.wait(min(remaining, 1.0))
+        finally:
+            _queue_cond.notify_all()  # my insert/remove renumbered everyone
+
+
+def _scrape_release():
+    """Hand a slot back and wake the queue. EVERY _scrape_lock release must
+    come through here — a bare release() leaves waiters parked until their
+    next wake cap."""
+    with _queue_cond:
+        _scrape_lock.release()
+        _queue_cond.notify_all()
+
 # ── Rate limiting ──────────────────────────────────────────────────
 # Two independent limits:
 #   per-netid scrape limit — portal-friendliness (each scrape = real SRM login)
@@ -401,33 +509,49 @@ _rate_lock = threading.Lock()  # audit: check-and-append is atomic only under on
 # unauthenticated work (login/preflight) is capped at CAP-FLOOR tokens and one
 # source IP holds at most _PORTAL_IP_CAP of them; the floor stays reserved for
 # authenticated owner refreshes, which can never be pre-spent by outsiders.
-_portal_attempts = []        # unauth admitted jobs, 10-min window
-_portal_attempts_auth = []   # authenticated owner syncs, 10-min window
+# A10: the aggregate splits into three named buckets — full login,
+# session-reuse refresh, preflight — so one kind of work can be counted (and
+# capped) on its own. The TOTALS are unchanged: aggregate 30, unauth
+# (login + preflight) 20, refresh floor 10, one IP at most 6; the preflight
+# bucket's own 10/10min share is the one new number (it was only ever bound
+# by the shared 20 before, and its route already caps 10/IP).
+_portal_attempts = []        # full-login syncs (unauth), 10-min window
+_portal_attempts_auth = []   # session-reuse refreshes (owner), 10-min window
+_portal_attempts_pf = []     # login preflights (unauth warm-logins), 10-min window
 _portal_ip = {}              # ip -> [unauth timestamps, ...] (same window)
-_PORTAL_CAP = 30             # across all clients, all netids
+_PORTAL_CAP = 30             # across all clients, all netids, all buckets
 _PORTAL_IP_CAP = 6           # one source IP holds at most 6 of the unauth tokens
 _PORTAL_AUTH_FLOOR = 10      # tokens unreachable for unauth work (refresh reserve)
+_PORTAL_PREFLIGHT_CAP = 10   # preflight's own share of the unauth pool
 
 
-def _check_portal_budget(ip=None, authorized=False):
+def _check_portal_budget(ip=None, authorized=False, bucket="login"):
     now = time.time()
     with _rate_lock:
         _portal_attempts[:] = [t for t in _portal_attempts if now - t < 600]
         _portal_attempts_auth[:] = [t for t in _portal_attempts_auth if now - t < 600]
+        _portal_attempts_pf[:] = [t for t in _portal_attempts_pf if now - t < 600]
         if authorized:
-            if len(_portal_attempts) + len(_portal_attempts_auth) >= _PORTAL_CAP:
+            if len(_portal_attempts) + len(_portal_attempts_auth) + len(_portal_attempts_pf) >= _PORTAL_CAP:
                 return False
             _portal_attempts_auth.append(now)
             return True
-        # unauth: never spend the reserved floor (audit run-1 #1)
-        if len(_portal_attempts) >= _PORTAL_CAP - _PORTAL_AUTH_FLOOR:
+        # unauth: never spend the reserved floor (audit run-1 #1); preflight
+        # additionally stops at its own share so warm-logins can't drain the
+        # full-logins pool
+        if bucket == "preflight" and len(_portal_attempts_pf) >= _PORTAL_PREFLIGHT_CAP:
+            return False
+        if len(_portal_attempts) + len(_portal_attempts_pf) >= _PORTAL_CAP - _PORTAL_AUTH_FLOOR:
             return False
         if ip is not None:
             hold = [t for t in _portal_ip.get(ip, []) if now - t < 600]
             if len(hold) >= _PORTAL_IP_CAP:
                 return False   # rejected WITHOUT spending a shared token
             _portal_ip[ip] = hold + [now]
-        _portal_attempts.append(now)
+        if bucket == "preflight":
+            _portal_attempts_pf.append(now)
+        else:
+            _portal_attempts.append(now)
         return True
 
 
@@ -508,9 +632,29 @@ def _check_ip_rate(ip):
 # pause ALL login attempts to avoid worsening the block.
 _portal_cooldown_until = 0   # unix timestamp; 0 = no cooldown
 _portal_consecutive_fails = 0
-_request_fail_counted = False
+
+
+class _SyncContext:
+    """Per-sync mutable state. The 'counted one portal fail already' flag
+    used to be a module global (_request_fail_counted): two overlapping
+    syncs shared it, so one sync's counted fail latched the other's flag
+    and its cooldown could never arm (or the reset raced mid-flight).
+    The object rides a ContextVar — the calling thread's context for the
+    pure-HTTP path, carried into the Playwright coroutine scheduled from
+    it — so every stage of ONE sync shares the flag and no other sync
+    sees it."""
+    __slots__ = ("fail_counted",)
+
+    def __init__(self):
+        self.fail_counted = False   # one portal-fail per request, not per retry
+
+
+_sync_ctx: contextvars.ContextVar = contextvars.ContextVar("opensrm_sync_ctx", default=None)
+
 
 def _portal_fail():
+    # ponytail: the cooldown itself is still GLOBAL — per-user isolation
+    # needs per-netid counters, add when multi-user load is real.
     global _portal_cooldown_until, _portal_consecutive_fails
     _portal_consecutive_fails += 1
     if _portal_consecutive_fails >= 3:
@@ -521,11 +665,12 @@ def _portal_fail():
 
 def _portal_fail_once():
     """Count ONE fail per login request, not one per captcha retry inside it.
-    ponytail: per-user isolation needs per-netid counters — add when multi-user load is real."""
-    global _portal_consecutive_fails, _request_fail_counted
-    if _request_fail_counted:
+    Guarded by the caller's _SyncContext; a call with no sync context (any
+    caller outside fetch_attendance) never arms the cooldown."""
+    ctx = _sync_ctx.get()
+    if ctx is None or ctx.fail_counted:
         return
-    _request_fail_counted = True
+    ctx.fail_counted = True
     _portal_fail()
 
 def _portal_ok():
@@ -663,7 +808,8 @@ def parse_personal_details(html):
 # only the context, never the shared browser. This removes ~2.5-3s of
 # per-request browser launch and ~3s ddddocr cold start.
 # Requires gunicorn -w 1 (singletons are process-local). Thread-safe: all
-# browser access serializes through _scrape_lock in fetch_attendance.
+# browser access serializes through _pw_lock in fetch_attendance's
+# Playwright fallback (A10 — whatever SYNC_MAX_CONCURRENCY is set to).
 _pw = None
 _browser = None
 _loop = None
@@ -1057,8 +1203,9 @@ def _pw_login_done(ok, err, attempts):
 async def _do_login(page, ctx, netid, password):
     """Perform login with captcha retry. Returns (ok, fail) — fail is a
     sync_error() result (typed kind + byte-identical message) or None."""
-    global _request_fail_counted
-    _request_fail_counted = False  # one portal-fail per request, not per retry
+    _sc = _sync_ctx.get()
+    if _sc is not None:
+        _sc.fail_counted = False  # one portal-fail per request, not per retry
     # Check global portal cooldown before attempting
     cooldown = _portal_cooldown_remaining()
     if cooldown > 0:
@@ -1405,26 +1552,34 @@ def _sync_result(pipeline, res, t0):
 
 
 def fetch_attendance(netid, password, authorized=False, attempt=None):
-    global _request_fail_counted
     t_sync = time.monotonic()   # observability: sync outcome + duration anchor
     loop = future = None  # except block references both; may not be reached
-    # audit 2026-09-30: the lock comes FIRST. _check_rate() used to run above
+    pw_held = False       # Playwright fallback lock; released in finally below
+    # audit 2026-09-30: admission comes FIRST. _check_rate() used to run above
     # it, so a busy/cooldown/budget rejection still consumed one of the
     # account's 3 syncs per 10 minutes while reaching the portal zero times —
     # three "Sync in progress" clicks locked an account that never synced out
     # for 10 minutes (prod 2026-09-30 16:45–16:53). Only count a sync once we
     # know it can actually run.
-    # audit F1 fix: blocking acquire in the worker thread; no try/except race
-    if not _scrape_lock.acquire(blocking=False):
+    # audit F1 fix: acquire in the worker thread; no try/except race.
+    # A10: the acquire is now a BOUNDED QUEUE WAIT — a click waits up to
+    # SYNC_QUEUE_WAIT_S for the running sync to finish instead of being
+    # refused instantly; a waiter that outstays the wait gets today's busy
+    # 503 (still free: it returns before _check_rate/_check_portal_budget).
+    # Queue priority: login (authorized=False, /api/login) ahead of refresh
+    # (authorized=True, /api/refresh) — FIFO inside each.
+    if not _scrape_admit(1 if authorized else 0, attempt, netid, _sync_queue_wait_s()):
         metrics.inc("opensrm_scrape_lock_rejections_total", op="sync")
         return sync_error("busy", "Sync in progress. Try again in about a minute.", retry_after=60)
     try:
-        # audit 2026-09-27: reset HERE (under the scrape lock, one pipeline at a
-        # time). Previously the flag was only reset inside Playwright's _do_login,
-        # so in the normal pure-HTTP path the first counted fail latched it True
-        # forever and _portal_fail_once() became a no-op — the portal cooldown
-        # could never arm and we'd keep hammering a rate-limiting portal.
-        _request_fail_counted = False
+        # audit 2026-09-27: reset HERE (one pipeline at a time, under its own
+        # sync context). Previously the flag was only reset inside Playwright's
+        # _do_login, so in the normal pure-HTTP path the first counted fail
+        # latched it True forever and _portal_fail_once() became a no-op — the
+        # portal cooldown could never arm and we'd keep hammering a
+        # rate-limiting portal. A10: the flag lives on this per-sync
+        # _SyncContext (module global was a race once two syncs can overlap).
+        _sync_ctx.set(_SyncContext())
         # audit run-1 (HIGH #1/#6): FREE gates first, budget charged LAST — a
         # cooldown or quota rejection must never spend a shared portal token,
         # and unauth wrong-password guesses must never spend the victim's
@@ -1509,6 +1664,17 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                 log.warning("http pipeline crashed (%r) — falling back to playwright", e)
                 _portal_fail_once()
         # ── Fallback: Playwright ──────────────────────────────────────
+        # A10: the browser pipeline stays serialized whatever
+        # SYNC_MAX_CONCURRENCY says — one shared persistent context cannot
+        # drive two logins. Held through the zombie cleanup in the except
+        # block (released in finally), so a fallback never overlaps another.
+        if not _pw_lock.acquire(timeout=max(1, int(deadline - time.monotonic()))):
+            metrics.inc("opensrm_scrape_lock_rejections_total", op="sync")
+            return _sync_result("playwright",
+                                sync_error("busy", "Sync in progress. Try again in about a minute.",
+                                           retry_after=60),
+                                t_sync)
+        pw_held = True
         loop = _ensure_loop()
         future = asyncio.run_coroutine_threadsafe(_fetch_rich_optimized(netid, password, cold=cold), loop)
         # 5 captcha retries w/ backoffs ≈ 90s worst case; 60s caused guaranteed
@@ -1540,7 +1706,9 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                             sync_error("internal", "Scrape failed server-side — check the server log, then try again."),
                             t_sync)
     finally:
-        _scrape_lock.release()
+        if pw_held:
+            _pw_lock.release()
+        _scrape_release()   # return the slot + wake the queue (A10)
 
 # ── View model ─────────────────────────────────────────────────────
 ATTENDANCE_TARGET = 0.75
@@ -2740,7 +2908,7 @@ def api_feedback_fill():
         _track("feedback_fill_ok", detail=f"{ms}ms", user=netid)
         return {"ok": True, **res}
     finally:
-        _scrape_lock.release()
+        _scrape_release()   # A10: hand back through the queue-aware release
 
 def _fmt_score(v):
     """Minimal decimals: 11.7 -> '11.7', 5 -> '5' (trailing zeroes stripped —
@@ -3520,7 +3688,7 @@ def _run_preflight(netid):
         log.warning("preflight failed netid=%s err=%r", netid, e)
         metrics.inc("opensrm_preflight_total", outcome="failed")
     finally:
-        _scrape_lock.release()
+        _scrape_release()   # A10: queue-aware handoff (wakes parked syncs)
 
 @app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
@@ -3549,7 +3717,10 @@ def api_login_preflight():
             # cooldown: identical response to a fresh start — no per-netid
             # discriminator leaks to an unauthenticated caller (audit run-1 #14)
             return {"ok": True}
-        elif _portal_cooldown_remaining() > 0 or _scrape_lock.locked():
+        elif _portal_cooldown_remaining() > 0 or _sync_queue_depth() > 0:
+            # A10: refused by QUEUE DEPTH, not by a held lock — one running
+            # sync no longer 503s the warm-login (its runner thread takes the
+            # non-blocking slot or skips); a backed-up queue does.
             busy = True
         else:
             _preflight_ip[ip] = hits
@@ -3559,7 +3730,7 @@ def api_login_preflight():
     if busy:
         log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
-    if not _check_portal_budget(ip):  # audit: aggregate egress cap (takes _rate_lock — must run outside the block above)
+    if not _check_portal_budget(ip, bucket="preflight"):  # audit: aggregate egress cap (takes _rate_lock — must run outside the block above)
         return {"ok": False, "error": "rate"}, 429
     with _rate_lock:  # atomic charge, re-validated — closes the admission race
         if now - _preflight_last.get(netid, 0) < 30:
