@@ -18,10 +18,10 @@ app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
-docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · screenshots/ + pr/ (PR evidence) · logos
+docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
 scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
 VERSION pyproject.toml uv.lock   # release = bump all three together
-.github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image, gated on tests) + lint.yml; SHA-pinned actions; `uv lock --check`
+.github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image :latest+:VERSION+:sha, gated on tests) + lint.yml + scans.yml (gitleaks/pip-audit/trivy, report-only); SHA-pinned actions; `uv lock --check`
 ```
 
 ## Dev loop (do this every time)
@@ -71,6 +71,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_push_send.py  # [unit] 16/16 (mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline)
 .venv/bin/python tests/test_push_tick.py  # [unit] 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
 .venv/bin/python tests/test_push_api.py   # [unit] 42/42 (401 style, validation, DB rate caps, test/receipt flows, per-type notification prefs)
+.venv/bin/python tests/test_supply_chain.py  # [unit] 26/26 (compose OPENSRM_TAG pin + byte-identical :latest default, build.yml VERSION tag + OCI version/revision labels, scans.yml report-only + SHA-pinned actions, SCANS.md flip-to-blocking docs) — no server
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -123,12 +124,16 @@ Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds the u
 - **Branches: `main` only** (merged feature branches get deleted local+remote — do the same).
 - Atomic commits; message = finding + evidence + fix + how it was verified.
 - **Commit email MUST be `128571614+thenabbu@users.noreply.github.com`** (GH uid 128571614 — never the Discord uid, or commits don't link).
-- Push → CI must be green before deploy: **Lint** (`uvx ruff check app/` + `uv lock --check`) · **Tests** (`unit` + `docker` + `e2e`, `.github/workflows/tests.yml`) · **Build & Push** (image → GHCR, `needs: [lint, tests]` on `main` so a red suite never pushes `:latest`) · the CodeQL checks the default code-scanning setup runs. A `unit` or `e2e` job that goes red on a PR is a real suite failure, not a flake — each suite is its own step/line with its own `DATA_DIR`.
+- Push → CI must be green before deploy: **Lint** (`uvx ruff check app/` + `uv lock --check`) · **Tests** (`unit` + `docker` + `e2e`, `.github/workflows/tests.yml`) · **Build & Push** (image → GHCR as `:latest` + `:<VERSION>` + `:<short-sha>` with `org.opencontainers.image.version/.revision` labels, `needs: [lint, tests]` on `main` so a red suite never pushes `:latest`) · **Scans** (gitleaks/pip-audit/trivy, always report-only — docs/SCANS.md) · the CodeQL checks the default code-scanning setup runs. A `unit` or `e2e` job that goes red on a PR is a real suite failure, not a flake — each suite is its own step/line with its own `DATA_DIR`.
 - Release: bump `VERSION` + `pyproject.toml` → `uv lock` → commit → tag `vX.Y.Z` → push tag → deploy → smoke.
 
 ## Prod deploy + smoke
 ```bash
 ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
+# Rollback to a released image (CI publishes :<VERSION> next to :latest):
+#   add OPENSRM_TAG=<VERSION> to /docker/opensrm/.env (the PROJECT env file —
+#   compose does NOT read the master /docker/.env for interpolation), then
+#   docker compose pull && docker compose up -d opensrm; unset to ride :latest again.
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
