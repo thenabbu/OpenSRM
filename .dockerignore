@@ -25,4 +25,16 @@ requirements.txt
 docs/
 # audit: research PoCs (had a hardcoded proxy token) must never ship in the image
 egress/
+# not runtime code: suites run in CI from the checkout, deploy helpers run on
+# the host — neither belongs in the shipped image
+tests/
+scripts/
+# ...except the two operational tools the runbooks invoke INSIDE the container:
+# SECURITY.md's key-rotation runbook (`docker exec opensrm python
+# /app/scripts/rotate_fernet_key.py`) and the README sync-health canary
+# (`docker exec opensrm python /app/scripts/canary_cookie.py`, the default
+# MINT/CHECK/DROP of scripts/canary_sync.sh). Dropping them silently breaks
+# both runbooks, so they stay in the image.
+!scripts/rotate_fernet_key.py
+!scripts/canary_cookie.py
 docker-compose.dev.yml
