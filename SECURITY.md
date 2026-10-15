@@ -37,6 +37,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - `default-src 'self'` — everything falls back to same-origin
 - `script-src 'self' https://cdn.jsdelivr.net` — no inline scripts; the only external origin is the Tailwind/daisyUI CDN (both pages load it via `partials/theme.html`)
 - `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net` — Tailwind/daisyUI loaded at runtime from jsDelivr
+- **Subresource Integrity on both CDN assets** — the Tailwind and daisyUI tags in `partials/theme.html` carry `integrity="sha384-…"` + `crossorigin="anonymous"`, so the browser refuses to execute or apply either file unless its bytes hash exactly to the pinned digest (a changed or tampered CDN response fails closed; the page renders unstyled instead of compromised). The digests were computed from the exact pinned URLs and confirmed against independent fetches; a locally served tampered copy is rejected by the browser while the untampered control loads.
 - `img-src 'self' data:` — no remote image hosts
 - `connect-src 'self'` — no external API calls from the browser
 - `frame-ancestors 'none'` — cannot be embedded in iframes

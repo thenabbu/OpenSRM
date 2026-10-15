@@ -23,7 +23,7 @@
 9. **Borders, not shadows.** No gradients, glows, blur, glassmorphism, hover-lift, or colored shadows (§6).
 10. **Data is monospace.** Course codes, percentages, times, counts, dates, NetIDs → `font-mono`. Everything else uses the default sans (§3).
 11. **daisyUI 5 only.** `input-bordered`, `form-control`, and `label-text` do not exist in v5. Use `fieldset`, `floating-label`, `input`, `label`.
-12. **No build step, strict CSP.** Tailwind and daisyUI load from the jsDelivr CDN at runtime. No inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
+12. **No build step, strict CSP.** Tailwind and daisyUI load from the jsDelivr CDN at runtime, pinned with SRI (`integrity` sha384 + `crossorigin` in `partials/theme.html`). No inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
 
 ### Cheat sheet: what am I styling?
 
@@ -672,7 +672,7 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
 
 ## 10. Implementation constraints (silent-failure list)
 
-1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`); `verify76` L47 fails the suite if a pin drifts.
+1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`) and carry SRI `integrity="sha384-…"` + `crossorigin="anonymous"`, so a changed CDN payload is rejected by the browser (fail-closed: unstyled, not compromised); `verify76` L47 fails the suite if a pin drifts.
 2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
 3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v14` → `opensrm-v15`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
@@ -808,8 +808,8 @@ html[data-theme="openSRM"] {
   <meta name="theme-color" content="#111111">
   <title>OpenSRM</title>
   <style>/* deployed theme block from Appendix A */</style>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3"></script>
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css" integrity="sha384-kDFOM9ydHs3NQrHJycAPdF3M0eBnO7Q06ZRTOr2xwv8Wpk7nYYsrw9z1PaoAY050" crossorigin="anonymous">
 </head>
 <body class="bg-base-100 text-base-content">
   <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3"
