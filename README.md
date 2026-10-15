@@ -233,7 +233,7 @@ Environment variables:
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
 - `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
-- `METRICS_SECRET` — secret header (`X-Metrics-Token`) for `GET /internal/metrics` (Prometheus text: sync outcomes/durations by pipeline and error class, captcha attempts per login, preflight fates, scrape-lock rejections, portal cooldown, parse-empty counts; no PII in labels); unset → endpoint off (401), wrong/missing/non-ASCII → bare 401
+- `METRICS_SECRET` — secret header (`X-Metrics-Token`) for `GET /internal/metrics` (Prometheus text: sync outcomes/durations by pipeline and error class, sync cache hits and single-flight joins, captcha attempts per login, preflight fates, scrape-lock rejections, portal cooldown, parse-empty counts; no PII in labels); unset → endpoint off (401), wrong/missing/non-ASCII → bare 401
 - `USAGE_EVENTS_RETENTION_DAYS` — `usage_events` retention in days (default 365); pruned at most once a day by the next recorded event (no background thread), pruned count logged as `usage_events pruned rows=N retention_days=N`
 - `NTFY_ALERT_URL` — optional: an [ntfy](https://ntfy.sh) topic URL; when set, ERROR-level faults (5xx/unhandled — never routine 4xx) POST there with their kv cause (rate-limited to 1/min, a failed send re-arms after 10s) so no real failure goes unseen
 
