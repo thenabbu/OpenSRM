@@ -94,6 +94,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_api.py
       - name: guide_static (login flow, source level)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/guide_static.py
+      - name: test_supply_chain (image tags + scan workflow pins)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_supply_chain.py
 
   docker:
     runs-on: ubuntu-latest

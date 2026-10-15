@@ -1,0 +1,103 @@
+# Supply-chain scans — report-only by design.
+#
+# Every job below is `continue-on-error: true`: a finding shows up in the
+# job summary (and as a non-blocking annotation) instead of failing the
+# PR. The maintainer flips a scan to blocking by deleting that one line
+# (see "flipping to blocking" in docs/SCANS.md for what each would gate).
+name: Scans
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# audit: scans only read the repo; the trivy build context never leaves the
+# runner and nothing is pushed.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: gitleaks (secrets in history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0 # full history — leaks only matter if they are old
+      - name: Scan git history for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deps:
+    name: pip-audit (python deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      # pip cannot resolve a git+ requirement for hashing, so the pinned-git
+      # blobatar line (a commit-pinned supply-chain item covered by the
+      # Dockerfile digest pins + trivy image scan + verify76 M22) is dropped
+      # from the export before auditing; everything else is audited.
+      - name: Export locked requirements
+        run: |
+          uv export --frozen --no-dev | grep -v 'git+' > requirements-audit.txt
+          echo "requirements: $(grep -c '==' requirements-audit.txt) pinned lines"
+
+      - name: Audit python dependencies (OSV)
+        run: |
+          uvx pip-audit -r requirements-audit.txt --format markdown -o $GITHUB_STEP_SUMMARY || true
+          uvx pip-audit -r requirements-audit.txt --format json -o pip-audit.json
+          python3 - <<'PY'
+          import json, os
+          deps = json.load(open("pip-audit.json"))["dependencies"]
+          vulns = {d["name"]: d["vulns"] for d in deps if d["vulns"]}
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(f"\n\npip-audit: {len(deps)} dependencies audited, "
+                     f"{sum(len(v) for v in vulns.values())} known vulnerabilities\n")
+          PY
+
+  image:
+    name: trivy (built image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Same image CI ships (build.yml), never pushed from here.
+      - name: Build image (never pushed)
+        run: DOCKER_BUILDKIT=1 docker build -t opensrm:scan .
+
+      - name: Trivy HIGH/CRITICAL with a fix available
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: opensrm:scan
+          format: table
+          exit-code: 0 # report-only
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          output: trivy.txt
+
+      - name: Job summary
+        run: |
+          {
+            echo "### Trivy — HIGH/CRITICAL with a fix available"
+            echo
+            echo '```'
+            tail -n +1 trivy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
