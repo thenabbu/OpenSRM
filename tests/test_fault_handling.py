@@ -26,6 +26,10 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "tests"))
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-fault-")  # verify76: no test DBs in-tree
+# this suite pins what a REAL refresh writes (stubbed fetch + seed's fresh
+# last_fetch) — opt out of SYNC_MIN_INTERVAL_S or every refresh here would
+# answer from the cache window and never call the stub
+os.environ["SYNC_MIN_INTERVAL_S"] = "0"
 
 from app import app as A          # noqa: E402
 from _seed import mint_token, seed  # noqa: E402
