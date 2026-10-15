@@ -42,6 +42,13 @@ code=$(curl -sS -o "$BODY" -w '%{http_code}' --max-time 200 \
 grep -Eq '"ok":[[:space:]]*true' "$BODY" \
     || fail "refresh not ok (http $code): $(head -c 300 "$BODY")"
 
+# 1b) a cache-window answer is NOT a sync: the canary's whole job is to
+# prove the portal path works, so a SYNC_MIN_INTERVAL_S-served response
+# (ok but cached) must fail loudly instead of reporting sync=1
+if grep -q '"cached"' "$BODY"; then
+    fail "refresh answered from SYNC_MIN_INTERVAL_S cache — no portal contact; wait out the window and rerun"
+fi
+
 # 2) the sync must have left non-empty attendance AND marks
 reason=$($CHECK "$NETID" 2>&1) || fail "$reason"
 

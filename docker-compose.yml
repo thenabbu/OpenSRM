@@ -30,6 +30,10 @@ services:
       # prod ran DEBUG for 15 days (3,366 junk DEBUG lines). Default INFO now;
       # set LOG_LEVEL=DEBUG in /docker/.env to debug.
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # sync cache window (README): a refresh answered from the last sync
+      # within this many seconds never contacts the portal; 0 disables.
+      # Default matches the code's data-derived 300s.
+      - SYNC_MIN_INTERVAL_S=${SYNC_MIN_INTERVAL_S:-300}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
       - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
