@@ -10,7 +10,9 @@ Portal wording below is verbatim from live responses captured 2026-09-30
 (alert markup + message only — no page markup, no credentials, no PII).
 Offline: `_req` is stubbed, so this suite never reaches the SRM portal.
 """
+import ast
 import os
+import re
 import sys
 import tempfile
 import time
@@ -62,19 +64,24 @@ def classify(body, attempt=1):
 
 
 # ── 1. classification on the three real portal outcomes ─────────────────────
-assert classify(rej(CRED_ALERT)) == ("fail", "invalid credentials — check your NetID/password"), \
+_creds = classify(rej(CRED_ALERT))
+assert _creds[0] == "fail" and _creds[1]["error"] == "invalid credentials — check your NetID/password", \
     "bad password must be a credentials failure, not a captcha retry"
+assert _creds[1]["kind"] == "bad_credentials", f"typed kind required: {_creds[1]}"
 assert calls["portal_fail"] == 0, "credentials failure is not a portal rate-limit event"
 
 assert classify(rej(CRED_ALERT), attempt=3)[0] == "fail", \
     "credentials failure must never burn captcha retries"
 assert classify(rej(CAPTCHA_ALERT), attempt=1) == ("retry", None), "bad captcha retries"
-assert classify(rej(CAPTCHA_ALERT), attempt=3) == (
-    "fail", "login failed after 3 attempts — captcha unreadable"), "3rd captcha failure gives up"
+_cap3 = classify(rej(CAPTCHA_ALERT), attempt=3)
+assert (_cap3[0] == "fail"
+        and _cap3[1]["error"] == "login failed after 3 attempts — captcha unreadable"
+        and _cap3[1]["kind"] == "bad_credentials"), "3rd captcha failure gives up"
 
 silent = classify(PAGE)      # page re-rendered with NO alert at all
-assert silent[0] == "fail" and "without an error" in silent[1], \
+assert silent[0] == "fail" and "without an error" in silent[1]["error"], \
     "the silent-rejection branch must be reachable (it was unreachable before)"
+assert silent[1]["kind"] == "portal_cooldown", f"silent rejection = portal cooldown: {silent[1]}"
 assert calls["portal_fail"] == 1, "silent rejection arms the portal cooldown"
 assert classify("<html>HRDSystem.jsp</html>") == ("ok", None), "success path untouched"
 
@@ -230,4 +237,152 @@ with A.app.test_request_context(headers={"X-Edge-Secret": "wrong", "cf-ray": "r2
     assert A._behind_cf() is False, "wrong secret must not confer trust"
 A.CF_EDGE_SECRET = ""
 
-print("ok  login rejection classifier + sync quota ordering")
+
+# ── 9. typed sync results: kind→status differential, old vs new ─────────────
+# The classifier this PR deletes (_login_error_code) matched substrings of
+# the message text; the replacement is the kind→status table. The old
+# classifier is kept here VERBATIM as the "old" side of the differential.
+# The inventory is an AST walk of every {'ok': False} producer in app.py +
+# http_scraper.py, so the differential covers ALL of them: typed producers
+# must agree old-vs-new on every rendered message, route producers must
+# carry a literal status or a kind-table lookup, and any other producer
+# shape fails this suite (no new untyped return can slip past).
+REPO = Path(__file__).resolve().parent.parent
+
+
+def _old_login_error_code(err):
+    e = err.lower()
+    if "invalid credentials" in e or "login failed" in e:
+        return 401
+    if "too many" in e or "rate-limit" in e:  # per-netid cap, per-IP cap, portal cooldown
+        return 429
+    return 503
+
+
+# f-string holes rendered with a value each site can actually produce; every
+# site's classifier-relevant words live in its constants, so one render each
+# is enough (and the differential proves exactly that).
+_HOLES = {
+    "_netid_retry_text(netid)": "55 seconds",
+    "int(cooldown / 60) + 1": "5",
+    "MAX_CAPTCHA_RETRIES": "5",
+    "last_err": "invalid captcha (read: ab12cd)",
+    "last_err or 'silent rejection'": "portal rate-limited (silent rejection)",
+}
+
+
+def _render_msg(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        out = []
+        for v in node.values:
+            if isinstance(v, ast.Constant):
+                out.append(v.value)
+            else:
+                out.append(_HOLES.get(ast.unparse(v.value), "N"))
+        return "".join(out)
+    return None
+
+
+def _is_fail(node):
+    return (isinstance(node, ast.Dict) and
+            any(isinstance(k, ast.Constant) and k.value == "ok" and
+                isinstance(v, ast.Constant) and v.value is False
+                for k, v in zip(node.keys, node.values)))
+
+
+def _status_ok(node, f, depth=0):
+    """Route status is an int literal or a sync_status() lookup (or a name
+    bound to one in the same function) — never message-derived."""
+    if depth > 4:
+        return False
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return True
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "sync_status":
+        return True
+    if isinstance(node, ast.Name) and f is not None:
+        args = f.args
+        pos = list(getattr(args, "posonlyargs", [])) + list(args.args)
+        binds = {}
+        for a, dv in zip(pos[len(pos) - len(args.defaults):], args.defaults):
+            binds[a.arg] = dv
+        for a, dv in zip(args.kwonlyargs, args.kw_defaults):
+            if dv is not None:
+                binds[a.arg] = dv
+        for st in ast.walk(f):
+            if isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name):
+                binds[st.targets[0].id] = st.value
+        v = binds.get(node.id)
+        return v is not None and _status_ok(v, f, depth + 1)
+    return False
+
+
+typed, route, problems = [], [], []
+for rel in ("app/app.py", "app/http_scraper.py"):
+    text = (REPO / rel).read_text()
+    tree = ast.parse(text)
+    parents = {}
+    for n in ast.walk(tree):
+        for ch in ast.iter_child_nodes(n):
+            parents[ch] = n
+    funcs = [n for n in ast.walk(tree)
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+    def enclosing(node):
+        best = None
+        for f in funcs:
+            if f.lineno <= node.lineno <= (f.end_lineno or f.lineno):
+                if best is None or f.lineno >= best.lineno:
+                    best = f
+        return best
+
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "sync_error":
+            kind = (n.args[0].value if n.args and isinstance(n.args[0], ast.Constant)
+                    and isinstance(n.args[0].value, str) else None)
+            msg = _render_msg(n.args[1]) if len(n.args) > 1 else None
+            if kind is None or msg is None:
+                problems.append(f"{rel}:{n.lineno}: sync_error site with non-literal kind/message")
+            else:
+                typed.append((rel, n.lineno, kind, msg))
+            continue
+        if isinstance(n, ast.Dict) and _is_fail(n):
+            f = enclosing(n)
+            if f is not None and f.name == "sync_error":
+                continue  # the result-type constructor itself
+            p = parents.get(n)
+            if isinstance(p, ast.Tuple) and isinstance(parents.get(p), ast.Return):
+                if not _status_ok(p.elts[1], enclosing(p)):
+                    problems.append(f"{rel}:{n.lineno}: status neither literal nor kind-table lookup: "
+                                    f"{ast.unparse(p.elts[1])}")
+                route.append((rel, n.lineno))
+            else:
+                problems.append(f"{rel}:{n.lineno}: failure producer with no kind and no literal status")
+
+assert not problems, "producer inventory problems:\n  " + "\n  ".join(problems)
+assert typed, "no typed sync_error producers found — inventory broken"
+assert set(A.KIND_STATUS) == {"bad_credentials", "rate_limited", "portal_cooldown",
+                              "busy", "portal_down", "markup_changed", "internal"}, \
+    f"kind table changed: {sorted(A.KIND_STATUS)}"
+seen = {k for _, _, k, _ in typed}
+assert seen == set(A.KIND_STATUS), \
+    f"kinds never produced: {sorted(set(A.KIND_STATUS) - seen)}; unknown: {sorted(seen - set(A.KIND_STATUS))}"
+# the differential: old substring classifier vs new kind table, per producer
+for rel, lineno, kind, msg in typed:
+    old, new = _old_login_error_code(msg), A.KIND_STATUS[kind]
+    assert old == new, (f"OLD/NEW status diverge at {rel}:{lineno}: kind={kind} "
+                        f"old={old} new={new} msg={msg!r}")
+# untyped failure (a bare test stub) keeps the old fallback status
+assert A.sync_status({"ok": False, "error": "x"}) == 503, "untyped failure must fall back to 503"
+# the grep proof, as a test: no message-substring matching left in app/
+_combined = (REPO / "app/app.py").read_text() + (REPO / "app/http_scraper.py").read_text()
+assert "_login_error_code" not in _combined, "message-substring classifier must be gone"
+for _pat in (r'\["error"\]\.lower\(', r'\["error"\]\.startswith',
+             r'\["error"\]\.endswith', r'in res\["error"\]'):
+    assert not re.search(_pat, _combined), f"error-text matching remains: {_pat}"
+assert route, "no literal-status route producers found — inventory broken"
+print(f"  ok  typed-results differential: {len(typed)} typed producers, "
+      f"{len(route)} literal-status producers, old == new everywhere")
+
+print("ok  login rejection classifier + sync quota ordering + typed-results differential")
