@@ -4241,6 +4241,92 @@ def push_receipt():
     return {"ok": True}
 
 
+# ── Account deletion ─────────────────────────────────────────────────
+# Ephemeral per-netid window (3/hour, same shape as _login_attempts): the
+# route needs no portal contact, so memory is the whole limiter — entries
+# exist only for accounts that POSTed a delete. ponytail: a stale entry is
+# never a safety issue (success removes the account, so a later POST 401s).
+_delete_attempts = {}   # netid -> [ts, ...]  account-delete POSTs, 1-hour window
+
+
+def _check_delete_rate(netid):
+    now = time.time()
+    if len(_delete_attempts) > _RATE_CAP:   # blowout guard, same as _check_rate
+        _delete_attempts.clear()
+    kept = [t for t in _delete_attempts.get(netid, []) if now - t < 3600]
+    if len(kept) >= 3:
+        _delete_attempts[netid] = kept
+        return False
+    kept.append(now)
+    _delete_attempts[netid] = kept
+    return True
+
+
+@app.route("/api/account/delete", methods=["POST"])
+@require_login
+def account_delete():
+    """Erase everything this app stores about the signed-in account
+    (docs/privacy.md). One opensrm.auth line with per-table counts.
+
+    No portal contact: sessions die locally, the SRM portal is never told
+    anything, and no portal attempt is spent. Schema coverage (every column
+    that can hold a netid) is enforced by tests/test_account_delete.py,
+    which seeds the live schema and fails when a later migration adds a
+    netid column this route does not clear.
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    if not _check_delete_rate(netid):
+        return {"ok": False, "error": "too many delete attempts — try again later"}, 429
+    c = db()
+    counts = {}
+    # cookies: EVERY session of this account (all devices). Rows hold
+    # sha256(token) since migration 17, so the key is the netid — never the
+    # presented raw token, which matches nothing at rest.
+    counts["cookies"] = c.execute("DELETE FROM cookies WHERE netid=?",
+                                  (netid,)).rowcount
+    counts["portal_sessions"] = c.execute(
+        "DELETE FROM portal_sessions WHERE netid=?", (netid,)).rowcount
+    # push_sent_log references subscriptions, not netids: drop the sent
+    # log first (per-subscription), then the subscriptions themselves.
+    counts["push_sent_log"] = c.execute(
+        "DELETE FROM push_sent_log WHERE subscription_id IN "
+        "(SELECT id FROM push_subscriptions WHERE netid=?)", (netid,)).rowcount
+    counts["push_subscriptions"] = c.execute(
+        "DELETE FROM push_subscriptions WHERE netid=?", (netid,)).rowcount
+    counts["push_events"] = c.execute(
+        "DELETE FROM push_events WHERE netid=?", (netid,)).rowcount
+    counts["usage_events"] = c.execute(
+        "DELETE FROM usage_events WHERE user=?", (netid,)).rowcount
+    # timetable_edit_log: this editor's entries go; the shared timetable
+    # groups/slots they edited have no netid and stay.
+    counts["timetable_edit_log"] = c.execute(
+        "DELETE FROM timetable_edit_log WHERE editor_netid=?",
+        (netid,)).rowcount
+    # component_tags is class-scoped (no netid by design): a per-student
+    # fallback key (net:<netid>|...) is private to the account and dies;
+    # a shared row keeps the class-wide confirmation but loses this
+    # student's confirmed_by attribution.
+    counts["component_tags"] = c.execute(
+        "DELETE FROM component_tags WHERE tag_key LIKE 'net:' || ? || '|%'",
+        (netid,)).rowcount
+    counts["component_tags"] += c.execute(
+        "UPDATE component_tags SET confirmed_by='' WHERE confirmed_by=?",
+        (netid,)).rowcount
+    counts["users"] = c.execute("DELETE FROM users WHERE netid=?",
+                                (netid,)).rowcount
+    c.commit()
+    c.close()
+    log_with_kv(log_auth, logging.INFO, "account delete ok", netid=netid,
+                ip=_client_ip(),
+                counts=",".join(f"{k}={v}" for k, v in counts.items()))
+    resp = make_response({"ok": True})
+    resp.delete_cookie("srm_session", secure=_cookie_secure(),
+                       httponly=True, samesite="Lax")
+    return resp
+
+
 @app.route("/logout")
 def logout():
     # incident 2026-10-10: this was a state-changing GET and prod sits behind

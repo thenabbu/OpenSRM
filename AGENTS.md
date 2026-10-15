@@ -164,7 +164,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v32; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v33; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - SQLite: every connection funnels through `app.app.db()` (10s busy timeout, `SQLITE_JOURNAL_MODE` env, default `delete`). Forensic `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when WAL is on — or use `sqlite3 “.backup”` (the daily snapshot pipeline already does; it is WAL-safe). Raw `cp` under WAL silently misses recent commits.
