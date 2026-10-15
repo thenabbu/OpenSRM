@@ -11,6 +11,7 @@ Adding a new migration:
     def m015_exam_scores(conn):
         conn.execute("ALTER TABLE users ADD COLUMN exam_scores TEXT DEFAULT '[]'")
 """
+import hashlib
 import logging
 import sqlite3
 import time
@@ -258,6 +259,20 @@ def m016_fb_open(conn):
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e):
             raise
+
+@migration(version=17, description="cookies.token stored as sha256 hex digest (existing raw rows hashed in place)")
+def m017_hash_cookie_tokens(conn):
+    # v1.20.3: the DB stops holding usable session tokens — a leaked
+    # srm.db yields digests, not live sessions. Rows are hashed HERE, in
+    # Python, so every pre-deploy session survives the migration (the
+    # browser keeps the raw copy; reads hash the presented value to match).
+    # migrate_db runs fn + the schema_version row in one transaction, so a
+    # crash mid-loop rolls the whole migration back — never half-applied.
+    rows = conn.execute("SELECT token FROM cookies").fetchall()
+    for r in rows:
+        tok = r[0]  # position works for both plain tuples and sqlite3.Row
+        conn.execute("UPDATE cookies SET token=? WHERE token=?",
+                     (hashlib.sha256(tok.encode()).hexdigest(), tok))
 
 @migration(version=14, description="push: per-type notification prefs (notify_reminders, notify_exams)")
 def m014_push_type_prefs(conn):
