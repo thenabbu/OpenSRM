@@ -365,14 +365,14 @@ assert typed, "no typed sync_error producers found — inventory broken"
 assert set(A.KIND_STATUS) == {"bad_credentials", "rate_limited", "portal_cooldown",
                               "busy", "portal_down", "markup_changed", "internal"}, \
     f"kind table changed: {sorted(A.KIND_STATUS)}"
-seen = {k for _, _, k, _ in typed}
-assert seen == set(A.KIND_STATUS), \
-    f"kinds never produced: {sorted(set(A.KIND_STATUS) - seen)}; unknown: {sorted(seen - set(A.KIND_STATUS))}"
 # the differential: old substring classifier vs new kind table, per producer
 for rel, lineno, kind, msg in typed:
     old, new = _old_login_error_code(msg), A.KIND_STATUS[kind]
     assert old == new, (f"OLD/NEW status diverge at {rel}:{lineno}: kind={kind} "
                         f"old={old} new={new} msg={msg!r}")
+seen = {k for _, _, k, _ in typed}
+assert seen == set(A.KIND_STATUS), \
+    f"kinds never produced: {sorted(set(A.KIND_STATUS) - seen)}; unknown: {sorted(seen - set(A.KIND_STATUS))}"
 # untyped failure (a bare test stub) keeps the old fallback status
 assert A.sync_status({"ok": False, "error": "x"}) == 503, "untyped failure must fall back to 503"
 # the grep proof, as a test: no message-substring matching left in app/
