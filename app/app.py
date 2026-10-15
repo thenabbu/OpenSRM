@@ -2147,6 +2147,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.21.0", "date": "15 Oct", "title": "Clearer sync errors + sync health monitoring",
+     "body": "A failed sync now says exactly what went wrong (wrong password, "
+             "portal busy, or the portal changed) instead of a generic error. "
+             "We also track sync success, timing and portal failures "
+             "server-side — with a one-command canary check — so a portal "
+             "change is caught before it reaches your dashboard."},
     {"ver": "v1.20.2", "date": "15 Oct", "title": "Fewer database-is-locked errors",
      "body": "Concurrent requests used to hit SQLite's 5-second lock wait "
              "limit and show a database-is-locked error; the app now waits "
