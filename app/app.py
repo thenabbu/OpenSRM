@@ -1391,7 +1391,7 @@ def _sync_result(pipeline, res, t0):
     the result through unchanged — every fetch_attendance return goes here."""
     if not isinstance(res, dict):
         # never seen today; keep the counters total instead of crashing a sync
-        res = {"ok": False, "error": "pipeline returned a non-dict result"}
+        res = sync_error("internal", "pipeline returned a non-dict result")
     ok = bool(res.get("ok"))
     metrics.inc("opensrm_sync_total", pipeline=pipeline,
                 result="ok" if ok else "error",
