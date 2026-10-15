@@ -2315,6 +2315,11 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.23.0", "date": "15 Oct", "title": "Syncs wait in line instead of failing",
+     "body": "Clicking sync while another sync is already running no longer fails with "
+             "\"Sync in progress\" — it waits up to 45 seconds for its turn (logins go "
+             "ahead of refreshes, and the progress bar shows how many syncs are ahead) "
+             "and only gives the busy error if the wait runs out."},
     {"ver": "v1.22.0", "date": "15 Oct", "title": "Smarter syncs — no wasted portal visits",
      "body": "Syncing twice in a row no longer hits the portal twice: a refresh within "
              "5 minutes of your last sync is answered from the data you already have, "
