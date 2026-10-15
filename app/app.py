@@ -167,10 +167,29 @@ def _import_legacy_timetable():
         log.exception("legacy timetable import failed")
     c.close()
 
-def db():
+# sqlite: every connection in the app funnels through db() (migrations and
+# push_store.get_conn() both call it). One knob pair here therefore covers
+# all three connection sites. timeout is sqlite3's per-statement lock wait;
+# busy_timeout is the PRAGMA twin — set both so the value holds even for
+# statements sqlite3's timeout does not cover.
+SQLITE_TIMEOUT_SECS = 10
+_journal_mode = os.environ.get("SQLITE_JOURNAL_MODE", "delete").strip().lower()
+if _journal_mode not in ("delete", "wal", "truncate", "persist", "off", "memory"):
+    _journal_mode = "delete"  # unknown value -> today's default, never fail boot
 
-    c = sqlite3.connect(DB_PATH)
+def db():
+    c = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT_SECS)
     c.row_factory = sqlite3.Row
+    c.execute(f"PRAGMA busy_timeout={SQLITE_TIMEOUT_SECS * 1000}")
+    # journal_mode persists in the DB file; set it explicitly on every
+    # connect so an env flip (wal<->delete) takes effect on the next boot
+    # without a manual sqlite3 shell session.
+    mode = c.execute(f"PRAGMA journal_mode={_journal_mode}").fetchone()[0]
+    if mode.lower() != _journal_mode:
+        log.warning("sqlite journal_mode %r requested but active mode is %r",
+                    _journal_mode, mode)
+    if _journal_mode == "wal":
+        c.execute("PRAGMA synchronous=NORMAL")  # WAL-safe durability trade
     return c
 
 def init_db():
@@ -1975,6 +1994,12 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.20.2", "date": "15 Oct", "title": "Fewer database-is-locked errors",
+     "body": "Concurrent requests used to hit SQLite's 5-second lock wait "
+             "limit and show a database-is-locked error; the app now waits "
+             "up to 10 seconds, and operators can switch to WAL journaling "
+             "with the SQLITE_JOURNAL_MODE setting for smoother concurrent "
+             "access. Nothing changes for existing installs by default."},
     {"ver": "v1.20.1", "date": "14 Oct", "title": "Refresh keeps your subjects",
      "body": "A refresh whose marks page failed to parse used to blank the "
              "subjects already stored on your account. Stored subjects, marks, "

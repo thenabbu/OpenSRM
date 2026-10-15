@@ -76,7 +76,7 @@ Key rules:
 ### Architecture
 
 - **Flask + Jinja2** — templates in `app/templates/`, static files in `app/static/`
-- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access
+- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access. All connections funnel through `app.app.db()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly
 - **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
 - **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
 - **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in).
