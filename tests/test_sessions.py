@@ -271,6 +271,22 @@ def t_guard_exempts_push_tick():
         f"push tick must reach its own secret-header auth (401), got {r.status_code}"
 
 
+def t_guard_exempts_marks_tag():
+    """/marks/tag is a session-authenticated browser form POST. Behind the
+    Cloudflare tunnel the proxy rewrites the browser's fetch metadata, so the
+    guard would false-403 a same-site user's save in prod while passing
+    locally (caught by the CI e2e suite's marks DUT): the path is exempt and
+    must reach the route's own auth (302 to /login without a session), not
+    the guard's 403."""
+    cl = A.app.test_client()
+    r = cl.post("/marks/tag", headers=_CROSS,
+                data={"code": "21CSC203P", "component": "FT-II", "role": "IE-2"})
+    assert r.status_code != 403, \
+        f"/marks/tag must be guard-exempt, got 403"
+    assert r.status_code in (302, 303), \
+        f"no-session /marks/tag must redirect to login, got {r.status_code}"
+
+
 def _capture(logger_name):
     """Attach a collecting handler to a named logger; returns (handler, detach)."""
     h = logging.Handler()
@@ -332,6 +348,7 @@ TESTS = [
     ("guard allows non-browser/same-origin/GET", t_guard_allows_non_browser_and_same_origin),
     ("guard covers PUT/PATCH/DELETE (403, not 405)", t_guard_covers_put_patch_delete),
     ("guard exempts /internal/push/tick", t_guard_exempts_push_tick),
+    ("guard exempts /marks/tag (tunnel rewrites fetch metadata)", t_guard_exempts_marks_tag),
     ("refusal logged on opensrm.http with error=", t_guard_403_logged_with_error),
     ("real logout emits opensrm.auth line", t_logout_emits_auth_line),
 ]

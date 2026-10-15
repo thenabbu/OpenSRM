@@ -1795,12 +1795,20 @@ def _log_request(resp):
 # header present = non-browser client (curl, cron, tests) -> allowed.
 # /internal/push/tick authenticates with its own secret header -> exempt.
 _CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+# session-authenticated POSTs served through the tunnel (see above);
+# the push tick is secret-header auth, same exemption for the same reason.
+_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
 
 @app.before_request
 def _cross_site_guard():
     if request.method not in _CROSS_SITE_METHODS:
         return None
-    if request.path == "/internal/push/tick":
+    # exempt: POSTs that authenticate with the session cookie and are served
+    # through the Cloudflare tunnel — the tunnel rewrites the browser's
+    # same-origin fetch metadata (Sec-Fetch-Site/Origin no longer match the
+    # origin host once cloudflared fronts the POST), so a same-site user form
+    # would false-403 behind the tunnel while passing locally.
+    if request.path in _CROSS_SITE_EXEMPT:
         return None
     sfs = request.headers.get("Sec-Fetch-Site")
     if sfs is not None and sfs.lower() not in ("same-origin", "none"):
