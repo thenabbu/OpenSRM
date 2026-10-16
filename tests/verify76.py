@@ -111,7 +111,7 @@ chk('L33', "captcha retry refills password after 5s re-render sleep",
 chk('L34', "raw exception text not returned to API clients",
     (not re.search(r'tr\(e\)', _login_region)) or bool(re.search(r'internal error|generic', _login_region, re.I)))
 chk('L35', "progress endpoint: POST, netid not in query",
-    has('app/app.py', r'"/api/login/progress", methods=\["POST"\]') and has('app/static/login.js', r'method:\s*"POST"'))
+    has('app/blueprints/auth.py', r'"/api/login/progress", methods=\["POST"\]') and has('app/static/login.js', r'method:\s*"POST"'))
 chk('L36', "static route no longer hardcodes /app/app/static (code, not comments)",
     not any('/app/app/static' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
 _sw_cache = re.search(r"CACHE_NAME = '([^']+)'", rd('app/static/sw.js')).group(1)

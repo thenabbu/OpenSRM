@@ -125,6 +125,47 @@ r_login = [r for r in a1.url_map.iter_rules() if r.rule == "/api/login"][0]
 check("factory: /api/login methods preserved", r_login.methods == {"POST", "OPTIONS"},
       str(r_login.methods))
 
+# ── blueprint split (A17): endpoints stay BARE, views stay app.app's ────
+# FlatBlueprint (app/blueprints/__init__.py) skips Flask's `<bp>.<endpoint>`
+# prefixing; this pins it. Every rule maps to its flat-app endpoint name AND
+# the app.app view function it must keep calling.
+EXPECTED_EP = {
+    "/": {("index", "index")},
+    "/api/marks": {("api_marks", "api_marks")},
+    "/api/feedback/fill": {("api_feedback_fill", "api_feedback_fill")},
+    "/static/<path:filename>": {("static_no_cache", "static_no_cache")},
+    "/login": {("login", "login")},
+    "/api/login": {("api_login", "api_login")},
+    "/api/refresh": {("api_refresh", "api_refresh")},
+    "/api/login/preflight": {("api_login_preflight", "api_login_preflight")},
+    "/api/login/progress": {("api_login_progress", "api_login_progress")},
+    "/api/timetable": {("api_get_timetable", "api_get_timetable"),
+                       ("api_save_timetable", "api_save_timetable")},
+    "/api/timetable/history": {("api_timetable_history", "api_timetable_history")},
+    "/marks/tag": {("marks_tag", "marks_tag")},
+    "/internal/push/tick": {("push_tick", "push_tick")},
+    "/healthz": {("healthz", "healthz")},
+    "/internal/metrics": {("internal_metrics", "internal_metrics")},
+    "/api/push/status": {("push_status", "push_status")},
+    "/api/push/subscribe": {("push_subscribe", "push_subscribe")},
+    "/api/push/unsubscribe": {("push_unsubscribe", "push_unsubscribe")},
+    "/api/push/settings": {("push_settings", "push_settings")},
+    "/api/push/test": {("push_test", "push_test")},
+    "/api/push/receipt": {("push_receipt", "push_receipt")},
+    "/api/account/delete": {("account_delete", "account_delete")},
+    "/logout": {("logout", "logout")},
+}
+got_ep = {}
+for r in a1.url_map.iter_rules():
+    if r.rule in ("/avatar", "/avatar/<name>"):
+        continue
+    v = a1.view_functions.get(r.endpoint)
+    got_ep.setdefault(r.rule, set()).add((r.endpoint, getattr(v, "__name__", "-")))
+_bad_ep = sorted(k for k in set(got_ep) | set(EXPECTED_EP)
+                 if got_ep.get(k) != EXPECTED_EP.get(k))
+check("factory: endpoints unprefixed + views unchanged (blueprint split)",
+      got_ep == EXPECTED_EP, f"differs={_bad_ep[:4]}")
+
 # ── the data isolation: seed + mint inside one app, the other must refuse ──
 seed_user(a1, NETID_A)
 tok_a = mint(a1, NETID_A)

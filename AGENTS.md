@@ -12,9 +12,11 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 
 ## Layout
 ```
-app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm) + routes, session/auth, rate limits, sync orchestration — re-exports every name that moved out
+app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm) + views, session/auth, rate limits, sync orchestration — re-exports every name that moved out; registers the route blueprints
 app/config.py         # AppConfig (frozen dataclass) + from_env(): boot env read ONCE (DATA_DIR, OCR_PREWARM); request-time knobs stay env-per-call by design
 app/db.py             # sqlite layer: connect() (A6 pragmas, per-app DB path inside an app context), request-scoped db() + teardown, transaction(), repository (all SQL lives here)
+app/blueprints/       # route tables (FlatBlueprint, endpoints stay bare): auth · dashboard · marks · timetable · push · feedback · internal — 24 rules pointing at app/app.py views
+app/security.py       # shared route decorators (require_login — guards views across blueprints)
 app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams, personal, feedback (+ shared helpers)
 app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker, LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
@@ -23,7 +25,7 @@ app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI i
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + test_healthz (container probe) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · url_map_dump.py (canonical route dump — diff two trees to prove a refactor didn't move a URL) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image :latest+:VERSION+:sha, gated on tests) + lint.yml + scans.yml (gitleaks/pip-audit/trivy, report-only); SHA-pinned actions; `uv lock --check`
 ```
@@ -46,7 +48,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 
 ```bash
 .venv/bin/python tests/verify76.py  # [unit] 72/72 static (findings, docs, pins, versions)
-.venv/bin/python tests/test_app_factory.py  # [unit] 23/23 (create_app factory: AppConfig reads boot env once; two apps on two data dirs fully isolated — per-app secret/DB/schema/cookies, A's cookie refused by B and vice versa; route surface + methods preserved; module app keeps gunicorn app.app:app + DATA_DIR-before-import contracts; OCR_PREWARM=0 opts out of the prewarm thread; red-tested: db.py per-app path resolution reverted -> FAIL)
+.venv/bin/python tests/test_app_factory.py  # [unit] 24/24 (create_app factory: AppConfig reads boot env once; two apps on two data dirs fully isolated — per-app secret/DB/schema/cookies, A's cookie refused by B and vice versa; route surface + methods preserved; every rule's endpoint name AND view function pinned — FlatBlueprint keeps endpoints bare, red-tested: stock Blueprint prefixing -> FAIL; module app keeps gunicorn app.app:app + DATA_DIR-before-import contracts; OCR_PREWARM=0 opts out of the prewarm thread; red-tested: db.py per-app path resolution reverted -> FAIL)
 .venv/bin/python tests/test_exams.py  # [unit] 69/69 (official ETT parser + header-drift adaptability + scribe fallback merge + transition/push events)
 .venv/bin/python tests/test_exams_view.py  # [unit] dashboard card view model (stamps, labels)
 .venv/bin/python tests/test_tt_history.py  # [unit] 18/18 (timetable edit log + break-divider fix + location preservation)
