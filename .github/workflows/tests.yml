@@ -70,6 +70,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_official_tt.py
       - name: test_sessions (session lifecycle contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sessions.py
+      - name: test_account_delete (schema-driven account-deletion residue)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_account_delete.py
       - name: test_login_reject (rejection classifier + quotas)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_login_reject.py
       - name: test_fault_handling (corrupt-row degradation)
@@ -166,6 +168,7 @@ jobs:
         run: |
           bash scripts/ci_e2e_http.sh \
             test_sw test_xss test_navbar test_marks_dut test_personal \
+            test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast guide_check
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)

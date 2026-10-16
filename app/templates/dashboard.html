@@ -611,7 +611,9 @@
     <div id="del-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
     <div class="modal-action">
       <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
-      <button id="del-confirm" class="btn btn-error btn-sm min-h-11">Delete permanently</button>
+      <!-- text-base-content: the default error-content label measures 4.43:1
+           on the error fill (AA needs 4.5 for 16px); pure white clears it at 4.85:1 -->
+      <button id="del-confirm" class="btn btn-error btn-sm min-h-11 text-base-content">Delete permanently</button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>

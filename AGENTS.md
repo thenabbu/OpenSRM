@@ -55,6 +55,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_logging_telemetry.py  # [unit] 10/10 (ntfy tripwire gates on ERROR/5xx + async post + failed-send retry, kv cause on 5xx alerts, rotation, telemetry env passthrough, control-char scrub in log+ntfy, non-ASCII X-Push-Tick -> 401 not 500)
 .venv/bin/python tests/test_metrics.py  # [unit] 10/10 (sync outcome+duration by pipeline/error class, captcha attempts per login, preflight ready/wasted/consumed, scrape-lock rejections, parse-empty per page, /internal/metrics secret-header auth: unset env = off, bare 401, non-ASCII fail-closed; usage_events retention env (365d default, once a day, count logged); every >=400 status line carries error= — offline, red-tested)
 .venv/bin/python tests/test_sync_cache.py  # [unit] 6/6 (refresh cache window: inside SYNC_MIN_INTERVAL_S the answer is {ok, cached, age_s} with zero portal calls + one kv log line + opensrm_sync_cached_total + sync_cached usage event and the quota untouched; expired window / window 0 / env parsing unset→300 / 900 / -5 / abc; N concurrent refreshes = ONE portal call, quota charged exactly once, every joiner shares the runner's result (outcome=shared); joiner past the wait → busy 503 while the runner still succeeds; a login with credentials always syncs inside the window; offline, red-tested both guards)
+.venv/bin/python tests/test_account_delete.py  # [unit] 15/15 (POST /api/account/delete residue — schema-driven: walks every live table and column, so a later migration that adds an uncovered netid-holding column FAILS the suite; hashed-cookie deletion post-migration-17, portal_sessions, push rows, usage_events, edit-log attribution wiped while shared timetable rows survive, per-netid 429 rate limit, one opensrm.auth line with counts, 401 unauth, cross-site guard passes; offline, mutation-tested)
 .venv/bin/python tests/test_canary_sync.py  # [unit] 13/13 (scripts/canary_sync.sh against a self-booting local server with the fetch stubbed by netid: success arm writes the payload, no-creds and empty-parse arms exit non-zero with the reason, a SYNC_MIN_INTERVAL_S cache-window answer fails with no-portal-contact instead of reporting sync=1, cookie deleted after every run, exactly ONE sync; needs gunicorn next to sys.executable)
 .venv/bin/python tests/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
@@ -103,7 +104,12 @@ kill %1
 
 export DATA_DIR=/tmp/osrm-personal          # fresh dir; seed+mint happen inside the test
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18179 app.app:app &
-DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # [e2e] 23/23 Settings tab (row list + logout placement, collapsed personal row, identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
+DUT_BASE=http://127.0.0.1:18179 .venv/bin/python tests/test_personal.py   # [e2e] 23/23 Settings tab (row list + logout placement + Delete my data row last, collapsed personal row, identity header, collapse groups, responsive defaults, 0<8<12 ladder, contrast sweep, copy round-trip)
+kill %1
+
+export DATA_DIR=/tmp/osrm-accdel            # fresh dir; seed+mint happen inside the test
+.venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18181 app.app:app &
+DUT_BASE=http://127.0.0.1:18181 .venv/bin/python tests/test_delete_dut.py   # [e2e] 12/12 Delete my data DUT (Settings row anatomy @1280 AND @393, explainer modal = erase/never-touch contract incl. the SRM-portal line, ONE confirm button, Cancel inert, modal contrast sweep 0 fails both viewports, real confirm → /login round trip + session cookie cleared)
 kill %1
 
 export DATA_DIR=/tmp/osrm-guide

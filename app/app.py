@@ -2187,6 +2187,13 @@ WIDGETS = {
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.24.0", "date": "15 Oct", "title": "Delete my data",
+     "body": "Settings now has a \"Delete my data\" row: it opens an explainer "
+             "listing exactly what is erased (your account, login sessions, "
+             "reminder subscriptions, usage rows, your edit attributions) and "
+             "what is never touched — the SRM portal itself, shared timetables "
+             "and other students' accounts. Nothing is removed until you "
+             "confirm, and afterwards you are signed out back to the login page."},
     {"ver": "v1.22.1", "date": "15 Oct", "title": "Sessions hardened at rest",
      "body": "Session tokens are now stored in the database only as SHA-256 "
              "digests, so a copied database file can no longer be used to log "
