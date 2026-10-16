@@ -31,6 +31,7 @@ os.environ["DATA_DIR"] = TMP   # verify76: no test DBs in-tree
 atexit.register(shutil.rmtree, TMP, ignore_errors=True)
 
 from app import app as A           # noqa: E402
+import app.db as DB                  # noqa: E402  (the connect() factory)
 from _seed import mint_token, seed  # noqa: E402
 
 FAILS = []
@@ -118,7 +119,7 @@ def t_db_failure_is_503():
     def broken():
         raise sqlite3.OperationalError("disk I/O error")
 
-    with mock.patch.object(A, "db", broken):
+    with mock.patch.object(DB, "connect", broken):
         r = cl.get("/healthz")
     assert r.status_code == 503, f"a dead DB must fail the probe, got {r.status_code}"
     body = r.get_json()
@@ -156,7 +157,7 @@ def t_healthz_5xx_still_errors():
     def broken():
         raise sqlite3.OperationalError("database is locked")
 
-    with mock.patch.object(A, "db", broken):
+    with mock.patch.object(DB, "connect", broken):
         recs = _with_http_records(lambda: cl.get("/healthz"))
     errs = [r for r in recs if r.levelno == logging.ERROR and r.getMessage() == "request"]
     assert errs, f"a 503 healthz must log at ERROR so ntfy pages: " \

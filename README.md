@@ -167,7 +167,8 @@ flowchart LR
         PARS["portal/parsers/<br/>attendance · marks · timetable<br/>exams · personal · feedback"]
         VIEWS["views/<br/>budgets · marks IE · ticker<br/>LAYOUT + WIDGETS registries"]
         SCR["http_scraper.py<br/>login · captcha · JSP fetch<br/>exam probe"]
-        MIG["migrations.py<br/>decorator registry → schema v16"]
+        DB["db.py<br/>connect · request-scoped conn<br/>transaction · repository"]
+        MIG["migrations.py<br/>decorator registry → schema v17"]
         LOG["logging_setup.py<br/>TIMED level + key=value lines"]
     end
 

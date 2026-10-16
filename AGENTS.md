@@ -13,6 +13,7 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 ## Layout
 ```
 app/app.py            # routes, session/auth, rate limits, sync orchestration — re-exports every name that moved out
+app/db.py             # sqlite layer: connect() (A6 pragmas), request-scoped db() + teardown, transaction(), repository (all SQL lives here)
 app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams, personal, feedback (+ shared helpers)
 app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker, LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
@@ -120,7 +121,8 @@ export DATA_DIR=/tmp/osrm-guide
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18098 app.app:app &
 export DUT_BASE=http://127.0.0.1:18098
 .venv/bin/python tests/guide_static.py    # [unit] 9/9  Login Flow UX Guide (source level, no server)
-.venv/bin/python tests/test_db_concurrency.py  # [unit] 14/14 (db() policy: 10s busy timeout survives a 6s lock hold where the old 5s default failed, thread stress zero locked, SQLITE_JOURNAL_MODE delete/wal/flip-back/invalid fallback via child-process boots)
+.venv/bin/python tests/test_db_concurrency.py  # [unit] 14/14 (connection policy: 10s busy timeout survives a 6s lock hold where the old 5s default failed, thread stress zero locked, SQLITE_JOURNAL_MODE delete/wal/flip-back/invalid fallback via child-process boots)
+.venv/bin/python tests/test_db_layer.py  # [unit] 24/24 (app/db.py layer: request-scoped connection closed by the teardown — an exception mid-handler leaves zero open connections, fd probe on srm.db; transaction SAVEPOINT isolation so a failed unit never bleeds into a later commit on the shared request connection; background threads get their own connection; users upsert login-rotates/refresh-preserves the stored password; attendance+marks preserve contract)
 .venv/bin/python tests/guide_check.py     # [e2e] 30 PASS / 0 FAIL / 1 SKIP / 1 N/A (portal mocked in-test)
 .venv/bin/python tests/guide_server.py    # [none] 6 items, green = 0 FAIL (2 come back INCONCLUSIVE when the portal/IP limiter interferes) — 7 live portal probes, NEVER loop it; the wrong-password arm is opt-in via GUIDE_WRONGPASS_NETID=<existing netid>
 kill %1
@@ -182,6 +184,6 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - SW cache name (read from `sw.js` — current value v33; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
-- SQLite: every connection funnels through `app.app.db()` (10s busy timeout, `SQLITE_JOURNAL_MODE` env, default `delete`). Forensic `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when WAL is on — or use `sqlite3 “.backup”` (the daily snapshot pipeline already does; it is WAL-safe). Raw `cp` under WAL silently misses recent commits.
+- SQLite: every connection funnels through `app.db.connect()` (10s busy timeout, `SQLITE_JOURNAL_MODE` env, default `delete`) — never `sqlite3.connect` directly. Request handlers share ONE request-scoped connection (closed by the `teardown_appcontext` hook, even when a handler raises); scripts and background threads own + close their own. Forensic `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when WAL is on — or use `sqlite3 “.backup”` (the daily snapshot pipeline already does; it is WAL-safe). Raw `cp` under WAL silently misses recent commits.
 - Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is the LAST (line 20).
 - The portal login page markup itself contains `captcha` (x17) and `invalid` (Bootstrap `.invalid-feedback`) — never classify a rejection on those tokens or EVERY failure reads as "invalid captcha" (this hid a wrong password behind 3 captcha retries and burned the portal's own 3-attempts-per-NetID lockout). Classify on the portal's `<h6 class="alert-heading">Alert</h6>` text; `tests/test_login_reject.py` holds the verbatim strings.
