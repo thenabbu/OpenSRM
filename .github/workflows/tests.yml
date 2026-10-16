@@ -82,6 +82,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_metrics.py
       - name: test_sync_cache (refresh cache window + per-netid single flight)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_cache.py
+      - name: test_sync_queue (bounded wait + priority + budget buckets)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_queue.py
       - name: test_canary_sync (canary_sync.sh end-to-end)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_canary_sync.py
       - name: test_marks_view (marks view model)
@@ -106,6 +108,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/guide_static.py
       - name: test_supply_chain (image tags + scan workflow pins)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_supply_chain.py
+      - name: healthz
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_healthz.py
       - name: test_db_concurrency (db() lock timeout + journal mode)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_concurrency.py
 

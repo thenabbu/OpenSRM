@@ -61,9 +61,10 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and HSTS (`max-age=31536000; includeSubDomains`) on `cf-ray` responses only
 
 ### Rate limiting
-- Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (scrape lock held, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed; a refresh served from the last completed sync (`SYNC_MIN_INTERVAL_S`, default 300s) or shared from an already-running sync likewise never reaches the portal
+- Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (sync queue wait exhausted, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed; a refresh served from the last completed sync (`SYNC_MIN_INTERVAL_S`, default 300s) or shared from an already-running sync likewise never reaches the portal
 - Per IP: 10 login attempts per hour (counted only after credentials pass format validation)
-- Aggregate server→portal budget: 30 requests per 10 minutes
+- Aggregate server→portal budget: 30 requests per 10 minutes, split into three buckets — full logins and preflights share 20 (preflight additionally capped at its own 10 so warm-logins can't drain the login pool), refreshes hold a reserved floor of 10 that unauthenticated work can never spend; one source IP holds at most 6 unauth tokens
+- Sync serialization: one portal pipeline at a time (`SYNC_MAX_CONCURRENCY`, default 1); a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) with logins queued ahead of refreshes, then gets the busy 503 — the wait is free, never charged against the account quota. The Playwright fallback stays serialized on one browser at any concurrency setting
 - Portal cooldown: 3 consecutive portal failures arm a cooldown (5 min, doubling, capped at 30 min)
 - Memory exhaustion guard: rate-limit dicts are pruned once they pass 10,000 entries (hard clear at 2× as the blowout backstop)
 
@@ -80,11 +81,22 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   while the DB runs the default `delete` journal; with `SQLITE_JOURNAL_MODE=wal`
   recent commits live in `srm.db-wal` and a file-only copy silently misses them
 - Only trusted when `cf-ray` header is present (prevents header spoofing)
-- Docker container runs with healthcheck and log rotation
-- Accepted risk (deliberate): the container runs as root with Chromium
-  `--no-sandbox` — required for headless Playwright in-container; the
-  container is single-purpose and only reachable through the Cloudflare
-  tunnel (compose publishes loopback + the cloudflared bridge gateway only)
+- Docker container runs with healthcheck and log rotation; the healthcheck
+  polls `GET /healthz` (`SELECT 1`, no session, no portal contact, a 16-byte
+  body) and `_log_request` demotes that path to DEBUG, so a 30s poll cannot
+  fill `opensrm.log` — a 5xx from the probe still logs ERROR so ntfy pages
+- The container does **not** run as root. `entrypoint.sh` starts root for
+  exactly two lines — `chown -R opensrm /app/data` (every existing volume
+  predates the change and is root-owned) and the `setpriv` drop that follows
+  — then `exec`s CMD in place, so PID 1 is the app as `opensrm` (uid 10001)
+  with `CapPrm`/`CapEff` zeroed and `NoNewPrivs` set. Compose adds
+  `cap_drop: ALL` with only `CHOWN`/`SETUID`/`SETGID` back, `read_only`
+  rootfs + `/tmp` tmpfs, `no-new-privileges`, and `mem_limit`/`pids_limit`
+  sized from measured RSS and task counts
+- Chromium keeps `--no-sandbox` (headless Playwright in-container) — it no
+  longer needs root for it; the container is single-purpose and only
+  reachable through the Cloudflare tunnel (compose publishes loopback +
+  the cloudflared bridge gateway only)
 
 ### Supply chain
 - Every CI action is SHA-pinned to a 40-char commit; the Dockerfile pins its

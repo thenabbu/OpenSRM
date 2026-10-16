@@ -22,6 +22,32 @@ services:
       - "172.31.0.1:8083:8080"
     volumes:
       - opensrm-data:/app/data
+    # Container hardening (non-root runtime; entrypoint.sh starts root only
+    # to chown this volume, then drops to opensrm uid 10001).
+    # read_only: the rootfs is immutable. Everything the process writes lives
+    # on the volume below or on the /tmp tmpfs below that: gunicorn's arbiter
+    # control socket + worker heartbeat, the Playwright driver and Chromium's
+    # user-data-dir all land in /tmp. Measured on the built image: idle
+    # 227,084 kB RSS (gunicorn master 30,236 + worker 196,848), peak
+    # 636 MiB cgroup while a Playwright fallback had Chromium open — so the
+    # limits below are ~2.4x the observed peak and ~2x the observed task
+    # count, headroom for a heavier portal page rather than a tight ceiling.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m
+    # cap_drop ALL leaves nothing; the entrypoint needs exactly three back:
+    # CHOWN (chown -R /app/data), SETUID+SETGID (setpriv drops to opensrm).
+    # The dropped app runs with CapPrm/CapEff = 0 (proved from /proc/1/status).
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1536m
+    pids_limit: 160
     environment:
       - TZ=Asia/Kolkata
       # sqlite: delete (default, today's mode) or wal — see README Configuration
@@ -34,7 +60,6 @@ services:
       # within this many seconds never contacts the portal; 0 disables.
       # Default matches the code's data-derived 300s.
       - SYNC_MIN_INTERVAL_S=${SYNC_MIN_INTERVAL_S:-300}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
       - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
       # Error alerting (docs/README logging section): set NTFY_ALERT_URL in
@@ -60,12 +85,22 @@ services:
       - FERNET_KEYS=${FERNET_KEYS:-}
     # healthcheck + log rotation: SECURITY.md documents both; the live lab
     # compose already had them — this repo copy had drifted from live.
+    # GET /healthz = SELECT 1, no session, no portal contact (app/app.py).
+    # The probe runs under the same runtime user as the app (setpriv drops
+    # the short-lived exec process too, so nothing in the container runs as
+    # root), and its request line is demoted to DEBUG in _log_request — a
+    # 30s poll cannot fill opensrm.log the way the old GET / probe did.
     healthcheck:
       test:
         - CMD
+        - setpriv
+        - --reuid=10001
+        - --regid=10001
+        - --init-groups
+        - --
         - python3
         - -c
-        - import urllib.request; urllib.request.urlopen('http://localhost:8080/')
+        - import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')
       interval: 30s
       timeout: 10s
       retries: 3

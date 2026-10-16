@@ -16,7 +16,7 @@ app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
-tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
+tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + test_healthz (container probe) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
 scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
@@ -56,6 +56,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_metrics.py  # [unit] 10/10 (sync outcome+duration by pipeline/error class, captcha attempts per login, preflight ready/wasted/consumed, scrape-lock rejections, parse-empty per page, /internal/metrics secret-header auth: unset env = off, bare 401, non-ASCII fail-closed; usage_events retention env (365d default, once a day, count logged); every >=400 status line carries error= — offline, red-tested)
 .venv/bin/python tests/test_sync_cache.py  # [unit] 6/6 (refresh cache window: inside SYNC_MIN_INTERVAL_S the answer is {ok, cached, age_s} with zero portal calls + one kv log line + opensrm_sync_cached_total + sync_cached usage event and the quota untouched; expired window / window 0 / env parsing unset→300 / 900 / -5 / abc; N concurrent refreshes = ONE portal call, quota charged exactly once, every joiner shares the runner's result (outcome=shared); joiner past the wait → busy 503 while the runner still succeeds; a login with credentials always syncs inside the window; offline, red-tested both guards)
 .venv/bin/python tests/test_account_delete.py  # [unit] 15/15 (POST /api/account/delete residue — schema-driven: walks every live table and column, so a later migration that adds an uncovered netid-holding column FAILS the suite; hashed-cookie deletion post-migration-17, portal_sessions, push rows, usage_events, edit-log attribution wiped while shared timetable rows survive, per-netid 429 rate limit, one opensrm.auth line with counts, 401 unauth, cross-site guard passes; offline, mutation-tested)
+.venv/bin/python tests/test_sync_queue.py  # [unit] 8/8 (bounded queue wait: exactly C run at once at C=1 (6 racing threads) and C=2 (barrier INSIDE the pipeline — under-admission breaks it), login parks ahead of an earlier refresh and runs first, waiters publish "Waiting for N ahead…" to the progress tracker then hand over to the pipeline, queue timeout → busy kind 503 + opensrm_scrape_lock_rejections_total + quota untouched (red-tested: the caller must WAIT — old code answered at 0.00s), portal-budget buckets (preflight own cap 10, login+preflight share 20, aggregate 30, per-IP 6 unchanged), preflight refused by queue depth > 0 / admitted at 0, Playwright fallback stays serialized at pool=2; offline, barrier-driven)
 .venv/bin/python tests/test_canary_sync.py  # [unit] 13/13 (scripts/canary_sync.sh against a self-booting local server with the fetch stubbed by netid: success arm writes the payload, no-creds and empty-parse arms exit non-zero with the reason, a SYNC_MIN_INTERVAL_S cache-window answer fails with no-portal-contact instead of reporting sync=1, cookie deleted after every run, exactly ONE sync; needs gunicorn next to sys.executable)
 .venv/bin/python tests/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials exist, `when`-filter drops all-empty cards, unknown widget id renders nothing, budget rows risk-first, teacher initials/mode, ticker states, CSS block) — no server
@@ -73,6 +74,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_push_tick.py  # [unit] 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
 .venv/bin/python tests/test_push_api.py   # [unit] 42/42 (401 style, validation, DB rate caps, test/receipt flows, per-type notification prefs)
 .venv/bin/python tests/test_supply_chain.py  # [unit] 26/26 (compose OPENSRM_TAG pin + byte-identical :latest default, build.yml VERSION tag + OCI version/revision labels, scans.yml report-only + SHA-pinned actions, SCANS.md flip-to-blocking docs) — no server
+.venv/bin/python tests/test_healthz.py  # [unit] 6/6 (GET /healthz: no cookie -> 200 {status:ok} <=32B, a valid session changes nothing, zero sockets opened = SELECT 1 only, DB failure -> 503 {status:error} with no leak, probe request line demoted to DEBUG while a non-probe request stays INFO+, a 503 still logs ERROR so ntfy pages) — self-booting, no server, red-tested on both guards
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -141,6 +143,11 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 #   compose does NOT read the master /docker/.env for interpolation), then
 #   docker compose pull && docker compose up -d opensrm; unset to ride :latest again.
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
+# GET /healthz → 200 {"status":"ok"} — the endpoint the compose healthcheck
+# polls (no session needed); at LOG_LEVEL=INFO its request lines are DEBUG, so
+# they never appear in `docker logs opensrm` — that absence means the LOG
+# LEVEL, not that the probe stopped (docker inspect opensrm --format
+# '{{.State.Health.Status}}' says 'healthy').
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
 # ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old
@@ -164,7 +171,7 @@ before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
 - No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the literal string).
 - No portal credentials hardcoded; tests mint session cookies, never log in.
 - Trust CF headers only with `cf-ray`; HSTS is cf-ray-gated on purpose (plain-HTTP dev).
-- Rate limits: 3 syncs/10min/netid (counted only when the sync actually runs — busy/cooldown/budget rejections are free, and so are a refresh served from the last completed sync within `SYNC_MIN_INTERVAL_S` (default 300s, 0 disables) and a joiner sharing an in-flight sync's result) · 10/hour IP login · aggregate portal budget 30/10min · preflight 30s/netid · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
+- Rate limits: 3 syncs/10min/netid (counted only when the sync actually runs — a queue-timeout/busy/cooldown/budget rejection is free, and so are a refresh served from the last completed sync within `SYNC_MIN_INTERVAL_S` (default 300s, 0 disables) and a joiner sharing an in-flight sync's result) · 10/hour IP login · aggregate portal budget 30/10min split into buckets — full login + preflight share 20 (preflight's own cap 10), refresh floor 10, one IP ≤6 unauth tokens · syncs wait in queue up to `SYNC_QUEUE_WAIT_S` (default 45s, 0 = refuse immediately), logins ahead of refreshes, position published as "Waiting for N ahead…" — a waiter past the wait gets the busy 503; `SYNC_MAX_CONCURRENCY` (default 1) sizes the slot pool and the Playwright fallback stays serialized at any setting · preflight 30s/netid, refused when queue depth > 0 · portal cooldown arms at 3 consecutive fails (5 min, doubling, capped 1800s = 30 min).
 
 ## Gotchas (bitten at least once)
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
