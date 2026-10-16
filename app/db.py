@@ -31,7 +31,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-from flask import g, has_request_context
+from flask import current_app, g, has_app_context, has_request_context
 
 # opensrm.db — setup_logging's "opensrm" handler catches it by propagation
 log = logging.getLogger("opensrm.db")
@@ -50,15 +50,27 @@ _tx: contextvars.ContextVar = contextvars.ContextVar("opensrm_db_tx", default=No
 _sp = itertools.count()
 
 
+def _db_path():
+    """The file this connection targets: the serving app's config first
+    (create_app sets DB_PATH per app — request handlers and the factory's
+    own boot), else the app.app module default (scripts, background
+    threads) imported lazily to dodge the import cycle."""
+    if has_app_context():
+        p = current_app.config.get("DB_PATH")
+        if p:
+            return p
+    from .app import DB_PATH
+    return DB_PATH
+
+
 def connect():
     """A raw connection: A6 pragmas, sqlite3.Row rows, caller owns/closes it.
 
-    DB_PATH lives in app.app (env-driven DATA_DIR; tests repoint it there),
-    imported per call — app.app imports this module at boot (same lazy-import
-    rule push_store/http_scraper use to dodge the cycle)."""
-    from .app import DB_PATH
-
-    c = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT_SECS)
+    The path resolves per app (see _db_path); app.app still carries the
+    module-level DB_PATH default (env-driven DATA_DIR; tests repoint it
+    there), imported per call — app.app imports this module at boot (same
+    lazy-import rule push_store/http_scraper use to dodge the cycle)."""
+    c = sqlite3.connect(_db_path(), timeout=SQLITE_TIMEOUT_SECS)
     c.row_factory = sqlite3.Row
     c.execute(f"PRAGMA busy_timeout={SQLITE_TIMEOUT_SECS * 1000}")
     # journal_mode persists in the DB file; set it explicitly on every

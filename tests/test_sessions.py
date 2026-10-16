@@ -192,12 +192,17 @@ def t_pre_migration_rows_hashed_and_session_survives():
     assert stored != raw, "pre-migration row still holds the raw token"
     ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
     assert ver == 17, f"schema_version must record 17 after the migration, got {ver}"
-    # the session survives: the browser still holds `raw` — it must resolve
+    # the session survives: the browser still holds `raw` — it must resolve.
+    # Repoint BOTH targets: module app config (request-context reads —
+    # db.connect() resolves current_app.config["DB_PATH"] inside an app
+    # context) and the module mirror (out-of-context lazy fallback).
     old_path = A.DB_PATH
     A.DB_PATH = str(fx)
+    A.app.config["DB_PATH"] = str(fx)
     try:
         who = _who(raw)
     finally:
+        A.app.config["DB_PATH"] = old_path
         A.DB_PATH = old_path
         conn.close()
     assert who == "zz9999", \

@@ -32,7 +32,7 @@ ck("§5 credential failure is a single fixed generic message",
    'sync_error("bad_credentials", "invalid credentials — check your NetID/password")' in app)
 # api_login must return res['error'] without branching on the netid's existence
 body = app[app.find("def api_login("):]
-body = body[:body.find("\n@app.route", 10)]
+body = body[:body.find("\ndef api_refresh", 10)]
 ck("§5 /api/login passes the mapped error through with no per-netid branch",
    "res[\"error\"]" in body and not re.search(r"if .*(exists|found|known)", body),
    "no existence branch between fetch_attendance and the response")
