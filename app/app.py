@@ -32,7 +32,6 @@ import secrets
 import threading
 import time
 from datetime import date, datetime, timedelta
-from functools import wraps
 from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -120,6 +119,7 @@ from .portal.parsers.timetable import (
     _tt_norm_clock,  # noqa: F401 — re-exported from app.app
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
+from .security import require_login
 from .views.attendance import (
     ATTENDANCE_TARGET,
     ATTENDANCE_WARN,  # noqa: F401 — re-exported from app.app
@@ -368,13 +368,9 @@ def make_session_token(netid):
                    now - SESSION_MAX_AGE)
     return token
 
-def require_login(f):
-    @wraps(f)
-    def w(*a, **kw):
-        if not get_current_user():
-            return redirect("/login")
-        return f(*a, **kw)
-    return w
+# The shared `require_login` decorator lives in app/security.py (it guards
+# views across route groups, so it belongs to neither app.py nor one
+# blueprint).
 
 # audit: Only trust CF headers when request came through Cloudflare (cf-ray present)
 # audit run-1 (#18): bare cf-ray presence is client-assertable — anyone
@@ -3745,11 +3741,12 @@ def create_app(config=None):
     if config is None:
         config = AppConfig.from_env()
     os.makedirs(config.data_dir, exist_ok=True)
-    # audit 2026-09-27: disable Flask's built-in /static route — it registers
-    # the SAME rule as static_no_cache() below and wins the match (registered
-    # first), so that function never ran anywhere: no Service-Worker-Allowed
-    # header, no intended cache policy. Nothing calls url_for('static'), so
-    # removal is safe.
+    # audit 2026-09-27: Flask's built-in /static route stays disabled — it
+    # registered the SAME rule as static_no_cache (whose rule now lives in
+    # app/blueprints/internal.py) and won the match (registered first), so
+    # that function never ran anywhere: no Service-Worker-Allowed header, no
+    # intended cache policy. Nothing calls url_for('static'), so removal is
+    # safe.
     a = Flask(__name__, static_folder=None)
     a.secret_key = _load_secret(config.secret_path)
     a.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
@@ -3766,30 +3763,24 @@ def create_app(config=None):
     a.errorhandler(Exception)(_unhandled_error)
     a.after_request(_log_request)
     a.after_request(_security_headers)
-    a.add_url_rule("/", view_func=index)
-    a.add_url_rule("/api/marks", view_func=api_marks)
-    a.add_url_rule("/api/feedback/fill", methods=["POST"], view_func=api_feedback_fill)
-    a.add_url_rule("/static/<path:filename>", view_func=static_no_cache)
-    a.add_url_rule("/login", view_func=login)
-    a.add_url_rule("/api/login", methods=["POST"], view_func=api_login)
-    a.add_url_rule("/api/refresh", methods=["POST"], view_func=api_refresh)
-    a.add_url_rule("/api/login/preflight", methods=["POST"], view_func=api_login_preflight)
-    a.add_url_rule("/api/login/progress", methods=["POST"], view_func=api_login_progress)
-    a.add_url_rule("/api/timetable", methods=["GET"], view_func=api_get_timetable)
-    a.add_url_rule("/api/timetable/history", methods=["GET"], view_func=api_timetable_history)
-    a.add_url_rule("/api/timetable", methods=["POST"], view_func=api_save_timetable)
-    a.add_url_rule("/marks/tag", methods=["POST"], view_func=marks_tag)
-    a.add_url_rule("/internal/push/tick", methods=["POST"], view_func=push_tick)
-    a.add_url_rule("/healthz", view_func=healthz)
-    a.add_url_rule("/internal/metrics", view_func=internal_metrics)
-    a.add_url_rule("/api/push/status", view_func=push_status)
-    a.add_url_rule("/api/push/subscribe", methods=["POST"], view_func=push_subscribe)
-    a.add_url_rule("/api/push/unsubscribe", methods=["POST"], view_func=push_unsubscribe)
-    a.add_url_rule("/api/push/settings", methods=["POST"], view_func=push_settings)
-    a.add_url_rule("/api/push/test", methods=["POST"], view_func=push_test)
-    a.add_url_rule("/api/push/receipt", methods=["POST"], view_func=push_receipt)
-    a.add_url_rule("/api/account/delete", methods=["POST"], view_func=account_delete)
-    a.add_url_rule("/logout", view_func=logout)
+    # Route tables live in app/blueprints/ (auth, dashboard, marks, timetable,
+    # push, feedback, internal), one module per area. The blueprints are
+    # FlatBlueprints: endpoints keep their bare names (`login`, not
+    # `auth.login`), so the url_map — paths, methods, endpoint names, view
+    # functions — stays byte-identical to the flat pre-split app (dump:
+    # scripts/url_map_dump.py; pinned: tests/test_app_factory.py). Imported
+    # here because each blueprint pulls its view functions from THIS module.
+    from .blueprints.auth import bp as auth_bp
+    from .blueprints.dashboard import bp as dashboard_bp
+    from .blueprints.feedback import bp as feedback_bp
+    from .blueprints.internal import bp as internal_bp
+    from .blueprints.marks import bp as marks_bp
+    from .blueprints.push import bp as push_bp
+    from .blueprints.timetable import bp as timetable_bp
+
+    for _bp in (auth_bp, dashboard_bp, marks_bp, timetable_bp,
+                push_bp, feedback_bp, internal_bp):
+        a.register_blueprint(_bp)
     # boot the schema on THIS app's DB: the app context below is what points
     # db.connect() at config.db_path (per-app resolution in app/db.py).
     with a.app_context():
