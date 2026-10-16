@@ -28,7 +28,8 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   (12-char hash prefix at most) and never rendered to another user; the
   status API exposes only the hash
 - `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `PUSH_TICK_SECRET` live in env
-  (`/docker/.env`, passed via compose `${VAR}`), never in the repo or
+  (`/docker/opensrm/.env`, the project env file compose interpolates from —
+  never the master `/docker/.env`), never in the repo or
   `DATA_DIR`; the app refuses to run the feature without them (no runtime
   key generation — an ephemeral host would orphan every subscription)
 - `POST /internal/push/tick` is authenticated by the `X-Push-Tick` header

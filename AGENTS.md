@@ -7,7 +7,7 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 
 ## Where things run
 - **Local dev**: repo at `/opt/data/opensrm-repo` (hermes host), venv `.venv` (uv; NEVER npm — no frontend build, CDN only; pnpm if JS tooling is ever needed).
-- **Prod**: lab host, container `opensrm` (repo copy at `/docker/opensrm`, **repo `docker-compose.yml` == live file**), port `127.0.0.1:8083` + `172.31.0.1:8083` (cloudflared gateway), served at https://srm.200871.xyz via CF tunnel `c2308be7-6527-4da3-a96c-49c4b4c918c0`.
+- **Prod**: lab host, container `opensrm` (compose project at `/docker/opensrm` — the live file lags the repo copy until synced; `docs/runbook.md` Deploy sequences the sync), port `127.0.0.1:8083` + `172.31.0.1:8083` (cloudflared gateway), served at https://srm.200871.xyz via CF tunnel `c2308be7-6527-4da3-a96c-49c4b4c918c0`.
 - **Do NOT touch** `flights.200871.xyz` (DNS/ingress) — another agent owns that subdomain.
 
 ## Layout
@@ -25,8 +25,8 @@ app/migrations.py     # versioned schema; runs inside create_app() (per-app DATA
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + test_healthz (container probe) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
-docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · url_map_dump.py (canonical route dump — diff two trees to prove a refactor didn't move a URL) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
+docs/                 # runbook.md (operator runbook: deploy/rollback/restore-drill/rotate/sync-damping/tick alerting) · audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · restore_drill.sh (offline restore drill: snapshot -> temp DB, integrity_check, row-count diff vs live) · url_map_dump.py (canonical route dump — diff two trees to prove a refactor didn't move a URL) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image :latest+:VERSION+:sha, gated on tests) + lint.yml + scans.yml (gitleaks/pip-audit/trivy, report-only); SHA-pinned actions; `uv lock --check`
 ```
@@ -176,6 +176,8 @@ MISS + byte-identity, authenticated render, cookie cleanup) in one exit code;
 conflicts, duplicate migrations, version trio/race, sw-cache docs).
 Before touching live DB/SQL: snapshot first (recipe in skill `homelab-backup-management`);
 before compose edits: copy `docker-compose.yml.bak-<date>` next to it.
+Full operator runbook (deploy incl. compose-sync-first, rollback, restore
+drill, key rotation, sync damping, push-tick alerting): `docs/runbook.md`.
 
 ## Safety rules (non-negotiable)
 - No secrets/tokens in the tree ever; egress gate reads env `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the literal string).

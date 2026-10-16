@@ -3,7 +3,7 @@
 Students install OpenSRM as a PWA and get a push notification a few minutes
 before each class (default 10): subject, start time, and room when the
 timetable has one. Works with the app closed. Zero ongoing cost: no Firebase,
-no paid services — only a cron-job.org free account calling one endpoint.
+no paid services — only a scheduled job calling one endpoint every minute.
 
 Docs: this file is the feature reference · [push-device-test.md](push-device-test.md)
 is the plain-language iOS tester guide.
@@ -11,7 +11,7 @@ is the plain-language iOS tester guide.
 ## How a reminder travels
 
 ```
-cron-job.org ──POST /internal/push/tick (header X-Push-Tick)──▶ Flask
+tick scheduler ──POST /internal/push/tick (header X-Push-Tick)──▶ Flask
   tick (stateless, 20 s internal deadline):
     1. load enabled subscriptions ──┐
     2. load current timetable rows  ├─▶ pure due_reminders(now_ist, …)
@@ -82,9 +82,10 @@ timetable stores: live DB (snapshot 2026-10-05) — labs carry rooms
 | `VAPID_PRIVATE_KEY` | — | SECRET. Missing → status endpoint says "not configured", feature off |
 | `VAPID_SUBJECT` | — | Real `mailto:` — VAPID `sub` claim; Apple rejects anything else |
 
-Generate once with `scripts/generate_push_keys.py`; append to lab
-`/docker/.env` (only if missing — replacing the VAPID pair invalidates every
-subscription) and pass through `docker-compose.yml` as `${VAR}`.
+Generate once with `scripts/generate_push_keys.py`; append to the project
+env file `/docker/opensrm/.env` (compose interpolates only from it — see the
+compose gotcha below; only add if missing — replacing the VAPID pair
+invalidates every subscription).
 
 **Compose gotcha (bit us on first deploy):** docker compose interpolates
 `${VAR}` from the **project** env file `/docker/opensrm/.env`, *not* from the
@@ -96,27 +97,40 @@ never generates or falls back to generated keys at runtime. **All three
 secrets must be copied into Vercel Production env vars unchanged when the
 app moves.**
 
-## cron-job.org job (enter by hand — secret value lives in `/docker/.env`)
+## Tick scheduler (live: Hermes cron job; cron-job.org works too)
+
+The tick is fired by a scheduled job that POSTs the endpoint below every
+minute. **On the lab this is the Hermes cron job `opensrm-push-tick`** (id
+`4352c6d4be31`, no-agent, `* * * * *`, script
+`/opt/data/scripts/push-tick.sh`, success lines in
+`/opt/data/cron/output/push-tick.log`) — one caller, ~1/min, verified
+2026-10-16. It is silent on HTTP 200 and exits 1 only at ≥3 consecutive
+failures, which Hermes turns into a chat + ntfy alert (see
+[docs/runbook.md](runbook.md#push-tick-scheduler-alerting-dead-man) for the
+failure chains and the proposed dead-man monitor). Any other scheduler that
+can POST a header on a cron works identically; a cron-job.org free account is
+the drop-in alternative (no account needed while the Hermes job runs).
 
 | Field | Value |
 |-------|-------|
 | Name | `opensrm-push-tick` |
 | URL | `https://srm.200871.xyz/internal/push/tick` |
 | Method | POST (empty body is fine) |
-| Custom header | `X-Push-Tick: <value of PUSH_TICK_SECRET from lab /docker/.env — never paste it anywhere else>` |
+| Custom header | `X-Push-Tick: <value of PUSH_TICK_SECRET from /docker/opensrm/.env — never paste it anywhere else>` |
 | Schedule | Every 1 minute |
 | Request timeout | 30 s (server self-limits to 20 s; overlap is harmless) |
-| Failure notification | ON — e-mail after ~3 consecutive failures |
+| Failure notification | ON — alert after ~3 consecutive failures |
 | Enable | Only **after** `PUSH_TICK_SECRET` is deployed — an unset secret = permanent 401s |
 
-Observed/constraints (FAQ + live probes, 2026-10-05): jobs run at most once
-per minute; the last 50 executions (with duration) are kept ~2 days — use
-that log to read the *real* timeout and jitter after the first live runs
-(numbers not yet observed; report them after deploy). Cloudflare was probed
-with a non-browser POST against the zone: **no WAF challenge** (no custom
-rules, managed ruleset, security level `medium`, rate limit 5 req/10 s/IP —
-1 tick/min is far under). If real runs ever get challenged, add the minimal
-skip rule for cron-job.org's IPs to the Cloudflare WAF and note it here.
+Observed/constraints (FAQ + live probes, 2026-10-05; scheduler re-verified
+2026-10-16): jobs run at most once per minute; cron-job.org keeps its last 50
+executions (with duration) ~2 days — use that log to read the *real* timeout
+and jitter after the first live runs (numbers not yet observed). Cloudflare
+was probed with a non-browser POST against the zone: **no WAF challenge** (no
+custom rules, managed ruleset, security level `medium`, rate limit 5 req/10
+s/IP — 1 tick/min is far under). If real runs ever get challenged, add the
+minimal skip rule for the scheduler's IPs to the Cloudflare WAF and note it
+here.
 
 Tick response is JSON counts only:
 `{"ok": true, "mode": "off|dry-run|live", "due": N, "claimed": N, "sent": N,
@@ -129,10 +143,10 @@ logged (only a 12-char hash prefix).
 
 1. Deploy with `PUSH_ENABLED` unset (off). Snapshot live DB + back up
    `docker-compose.yml` first; follow "Prod deploy + smoke" in AGENTS.md.
-   Add the env vars to compose + `/docker/.env` (keys generated once).
-2. Point cron-job.org at the tick; watch logs — `mode: "off"` ticks should
-   show real `audited` counts. Compare logged due-list against the real
-   timetable.
+   Add the env vars to `/docker/opensrm/.env` (keys generated once).
+2. Point the tick scheduler at the tick (the Hermes cron job already does
+   this on the lab); watch logs — `mode: "off"` ticks should show real
+   `audited` counts. Compare logged due-list against the real timetable.
 3. `PUSH_ENABLED=1` + `PUSH_DRY_RUN=1` → same audit, claims still not made.
 4. `PUSH_ALLOW_NETIDS=<yours>` only, dry-run off → your devices first.
 5. Android broadly, then iOS once `push-device-test.md` comes back green.
@@ -165,8 +179,9 @@ The push feature was built to survive the move unchanged:
 - **Database**: push tables already sit behind `app/push_store.py` — point
   `get_conn()` at Postgres/libSQL; plain SQL, no SQLite-only features (a test
   enforces this).
-- **Scheduler**: cron-job.org job URL switches to the new deployment URL —
-  header/method/schedule unchanged.
+- **Scheduler**: the tick job's URL switches to the new deployment URL —
+  header/method/schedule unchanged (works for the Hermes cron job or a
+  cron-job.org job alike).
 - **Stateless**: no module-level state, no threads outliving a request, no
   filesystem reads on the push path; the tick's 20 s deadline and at-most-once
   claims make overlapping/cold-started functions harmless.

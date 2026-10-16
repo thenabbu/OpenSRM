@@ -54,7 +54,8 @@ services:
       - SQLITE_JOURNAL_MODE=${SQLITE_JOURNAL_MODE:-delete}
       # audit 2026-10-07: compose default DEBUG overrode the Dockerfile INFO —
       # prod ran DEBUG for 15 days (3,366 junk DEBUG lines). Default INFO now;
-      # set LOG_LEVEL=DEBUG in /docker/.env to debug.
+      # set LOG_LEVEL=DEBUG in /docker/opensrm/.env (the project env file —
+      # compose interpolates only from it, never the master /docker/.env).
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # sync cache window (README): a refresh answered from the last sync
       # within this many seconds never contacts the portal; 0 disables.
@@ -62,15 +63,18 @@ services:
       - SYNC_MIN_INTERVAL_S=${SYNC_MIN_INTERVAL_S:-300}
       - SRM_EGRESS_URL=${SRM_EGRESS_URL:-}
       - SRM_PROXY_TOKEN=${SRM_PROXY_TOKEN:-}
-      # Error alerting (docs/README logging section): set NTFY_ALERT_URL in
-      # /docker/.env to push WARNING+ opensrm log lines to an ntfy topic.
+      # Error alerting (docs/runbook.md, README logging section): set
+      # NTFY_ALERT_URL in /docker/opensrm/.env (project env file) to push
+      # ERROR-level (5xx/unhandled — not WARNING) opensrm log lines to an
+      # ntfy topic, rate-limited 1/min (app/logging_setup.py NtfyHandler).
       - NTFY_ALERT_URL=${NTFY_ALERT_URL:-}
-      # audit run-1 #18: edge provenance secret — set in /docker/.env AND
-      # inject the same value as X-Edge-Secret from the tunnel config
+      # audit run-1 #18: edge provenance secret — set in /docker/opensrm/.env
+      # AND inject the same value as X-Edge-Secret from the tunnel config
       # (cloudflared originRequest.httpHeaders), together or not at all.
       - CF_EDGE_SECRET=${CF_EDGE_SECRET:-}
       # Web Push (docs/push.md): feature stays OFF until PUSH_ENABLED=1 in
-      # /docker/.env; missing VAPID keys -> status endpoint says "not configured".
+      # /docker/opensrm/.env; missing VAPID keys -> status endpoint says
+      # "not configured".
       - PUSH_ENABLED=${PUSH_ENABLED:-0}
       - PUSH_DRY_RUN=${PUSH_DRY_RUN:-0}
       - PUSH_ALLOW_NETIDS=${PUSH_ALLOW_NETIDS:-}
