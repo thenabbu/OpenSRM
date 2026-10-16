@@ -94,7 +94,7 @@ Key rules:
   - `guide_server.py` is deliberately **not** in CI — it performs 7 real portal logins per run and the portal caps 10/hour per IP. `guide_check.py` **is** in CI: it mocks `/api/login` in the browser, so nothing reaches the portal
 - **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` **plus `:<VERSION>` and `:<short-sha>`** (with `org.opencontainers.image.version`/`revision` labels), gated on `needs: [lint, tests]` so a red suite never pushes `:latest`. Deployments pin/roll back via `OPENSRM_TAG` (see AGENTS.md "Prod deploy")
 - **Scans** — `.github/workflows/scans.yml` (gitleaks on full history · pip-audit on the locked export · trivy HIGH/CRITICAL on the built image) — **report-only**: findings land in the job summary, never a red check. docs/SCANS.md documents what each would block on and how to flip one to blocking
-- **Deploy** — **manual**, there is no watcher: once CI is green on `main`, `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'` (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
+- **Deploy** — **manual**, there is no watcher: once CI is green on `main`, follow [docs/runbook.md](docs/runbook.md) (sync the compose file first, then `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'`) (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
 
 ## Portal rate limits
 

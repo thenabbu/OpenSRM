@@ -84,7 +84,7 @@ flowchart TD
         PROG["Login progress tracker<br/>POST /api/login/progress · 600 ms poll"]
         HS["http_scraper<br/>pure-HTTP pipeline"]
         PW["Playwright fallback<br/>headless Chromium · 5 captcha tries"]
-        DB[("SQLite srm.db<br/>users · portal_sessions · timetable · edit log<br/>schema_version 9")]
+        DB[("SQLite srm.db<br/>users · portal_sessions · timetable · edit log<br/>schema_version 17")]
         FL --> PROG
         FL <--> DB
         FL --> HS
@@ -244,7 +244,7 @@ Environment variables:
 - `TZ` — Timezone (default: `Asia/Kolkata`)
 - `SRM_EGRESS_URL` + `SRM_PROXY_TOKEN` — optional: route portal traffic through the Cloudflare egress worker instead of direct egress (both must be set, otherwise direct)
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))
-- `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (cron-job.org); unset → 401
+- `PUSH_TICK_SECRET` — secret header for `POST /internal/push/tick` (the every-minute tick scheduler — see [docs/push.md](docs/push.md)); unset → 401
 - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` — Web Push keys (env-only, generated once by `scripts/generate_push_keys.py`); missing → feature reports "not configured"
 - `METRICS_SECRET` — secret header (`X-Metrics-Token`) for `GET /internal/metrics` (Prometheus text: sync outcomes/durations by pipeline and error class, sync cache hits and single-flight joins, captcha attempts per login, preflight fates, scrape-lock rejections, portal cooldown, parse-empty counts; no PII in labels); unset → endpoint off (401), wrong/missing/non-ASCII → bare 401
 - `USAGE_EVENTS_RETENTION_DAYS` — `usage_events` retention in days (default 365); pruned at most once a day by the next recorded event (no background thread), pruned count logged as `usage_events pruned rows=N retention_days=N`
@@ -283,7 +283,8 @@ See [SECURITY.md](SECURITY.md) for details.
 - [AGENTS.md](AGENTS.md) — quickstart for agents: dev loop, test matrix, release rules, gotchas
 - [DESIGN.md](DESIGN.md) — the `openSRM` daisyUI theme: tokens, components, house rules
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, PR flow, portal rate limits
-- [docs/push.md](docs/push.md) — Web Push class reminders: architecture, env vars, cron-job.org job, rollout, limitations
+- [docs/push.md](docs/push.md) — Web Push class reminders: architecture, env vars, tick scheduler, rollout, limitations
+- [docs/runbook.md](docs/runbook.md) — operator runbook: build, deploy, rollback, restore drill, key rotation, sync damping, push-tick alerting
 - [docs/audit/](docs/audit/) — consolidated audit record (76 findings, all fixed)
 
 ---
