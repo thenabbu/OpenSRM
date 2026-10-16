@@ -35,7 +35,6 @@ import time
 from datetime import date, datetime, timedelta
 from functools import wraps
 from html import escape as _hesc  # audit: escape DB values before |safe timetable HTML
-from html import unescape as _hescu
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -46,6 +45,62 @@ from werkzeug.exceptions import HTTPException
 from . import metrics, push_calc, push_send, push_store
 from .logging_setup import log_with_kv, setup_logging
 from .migrations import migrate_db
+from .portal.parsers.attendance import parse_attendance
+from .portal.parsers.common import (
+    MONTHS,
+    ROMAN,  # noqa: F401 — re-exported from app.app
+    _cells,
+    _class_key,
+    _group_key,
+    _program_short,  # noqa: F401 — re-exported from app.app
+    _semester_int,
+)
+from .portal.parsers.exams import (
+    parse_exam_schedule,  # noqa: F401 — re-exported from app.app
+    parse_exam_timetable,  # noqa: F401 — re-exported from app.app
+)
+from .portal.parsers.feedback import _fb_plan
+from .portal.parsers.marks import (
+    _DATE_CELL_RE,  # noqa: F401 — re-exported from app.app
+    _parse_component_inner,
+    parse_marks,
+)
+from .portal.parsers.personal import parse_personal_details
+from .portal.parsers.timetable import (
+    DAY_ORDER,
+    _tt_norm_clock,  # noqa: F401 — re-exported from app.app
+    parse_timetable,  # noqa: F401 — re-exported from app.app
+)
+from .views.attendance import (
+    ATTENDANCE_TARGET,
+    ATTENDANCE_WARN,  # noqa: F401 — re-exported from app.app
+    WORKING_DAYS,  # noqa: F401 — re-exported from app.app
+    _absences_view,
+    _attendance_budgets,
+    _exam_stop,  # noqa: F401 — re-exported from app.app
+    _safe_int,
+    _status_for_pct,
+    _title_case,
+    _weekdays,  # noqa: F401 — re-exported from app.app
+)
+from .views.layout import (
+    LAYOUT,
+    WIDGETS,
+)
+from .views.marks import (
+    _derive_ie,  # noqa: F401 — re-exported from app.app
+    _fmt_date,  # noqa: F401 — re-exported from app.app
+    _fmt_max,  # noqa: F401 — re-exported from app.app
+    _fmt_score,  # noqa: F401 — re-exported from app.app
+    _marks_summary,
+    _marks_view,
+)
+from .views.ticker import (
+    _now_next_from_slots,
+    _today_brief,
+    _today_ticker,
+    _week_updates,
+)
 
 LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp"
 
@@ -321,11 +376,6 @@ CAPTCHA_JS = """async () => {
     return null;
 }"""
 
-MONTHS = {
-    "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04",
-    "MAY": "05", "JUN": "06", "JUL": "07", "AUG": "08",
-    "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
-}
 
 NETID_RE = re.compile(r"^[a-z0-9]{2,20}$")  # audit: SRM NetIDs are lowercase alnum
 
@@ -705,110 +755,6 @@ def _client_ip():
         return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
     return request.remote_addr or "?"
 
-# ── HTML parsing ───────────────────────────────────────────────────
-def _cells(row_html):
-    return [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
-            for c in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)]
-
-# audit: portal dates ('12/09/2026', '12-Sep-2026') also match the score
-# pattern \d+/\d+ — parsers must recognize date cells before scanning scores
-_DATE_CELL_RE = re.compile(r"\d{1,2}[/ -](?:\w{3,9}|\d{1,2})[/ -]\d{2,4}")
-
-ROMAN = {'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
-
-def _semester_int(semester_str):
-    """Convert 'III SEMESTER' -> 3. Empty/None -> 0: split()[0] raised
-    IndexError (probe-verified) and 500'd every page calling _group_key."""
-    parts = (semester_str or "").split()
-    return ROMAN.get(parts[0].strip(), 0) if parts else 0
-
-def _program_short(program):
-    """Portal Program -> stable branch id: drop the bracketed suffix and the
-    'B.Tech.-'/'with specialization in' boilerplate, so the same programme
-    always maps to one string ('...Cloud Computing[UG - FT - ACADEMIC]' ->
-    'Computer Science and Engineering Cloud Computing')."""
-    short = re.sub(r"\[.*?\]", "", program).strip()
-    short = re.sub(r"B\.Tech\.\s*-\s*", "", short).strip()
-    short = re.sub(r"with specialization in\s*", "", short).strip()
-    return short.replace(",", "")
-
-def _group_key(personal):
-    """Extract timetable group from personal details dict."""
-    program = re.sub(r"\[.*?\]", "", personal.get("Program", "")).strip()
-    batch = personal.get("Batch", "")
-    semester = _semester_int(personal.get("Semester", ""))
-    section = personal.get("Section", "")
-    if not all([program, batch, semester, section]):
-        return None
-    return f"{_program_short(program)}_{batch}_{semester}_{section}"
-
-def _class_key(personal, netid):
-    """Class context for component tags: year|branch|section — deliberately no
-    semester, because a teacher's components belong to the whole class every
-    term (one student's confirmation then applies to the whole class).
-    ponytail: a profile missing any field falls back to a per-student key
-    instead of a shared '?' bucket, so an incomplete profile can never leak a
-    tag into another class."""
-    ctx = [personal.get("Batch", ""), _program_short(personal.get("Program", "")),
-           personal.get("Section", "")]
-    return "|".join(ctx if all(ctx) else [f"net:{netid}"])
-
-def parse_attendance(html):
-    out = {"courses": [], "monthly": [], "period": None}
-    m = re.search(r"During the Period.*?<b>([^<]+)</b>\s*To\s*<b>([^<]+)</b>", html, re.S)
-    if m:
-        out["period"] = {"from": m.group(1).strip(), "to": m.group(2).strip()}
-    tbody = re.search(r"<tbody>(.*?)</tbody>", html, re.S)
-    if tbody:
-        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", tbody.group(1), re.S):
-            cells = _cells(row)
-            if not cells or len(cells) < 5:
-                continue
-            if cells[0].lower() == "total" or len(cells) == 7:
-                continue
-            # audit: numeric columns must look numeric — a portal column change
-            # would shift text into them and silently poison attendance.
-            # audit run-1: "" and "-" no longer pass (a non-attendance tbody
-            # with blank trailing columns used to substitute junk courses);
-            # a rejected row -> empty courses -> sync fails closed, stored
-            # attendance_json is never touched.
-            if not all(re.fullmatch(r"-?\d+(?:\.\d+)?", n)
-                       for n in (cells[2], cells[3], cells[4])):
-                log.warning("attendance row layout shifted, skipped: %r", cells[:5])
-                continue
-            out["courses"].append({
-                "code": cells[0], "description": cells[1],
-                "max_hours": cells[2], "attended": cells[3], "absent": cells[4],
-            })
-    cum = re.search(r"Cumulative Attendance.*?<table[^>]*>.*?<tbody>(.*?)</tbody>", html, re.S)
-    if cum:
-        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", cum.group(1), re.S):
-            cells = _cells(row)
-            # audit run-1: present/absent must parse as integers — column drift
-            # otherwise poisons the monthly bars; a rejected row leaves monthly
-            # empty and the merge preserves stored history instead of wiping it.
-            # od/ml are display-only passthrough (portal may blank them).
-            if len(cells) >= 6 and all(re.fullmatch(r"-?\d+", c) for c in cells[1:3]):
-                out["monthly"].append({
-                    "month": cells[0], "present": cells[1], "absent": cells[2],
-                    "od_present": cells[3], "od_absent": cells[4], "ml": cells[5],
-                })
-    return out
-
-
-# ── Personal details (formId 17) ───────────────────────────────
-def parse_personal_details(html):
-    """Extract key-value pairs from the personal details page (formId 17).
-    The portal renders label/value table rows inside #divMainDetails."""
-    out = {}
-    for m in re.finditer(
-            r'<td[^>]*>\s*([^<]+?)\s*</td>\s*<td[^>]*>\s*(.*?)\s*</td>', html, re.S):
-        key = re.sub(r'<[^>]+>', '', m.group(1)).strip().rstrip(':').strip()
-        val = re.sub(r'<[^>]+>', '', m.group(2)).strip()
-        if key and val and key.lower() not in ('', 's.no', 's. no'):
-            out[key] = val
-    return out
-
 
 # ── Persistent browser + event-loop singletons (speed warm-up, Sep 2026) ──
 # Launch Chromium ONCE and reuse it across requests via a dedicated worker
@@ -822,306 +768,6 @@ _pw = None
 _browser = None
 _loop = None
 _loop_thread = None
-
-
-
-# -- Internal marks (formId 13) --
-def parse_marks(html):
-    """Parse internal marks from studentInternalMarkDetails.jsp.
-    Returns (marks_list, subject_map) where subject_map maps code -> {id, status}."""
-    out = []
-    if not html:
-        return out, {}   # audit: ALWAYS a 2-tuple — callers unpack (out, subject_map)
-    if re.search(r"no\s+record\s+found", html, re.I):
-        return out, {}
-    # Extract subjectId + status from onclick="funViewComponentWiseMarks(id, code, desc, status)"
-    subject_map = {}
-    for fm in re.finditer(r"funViewComponentWiseMarks\('(\d+)',\s*'([^']+)',\s*'([^']+)',\s*(\d+)\)", html):
-        sid, scode, _sdesc, sstatus = fm.group(1), fm.group(2), fm.group(3), int(fm.group(4))
-        subject_map[scode] = {"id": int(sid), "status": sstatus}
-    table_m = re.search(r"<table[^>]*>.*?<tr[^>]*>(.*?)</tr>(.*?)</table>", html, re.S)
-    if not table_m:
-        return out, {}   # audit: 2-tuple (bare list crashed the unpack, was swallowed -> silent empty marks)
-    headers = [re.sub(r"<[^>]+>", "", h).strip().lower()
-               for h in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", table_m.group(1), re.S)]
-    if not headers or not any("code" in h for h in headers):
-        return out, {}   # audit: 2-tuple (see above)
-    code_i = next((i for i, h in enumerate(headers) if "code" in h), 0)
-    desc_i = next((i for i, h in enumerate(headers)
-                    if any(k in h for k in ("desc", "course", "subject"))), 1)
-    test_i = next((i for i, h in enumerate(headers)
-                    if any(k in h for k in ("test", "exam", "assess", "component"))), None)
-    by_code = {}
-    order = []
-    pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table_m.group(2), re.S):
-        cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
-                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-        if len(cells) < 3:
-            continue
-        code = cells[code_i] if code_i < len(cells) else ""
-        if not code or re.match(r"total|s\.?\s*no", code, re.I):
-            continue
-        scored = maximum = 0.0
-        for cell in cells:
-            if _DATE_CELL_RE.search(cell):
-                continue  # audit: '12/09/2026' would match pair_re as 12/9
-            m = pair_re.search(cell)
-            if m:
-                scored, maximum = float(m.group(1)), float(m.group(2))
-                break
-        if maximum <= 0:
-            continue
-        desc = cells[desc_i] if desc_i < len(cells) and desc_i != code_i else ""
-        test_name = ""
-        if test_i is not None and test_i < len(cells):
-            val = cells[test_i].strip()
-            if val and val.lower() not in ("view details", "nil", "-", ""):
-                test_name = val
-        if not test_name:
-            if maximum <= 5:
-                n = sum(1 for v in by_code.get(code, {}).get("components", [])
-                        if v.get("max", 0) <= 5) + 1
-                test_name = f"FT{n}"
-            else:
-                n = sum(1 for v in by_code.get(code, {}).get("components", [])
-                        if v.get("max", 0) > 5) + 1
-                test_name = f"CT {n}"
-        if code not in by_code:
-            by_code[code] = {"code": code, "title": desc, "components": [],
-                             "scored_total": 0.0, "max_total": 0.0}
-            order.append(code)
-        elif not by_code[code]["title"] and desc:
-            by_code[code]["title"] = desc
-        by_code[code]["components"].append(
-            {"name": test_name, "scored": scored, "max": maximum})
-        by_code[code]["scored_total"] = round(by_code[code]["scored_total"] + scored, 2)
-        by_code[code]["max_total"] = round(by_code[code]["max_total"] + maximum, 2)
-    return [by_code[c] for c in order], subject_map
-
-def _parse_component_inner(html):
-    """Parse inner JSP response for component-wise marks breakdown."""
-    comps = []
-    if not html:
-        return comps
-    if re.search(r"no\s+record\s+found", html, re.I):
-        return comps
-    pair_re = re.compile(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)")
-    date_re = _DATE_CELL_RE  # shared: broadened to numeric months too
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        cells = [re.sub(r"<[^>]+>", "", c).replace("\xa0", " ").strip()
-                 for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
-        if len(cells) < 2:
-            continue
-        scored = maximum = 0.0
-        for cell in cells:
-            if _DATE_CELL_RE.search(cell):
-                continue  # audit: '12/09/2026' would match pair_re as 12/9
-            m = pair_re.search(cell)
-            if m:
-                scored, maximum = float(m.group(1)), float(m.group(2))
-                break
-        if maximum <= 0:
-            continue
-        name, entered = "", ""
-        # component JSP rows: [entered_on, component_name, score/max]
-        if len(cells) >= 3 and date_re.search(cells[0]):
-            entered = cells[0]
-            if not pair_re.search(cells[1]):
-                name = cells[1]
-        if not name:
-            for cell in cells:
-                t = cell.strip()
-                if t and not pair_re.search(t) and t.lower() not in ("", "-", "nil", "total"):
-                    name = t
-                    break
-        if not name:
-            name = f"Assessment {len(comps)+1}"
-        comps.append({"name": name, "entered": entered, "scored": scored, "max": maximum})
-    return comps
-
-
-def parse_exam_schedule(html):
-    """ScribeInner.jsp (iden=1, ANY hdnExamMonth/Year — portal doesn't
-    validate against the official dropdown) -> end-sem exam rows.
-
-    Structure verified live Sep 27 2026: checkbox td (strips to '') then
-    code / description / date / session / type / amount. Empty sessions
-    return 'No subject found'.
-    """
-    if not html or "No subject found" in html:
-        return []
-    out = []
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        cells = _cells(row)
-        # td[0] is the checkbox cell -> ''; real columns shift by 1
-        if len(cells) >= 6 and re.fullmatch(r"\d{2}-\d{2}-\d{4}", cells[3] or ""):
-            out.append({"code": cells[1], "name": cells[2], "date": cells[3],
-                        "session": cells[4], "type": cells[5]})
-    return out
-
-
-def parse_exam_timetable(html):
-    """StudentExamTimeTable.jsp (iden=126, official 'Exam Time Table' page)
-    -> end-sem exam rows. Verified live Oct 7 2026 (the ONLY published source
-    with exact clock times).
-
-    Columns: Sem/Year/Trim | Subject Code | Subject Description | Date & Session
-    | Hall No. | Seat No. (+ a month banner) — cells at the Date & Session
-    position hold `DD-MMM-YYYY AN  (02:00-05:00)`; subjects without a slot yet
-    render `- -`. Empty page = 'No subjects found'.
-
-    Column positions are resolved from the header row so the portal can
-    REORDER or INSERT columns (hall allotment day may add fields) without
-    breaking known fields; unknown labels are ignored. Falls back to the
-    positional shape above when no header row exists.
-
-    Returns rows, [] (clean empty — 'No subjects found'), or None (table
-    present but unparseable: label/column drift or blanked rows — callers
-    MUST preserve stored rows, never treat as empty).
-    """
-    if not html or "No subjects found" in html:
-        return []
-    # header-driven indexes: label -> column position (known fields only)
-    labels = {"subject code": "code", "subject description": "name",
-              "date & session": "date", "hall no.": "hall", "seat no.": "seat"}
-    idx = {}
-    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        ths = re.findall(r"<th[^>]*>(.*?)</th>", tr, re.S)
-        if len(ths) >= 4:
-            for i, th in enumerate(ths):
-                lbl = _hescu(re.sub(r"<[^>]+>", "", th)).replace("\xa0", " ").strip().lower()
-                if lbl in labels:
-                    idx.setdefault(labels[lbl], i)
-            break
-    got_header = bool(idx)
-    pos = {"code": 1, "name": 2, "date": 3, "hall": 4, "seat": 5}  # positional fallback
-    # header found but a known label missing -> the column is GONE (do not
-    # guess positionally — that would read a neighbour cell as the field)
-    def _i(field):
-        if field in idx:
-            return idx[field]
-        return None if got_header else pos[field]
-
-    out = []
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        cells = _cells(row)
-        i_date, i_code = _i("date"), _i("code")
-        need = [i for i in (i_date, i_code, _i("hall"), _i("seat")) if i is not None]
-        if not need or len(cells) <= max(need) or i_date is None or i_code is None:
-            continue
-        ds = cells[i_date] or ""
-        dm = re.match(r"(\d{2})-([A-Z]{3})-(\d{4})", ds)
-        if not dm or not cells[i_code]:
-            continue  # header/banner rows, pending `- -`, blanked cells
-        mon = MONTHS.get(dm.group(2), "00")
-        tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", ds)
-        out.append({
-            "code": cells[i_code], "name": (cells[_i("name")] or "") if _i("name") is not None else "",
-            "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
-            "session": (re.search(r"\b(AN|FN)\b", ds) or [None, ""])[1],
-            "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
-            "hall": (cells[_i("hall")] or "") if _i("hall") is not None else "",
-            "seat": (cells[_i("seat")] or "") if _i("seat") is not None else "",
-        })
-    if not out and "<table" in html:
-        # table present but nothing parsed: label/column drift or blanked rows.
-        # NOT a clean empty — callers must preserve stored rows (Oct 4 2026 rule).
-        log.debug("exam timetable: table present but 0 dated rows parsed (shape drift?)")
-        return None
-    return out
-
-
-def _tt_norm_clock(h, m):
-    """Portal clock -> 24h minutes. The published time row mixes bands: morning
-    is 24h (08:30) but the afternoon is 12h-style WITHOUT meridiem (01:30 ==
-    13:30). No campus period starts before 08:00, so single-digit hours are
-    always the PM band. Verified live 2026-10-12 (6 periods, 08:30-15:10)."""
-    h = int(h)
-    if h < 8:
-        h += 12
-    return h * 60 + int(m)
-
-
-def parse_timetable(html):
-    """studentTimeTableDetails.jsp (iden=10, official 'Timetable' page)
-    -> weekly grid. LIVE since Oct 2026 (verified 2026-10-12; the endpoint was
-    a hard server-side gap before — 'No Time Table Found..!' for every section).
-
-    Page = two static tables: a grid (row 0 = `Hour/Day order` header with
-    rowspan + period numbers 1..N, row 1 = N time cells — the rowspan keeps
-    them aligned under the periods, there is NO label cell — then one row per
-    weekday) and a Legends table (Code | Description). Breaks are NOT rows:
-    they exist only as gaps between consecutive times.
-
-    Returns:
-      {"times": {period: "HH:MM-HH:MM"}  # RAW as published, 24h-normalized,
-                                          # pre-offset (offsets apply at render)
-       "grid":  {day: {period: code}},
-       "legend":{code: name}}            # may be empty; caller falls back
-                                          # stored name -> code
-      []  — explicit empty marker ('No Time Table Found..!'): section not
-            published, a clean empty callers MAY overwrite.
-      None — preserve-signal (never wipe stored rows): missing/blank html,
-            youLogin bounce (auth state, not data), or a table present that
-            yields 0 day rows / unparseable times (shape drift — the Oct-4
-            exam-parser rule)."""
-    if not html:
-        return None
-    if "No Time Table Found" in html:
-        return []
-    if "youLogin" in html:
-        return None
-    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S)
-
-    def _tcells(row_html):
-        # _cells() is <td>-only; this page's header + time rows are <th>
-        return [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
-                for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row_html, re.S)]
-
-    period_labels, times, grid, legend = None, None, {}, {}
-    for i, row in enumerate(rows):
-        cells = _tcells(row)
-        if period_labels is None and cells and "Hour/Day" in cells[0]:
-            # header row: label + one <th> per period; row i+1 = the time row
-            period_labels = [c.strip() for c in cells[1:]]
-            if i + 1 < len(rows):
-                tcells = _tcells(rows[i + 1])
-                if len(tcells) != len(period_labels):
-                    return None
-                times = {}
-                for p, t in enumerate(tcells, 1):
-                    tm = re.fullmatch(r"\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*", t)
-                    if not tm:
-                        return None
-                    s = _tt_norm_clock(*tm.group(1).split(":"))
-                    e = _tt_norm_clock(*tm.group(2).split(":"))
-                    if e <= s:
-                        return None  # band-normalization went wrong: preserve
-                    times[p] = "%02d:%02d-%02d:%02d" % (s // 60, s % 60, e // 60, e % 60)
-            continue
-        if period_labels and cells and cells[0] in DAY_ORDER:
-            if len(cells) != len(period_labels) + 1:
-                return None  # day row drifted off the period axis: preserve
-            grid[cells[0]] = {p: cells[p].strip() for p in range(1, len(period_labels) + 1)}
-        elif len(cells) == 2 and cells[0].strip() and cells[0].strip().lower() != "code":
-            legend[cells[0].strip()] = cells[1].strip()
-    if not period_labels or times is None or not grid or not times \
-            or not any(str(v).strip(" -\u2013\u2014\xa0") for d in grid.values() for v in d.values()):
-        # table present but the grid never resolved (structure drift), zero
-        # day rows, or every cell blank/dash (structurally valid but
-        # contentless — a published shell): NOT a clean empty — preserve
-        # stored rows (Oct-4 rule; review #1: a blank grid used to wipe 30 rows)
-        log.debug("timetable: unparseable shape (labels=%s times=%s day_rows=%d)",
-                  bool(period_labels), times is not None, len(grid))
-        return None
-    missing = [d for d in DAY_ORDER if d not in grid]
-    if missing:
-        # a dropped day row is partial drift, not a published 4-day week —
-        # storing it would silently thin every stored weekday slot
-        log.debug("timetable: day rows missing %s (shape drift?)", missing)
-        return None
-    return {"times": times, "grid": grid, "legend": legend}
 
 
 def _ensure_loop():
@@ -1719,20 +1365,6 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
         _scrape_release()   # return the slot + wake the queue (A10)
 
 # ── View model ─────────────────────────────────────────────────────
-ATTENDANCE_TARGET = 0.75
-ATTENDANCE_WARN = 0.65
-WORKING_DAYS = 90  # 90-working-day skip-budget horizon (spec §3); no academic calendar exists (see _attendance_budgets)
-
-def _safe_int(v):
-    try:
-        return int(str(v).strip())
-    except (TypeError, ValueError):
-        return 0
-
-def _status_for_pct(pct):
-    if pct >= ATTENDANCE_TARGET * 100: return "ok"
-    if pct >= ATTENDANCE_WARN * 100: return "warn"
-    return "danger"
 
 def _bunk_counts(attended, total, threshold=ATTENDANCE_TARGET):
     """(skip_now, attend_now) — the numbers behind _bunk_line's prose (spec §3).
@@ -1756,59 +1388,6 @@ def _bunk_line(attended, max_hours, threshold=ATTENDANCE_TARGET):
         return "Can miss %d more class%s and stay above %.0f%%" % (skip, "" if skip == 1 else "es", pct_target)
     return "Attend the next %d class%s in a row to reach %.0f%%" % (attend, "" if attend == 1 else "es", pct_target)
 
-def _weekdays(a, b):
-    """Mon–Fri count with BOTH ends inclusive (0 when b < a) [F13]."""
-    if not a or not b or b < a:
-        return 0
-    n, d = 0, a
-    while d <= b:
-        if d.weekday() < 5:
-            n += 1
-        d += timedelta(days=1)
-    return n
-
-def _exam_stop(exams):
-    """One global attendance horizon for every subject: first parseable endsem date − 1 day
-    (spec §0/R6 — portal marking stops at the FIRST exam of ANY subject). None when
-    exam_schedule is empty/junk: callers degrade, never guess a date."""
-    dates = []
-    for r in exams or []:
-        try:
-            dates.append(datetime.strptime(str(r.get("date", "")), "%d-%m-%Y").date())
-        except ValueError:
-            continue  # junk rows fall back in _exams_view; they must not anchor the horizon
-    return (min(dates) - timedelta(days=1)) if dates else None
-
-def _attendance_budgets(attended, max_hours, w, period=None, exams=None, today=None):
-    """Semester skip budgets (spec §3): 90-working-day model + endsem-date model.
-    Every value degrades to None (template renders `--` / hides) — never a fake zero:
-    no exams → m_end/days_left_exam None; w = 0 → both budgets None; period absent or
-    elapsed ≤ 0 → days_left_90 dropped (column keeps its budgets) [F9].
-    ponytail: period.from may be a rolling window; if days-left ever looks wrong, add
-    academic_calendar_json (migration v11 is free) — ceiling disclosed in the PR [R7]."""
-    today = today or date.today()
-    stop = _exam_stop(exams)
-    out = {"m90": None, "m_end": None, "days_left_90": None, "days_left_exam": None, "stop": stop}
-    if w > 0:
-        T = math.ceil(WORKING_DAYS * w / 5)
-        N = T - max_hours
-        out["m90"] = max(0, math.floor(attended + N - ATTENDANCE_TARGET * T))
-        if stop is not None:
-            # ceil REQUIRED here: floor/raw gives DBMS 4 where the frozen table says 5 [F1]
-            N_e = math.ceil(w * _weekdays(today + timedelta(days=1), stop) / 5)
-            T_e = max_hours + N_e
-            out["m_end"] = max(0, math.floor(attended + N_e - ATTENDANCE_TARGET * T_e))
-    if stop is not None:
-        out["days_left_exam"] = (stop - today).days
-    frm = period.get("from") if isinstance(period, dict) else None
-    if frm:
-        try:
-            elapsed = _weekdays(datetime.strptime(str(frm), "%d/%b/%Y").date(), today)
-        except ValueError:
-            elapsed = 0
-        if elapsed > 0:
-            out["days_left_90"] = WORKING_DAYS - min(elapsed, WORKING_DAYS)
-    return out
 
 def _weekly_slots(group_key):
     """w = weekly slot count per subject_code, scoped to THIS user's group [F4].
@@ -1826,33 +1405,11 @@ def _weekly_slots(group_key):
     c.close()
     return out
 
-def _absences_view(daily):
-    """Absences card (review R4): month-grouped; each row is `date · hours` ONLY —
-    no subject column [R5] (daily_absent rows carry none; deriving one would be a lie)."""
-    out = []
-    for label, rows in (daily or {}).items():
-        disp_rows = []
-        for r in rows or []:
-            raw = str(r.get("date", ""))
-            try:
-                disp = datetime.strptime(raw, "%d-%m-%Y").strftime("%d %b")
-            except ValueError:
-                disp = raw  # unknown shape: show it raw rather than hide the absence
-            disp_rows.append({"date": disp, "hours": r.get("hours", "")})
-        if disp_rows:
-            out.append({"label": _title_case(str(label).replace(" / ", " ")), "rows": disp_rows})
-    return out
 
 def _norm_subject(s):
     """Join key: upper / strip / squash whitespace (spec §4.3)."""
     return " ".join(str(s or "").upper().split())
 
-def _title_case(s):
-    """Display only (review R2): portal names arrive ALL CAPS -> Title Case.
-    No-op on mixed-case strings (custom timetable names keep their casing);
-    join keys still go through _norm_subject, so casing is render-time only."""
-    s = str(s or "")
-    return s.title() if s.isupper() else s
 
 def _attendance_index(courses):
     """spec §4 join index built in index(): code-exact map + normalized-name fallback map."""
@@ -2058,25 +1615,6 @@ def _faculty_view(faculty_map, courses):
     return out
 
 
-def _fb_plan(faculty_map):
-    """Stored map -> [{subject, teacher, staff_id, comment}] — the exact rows the
-    fill endpoint submits. EVERY listed teacher gets their own row: the portal
-    takes one form per teacher within a subject, so a subject with 2 staff
-    becomes 2 rows.
-
-    SINGLE builder: the modal preview AND POST /api/feedback/fill both call
-    this, so what the student saw IS what gets sent. {} / unknown-only -> [].
-    """
-    plan = []
-    for r in _faculty_view(faculty_map, []):
-        for sid, tname, kind in r["staff"]:
-            plan.append({"subject": r["name"],
-                         "teacher": f"{tname} ({kind})" if kind else tname,
-                         "staff_id": sid,
-                         "comment": "none"})
-    return plan
-
-
 def _jload(raw, default):
     """json.loads over a stored row: degrade to `default` + log the
     corruption. index()/api_marks decoded unguarded — one corrupt row
@@ -2280,7 +1818,6 @@ def index():
         personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
-DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 SLOTS = [
     {"period": 1, "start": "09:30", "end": "10:20", "type": "class"},
     {"period": 2, "start": "10:20", "end": "11:10", "type": "class"},
@@ -2323,39 +1860,6 @@ TIMETABLE_SOURCE = "official"
 def _tt_editor_enabled():
     return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
 
-# ── Dashboard card/widget engine ────────────────────────────────────────────
-# Contract (session spec, engine-spec.md): a card is one LAYOUT entry (grid
-# span + widget ids); a widget is one WIDGETS entry pointing at a partial that
-# emits its OWN label + box — no data -> it emits nothing (DESIGN §4.12
-# empty=hidden). Adding/removing a card or widget edits ONLY these dicts:
-# no template, route or test churn beyond the widget's own partial.
-LAYOUT = [
-    {"id": "day", "span": 4, "row_span": 2,
-     "widgets": ["profile", "today", "week", "notices"]},
-    # `when` = route-context vars that must be truthy for the card to render
-    # (all-empty card -> no orphan shell). Missing `when` = always show.
-    # `cap` = lg max-height as a fraction of the viewport-fit grid
-    # (calc((100dvh-94px)*cap)) — clamps row 1's content height so a heavy
-    # exams/marks load can't starve row 2 (stress: uncapped auto row 1 = 640px
-    # crushed row 2 to 2px at 1024x768). % rows don't work: maximize-tracks
-    # STRETCHES them to the limit (row 1 ate 65% even with normal data).
-    {"id": "assess", "span": 8, "when": ["marks_summary", "exams"],
-     "cap": "0.65", "widgets": ["marks", "exams"]},
-    {"id": "people", "span": 8, "when": ["budgets", "teach_groups"],
-     "cols": 2, "widgets": ["attendance", "teachers"]},
-]
-# min_w = measured plateaus (mockup measure_widgets.py): a card's inner width
-# must stay >= min_w for every widget it carries (span math, not vibes).
-WIDGETS = {
-    "profile":    {"partial": "partials/widgets/profile.html",  "min_w": 250},
-    "today":      {"partial": "partials/widgets/today.html",    "min_w": 260},
-    "week":       {"partial": "partials/widgets/week.html",     "min_w": 250},
-    "notices":    {"partial": "partials/widgets/notices.html",  "min_w": 300},
-    "marks":      {"partial": "partials/widgets/marks.html",    "min_w": 560},
-    "exams":      {"partial": "partials/widgets/exams.html",    "min_w": 560},
-    "attendance": {"partial": "partials/widgets/attendance.html", "min_w": 300},
-    "teachers":   {"partial": "partials/widgets/teachers.html", "min_w": 358},
-}
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
@@ -2433,36 +1937,6 @@ NOTICES = [
 ]
 
 
-def _today_ticker(group_key):
-    """Today widget: prev/now/next class rows from the REAL slot grid.
-
-    None = no timetable / no classes today -> widget hidden (empty=hidden).
-    state: "now" (a class is running), "up" (none running, one upcoming —
-    breaks land here naturally), "done" (all classes finished). v1 renders
-    statically; event-driven promotion is a later rung.
-    """
-    day_slots = _day_slots(group_key)
-    if not day_slots:
-        return None
-    todays = day_slots.get(datetime.now().strftime("%A"), {})
-    rows = [{"start": s["start"], "end": s["end"],
-             "code": todays[s["period"]]["code"],
-             "name": todays[s["period"]].get("name") or ""}
-            for s in _tt_grid(group_key) if s["type"] != "break" and s["period"] in todays]
-    if not rows:
-        return None
-    now = datetime.now().hour * 60 + datetime.now().minute
-
-    def _m(t):
-        return int(t[:2]) * 60 + int(t[3:5])
-    for i, r in enumerate(rows):
-        if now < _m(r["end"]):
-            state = "now" if now >= _m(r["start"]) else "up"
-            return {"state": state, "prev": rows[i - 1] if i else None,
-                    "now": r, "next": rows[i + 1] if i + 1 < len(rows) else None}
-    return {"state": "done", "prev": rows[-1], "now": None, "next": None}
-
-
 def _budget_rows(courses):
     """Attendance widget: (subject name, signed margin, risk) per subject in
     COURSES order (already sorted pct-ascending = risk-first). Value is the
@@ -2510,29 +1984,6 @@ def _teacher_groups(faculty):
         out.append({"code": f["code"], "name": f["name"], "staff": staff})
     return out
 
-
-def _now_next_from_slots(day, slots):
-    now_mins = datetime.now().hour * 60 + datetime.now().minute
-    for s in slots:
-        sm = int(s["start"].split(":")[0]) * 60 + int(s["start"].split(":")[1])
-        em = int(s["end"].split(":")[0]) * 60 + int(s["end"].split(":")[1])
-        if sm <= now_mins < em:
-            if s.get("type") == "break":
-                return {"kind": "break", "label": s.get("name","Break"), "until": s["end"]}
-            # _att must ride along: the hero's 22px sig block reads it (spec §1.B);
-            # dropping it here silently rendered hero without the stat
-            return {"kind": "current", "code": s["code"], "name": s["name"],
-                    "loc": s.get("location",""), "until": s["end"],
-                    **({"_att": s["_att"]} if "_att" in s else {})}
-    upcoming = [s for s in slots if s.get("type") != "break" and
-                int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1]) > now_mins]
-    if upcoming:
-        s = upcoming[0]
-        sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
-        return {"kind": "next", "code": s["code"], "name": s["name"],
-                "loc": s.get("location",""), "at": s["start"],
-                "in_mins": sm - now_mins}
-    return {"kind": "done"} if slots else None
 
 def _day_slots(group_key):
     """group_key -> {day: {period: slot}} or None when no timetable exists."""
@@ -2681,53 +2132,6 @@ def _save_timetable_group(netid, res):
     except Exception as e:
         log.warning("timetable group/subject save failed netid=%s: %r", netid, e, exc_info=True)
 
-def _today_brief(group_key):
-    """Dashboard: today's class count + next class from the timetable."""
-    day_slots = _day_slots(group_key)
-    out = {"count": 0, "next": None, "day_done": False}
-    if not day_slots:
-        return out
-    today = datetime.now().strftime("%A")
-    todays = day_slots.get(today, {})
-    out["count"] = len(todays)
-    for s in _tt_grid(group_key):
-        if s["type"] == "break" or s["period"] not in todays:
-            continue
-        sm = int(s["start"].split(":")[0]) * 60 + int(s["start"].split(":")[1])
-        em = int(s["end"].split(":")[0]) * 60 + int(s["end"].split(":")[1])
-        now_mins = datetime.now().hour * 60 + datetime.now().minute
-        if sm <= now_mins < em:
-            sl = todays[s["period"]]
-            out["next"] = {"kind": "now", "code": sl["code"], "at": s["end"]}
-            return out
-        if now_mins < sm:
-            sl = todays[s["period"]]
-            out["next"] = {"kind": "next", "code": sl["code"], "at": s["start"]}
-            return out
-    out["day_done"] = True
-    return out
-
-def _week_updates(daily_absent):
-    """Dashboard: absences in the current Mon–Sun week (IST server time)."""
-    today = datetime.now().date()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
-    hits, hours = [], 0.0
-    for _month, rows in (daily_absent or {}).items():
-        for r in rows:
-            try:
-                d = datetime.strptime(r.get("date", ""), "%d-%m-%Y").date()
-            except ValueError:
-                continue
-            if monday <= d <= sunday:
-                hits.append({"date": r["date"], "hours": r.get("hours", "")})
-                try:
-                    hours += float(str(r.get("hours", "0")).split("-")[0])
-                except ValueError:
-                    pass
-    hits.sort(key=lambda x: x["date"])
-    return {"days": len(hits), "hours": hours, "dates": hits,
-            "today_absent": any(h["date"] == today.strftime("%d-%m-%Y") for h in hits)}
 
 def _tt_att_sig(course):
     """One glance signal for a timetable slot (spec §1.B): the text carries the
@@ -2980,39 +2384,6 @@ def api_feedback_fill():
     finally:
         _scrape_release()   # A10: hand back through the queue-aware release
 
-def _fmt_score(v):
-    """Minimal decimals: 11.7 -> '11.7', 5 -> '5' (trailing zeroes stripped —
-    the '.' keeps whole-number zeros intact). Junk/None -> '?' — a stored
-    null score used to TypeError into a 500 (audit B9)."""
-    try:
-        return f"{float(v):.2f}".rstrip("0").rstrip(".")
-    except (TypeError, ValueError):
-        return "?"
-
-def _fmt_max(v):
-    """Maxima are whole marks on the portal: 15.0 -> '15' (never '15.00')."""
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return "?"
-    return str(int(f)) if f.is_integer() else f"{f:.2f}"
-
-def _fmt_date(s):
-    """Portal date '04/Sep/2026' -> muted display '04 Sep'; junk passes through."""
-    try:
-        return datetime.strptime(s, "%d/%b/%Y").strftime("%d %b")
-    except (ValueError, TypeError):
-        return s or ""
-
-def _derive_ie(code, maximum):
-    """IE-1/IE-2 are never labelled by the portal — guess IE-1 from the
-    component's scaled max (the /15 component; /10 for practicals like
-    21CSC203P). A confirmed tag always wins; this is the 'derived' state."""
-    if maximum == 15:
-        return "IE-1"
-    if maximum == 10 and str(code).endswith("P"):
-        return "IE-1"
-    return None
 
 def _load_component_tags(class_key, marks):
     """Confirmed IE tags for this class's components -> {(code, name): row}.
@@ -3030,77 +2401,6 @@ def _load_component_tags(class_key, marks):
     c.close()
     return {wanted[r[0]]: {"role": r[1], "raw_max": r[2], "scaled_max": r[3]} for r in rows}
 
-def _marks_view(marks, tags=None):
-    """Marks tab view model: title-cased subjects, components sorted by NAME
-    (the portal's order is by entry, dates jump around), '04 Sep' dates,
-    integer maxima with 2-decimal scores, and IE rows converted back to their
-    raw /50 (IE-1) or /60 (IE-2) marks. `tags` = confirmed overrides."""
-    tags = tags or {}
-    out = []
-    for s in marks:
-        code = s.get("code", "")
-        comps = []
-        for cpt in sorted(s.get("components", []), key=lambda c: str(c.get("name", ""))):
-            maximum, scored = cpt.get("max", 0.0), cpt.get("scored", 0.0)
-            tag = tags.get((code, cpt.get("name", "")))
-            derived = _derive_ie(code, maximum)
-            role = tag["role"] if tag else derived   # confirmed wins, incl. 'none'
-            ie = None
-            if role in ("IE-1", "IE-2"):
-                raw = (tag.get("raw_max") if tag and tag.get("raw_max")
-                       else (50.0 if role == "IE-1" else 60.0))
-                ie = {"role": role, "confirmed": bool(tag), "max_disp": _fmt_max(raw),
-                      "score_disp": _fmt_score(scored * raw / maximum) if maximum else _fmt_score(0)}
-            comps.append({"name": cpt.get("name", ""), "date_disp": _fmt_date(cpt.get("entered", "")),
-                          "score_disp": _fmt_score(scored), "max_disp": _fmt_max(maximum),
-                          "derived": derived or "", "confirmed": tag["role"] if tag else None,
-                          "ie": ie})
-        st, mt = s.get("scored_total", 0.0), s.get("max_total", 0.0)
-        out.append({"code": code, "title": (s.get("title") or "").title(),
-                    "scored_disp": _fmt_score(st), "max_disp": _fmt_max(mt),
-                    "pct": round(st / mt * 100, 1) if mt else 0.0, "outlier": False,
-                    "components": comps})
-    # One muted accent per screen (DESIGN.md §2.7): the UNIQUE lowest subject,
-    # and only below the 75% target — everything else on this page is neutral.
-    ranked = sorted(out, key=lambda x: x["pct"])
-    if len(ranked) > 1 and ranked[0]["pct"] < ranked[1]["pct"] and ranked[0]["pct"] < 75:
-        ranked[0]["outlier"] = True
-    return out
-
-def _marks_summary(marks):
-    """Dashboard glance: EVERY subject as code scored/max chips in risk-first
-    order (weakest first) — no %, no aggregate/overall number. `stale=True`
-    marks a row preserved from an earlier sync (the widget renders those chips
-    faint). `recent` = some component's portal "Entered on" is today — the
-    portal writes a date only (no time), so "changed in the last 24 hrs"
-    resolves to entered-today at day granularity; `entered` carries that date
-    for the chip's tooltip. None when empty."""
-    if not marks:
-        return None
-    low = sorted(marks, key=lambda m: (m.get("scored_total", 0) / m["max_total"])
-                 if m.get("max_total") else 1)
-    today = date.today()
-    out = []
-    for m in low:
-        recent, entered = False, ""
-        for cpt in m.get("components", []):
-            try:
-                d = datetime.strptime(cpt.get("entered", "") or "", "%d/%b/%Y").date()
-            except (ValueError, TypeError):
-                continue
-            if d == today:
-                recent, entered = True, _fmt_date(cpt.get("entered", ""))
-        out.append({"code": m.get("code", ""),
-                    "scored": _fmt_score(m.get("scored_total", 0)),
-                    "max": _fmt_max(m.get("max_total", 0)),
-                    "stale": bool(m.get("stale")),
-                    "recent": recent,
-                    "entered": entered})
-    # stale wins the chip: a preserved row has no fresh entry to show
-    for r in out:
-        if r["stale"]:
-            r["recent"], r["entered"] = False, ""
-    return out
 
 def _week_marks(marks):
     """Week widget: components whose portal 'Entered on' falls in the current
