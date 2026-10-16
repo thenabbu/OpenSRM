@@ -163,7 +163,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph backend["app/ — backend"]
-        APP["app.py<br/>create_app factory · 24 routes<br/>auth · rate limits<br/>sync · progress tracker"]
+        APP["app.py<br/>create_app factory · views · sync<br/>auth · rate limits · progress tracker"]
+        BPS["blueprints/<br/>24 routes in 7 route tables<br/>auth dashboard marks timetable<br/>push feedback internal (+security.py)"]
         PARS["portal/parsers/<br/>attendance · marks · timetable<br/>exams · personal · feedback"]
         VIEWS["views/<br/>budgets · marks IE · ticker<br/>LAYOUT + WIDGETS registries"]
         SCR["http_scraper.py<br/>login · captcha · JSP fetch<br/>exam probe"]
@@ -199,6 +200,7 @@ flowchart LR
     APP --> LOG
     APP --> PARS
     APP --> VIEWS
+    APP --> BPS
     APP --> TPL
     TPL --> JS
     TPL --> SWJS
