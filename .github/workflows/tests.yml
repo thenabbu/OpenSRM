@@ -76,6 +76,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_account_delete.py
       - name: test_login_reject (rejection classifier + quotas)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_login_reject.py
+      - name: test_state_classes (rate/progress/portal-health locks + pruning)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_state_classes.py
       - name: test_fault_handling (corrupt-row degradation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_fault_handling.py
       - name: test_logging_telemetry (ntfy/rotation/scrub)

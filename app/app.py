@@ -120,6 +120,29 @@ from .portal.parsers.timetable import (
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
 from .security import require_login
+from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
+    _RATE_CAP,
+    _charge_rate,
+    _check_ip_rate,
+    _check_rate,
+    _ip_attempts,
+    _ip_retry_text,
+    _login_attempts,
+    _login_progress,
+    _netid_retry_text,
+    _portal_cooldown_remaining,
+    _portal_fail,
+    _portal_ok,
+    _preflight_ip,
+    _preflight_last,
+    _progress_ip,
+    _rate_lock,
+    _retry_text,
+    _set_progress,
+    portal_health,
+    progress,
+    rate_limiter,
+)
 from .views.attendance import (
     ATTENDANCE_TARGET,
     ATTENDANCE_WARN,  # noqa: F401 — re-exported from app.app
@@ -482,15 +505,14 @@ def _clear_session(netid):
     """Remove cached portal cookies (on failed session restore)."""
     delete_portal_session(netid)
 
-# ── Login progress (in-memory; single worker) ────────────────────────
-# audit run-1 (#13): keyed by an unforgeable per-browser attempt token (not
-# netid) — /api/login/progress then only answers the browser that started
-# the flow. Flows without a token (refresh, old clients) publish NOTHING.
-_login_progress = {}  # attempt -> {"step", "ts", "pct", "netid"}
-
-def _set_progress(key, step, pct, netid=None):
-    _login_progress[key] = {"step": step, "ts": int(time.time()), "pct": pct,
-                            "netid": netid or "-"}
+# ── Login progress · rate limits · portal cooldown ───────────────────────────────
+# A18: all of it lives in app/state.py — RateLimiter / ProgressTracker /
+# PortalHealth, each behind ONE lock with TTL pruning. The old module-level
+# names (_set_progress, _login_attempts, _rate_lock, ...) are re-exported
+# from the import block at the top, so callers, tests and recipes are
+# unchanged. audit run-1 (#13) still holds: progress is keyed by the
+# unforgeable per-browser attempt token — /api/login/progress only answers
+# the browser that started the flow; flows without a token publish NOTHING.
 
 # ── Sync queue: bounded wait for a portal slot (A10) ────────────────
 def _sync_queue_wait_s():
@@ -574,15 +596,13 @@ def _scrape_release():
         _scrape_lock.release()
         _queue_cond.notify_all()
 
-# ── Rate limiting ──────────────────────────────────────────────────
-# Two independent limits:
+# ── Portal budget (aggregate egress cap) ───────────────────────────────
+# A18: the per-netid / per-IP attempt windows and the preflight admission
+# moved to app/state.py (RateLimiter). The _rate_lock imported at the top
+# IS the RateLimiter's lock — this budget code keeps holding the same lock
+# object, so cross-structure admission order is unchanged. The two limits:
 #   per-netid scrape limit — portal-friendliness (each scrape = real SRM login)
 #   per-IP login limit    — brute-force protection (netid rotation-proof)
-_login_attempts = {}   # netid -> [ts, ...]  (scrapes, 10-min window)
-_ip_attempts = {}      # ip -> [ts, ...]    (login POSTs, 1-hour window)
-_RATE_CAP = 10000      # ponytail: memory exhaustion guard; upgrade to LRU if throughput matters
-_rate_lock = threading.Lock()  # audit: check-and-append is atomic only under one lock shared by gthread workers
-
 # audit 2026-09-27: AGGREGATE cap on outbound portal-bound work. Per-netid and
 # per-IP limits don't bind an attacker rotating source IPs: N IPs => N*10
 # attempts/hour through OUR single egress IP — which is exactly how the portal
@@ -638,83 +658,12 @@ def _check_portal_budget(ip=None, authorized=False, bucket="login"):
         return True
 
 
-def _check_rate(netid):
-    """Sync-quota ADMISSION (check-only, audit run-1 #6): >=3 successful syncs
-    in the 10-min window rejects; rejected requests never append, and the charge
-    only happens in _charge_rate when a sync actually succeeds — so unauth
-    wrong-password guesses can never pre-spend a chosen victim's quota."""
-    now = time.time()
-    with _rate_lock:
-        if len(_login_attempts) > _RATE_CAP:
-            # audit: clear() wiped EVERYONE's counters (a flood resets the cap
-            # for all) — drop only stale keys instead
-            for k in [k for k, v in _login_attempts.items() if not v or now - max(v) >= 600]:
-                _login_attempts.pop(k, None)
-            if len(_login_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard; 20k live netids impossible here
-                _login_attempts.clear()
-        kept = [t for t in _login_attempts.get(netid, []) if now - t < 600]
-        if kept:
-            _login_attempts[netid] = kept
-        else:
-            # never materialize an empty key: a denied admission must leave
-            # the counter state exactly as it was (test_login_reject pins it)
-            _login_attempts.pop(netid, None)
-        return len(kept) < 3
-
-
-def _charge_rate(netid):
-    """Spend one sync token — called only when a sync really succeeded."""
-    now = time.time()
-    with _rate_lock:
-        _login_attempts[netid] = [t for t in _login_attempts.get(netid, []) if now - t < 600]
-        _login_attempts[netid].append(now)
-
-def _retry_text(oldest, window):
-    """Guide §5 core: honest countdown from a window's oldest entry, so the
-    promise can't drift from what the matching checker will actually allow."""
-    left = max(1, int(window - (time.time() - oldest)))
-    return f"{left} seconds" if left < 90 else f"{(left + 59) // 60} minutes"
-
-
-def _ip_retry_text(ip):
-    """Guide §5: an honest lockout message names the remaining time instead of
-    "try again later". Reads the SAME window _check_ip_rate prunes against, so
-    the countdown can't drift from the actual limit."""
-    with _rate_lock:
-        oldest = min(_ip_attempts.get(ip) or [time.time()])
-    return _retry_text(oldest, 3600)
-
-
-def _netid_retry_text(netid):
-    """Per-netid sync cap countdown. The old message promised a flat
-    "10 minutes" while the sliding window could have <2 minutes left — users
-    were told to wait five times longer than the actual lockout."""
-    with _rate_lock:
-        oldest = min(_login_attempts.get(netid) or [time.time()])
-    return _retry_text(oldest, 600)
-
-
-def _check_ip_rate(ip):
-    now = time.time()
-    with _rate_lock:
-        if len(_ip_attempts) > _RATE_CAP:
-            # audit: same as _login_attempts — prune stale keys, don't reset everyone
-            for k in [k for k, v in _ip_attempts.items() if not v or now - max(v) >= 3600]:
-                _ip_attempts.pop(k, None)
-            if len(_ip_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard
-                _ip_attempts.clear()
-        attempts = _ip_attempts.get(ip, [])
-        _ip_attempts[ip] = [t for t in attempts if now - t < 3600]
-        if len(_ip_attempts[ip]) >= 10:
-            return False
-        _ip_attempts[ip].append(now)
-        return True
-
 # -- Portal cooldown ------------------------------------------------
 # When the SRM portal silently rejects logins (rate-limiting our IP),
-# pause ALL login attempts to avoid worsening the block.
-_portal_cooldown_until = 0   # unix timestamp; 0 = no cooldown
-_portal_consecutive_fails = 0
+# pause ALL login attempts to avoid worsening the block. A18: the state
+# itself (cooldown timestamp + consecutive-fail counter, lock-guarded) is
+# app.state.PortalHealth; the per-sync guard below stays here because it
+# rides a ContextVar owned by the sync flow.
 
 
 class _SyncContext:
@@ -735,17 +684,6 @@ class _SyncContext:
 _sync_ctx: contextvars.ContextVar = contextvars.ContextVar("opensrm_sync_ctx", default=None)
 
 
-def _portal_fail():
-    # ponytail: the cooldown itself is still GLOBAL — per-user isolation
-    # needs per-netid counters, add when multi-user load is real.
-    global _portal_cooldown_until, _portal_consecutive_fails
-    _portal_consecutive_fails += 1
-    if _portal_consecutive_fails >= 3:
-        minutes = min(30, 5 * (2 ** (_portal_consecutive_fails - 3)))
-        _portal_cooldown_until = time.time() + minutes * 60
-        log.warning("portal cooldown %d min after %d consecutive fails",
-                     minutes, _portal_consecutive_fails)
-
 def _portal_fail_once():
     """Count ONE fail per login request, not one per captcha retry inside it.
     Guarded by the caller's _SyncContext; a call with no sync context (any
@@ -755,19 +693,6 @@ def _portal_fail_once():
         return
     ctx.fail_counted = True
     _portal_fail()
-
-def _portal_ok():
-    global _portal_cooldown_until, _portal_consecutive_fails
-    _portal_consecutive_fails = 0
-    _portal_cooldown_until = 0
-
-def _portal_cooldown_remaining():
-    remaining = _portal_cooldown_until - time.time()
-    return max(0, remaining)
-
-# observability: live cooldown state for GET /internal/metrics (0 = armed off)
-metrics.gauge("opensrm_portal_cooldown_seconds",
-              lambda: float(max(0, _portal_cooldown_until - time.time())))
 
 def _client_ip():
     # Only trust CF-Connecting-IP when request came through Cloudflare.
@@ -2966,9 +2891,8 @@ def api_refresh():
 # ── Login preflight: browser fires this when the user focuses the
 #    password field — warms the portal session + solves the captcha
 #    while they finish typing. Consumed by /api/login via fetch_attendance.
-_preflight_last = {}   # netid -> ts (30s per-netid cooldown)
-_preflight_ip = {}     # ip -> [ts, ...] (10 per 10 min per IP)
-_progress_ip = {}      # ip -> [ts, ...] (audit #13: 30 reads/60s per IP)
+# A18: _preflight_last/_preflight_ip (and the progress read cap) live in
+# app/state.py — RateLimiter.preflight_* and ProgressTracker.read_ok.
 
 def _run_preflight(netid):
     # audit run-1 (#7): the detached body used to fire portal work + OCR with
@@ -2995,49 +2919,33 @@ def api_login_preflight():
              if isinstance(d, dict) and isinstance(d.get("netid"), str) else "")
     if not netid or not NETID_RE.match(netid):
         return {"ok": False, "error": "invalid netid"}, 400
-    now = time.time()
     ip = _client_ip()
-    # audit run-1 (#7): the whole admission (ip cap + per-netid cooldown) is a
-    # read-modify-write under _rate_lock — the old unlocked check-then-act let
-    # two gthread workers double-spend the same admission; dicts get aggregate
-    # eviction here so neither can grow without bound. Log AFTER releasing.
-    limited = busy = False
-    with _rate_lock:
-        for k in [k for k, t in _preflight_last.items() if now - t > 600]:
-            _preflight_last.pop(k, None)          # expire cooled-down netids
-        for k in [k for k, v in _preflight_ip.items()
-                  if not [t for t in v if now - t < 600]]:
-            _preflight_ip.pop(k, None)            # expire drained ip buckets
-        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
-        if len(hits) >= 10:  # ponytail: preflight is unauthenticated — cap hard
-            limited = True
-        elif now - _preflight_last.get(netid, 0) < 30:
-            # cooldown: identical response to a fresh start — no per-netid
-            # discriminator leaks to an unauthenticated caller (audit run-1 #14)
-            return {"ok": True}
-        elif _portal_cooldown_remaining() > 0 or _sync_queue_depth() > 0:
-            # A10: refused by QUEUE DEPTH, not by a held lock — one running
-            # sync no longer 503s the warm-login (its runner thread takes the
-            # non-blocking slot or skips); a backed-up queue does.
-            busy = True
-        else:
-            _preflight_ip[ip] = hits
-    if limited:
+    # audit run-1 (#7): the whole admission (ip cap + per-netid cooldown) is
+    # one atomic read-modify-write inside RateLimiter.preflight_admit — the
+    # old unlocked check-then-act let two gthread workers double-spend the
+    # same admission; TTL eviction of both dicts happens there too. Log AFTER
+    # releasing. A10: busy = queue DEPTH > 0, not a held lock — one running
+    # sync no longer 503s the warm-login; a backed-up queue does.
+    admission = rate_limiter.preflight_admit(
+        netid, ip,
+        busy=_portal_cooldown_remaining() > 0 or _sync_queue_depth() > 0)
+    if admission == "limited":
         log_with_kv(log_auth, logging.WARNING, "preflight ip limited", netid=netid, ip=ip)
         return {"ok": False, "error": "rate"}, 429
-    if busy:
+    if admission == "cooldown":
+        # identical response to a fresh start — no per-netid discriminator
+        # leaks to an unauthenticated caller (audit run-1 #14)
+        return {"ok": True}
+    if admission == "busy":
         log_with_kv(log_auth, logging.WARNING, "preflight busy", netid=netid, ip=ip)
         return {"ok": False, "error": "portal busy"}, 503
-    if not _check_portal_budget(ip, bucket="preflight"):  # audit: aggregate egress cap (takes _rate_lock — must run outside the block above)
+    if not _check_portal_budget(ip, bucket="preflight"):  # audit: aggregate egress cap (takes _rate_lock — must run outside the admission above)
         return {"ok": False, "error": "rate"}, 429
-    with _rate_lock:  # atomic charge, re-validated — closes the admission race
-        if now - _preflight_last.get(netid, 0) < 30:
-            return {"ok": True}
-        hits = [t for t in _preflight_ip.get(ip, []) if now - t < 600]
-        if len(hits) >= 10:
-            return {"ok": False, "error": "rate"}, 429
-        _preflight_ip[ip] = hits + [now]
-        _preflight_last[netid] = now
+    raced = rate_limiter.preflight_charge(netid, ip)  # atomic charge, re-validated — closes the admission race
+    if raced == "cooldown":
+        return {"ok": True}
+    if raced == "limited":
+        return {"ok": False, "error": "rate"}, 429
     threading.Thread(target=_run_preflight, args=(netid,), daemon=True,
                      name="srm-preflight").start()
     log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
@@ -3054,18 +2962,10 @@ def api_login_progress():
     attempt = str(data.get("attempt", "")).strip()
     if not attempt or not attempt.isalnum() or len(attempt) > 64:
         return {"step": "", "pct": 0, "error": "invalid attempt token"}, 400
-    now = time.time()
-    ip = _client_ip()
-    hits = [t for t in _progress_ip.get(ip, []) if now - t < 60]
-    if len(hits) >= 30:
+    if not progress.read_ok(_client_ip()):   # 30 reads/60s per IP (was unlocked)
         return {"step": "", "pct": 0, "error": "rate"}, 429
-    _progress_ip[ip] = hits + [now]
-    p = _login_progress.get(attempt)
-    # ponytail: entries purged when >10min old; fine for a ~5-30s flow
-    if p and now - p["ts"] > 600:
-        _login_progress.pop(attempt, None)
-        p = None
-    return {"step": p["step"], "pct": p["pct"]} if p else {"step": "", "pct": 0}
+    step, pct = progress.read(attempt)   # prunes the key when stale
+    return {"step": step, "pct": pct}
 
 # ── Timetable API ───────────────────────────────────────────────
 def _load_personal(netid):
