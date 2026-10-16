@@ -29,7 +29,6 @@ import math
 import os
 import re
 import secrets
-import sqlite3
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -43,6 +42,55 @@ from flask import Flask, g, has_request_context, make_response, redirect, render
 from werkzeug.exceptions import HTTPException
 
 from . import metrics, push_calc, push_send, push_store
+from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scripts/tests
+    SQLITE_TIMEOUT_SECS,
+    append_edit_log,
+    clear_official_stamp,
+    close_db,
+    component_tags,
+    connect,
+    create_session,
+    day_slots,
+    db,
+    delete_account_rows,
+    delete_cookie,
+    delete_portal_session,
+    edit_log_entries,
+    get_cookie,
+    get_portal_session,
+    group_id,
+    group_ids_for,
+    group_slots,
+    group_subjects,
+    insert_usage_event,
+    official_times,
+    ping,
+    pop_cookie,
+    prune_push_sent_log,
+    prune_usage_events,
+    replace_group_slots,
+    save_portal_session,
+    set_cold_fetch,
+    set_official_times,
+    slots_for_groups,
+    transaction,
+    tt_fetched_at,
+    upsert_component_tag,
+    upsert_group,
+    upsert_subject,
+    user_cold_fetch,
+    user_dashboard,
+    user_feedback,
+    user_last_fetch,
+    user_marks,
+    user_marks_personal,
+    user_password,
+    user_personal,
+    user_sync_state,
+    users_group_keys,
+    weekly_slot_counts,
+    write_user_sync,
+)
 from .logging_setup import log_with_kv, setup_logging
 from .migrations import migrate_db
 from .portal.parsers.attendance import parse_attendance
@@ -124,6 +172,9 @@ SECRET = open(_secret_path).read().strip()
 # so that function never ran anywhere: no Service-Worker-Allowed header, no
 # intended cache policy. Nothing calls url_for('static'), so removal is safe.
 app = Flask(__name__, static_folder=None)
+# one request-scoped connection per request, closed when the app context
+# pops — including when a handler raises (app/db.py close_db).
+app.teardown_appcontext(close_db)
 app.secret_key = SECRET
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
 
@@ -206,78 +257,57 @@ def _import_legacy_timetable():
     if not json_path: return
     # audit B11: open+parse INSIDE the try — a corrupt legacy timetable.json
     # used to escape init_db() at import time and crash-loop the container
-    c = db()
     try:
-        with open(json_path) as f:
-            data = json.load(f)
-        # Infer group from the imported timetable's known cohort data
-        group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
-        c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
-                  "VALUES(?,?,?,?,?)", (group_key, "B.Tech.-CSE Cloud Computing", 2025, 3, "A"))
-        gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()[0]
-        c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
-        # Import subjects from attendance data
-        for u in c.execute("SELECT personal_details_json, attendance_json FROM users").fetchall():
-            if u[0]:
-                pd = json.loads(u[0])
-                gk = _group_key(pd)
-                if gk == group_key and u[1]:
-                    att = json.loads(u[1])
-                    seen = set()
-                    for course in att.get("courses", []):
-                        code = course.get("code", "")
-                        if code and code not in seen:
-                            seen.add(code)
-                            c.execute("INSERT OR IGNORE INTO timetable_subjects(group_id,code,name,credits,is_custom) "
-                                      "VALUES(?,?,?,0,0)", (gid, code, course.get("description","")))
-        # Import slots from JSON. Rows include BREAK/LUNCH entries — those are
-        # rendered as dividers from SLOTS, NOT stored as class periods. Map each
-        # class row to its period by START TIME (SLOTS defines the grid); the old
-        # index→period mapping shifted classes after breaks and clamped the
-        # 8th row away (AWS/VA vanished from Thu/Tue).
-        _slot_start = {s["start"]: s["period"] for s in SLOTS if s["type"] == "class"}
-        for day, slots in data.items():
-            for s in slots:
-                per = _slot_start.get(s.get("start", ""))
-                if not per:
-                    continue  # break/lunch rows or unknown times
-                c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
-                          "VALUES(?,?,?,?,?,?,'manual')", (gid, day, per, s.get("code",""), s.get("name",""), s.get("location","")))
-        # legacy rows are manual: drop any official stamp (rows+times must agree)
-        c.execute("UPDATE timetable_groups SET official_times='', tt_fetched_at=0 WHERE id=?", (gid,))
-        c.commit()
+        with transaction() as c:
+            with open(json_path) as f:
+                data = json.load(f)
+            # Infer group from the imported timetable's known cohort data
+            group_key = "Computer Science and Engineering Cloud Computing_2025_3_A"
+            c.execute("INSERT OR IGNORE INTO timetable_groups(group_key,program,batch,semester,section) "
+                      "VALUES(?,?,?,?,?)", (group_key, "B.Tech.-CSE Cloud Computing", 2025, 3, "A"))
+            gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()[0]
+            c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
+            # Import subjects from attendance data
+            for u in c.execute("SELECT personal_details_json, attendance_json FROM users").fetchall():
+                if u[0]:
+                    pd = json.loads(u[0])
+                    gk = _group_key(pd)
+                    if gk == group_key and u[1]:
+                        att = json.loads(u[1])
+                        seen = set()
+                        for course in att.get("courses", []):
+                            code = course.get("code", "")
+                            if code and code not in seen:
+                                seen.add(code)
+                                c.execute("INSERT OR IGNORE INTO timetable_subjects(group_id,code,name,credits,is_custom) "
+                                          "VALUES(?,?,?,0,0)", (gid, code, course.get("description","")))
+            # Import slots from JSON. Rows include BREAK/LUNCH entries — those are
+            # rendered as dividers from SLOTS, NOT stored as class periods. Map each
+            # class row to its period by START TIME (SLOTS defines the grid); the old
+            # index→period mapping shifted classes after breaks and clamped the
+            # 8th row away (AWS/VA vanished from Thu/Tue).
+            _slot_start = {s["start"]: s["period"] for s in SLOTS if s["type"] == "class"}
+            for day, slots in data.items():
+                for s in slots:
+                    per = _slot_start.get(s.get("start", ""))
+                    if not per:
+                        continue  # break/lunch rows or unknown times
+                    c.execute("INSERT OR IGNORE INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
+                              "VALUES(?,?,?,?,?,?,'manual')", (gid, day, per, s.get("code",""), s.get("name",""), s.get("location","")))
+            # legacy rows are manual: drop any official stamp (rows+times must agree)
+            c.execute("UPDATE timetable_groups SET official_times='', tt_fetched_at=0 WHERE id=?", (gid,))
         os.rename(json_path, json_path + ".bak")   # only consume on success
     except Exception:
         log.exception("legacy timetable import failed")
-    c.close()
 
-# sqlite: every connection in the app funnels through db() (migrations and
-# push_store.get_conn() both call it). One knob pair here therefore covers
-# all three connection sites. timeout is sqlite3's per-statement lock wait;
-# busy_timeout is the PRAGMA twin — set both so the value holds even for
-# statements sqlite3's timeout does not cover.
-SQLITE_TIMEOUT_SECS = 10
-_journal_mode = os.environ.get("SQLITE_JOURNAL_MODE", "delete").strip().lower()
-if _journal_mode not in ("delete", "wal", "truncate", "persist", "off", "memory"):
-    _journal_mode = "delete"  # unknown value -> today's default, never fail boot
-
-def db():
-    c = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT_SECS)
-    c.row_factory = sqlite3.Row
-    c.execute(f"PRAGMA busy_timeout={SQLITE_TIMEOUT_SECS * 1000}")
-    # journal_mode persists in the DB file; set it explicitly on every
-    # connect so an env flip (wal<->delete) takes effect on the next boot
-    # without a manual sqlite3 shell session.
-    mode = c.execute(f"PRAGMA journal_mode={_journal_mode}").fetchone()[0]
-    if mode.lower() != _journal_mode:
-        log.warning("sqlite journal_mode %r requested but active mode is %r",
-                    _journal_mode, mode)
-    if _journal_mode == "wal":
-        c.execute("PRAGMA synchronous=NORMAL")  # WAL-safe durability trade
-    return c
+# sqlite: connection policy (SQLITE_TIMEOUT_SECS=10, busy_timeout,
+# SQLITE_JOURNAL_MODE), the request-scoped connection, transactions and the
+# repository layer all live in app/db.py — connect() is the raw factory.
+# DB_PATH below is read by db.connect() per call (tests repoint it here).
+# db + SQLITE_TIMEOUT_SECS are re-exported for scripts and tests.
 
 def init_db():
-    c = db()
+    c = connect()
     migrate_db(c)  # versioned migration system — handles all schema upgrades
     _import_legacy_timetable()
     c.close()
@@ -300,22 +330,19 @@ def get_current_user():
     # the raw token, the DB never does, so a leaked srm.db cannot be replayed
     # as a live session. Every read/prune/delete path hashes to match.
     digest = hashlib.sha256(token.encode()).hexdigest()
-    c = db()
-    row = c.execute("SELECT netid, created FROM cookies WHERE token=?", (digest,)).fetchone()
+    row = get_cookie(digest)
     if row and time.time() - row["created"] > SESSION_MAX_AGE:
         # audit 2026-09-27: enforce expiry at READ time. Previously pruning
         # happened only inside make_session_token() (i.e. when that same user
         # logged in again), so a leaked srm_session cookie stayed valid
         # server-side indefinitely — the 30-day client cookie was the only cap.
-        c.execute("DELETE FROM cookies WHERE token=?", (digest,))
-        c.commit()
+        delete_cookie(digest)
         row = None
-    c.close()
     return row["netid"] if row else None
 
 def make_session_token(netid):
     token = secrets.token_hex(32)
-    c = db()
+    now = int(time.time())
     # incident 2026-10-10: this previously ran `DELETE FROM cookies WHERE
     # netid=?` — one session per account, globally. Every login on any device
     # silently evicted every other device's session: over Sep 22 - Oct 10 the
@@ -323,13 +350,11 @@ def make_session_token(netid):
     # were its OWN earlier login killing the current session (33 from a
     # different IP = cross-device). Sessions are now concurrent per account,
     # each still bounded by SESSION_MAX_AGE at read time.
-    c.execute("DELETE FROM cookies WHERE created < ?", (int(time.time()) - SESSION_MAX_AGE,))
     # v1.20.3: store sha256(token); the caller/browser keeps the raw token
     # (contract: make_session_token still returns it), so the value at rest
     # is useless to anyone holding the DB but not the cookie.
-    c.execute("INSERT INTO cookies(token,netid,created) VALUES(?,?,?)",
-              (hashlib.sha256(token.encode()).hexdigest(), netid, int(time.time())))
-    c.commit(); c.close()
+    create_session(hashlib.sha256(token.encode()).hexdigest(), netid, now,
+                   now - SESSION_MAX_AGE)
     return token
 
 def require_login(f):
@@ -423,10 +448,7 @@ def _save_session(netid, cookies_json):
     cookies sat in plaintext next to the encrypted passwords, so a stolen
     srm.db + fernet.key pair still handed over authenticated portal
     sessions)."""
-    c = db()
-    c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
-              (netid, encrypt_pw(cookies_json), int(time.time())))
-    c.commit(); c.close()
+    save_portal_session(netid, encrypt_pw(cookies_json), int(time.time()))
 
 def _load_session(netid):
     """Load cached portal cookies if still valid (< TTL).
@@ -434,9 +456,7 @@ def _load_session(netid):
     audit run-1: decrypts rows written by _save_session; rows written before
     the encryption change (plaintext JSON) are returned as-is and become
     encrypted on their next save, so existing sessions keep working."""
-    c = db()
-    row = c.execute("SELECT cookies_json, created FROM portal_sessions WHERE netid=?", (netid,)).fetchone()
-    c.close()
+    row = get_portal_session(netid)
     if not row: return None
     if time.time() - row["created"] > _SESSION_CACHE_TTL:
         _clear_session(netid)  # expired rows are useless — stop storing dead cookie blobs
@@ -453,9 +473,7 @@ def _load_session(netid):
 
 def _clear_session(netid):
     """Remove cached portal cookies (on failed session restore)."""
-    c = db()
-    c.execute("DELETE FROM portal_sessions WHERE netid=?", (netid,))
-    c.commit(); c.close()
+    delete_portal_session(netid)
 
 # ── Login progress (in-memory; single worker) ────────────────────────
 # audit run-1 (#13): keyed by an unforgeable per-browser attempt token (not
@@ -1268,9 +1286,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                    "clear_session": _clear_session, "set_progress": _progress_pub}
         # Hot/cold split: cold data (personal/courses) re-fetched only when
         # stale >24h; hot (attendance/marks) always.
-        c = db()
-        row = c.execute("SELECT cold_fetch FROM users WHERE netid=?", (netid,)).fetchone()
-        c.close()
+        row = user_cold_fetch(netid)
         cold = True
         if row and row["cold_fetch"] and time.time() - row["cold_fetch"] < 24 * 3600:
             cold = False
@@ -1305,9 +1321,7 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                     _charge_rate(netid)
                 if res.get("ok") and cold:
                     try:
-                        c = db()
-                        c.execute("UPDATE users SET cold_fetch=? WHERE netid=?", (int(time.time()), netid))
-                        c.commit(); c.close()
+                        set_cold_fetch(netid, int(time.time()))
                     except Exception as e:
                         log.debug("cold_fetch update failed err=%r", e)
                 return _sync_result("http", res, t_sync)
@@ -1392,18 +1406,7 @@ def _bunk_line(attended, max_hours, threshold=ATTENDANCE_TARGET):
 def _weekly_slots(group_key):
     """w = weekly slot count per subject_code, scoped to THIS user's group [F4].
     Precedent: _day_slots / timetable_html / /api/timetable all scope by group_id."""
-    if not group_key:
-        return {}
-    c = db()
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
-    out = {}
-    if gid:
-        out = {r[0]: r[1] for r in c.execute(
-            "SELECT subject_code, COUNT(*) FROM timetable_slots "
-            "WHERE group_id=? AND subject_code IS NOT NULL AND subject_code != '' "
-            "GROUP BY subject_code", (gid[0],))}
-    c.close()
-    return out
+    return weekly_slot_counts(group_key)
 
 
 def _norm_subject(s):
@@ -1660,10 +1663,7 @@ def _prune_usage_events(now=None):
         _usage_prune_last = now
     days = _usage_retention_days()
     try:
-        c = db()
-        cur = c.execute("DELETE FROM usage_events WHERE ts < ?", (int(now) - days * 86400,))
-        n = cur.rowcount
-        c.commit(); c.close()
+        n = prune_usage_events(int(now) - days * 86400)
     except Exception as e:
         log.info("usage_events prune failed error=%r", e)
         return -1
@@ -1678,10 +1678,7 @@ def _track(event, target="", detail="", user=""):
     in the DB; never passwords, tokens, or portal payloads. ponytail:
     plain INSERT, no batching — a few rows/day at this scale."""
     try:
-        c = db()
-        c.execute("INSERT INTO usage_events(day, user, event, target, detail) VALUES(?,?,?,?,?)",
-                  (time.strftime("%Y-%m-%d"), user, event, target[:64], detail[:64]))
-        c.commit(); c.close()
+        insert_usage_event(time.strftime("%Y-%m-%d"), user, event, target, detail)
         _prune_usage_events()   # at most once a day (no-op otherwise)
     except Exception as e:
         # INFO, not debug: a permanently broken usage_events table (lock
@@ -1700,10 +1697,8 @@ def index():
         # race: require_login validated, then the row vanished before this
         # re-read (logout in another tab mid-request) — redirect, not 500.
         return redirect("/login")
-    c = db()
     # one row read: marks/faculty live on the same users row (was three queries)
-    row = c.execute("SELECT attendance_json, last_fetch, personal_details_json, exam_schedule_json, marks_json, faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
-    c.close()
+    row = user_dashboard(netid)
     _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
                   {"courses": [], "monthly": [], "period": None, "daily_absent": {}})
@@ -1987,19 +1982,7 @@ def _teacher_groups(faculty):
 
 def _day_slots(group_key):
     """group_key -> {day: {period: slot}} or None when no timetable exists."""
-    if not group_key:
-        return None
-    c = db()
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
-    if not gid:
-        c.close()
-        return None
-    day_slots = {}
-    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid[0],)):
-        if r[0] not in day_slots: day_slots[r[0]] = {}
-        day_slots[r[0]][r[1]] = {"code": r[2], "name": r[3], "location": r[4] or ""}
-    c.close()
-    return day_slots
+    return day_slots(group_key)
 
 def _tt_grid(group_key):
     """Resolved weekly TIME grid for a group — same row shape SLOTS has
@@ -2017,14 +2000,11 @@ def _tt_grid(group_key):
     TIMETABLE_SOURCE = "manual" is the ops escape hatch: always SLOTS."""
     if TIMETABLE_SOURCE != "official":
         return SLOTS
-    c = db()
-    row = c.execute("SELECT official_times FROM timetable_groups WHERE group_key=?",
-                    (group_key,)).fetchone()
-    c.close()
-    if not row or not row[0]:
+    raw_txt = official_times(group_key)
+    if not raw_txt:
         return SLOTS
     try:
-        raw = json.loads(row[0])
+        raw = json.loads(raw_txt)
         parsed = []
         for k in raw:
             p = int(k)
@@ -2055,11 +2035,8 @@ def _tt_grid(group_key):
 
 def _tt_fetched_at(group_key):
     """Epoch of the last official timetable sync for this group (0 = never)."""
-    c = db()
-    r = c.execute("SELECT tt_fetched_at FROM timetable_groups WHERE group_key=?",
-                  (group_key,)).fetchone()
-    c.close()
-    return int(r[0]) if r and r[0] else 0
+    v = tt_fetched_at(group_key)
+    return int(v) if v else 0
 
 def _save_timetable_group(netid, res):
     """Upsert the student's timetable group + scraped subjects, then persist the
@@ -2080,9 +2057,7 @@ def _save_timetable_group(netid, res):
     try:
         personal = dict(res.get("personal") or {})
         if not personal:
-            c0 = db()
-            prow = c0.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
-            c0.close()
+            prow = user_personal(netid)
             try:
                 personal = json.loads(prow[0]) if prow and prow[0] else {}
             except Exception:
@@ -2090,45 +2065,33 @@ def _save_timetable_group(netid, res):
         gk = _group_key(personal)
         if not gk:
             return
-        c2 = db()
-        c2.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
-                   "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
-                   (gk, personal.get("Program", ""), int(personal.get("Batch", 0) or 0),
-                    _semester_int(personal.get("Semester", "")), personal.get("Section", "")))
-        gid = c2.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
-        for sub in res.get("courses") or []:
-            c2.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
-                       "VALUES(?,?,?,?,0) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
-                       (gid, sub["code"], sub["name"], sub["credits"]))
-        tt = res.get("timetable")
-        if isinstance(tt, dict) and tt.get("grid"):
-            old_loc = {(r[0], r[1]): (r[2], r[3]) for r in c2.execute(
-                "SELECT day,period,subject_code,location FROM timetable_slots "
-                "WHERE group_id=? AND COALESCE(location,'')!=''", (gid,))}
-            known = {r[0]: r[1] for r in c2.execute(
-                "SELECT code,name FROM timetable_subjects WHERE group_id=?", (gid,))}
-            legend = tt.get("legend") or {}
-            c2.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
-            n = 0
-            for day, slots in tt["grid"].items():
-                for p, code in slots.items():
-                    if not code:
-                        continue
-                    # same rule as the editor path (app.py:~3020): carry the
-                    # room forward only while the slot's CODE is unchanged —
-                    # a swapped subject drops the old room (review #3)
-                    prev = old_loc.get((day, int(p)))
-                    loc = prev[1] if prev and prev[0] == code else ""
-                    c2.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
-                               "VALUES(?,?,?,?,? ,?,'official')",
-                               (gid, day, int(p), code,
-                                legend.get(code) or known.get(code) or code, loc))
-                    n += 1
-            c2.execute("UPDATE timetable_groups SET official_times=?, tt_fetched_at=? WHERE group_key=?",
-                       (json.dumps({str(k): v for k, v in sorted(tt["times"].items())}),
-                        int(time.time()), gk))
-            log.debug("timetable official save netid=%s group=%s rows=%d", netid, gk, n)
-        c2.commit(); c2.close()
+        with transaction():
+            upsert_group(gk, personal.get("Program", ""), int(personal.get("Batch", 0) or 0),
+                         _semester_int(personal.get("Semester", "")), personal.get("Section", ""))
+            gid = group_id(gk)
+            for sub in res.get("courses") or []:
+                upsert_subject(gid, sub["code"], sub["name"], sub["credits"], 0)
+            tt = res.get("timetable")
+            if isinstance(tt, dict) and tt.get("grid"):
+                old_loc = {(r[0], r[1]): (r[2], r[4]) for r in group_slots(gid) if r[4]}
+                known = {r[0]: r[1] for r in group_subjects(gid)}
+                legend = tt.get("legend") or {}
+                rows = []
+                for day, slots in tt["grid"].items():
+                    for p, code in slots.items():
+                        if not code:
+                            continue
+                        # same rule as the editor path (app.py:~3020): carry the
+                        # room forward only while the slot's CODE is unchanged —
+                        # a swapped subject drops the old room (review #3)
+                        prev = old_loc.get((day, int(p)))
+                        loc = prev[1] if prev and prev[0] == code else ""
+                        rows.append((day, int(p), code,
+                                     legend.get(code) or known.get(code) or code, loc))
+                replace_group_slots(gid, rows, "official")
+                set_official_times(gk, json.dumps({str(k): v for k, v in sorted(tt["times"].items())}),
+                                   int(time.time()))
+                log.debug("timetable official save netid=%s group=%s rows=%d", netid, gk, len(rows))
     except Exception as e:
         log.warning("timetable group/subject save failed netid=%s: %r", netid, e, exc_info=True)
 
@@ -2153,24 +2116,21 @@ def timetable_html(group_key, attendance=None):
                 ""
                 "<div><strong>No timetable found</strong>"
                 "<div class=\"tt-hero-sub\">No timetable exists for your group yet.</div></div></div></div>")
-    c = db()
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (group_key,)).fetchone()
-    if not gid:
-        c.close()
+    gid = group_id(group_key)
+    if gid is None:
         return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
                 ""
                 "<div><strong>No timetable set</strong>"
                 "<div class=\"tt-hero-sub\">Your group has no timetable. Use the editor to build one.</div></div></div></div>")
-    gid = gid[0]
     day_slots = {}
     # attendance join (spec §4): custom short-circuits BEFORE any name match —
     # a custom subject typed with a portal-matching name must never join.
     custom_codes = set()
     if attendance:
-        for r in c.execute("SELECT code FROM timetable_subjects WHERE group_id=? AND is_custom=1", (gid,)):
-            if r[0]:
+        for r in group_subjects(gid):
+            if r[3] and r[0]:
                 custom_codes.add(r[0])
-    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
+    for r in group_slots(gid):
         if r[0] not in day_slots: day_slots[r[0]] = {}
         # audit 2026-09-27: slots are written by ANY user of the group via
         # /api/timetable and rendered with {{ timetable | safe }} — escape at
@@ -2181,7 +2141,6 @@ def timetable_html(group_key, attendance=None):
                                  "location": _hesc(str(r[4] or ""))}
         # raw (unescaped) pair for the join + sig lookup; rendered values above stay escaped
         day_slots[r[0]][r[1]]["_att"] = _join_attendance(attendance, custom_codes, str(r[2] or ""), str(r[3] or ""))
-    c.close()
     # If no slots at all, show empty state
     has_slots = any(day_slots.get(d) for d in DAY_ORDER)
     if not has_slots:
@@ -2300,9 +2259,7 @@ def api_marks():
     netid = get_current_user()
     if not netid:
         return {"ok": False, "error": "not logged in"}, 401
-    c = db()
-    row = c.execute("SELECT marks_json FROM users WHERE netid=?", (netid,)).fetchone()
-    c.close()
+    row = user_marks(netid)
     marks = _jload(row["marks_json"] if row else None, [])
     return {"ok": True, "marks": marks}
 
@@ -2319,9 +2276,7 @@ def api_feedback_fill():
     netid = get_current_user()
     if not netid:
         return {"ok": False, "error": "not logged in"}, 401
-    c = db()
-    row = c.execute("SELECT faculty_map_json, fb_open FROM users WHERE netid=?", (netid,)).fetchone()
-    c.close()
+    row = user_feedback(netid)
     # archived while the window is closed: refuse BEFORE any portal contact
     # (a stale open flag would otherwise burn a session rebuild + login just
     # to be told "Service closed" by the portal).
@@ -2394,11 +2349,7 @@ def _load_component_tags(class_key, marks):
               for s in marks for c in s.get("components", [])}
     if not wanted:
         return {}
-    q = ",".join("?" * len(wanted))
-    c = db()
-    rows = c.execute(f"SELECT tag_key, role, raw_max, scaled_max FROM component_tags "
-                     f"WHERE tag_key IN ({q})", list(wanted)).fetchall()
-    c.close()
+    rows = component_tags(wanted)
     return {wanted[r[0]]: {"role": r[1], "raw_max": r[2], "scaled_max": r[3]} for r in rows}
 
 
@@ -2789,25 +2740,12 @@ def persist_sync(netid, res, password=None):
     (UPDATE in place, stored password untouched). Ordering and the
     post-commit thread start are kept from both routes.
     """
-    c = db()
-    existing = c.execute("SELECT personal_details_json, subjects_json, exam_schedule_json, marks_json, faculty_map_json, fb_open, attendance_json FROM users WHERE netid=?", (netid,)).fetchone()
+    existing = user_sync_state(netid)
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
      fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res, netid=netid)
-    if password is None:
-        c.execute("UPDATE users SET attendance_json=?, last_fetch=?, personal_details_json=?, marks_json=?, subjects_json=?, exam_schedule_json=?, faculty_map_json=?, fb_open=? WHERE netid=?",
-                  # audit run-1: attendance goes through the preserve merge (was
-                  # json.dumps(res["data"]) — wholesale wipe on partial responses);
-                  # subjects_json was ALSO discarded here despite the merge (R1)
-                  (attendance_json, res["fetched"], personal_json,
-                   marks_json, subjects_json, exams_json, faculty_json, fb_open, netid))
-    else:
-        # photo_b64 dropped: write-only since photo scraping was removed Sep 25 2026
-        c.execute("INSERT INTO users(netid,password,attendance_json,last_fetch,personal_details_json,marks_json,subjects_json,exam_schedule_json,faculty_map_json,fb_open) VALUES(?,?,?,?,?,?,?,?,?,?) "
-                  "ON CONFLICT(netid) DO UPDATE SET password=excluded.password, attendance_json=excluded.attendance_json, marks_json=excluded.marks_json, subjects_json=excluded.subjects_json, "
-                  "last_fetch=excluded.last_fetch, personal_details_json=excluded.personal_details_json, exam_schedule_json=excluded.exam_schedule_json, faculty_map_json=excluded.faculty_map_json, fb_open=excluded.fb_open",
-                  (netid, encrypt_pw(password), attendance_json, res["fetched"],
-                   personal_json, marks_json, subjects_json, exams_json, faculty_json, fb_open))
-    c.commit(); c.close()
+    write_user_sync(netid, encrypt_pw(password) if password is not None else None,
+                    attendance_json, res["fetched"], personal_json, marks_json,
+                    subjects_json, exams_json, faculty_json, fb_open)
     # one-shot exam pushes (official release / room allotment): post-commit,
     # background thread — detection already read pre-write rows, and the
     # single gunicorn worker must not wait on a push round-trip
@@ -2928,9 +2866,7 @@ def _last_sync_age(netid):
     persist_sync from the fetch completion time). None = never synced or
     unreadable → no cache, always sync."""
     try:
-        c = db()
-        row = c.execute("SELECT last_fetch FROM users WHERE netid=?", (netid,)).fetchone()
-        c.close()
+        row = user_last_fetch(netid)
         fetched = int(row["last_fetch"] or 0) if row else 0
     except Exception as e:
         log.debug("last_fetch read failed netid=%s err=%r", netid, e)
@@ -2964,9 +2900,7 @@ def api_refresh():
     netid = get_current_user()
     if not netid:
         return {"ok": False, "error": "not logged in"}, 401
-    c = db()
-    row = c.execute("SELECT password FROM users WHERE netid=?", (netid,)).fetchone()
-    c.close()
+    row = user_password(netid)
     if not row:
         log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
         return {"ok": False, "error": "no stored creds"}, 401
@@ -3147,9 +3081,7 @@ def _load_personal(netid):
     One shared decode — was copy-pasted (with a different comment) across the
     three timetable routes."""
     try:
-        c = db()
-        r = c.execute("SELECT personal_details_json FROM users WHERE netid=?", (netid,)).fetchone()
-        c.close()
+        r = user_personal(netid)
         v = json.loads(r[0]) if r and r[0] else {}
         return v if isinstance(v, dict) else {}
     except Exception as e:  # corrupt/unreadable row → proceed with empty personal details
@@ -3164,16 +3096,13 @@ def api_get_timetable():
     personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "slots": {}, "subjects": [], "group_key": None}
-    c = db()
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()
-    if not gid: c.close(); return {"ok": True, "slots": {}, "subjects": [], "group_key": gk}
-    gid = gid[0]
+    gid = group_id(gk)
+    if gid is None: return {"ok": True, "slots": {}, "subjects": [], "group_key": gk}
     slots = {}
-    for r in c.execute("SELECT day,period,subject_code,subject_name,location FROM timetable_slots WHERE group_id=?", (gid,)):
+    for r in group_slots(gid):
         slots[str(r[0]) + "-" + str(r[1])] = {"code": r[2], "name": r[3], "location": r[4] or ""}
     subjects = [{"code":r[0], "name":r[1], "credits":r[2], "custom":bool(r[3])}
-                for r in c.execute("SELECT code,name,credits,is_custom FROM timetable_subjects WHERE group_id=?", (gid,))]
-    c.close()
+                for r in group_subjects(gid)]
     return {"ok": True, "slots": slots, "subjects": subjects, "group_key": gk}
 
 def _tt_sort_key(key):
@@ -3208,20 +3137,16 @@ def api_timetable_history():
     personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": True, "entries": []}
-    c = db()
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()
-    if not gid: c.close(); return {"ok": True, "entries": []}
+    gid = group_id(gk)
+    if gid is None: return {"ok": True, "entries": []}
     entries = []
-    for r in c.execute("SELECT editor_netid,editor_name,created_at,changes_json "
-                       "FROM timetable_edit_log WHERE group_id=? ORDER BY id DESC LIMIT 50",
-                       (gid[0],)):
+    for r in edit_log_entries(gid):
         try:
             changes = json.loads(r[3] or "[]")
         except Exception as e:
             log.warning("corrupt timetable edit changes_json: %r", e)
             changes = []
         entries.append({"netid": r[0], "name": r[1] or "", "at": r[2], "changes": changes})
-    c.close()
     return {"ok": True, "entries": entries}
 
 @app.route("/api/timetable", methods=["POST"])
@@ -3237,53 +3162,41 @@ def api_save_timetable():
     personal = _load_personal(netid)
     gk = _group_key(personal)
     if not gk: return {"ok": False, "error": "could not determine group"}, 400
-    c = db()
-    c.execute("INSERT INTO timetable_groups(group_key,program,batch,semester,section) "
-              "VALUES(?,?,?,?,?) ON CONFLICT(group_key) DO UPDATE SET updated_at=excluded.updated_at",
-              (gk, personal.get("Program",""), int(personal.get("Batch",0)),
-               _semester_int(personal.get("Semester","")), personal.get("Section","")))
-    gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (gk,)).fetchone()[0]
-    for sub in custom:
-        c.execute("INSERT INTO timetable_subjects(group_id,code,name,credits,is_custom) "
-                  "VALUES(?,?,?,0,1) ON CONFLICT(group_id,code) DO UPDATE SET name=excluded.name",
-                  (gid, sub["code"], sub["name"]))
-    # audit feature: diff old vs new BEFORE the delete-and-replace so the
-    # shared timetable's edit log records exactly who changed what.
-    old_rows = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or "",
-                                   "location": r[4] or ""}
-                for r in c.execute("SELECT day,period,subject_code,subject_name,location "
-                                   "FROM timetable_slots WHERE group_id=?", (gid,))}
-    old_slots = {k: {"code": v["code"], "name": v["name"]} for k, v in old_rows.items()}
-    new_slots = {}
-    for key, val in slots.items():
-        if val and len(key.rsplit("-", 1)) == 2:
-            new_slots[key] = {"code": str(val.get("code", "")), "name": str(val.get("name", ""))}
-    changes = _tt_diff(old_slots, new_slots)
-    c.execute("DELETE FROM timetable_slots WHERE group_id=?", (gid,))
-    for key, val in new_slots.items():
-        day, period = key.rsplit("-", 1)
-        # fix 2026-10-05: the editor has no location field, so a blind
-        # delete+re-insert used to wipe `location` for the WHOLE group on
-        # every save (proved: 'Test Hall' -> ''). Carry the room forward
-        # while the slot's subject CODE is unchanged; a swapped subject
-        # drops the old room (it belonged to the old class).
-        prev = old_rows.get(key)
-        loc = prev["location"] if prev and prev["code"] == val["code"] else ""
-        c.execute("INSERT INTO timetable_slots(group_id,day,period,subject_code,subject_name,location,source) "
-                  "VALUES(?,?,?,?,?,?,'manual')", (gid, day, int(period), val["code"], val["name"], loc))
-    # rows and official_times must never disagree: these rows are manual, so
-    # drop the official stamp (next sync rewrites rows+stamp together)
-    c.execute("UPDATE timetable_groups SET official_times='', tt_fetched_at=0 WHERE id=?", (gid,))
-    if changes:  # no-op saves stay out of the log
-        c.execute("INSERT INTO timetable_edit_log(group_id,editor_netid,editor_name,changes_json) "
-                  "VALUES(?,?,?,?)",
-                  (gid, netid, str(personal.get("Student Name", "")), json.dumps(changes, ensure_ascii=False)))
-        # ponytail: keep the last 200 entries per group (spam ceiling);
-        # raise the LIMIT if sections start legitimately editing that often
-        c.execute("DELETE FROM timetable_edit_log WHERE group_id=? AND id NOT IN "
-                  "(SELECT id FROM timetable_edit_log WHERE group_id=? ORDER BY id DESC LIMIT 200)",
-                  (gid, gid))
-    c.commit(); c.close()
+    with transaction():
+        upsert_group(gk, personal.get("Program", ""), int(personal.get("Batch", 0)),
+                     _semester_int(personal.get("Semester", "")), personal.get("Section", ""))
+        gid = group_id(gk)
+        for sub in custom:
+            upsert_subject(gid, sub["code"], sub["name"], 0, 1)
+        # audit feature: diff old vs new BEFORE the delete-and-replace so the
+        # shared timetable's edit log records exactly who changed what.
+        old_rows = {f"{r[0]}-{r[1]}": {"code": r[2] or "", "name": r[3] or "",
+                                       "location": r[4] or ""}
+                    for r in group_slots(gid)}
+        old_slots = {k: {"code": v["code"], "name": v["name"]} for k, v in old_rows.items()}
+        new_slots = {}
+        for key, val in slots.items():
+            if val and len(key.rsplit("-", 1)) == 2:
+                new_slots[key] = {"code": str(val.get("code", "")), "name": str(val.get("name", ""))}
+        changes = _tt_diff(old_slots, new_slots)
+        rows = []
+        for key, val in new_slots.items():
+            day, period = key.rsplit("-", 1)
+            # fix 2026-10-05: the editor has no location field, so a blind
+            # delete+re-insert used to wipe `location` for the WHOLE group on
+            # every save (proved: 'Test Hall' -> ''). Carry the room forward
+            # while the slot's subject CODE is unchanged; a swapped subject
+            # drops the old room (it belonged to the old class).
+            prev = old_rows.get(key)
+            loc = prev["location"] if prev and prev["code"] == val["code"] else ""
+            rows.append((day, int(period), val["code"], val["name"], loc))
+        replace_group_slots(gid, rows, "manual")
+        # rows and official_times must never disagree: these rows are manual, so
+        # drop the official stamp (next sync rewrites rows+stamp together)
+        clear_official_stamp(gid)
+        if changes:  # no-op saves stay out of the log
+            append_edit_log(gid, netid, str(personal.get("Student Name", "")),
+                            json.dumps(changes, ensure_ascii=False))
     return {"ok": True}
 
 @app.route("/marks/tag", methods=["POST"])
@@ -3302,9 +3215,7 @@ def marks_tag():
     role = form.get("role")
     if role not in ("IE-1", "IE-2", "none") or not code or not name:
         return redirect("/#marks")
-    c = db()
-    row = c.execute("SELECT marks_json, personal_details_json FROM users WHERE netid=?",
-                    (netid,)).fetchone()
+    row = user_marks_personal(netid)
     try:
         marks = json.loads(row[0]) if row and row[0] else []
         personal = json.loads(row[1]) if row and row[1] else {}
@@ -3313,19 +3224,12 @@ def marks_tag():
     scaled = next((cp.get("max", 0.0) for s in marks if s.get("code") == code
                    for cp in s.get("components", []) if cp.get("name") == name), 0.0)
     if not scaled:
-        c.close()
         return redirect("/#marks")
     # raw_max: the marks the component stands for on paper (50 / 60); 'none'
     # keeps it NULL — the row exists either way, which is what 'confirmed' means.
     raw = {"IE-1": 50.0, "IE-2": 60.0}.get(role)
     key = f"{_class_key(personal, netid)}|{code}|{name}"
-    c.execute("""INSERT INTO component_tags(tag_key, role, raw_max, scaled_max, confirmed_by, updated_at)
-                 VALUES(?,?,?,?,?,?)
-                 ON CONFLICT(tag_key) DO UPDATE SET role=excluded.role, raw_max=excluded.raw_max,
-                 scaled_max=excluded.scaled_max, confirmed_by=excluded.confirmed_by,
-                 updated_at=excluded.updated_at""",
-              (key, role, raw, scaled, netid, int(time.time())))
-    c.commit(); c.close()
+    upsert_component_tag(key, role, raw, scaled, netid, int(time.time()))
     return redirect("/#marks")
 
 # ── Web push: config, tick endpoint ───────────────────────────────────
@@ -3362,16 +3266,13 @@ def _push_groups(netids):
     """netid -> group_key from stored personal details (one query)."""
     if not netids:
         return {}
-    c = db()
-    q = ",".join("?" * len(netids))
     out = {}
-    for r in c.execute(f"SELECT netid, personal_details_json FROM users WHERE netid IN ({q})", list(netids)):
+    for r in users_group_keys(netids):
         try:
             pd = json.loads(r[1]) if r[1] else {}
         except (ValueError, TypeError):
             pd = {}
         out[r[0]] = _group_key(pd)
-    c.close()
     return out
 
 
@@ -3380,16 +3281,12 @@ def _push_timetable(group_keys):
     group_keys = [g for g in group_keys if g]
     if not group_keys:
         return {}
-    c = db()
-    q = ",".join("?" * len(group_keys))
-    gids = {r[0]: r[1] for r in c.execute(f"SELECT id, group_key FROM timetable_groups WHERE group_key IN ({q})", group_keys)}
+    gids = group_ids_for(group_keys)
     out = {}
     if gids:
-        qi = ",".join("?" * len(gids))
-        for r in c.execute(f"SELECT group_id, day, period, subject_code, subject_name, location FROM timetable_slots WHERE group_id IN ({qi})", list(gids)):
+        for r in slots_for_groups(list(gids)):
             day = out.setdefault(gids[r[0]], {}).setdefault(r[1], {})
             day[r[2]] = {"code": r[3] or "", "name": r[4] or "", "location": r[5] or ""}
-    c.close()
     return out
 
 
@@ -3493,10 +3390,7 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
     # read. usage_events retention moved to _prune_usage_events (env-config,
     # default 365d, at most once a day) so a per-minute tick stops paying it.
     try:
-        c = db()
-        c.execute("DELETE FROM push_sent_log WHERE local_date < ?",
-                  (time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)),))
-        c.commit(); c.close()
+        prune_push_sent_log(time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)))
     except Exception as e:
         log_push.warning("log retention prune failed: %r", e)
     stats["took_ms"] = int((time.monotonic() - t0) * 1000)
@@ -3541,11 +3435,7 @@ def healthz():
     Body stays two words: it is served through the tunnel too.
     """
     try:
-        conn = db()
-        try:
-            conn.execute("SELECT 1").fetchone()
-        finally:
-            conn.close()
+        ping()
     except Exception as exc:            # pragma: no cover - failure arm below
         log_with_kv(log_http, logging.ERROR, "healthz failed", error=type(exc).__name__)
         return {"status": "error"}, 503
@@ -3796,45 +3686,7 @@ def account_delete():
         return {"ok": False, "error": "not logged in"}, 401
     if not _check_delete_rate(netid):
         return {"ok": False, "error": "too many delete attempts — try again later"}, 429
-    c = db()
-    counts = {}
-    # cookies: EVERY session of this account (all devices). Rows hold
-    # sha256(token) since migration 17, so the key is the netid — never the
-    # presented raw token, which matches nothing at rest.
-    counts["cookies"] = c.execute("DELETE FROM cookies WHERE netid=?",
-                                  (netid,)).rowcount
-    counts["portal_sessions"] = c.execute(
-        "DELETE FROM portal_sessions WHERE netid=?", (netid,)).rowcount
-    # push_sent_log references subscriptions, not netids: drop the sent
-    # log first (per-subscription), then the subscriptions themselves.
-    counts["push_sent_log"] = c.execute(
-        "DELETE FROM push_sent_log WHERE subscription_id IN "
-        "(SELECT id FROM push_subscriptions WHERE netid=?)", (netid,)).rowcount
-    counts["push_subscriptions"] = c.execute(
-        "DELETE FROM push_subscriptions WHERE netid=?", (netid,)).rowcount
-    counts["push_events"] = c.execute(
-        "DELETE FROM push_events WHERE netid=?", (netid,)).rowcount
-    counts["usage_events"] = c.execute(
-        "DELETE FROM usage_events WHERE user=?", (netid,)).rowcount
-    # timetable_edit_log: this editor's entries go; the shared timetable
-    # groups/slots they edited have no netid and stay.
-    counts["timetable_edit_log"] = c.execute(
-        "DELETE FROM timetable_edit_log WHERE editor_netid=?",
-        (netid,)).rowcount
-    # component_tags is class-scoped (no netid by design): a per-student
-    # fallback key (net:<netid>|...) is private to the account and dies;
-    # a shared row keeps the class-wide confirmation but loses this
-    # student's confirmed_by attribution.
-    counts["component_tags"] = c.execute(
-        "DELETE FROM component_tags WHERE tag_key LIKE 'net:' || ? || '|%'",
-        (netid,)).rowcount
-    counts["component_tags"] += c.execute(
-        "UPDATE component_tags SET confirmed_by='' WHERE confirmed_by=?",
-        (netid,)).rowcount
-    counts["users"] = c.execute("DELETE FROM users WHERE netid=?",
-                                (netid,)).rowcount
-    c.commit()
-    c.close()
+    counts = delete_account_rows(netid)
     log_with_kv(log_auth, logging.INFO, "account delete ok", netid=netid,
                 ip=_client_ip(),
                 counts=",".join(f"{k}={v}" for k, v in counts.items()))
@@ -3880,11 +3732,7 @@ def logout():
     netid = None
     if token:
         digest = hashlib.sha256(token.encode()).hexdigest()
-        c = db()
-        row = c.execute("SELECT netid FROM cookies WHERE token=?", (digest,)).fetchone()
-        netid = row["netid"] if row else None
-        c.execute("DELETE FROM cookies WHERE token=?", (digest,))
-        c.commit(); c.close()
+        netid = pop_cookie(digest)
     # incident logging: real logouts previously left no auth line at all —
     # attribution had to be reconstructed from HTTP 302s + cookie joins.
     log_with_kv(log_auth, logging.INFO, "logout ok", netid=netid or "-",

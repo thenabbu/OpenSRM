@@ -4,8 +4,8 @@
 Under gunicorn gthread (1 worker, 8 threads) concurrent requests share one
 SQLite file; a slow uncommitted write used to starve the next writer past
 python's 5s default busy timeout and surface as `database is locked`.
-db() is the single connection factory (migrations boot and push_store
-get_conn() both route through it), so this suite pins its policy:
+connect() (app/db.py) is the single connection factory — migrations boot and
+push_store.get_conn() both route through it — so this suite pins its policy:
 
   1. every connection waits up to 10s for a lock (old default: 5s)
   2. a 6s held write lock no longer fails a second writer (red baseline:
@@ -73,7 +73,7 @@ bt = c.execute("PRAGMA busy_timeout").fetchone()[0]
 check("db() busy_timeout = 10000ms", bt == 10000, str(bt))
 c.close()
 pbt = push_store.get_conn().execute("PRAGMA busy_timeout").fetchone()[0]
-check("push_store.get_conn() busy_timeout = 10000ms (routes through db())",
+check("push_store.get_conn() busy_timeout = 10000ms (routes through connect())",
       pbt == 10000, str(pbt))
 
 # ── 2. deterministic red test: 6s held write lock ───────────────
