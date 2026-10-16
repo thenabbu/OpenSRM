@@ -75,7 +75,7 @@ Key rules:
 
 ### Architecture
 
-- **Flask + Jinja2** — templates in `app/templates/`, static files in `app/static/`
+- **Flask + Jinja2** — the app boots through `create_app()` in `app/app.py` (data dir, secret key, migrations and the OCR prewarm live in the factory; typed boot config in `app/config.py` reads `DATA_DIR`/`OCR_PREWARM` once per app), templates in `app/templates/`, static files in `app/static/`. The module-level `app = create_app()` keeps the Dockerfile CMD (`app.app:app`) and set-`DATA_DIR`-before-import tests working
 - **Pure code lives outside the monolith** — portal parsers in `app/portal/parsers/`, dashboard view models in `app/views/`; `app.app` re-exports every moved name, so `from app.app import …` and the Dockerfile CMD (`app.app:app`) keep working
 - **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access, all of it in the `app/db.py` repository layer. All connections funnel through `app.db.connect()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly. Request handlers get one request-scoped connection closed by the Flask teardown; multi-statement units use `with transaction():`
 - **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.

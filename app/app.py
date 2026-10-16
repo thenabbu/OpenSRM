@@ -38,10 +38,11 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, g, has_request_context, make_response, redirect, render_template, request
+from flask import Flask, current_app, g, has_app_context, has_request_context, make_response, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from . import metrics, push_calc, push_send, push_store
+from .config import AppConfig
 from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scripts/tests
     SQLITE_TIMEOUT_SECS,
     append_edit_log,
@@ -157,30 +158,39 @@ LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/
 with open(os.path.join(os.path.dirname(__file__), "..", "VERSION")) as _vf:
     APP_VERSION = _vf.read().strip()
 
-DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
-DB_PATH = os.path.join(DATA_DIR, "srm.db")
-_secret_path = os.path.join(DATA_DIR, "secret")
-if not os.path.exists(_secret_path):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(_secret_path, "w") as f:
-        f.write(secrets.token_hex(32))
-    os.chmod(_secret_path, 0o600)
-SECRET = open(_secret_path).read().strip()
+# ── Configuration ───────────────────────────────────────────────────
+# The env is read ONCE into a typed AppConfig (app/config.py); create_app
+# (bottom of file) consumes it and owns every boot side effect (data dir,
+# secret key, migrations, OCR prewarm). The module mirrors below keep the
+# old import-time contract for everything that runs OUTSIDE an app
+# context: db.py's lazy `from .app import DB_PATH` fallback (scripts,
+# background threads) and the DATA_DIR readers (fernet key rotation).
+_default_config = AppConfig.from_env()
+DATA_DIR = _default_config.data_dir
+DB_PATH = _default_config.db_path
 
-# audit 2026-09-27: disable Flask's built-in /static route — it registers the
-# SAME rule as static_no_cache() below and wins the match (registered first),
-# so that function never ran anywhere: no Service-Worker-Allowed header, no
-# intended cache policy. Nothing calls url_for('static'), so removal is safe.
-app = Flask(__name__, static_folder=None)
-# one request-scoped connection per request, closed when the app context
-# pops — including when a handler raises (app/db.py close_db).
-app.teardown_appcontext(close_db)
-app.secret_key = SECRET
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
+
+def _load_secret(secret_path):
+    """One app's session-signing secret: created on first boot, read-only
+    after (moved out of import time into create_app)."""
+    if not os.path.exists(secret_path):
+        with open(secret_path, "w") as f:
+            f.write(secrets.token_hex(32))
+        os.chmod(secret_path, 0o600)
+    return open(secret_path).read().strip()
+
+
+def _active_data_dir():
+    """The data dir that owns the CURRENT work: the serving app's config
+    when a Flask app context is active (per-app fernet keys, the legacy
+    timetable import during create_app), else the module default."""
+    if has_app_context():
+        d = current_app.config.get("DATA_DIR")
+        if d:
+            return d
+    return DATA_DIR
 
 from blobatar.flask import init_app as _init_blobatar
-
-_init_blobatar(app)  # GET /avatar/<name> + `blobatar` Jinja filter
 
 setup_logging()
 log = logging.getLogger("opensrm")
@@ -208,7 +218,7 @@ def fernet_keys():
     parts = [k.strip().encode() for k in os.environ.get("FERNET_KEYS", "").split(",") if k.strip()]
     if parts:
         return parts, True
-    key_path = os.path.join(DATA_DIR, "fernet.key")
+    key_path = os.path.join(_active_data_dir(), "fernet.key")
     if os.path.exists(key_path):
         return [open(key_path, "rb").read()], False
     key = Fernet.generate_key()
@@ -252,7 +262,7 @@ def _import_legacy_timetable():
     Re-runnable: deletes the group's slots first, so a corrected importer
     repairs previously-shifted data on next boot."""
     paths = [os.path.join(os.path.dirname(__file__), "data", "timetable.json"),
-             os.path.join(DATA_DIR, "timetable.json")]
+             os.path.join(_active_data_dir(), "timetable.json")]
     json_path = next((p for p in paths if os.path.exists(p)), None)
     if not json_path: return
     # audit B11: open+parse INSIDE the try — a corrupt legacy timetable.json
@@ -303,7 +313,8 @@ def _import_legacy_timetable():
 # sqlite: connection policy (SQLITE_TIMEOUT_SECS=10, busy_timeout,
 # SQLITE_JOURNAL_MODE), the request-scoped connection, transactions and the
 # repository layer all live in app/db.py — connect() is the raw factory.
-# DB_PATH below is read by db.connect() per call (tests repoint it here).
+# connect() resolves the DB per app (app.config["DB_PATH"] inside an app
+# context) and falls back to module DB_PATH above (tests/scripts repoint it).
 # db + SQLITE_TIMEOUT_SECS are re-exported for scripts and tests.
 
 def init_db():
@@ -1477,11 +1488,9 @@ def _bare(code, reason):
     g._log_reason = reason
     return "", code
 
-@app.before_request
 def _log_request_start():
     request._start_time = time.monotonic()
 
-@app.after_request
 def _log_request(resp):
     duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
     # audit 2026-10-07: 86% of the log file was the docker healthcheck's
@@ -1531,7 +1540,6 @@ _CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # the push tick is secret-header auth, same exemption for the same reason.
 _CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
 
-@app.before_request
 def _cross_site_guard():
     if request.method not in _CROSS_SITE_METHODS:
         return None
@@ -1552,7 +1560,6 @@ def _cross_site_guard():
 
 
 # ── Security headers ───────────────────────────────────────────────
-@app.errorhandler(Exception)
 def _unhandled_error(e):
     """Safety net: one greppable opensrm ERROR line for anything the app
     fails to catch (audit: no handler existed — sqlite lock errors and
@@ -1573,7 +1580,6 @@ def _unhandled_error(e):
                {"Content-Type": "text/html; charset=utf-8"}
     return {"ok": False, "error": "internal server error"}, 500
 
-@app.after_request
 def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
@@ -1689,7 +1695,6 @@ def _track(event, target="", detail="", user=""):
         log.info("usage track failed event=%s error=%r", event, e)
 
 # ── Routes ─────────────────────────────────────────────────
-@app.route("/")
 @require_login
 def index():
     netid = get_current_user()
@@ -2253,7 +2258,6 @@ def timetable_html(group_key, attendance=None):
             + "</div></div>")
 
 
-@app.route("/api/marks")
 @require_login
 def api_marks():
     netid = get_current_user()
@@ -2263,7 +2267,6 @@ def api_marks():
     marks = _jload(row["marks_json"] if row else None, [])
     return {"ok": True, "marks": marks}
 
-@app.route("/api/feedback/fill", methods=["POST"])
 @require_login
 def api_feedback_fill():
     """OPT-IN mid-sem feedback submit (sync only harvests the map read-only).
@@ -2547,7 +2550,6 @@ def _notify_exam_events(netid, events, conf=None, send_batch=None):
     return sent
 
 
-@app.route("/static/<path:filename>")
 def static_no_cache(filename):
     from flask import send_from_directory
     # audit: was hardcoded "/app/app/static" — only worked inside the container
@@ -2604,7 +2606,6 @@ def sync_status(res):
     fallback: 503."""
     return KIND_STATUS.get(res.get("kind"), 503)
 
-@app.route("/login")
 def login():
     if get_current_user(): return redirect("/")
     return render_template("login.html", version=APP_VERSION)
@@ -2757,7 +2758,6 @@ def persist_sync(netid, res, password=None):
     _track("sync_ok", user=netid)
 
 
-@app.route("/api/login", methods=["POST"])
 def api_login():
     # audit: no force=True — require real application/json content-type
     d = request.get_json(silent=True)
@@ -2894,7 +2894,6 @@ def _cached_sync_answer(netid, window):
     return {"ok": True, "cached": True, "age_s": int(age)}
 
 
-@app.route("/api/refresh", methods=["POST"])
 @require_login
 def api_refresh():
     netid = get_current_user()
@@ -2994,7 +2993,6 @@ def _run_preflight(netid):
     finally:
         _scrape_release()   # A10: queue-aware handoff (wakes parked syncs)
 
-@app.route("/api/login/preflight", methods=["POST"])
 def api_login_preflight():
     d = request.get_json(silent=True)
     netid = ((d.get("netid") or "").strip().lower().split("@")[0]
@@ -3049,7 +3047,6 @@ def api_login_preflight():
     log_with_kv(log_auth, logging.DEBUG, "preflight start", netid=netid, ip=ip)
     return {"ok": True}
 
-@app.route("/api/login/progress", methods=["POST"])
 def api_login_progress():
     # audit: GET put netid in the URL (access logs, history, referrers).
     # Mid-login, session auth can't apply — the body keeps it out of logs.
@@ -3089,7 +3086,6 @@ def _load_personal(netid):
         return {}
 
 
-@app.route("/api/timetable", methods=["GET"])
 def api_get_timetable():
     netid = get_current_user()
     if not netid: return {"ok": False, "error": "not logged in"}, 401
@@ -3129,7 +3125,6 @@ def _tt_diff(old, new):
             out.append({**base, "action": "changed", "from": o, "to": n})
     return out
 
-@app.route("/api/timetable/history", methods=["GET"])
 def api_timetable_history():
     """Edit log for the caller's own group (classmates share group_key)."""
     netid = get_current_user()
@@ -3149,7 +3144,6 @@ def api_timetable_history():
         entries.append({"netid": r[0], "name": r[1] or "", "at": r[2], "changes": changes})
     return {"ok": True, "entries": entries}
 
-@app.route("/api/timetable", methods=["POST"])
 def api_save_timetable():
     netid = get_current_user()
     if not netid: return {"ok": False, "error": "not logged in"}, 401
@@ -3199,7 +3193,6 @@ def api_save_timetable():
                             json.dumps(changes, ensure_ascii=False))
     return {"ok": True}
 
-@app.route("/marks/tag", methods=["POST"])
 def marks_tag():
     """Confirm (or refuse) the IE-1/IE-2 tag of one component. Server-side only:
     the scaled max comes from the live portal row, never from the form.
@@ -3398,7 +3391,6 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
     return {"ok": True, **stats}
 
 
-@app.route("/internal/push/tick", methods=["POST"])
 def push_tick():
     """cron-job.org fires this every minute. Secret header, no session;
     wrong/missing secret => bare 401 with no detail (nothing to probe)."""
@@ -3423,7 +3415,6 @@ def push_tick():
 # ── Internal metrics (Prometheus text, secret-header auth) ──────────
 METRICS_HEADER = "X-Metrics-Token"
 
-@app.route("/healthz")
 def healthz():
     """Container healthcheck probe: DB round-trip only.
 
@@ -3442,7 +3433,6 @@ def healthz():
     return {"status": "ok"}
 
 
-@app.route("/internal/metrics")
 def internal_metrics():
     """In-process sync/portal counters as Prometheus text (app/metrics.py).
 
@@ -3489,7 +3479,6 @@ def _push_endpoint_allowed(endpoint):
     return any(host == s or host.endswith("." + s) for s in _PUSH_HOST_SUFFIXES)
 
 
-@app.route("/api/push/status")
 def push_status():
     netid = get_current_user()
     if not netid:
@@ -3512,7 +3501,6 @@ def push_status():
             "lead_choices": list(push_calc.LEAD_CHOICES)}
 
 
-@app.route("/api/push/subscribe", methods=["POST"])
 def push_subscribe():
     netid = get_current_user()
     if not netid:
@@ -3545,7 +3533,6 @@ def push_subscribe():
             "endpoint_hash": _endpoint_hash(endpoint)}
 
 
-@app.route("/api/push/unsubscribe", methods=["POST"])
 def push_unsubscribe():
     netid = get_current_user()
     if not netid:
@@ -3558,7 +3545,6 @@ def push_unsubscribe():
     return {"ok": True, "removed": removed}
 
 
-@app.route("/api/push/settings", methods=["POST"])
 def push_settings():
     netid = get_current_user()
     if not netid:
@@ -3586,7 +3572,6 @@ def push_settings():
     return {"ok": True, "updated": n}
 
 
-@app.route("/api/push/test", methods=["POST"])
 def push_test():
     """Send one real notification to this account's device (receipts prove
     arrival server-side). Rate-limited; works only when the feature is on."""
@@ -3631,7 +3616,6 @@ def push_test():
     return _push_bad("push service error — try again later", 502)
 
 
-@app.route("/api/push/receipt", methods=["POST"])
 def push_receipt():
     """The SW posts this when a test notification actually displayed —
     Navya's server-side proof of device delivery (esp. iOS)."""
@@ -3669,7 +3653,6 @@ def _check_delete_rate(netid):
     return True
 
 
-@app.route("/api/account/delete", methods=["POST"])
 @require_login
 def account_delete():
     """Erase everything this app stores about the signed-in account
@@ -3696,7 +3679,6 @@ def account_delete():
     return resp
 
 
-@app.route("/logout")
 def logout():
     # incident 2026-10-10: this was a state-changing GET and prod sits behind
     # Cloudflare Speed Brain's conservative speculation rules (/*), so the
@@ -3743,10 +3725,84 @@ def logout():
     resp.delete_cookie("srm_session", secure=_cookie_secure(), httponly=True, samesite="Lax")
     return resp
 
-# Pre-warm ddddocr on import so the first real scrape isn't +3s cold.
-threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+# ── Application factory ─────────────────────────────────────────────
+# Import used to be the boot script: data dir + secret at the top, the
+# Flask object right below them, migrations + OCR prewarm at the file
+# bottom. All of it now lives in create_app so a second app (tests) can
+# boot with its own data dir while the module-level `app` below keeps
+# `gunicorn app.app:app` (Dockerfile CMD) and the set-DATA_DIR-before-
+# import test contract working unchanged.
 
-init_db()
+def create_app(config=None):
+    """Build one OpenSRM instance end to end.
+
+    config: an AppConfig (app/config.py); None -> AppConfig.from_env(),
+    which reads the boot env exactly once per app. Side effects live
+    here and only here: data-dir + secret-key creation, schema
+    migrations, and the ddddocr prewarm thread (config.prewarm_ocr,
+    OCR_PREWARM=0 opts out — tests take it).
+    """
+    if config is None:
+        config = AppConfig.from_env()
+    os.makedirs(config.data_dir, exist_ok=True)
+    # audit 2026-09-27: disable Flask's built-in /static route — it registers
+    # the SAME rule as static_no_cache() below and wins the match (registered
+    # first), so that function never ran anywhere: no Service-Worker-Allowed
+    # header, no intended cache policy. Nothing calls url_for('static'), so
+    # removal is safe.
+    a = Flask(__name__, static_folder=None)
+    a.secret_key = _load_secret(config.secret_path)
+    a.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # audit: bound request bodies
+    # per-app resolution targets for db.py (_db_path) and _active_data_dir()
+    a.config["DATA_DIR"] = config.data_dir
+    a.config["DB_PATH"] = config.db_path
+    # one request-scoped connection per request, closed when the app context
+    # pops — including when a handler raises (app/db.py close_db).
+    a.teardown_appcontext(close_db)
+    _init_blobatar(a)  # GET /avatar/<name> + `blobatar` Jinja filter
+    # hooks in the order the decorators used to register them
+    a.before_request(_log_request_start)
+    a.before_request(_cross_site_guard)
+    a.errorhandler(Exception)(_unhandled_error)
+    a.after_request(_log_request)
+    a.after_request(_security_headers)
+    a.add_url_rule("/", view_func=index)
+    a.add_url_rule("/api/marks", view_func=api_marks)
+    a.add_url_rule("/api/feedback/fill", methods=["POST"], view_func=api_feedback_fill)
+    a.add_url_rule("/static/<path:filename>", view_func=static_no_cache)
+    a.add_url_rule("/login", view_func=login)
+    a.add_url_rule("/api/login", methods=["POST"], view_func=api_login)
+    a.add_url_rule("/api/refresh", methods=["POST"], view_func=api_refresh)
+    a.add_url_rule("/api/login/preflight", methods=["POST"], view_func=api_login_preflight)
+    a.add_url_rule("/api/login/progress", methods=["POST"], view_func=api_login_progress)
+    a.add_url_rule("/api/timetable", methods=["GET"], view_func=api_get_timetable)
+    a.add_url_rule("/api/timetable/history", methods=["GET"], view_func=api_timetable_history)
+    a.add_url_rule("/api/timetable", methods=["POST"], view_func=api_save_timetable)
+    a.add_url_rule("/marks/tag", methods=["POST"], view_func=marks_tag)
+    a.add_url_rule("/internal/push/tick", methods=["POST"], view_func=push_tick)
+    a.add_url_rule("/healthz", view_func=healthz)
+    a.add_url_rule("/internal/metrics", view_func=internal_metrics)
+    a.add_url_rule("/api/push/status", view_func=push_status)
+    a.add_url_rule("/api/push/subscribe", methods=["POST"], view_func=push_subscribe)
+    a.add_url_rule("/api/push/unsubscribe", methods=["POST"], view_func=push_unsubscribe)
+    a.add_url_rule("/api/push/settings", methods=["POST"], view_func=push_settings)
+    a.add_url_rule("/api/push/test", methods=["POST"], view_func=push_test)
+    a.add_url_rule("/api/push/receipt", methods=["POST"], view_func=push_receipt)
+    a.add_url_rule("/api/account/delete", methods=["POST"], view_func=account_delete)
+    a.add_url_rule("/logout", view_func=logout)
+    # boot the schema on THIS app's DB: the app context below is what points
+    # db.connect() at config.db_path (per-app resolution in app/db.py).
+    with a.app_context():
+        init_db()
+    if config.prewarm_ocr:
+        # pre-warm ddddocr so the first real scrape isn't +3s cold (was a
+        # module-level thread at import time)
+        threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+    return a
+
+
+app = create_app()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
 

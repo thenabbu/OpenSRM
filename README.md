@@ -57,7 +57,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Backend | Flask 3.1, Python 3.11, gunicorn (gthread, single worker) |
 | Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback |
 | Captcha | ddddocr (self-contained OCR) |
-| Database | SQLite with a versioned migration registry (15 migrations → schema v16) |
+| Database | SQLite with a versioned migration registry (16 migrations → schema v17) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pinned CDN, no build step), vanilla JS, Jinja2 |
 | PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
 | CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` · Scans (gitleaks/pip-audit/trivy, report-only) |
@@ -163,7 +163,7 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph backend["app/ — backend"]
-        APP["app.py<br/>21 routes · auth · rate limits<br/>sync · progress tracker"]
+        APP["app.py<br/>create_app factory · 24 routes<br/>auth · rate limits<br/>sync · progress tracker"]
         PARS["portal/parsers/<br/>attendance · marks · timetable<br/>exams · personal · feedback"]
         VIEWS["views/<br/>budgets · marks IE · ticker<br/>LAYOUT + WIDGETS registries"]
         SCR["http_scraper.py<br/>login · captcha · JSP fetch<br/>exam probe"]

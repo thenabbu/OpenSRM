@@ -50,7 +50,7 @@ chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix
     has('app/app.py', r'zombie double-drive') and has('app/app.py', r'future\.cancel\(\)') and has('app/app.py', r'old_browser, _browser = _browser, None'))
 chk('M9',  "rate checkers atomic under threads (_rate_lock)",
     len(re.findall(r'with _rate_lock', rd('app/app.py'))) >= 2)
-_login_region = region('app/app.py', 'def api_login(', '\n@app.route')
+_login_region = region('app/app.py', 'def api_login(', '\ndef api_refresh')
 chk('M10', "login: creds validated before IP budget burn",
     'password' in _login_region and
     0 < _login_region.find('password') < _login_region.find('Too many login attempts'))

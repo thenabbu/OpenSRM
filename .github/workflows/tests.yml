@@ -54,6 +54,8 @@ jobs:
       # import and the suite seeds its own state.
       - name: verify76 (static checks)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/verify76.py
+      - name: test_app_factory (create_app isolation)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_app_factory.py
       - name: test_exams (end-sem parser)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_exams.py
       - name: test_exams_view (exam card view model)
