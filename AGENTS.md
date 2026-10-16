@@ -12,7 +12,9 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 
 ## Layout
 ```
-app/app.py            # monolith: routes, parsers, session/auth, rate limits
+app/app.py            # routes, session/auth, rate limits, sync orchestration — re-exports every name that moved out
+app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams, personal, feedback (+ shared helpers)
+app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker, LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)

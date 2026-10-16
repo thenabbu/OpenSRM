@@ -153,7 +153,7 @@ Dim with the color modifier, not `opacity-*` (which also fades borders and child
 
 ### 2.6 Status colors
 
-Thresholds live in `app/app.py`: `ATTENDANCE_TARGET = 0.75`, `ATTENDANCE_WARN = 0.65`; `_status_for_pct()` returns `"ok"`, `"warn"`, or `"danger"`.
+Thresholds live in `app/views/attendance.py` (re-exported by `app.app`): `ATTENDANCE_TARGET = 0.75`, `ATTENDANCE_WARN = 0.65`; `_status_for_pct()` returns `"ok"`, `"warn"`, or `"danger"`.
 
 | `status` | Range | Token | Note |
 |---|---|---|---|
@@ -545,7 +545,7 @@ Anatomy — copied from the end-sem card (§4.12): `bg-base-300/40 border border
 
 ### 4.17 Dashboard card/widget engine (v1.16.0)
 
-The Dashboard tab is generated, not hand-written. Three constants in `app/app.py` drive it: **`LAYOUT`** (card registry), **`WIDGETS`** (id → partial + `min_w`), **`NOTICES`** (release notices, newest first). Widget partials live in `app/templates/partials/widgets/*.html`.
+The Dashboard tab is generated, not hand-written. Three constants drive it: **`LAYOUT`** (card registry) and **`WIDGETS`** (id → partial + `min_w`) live in `app/views/layout.py`, **`NOTICES`** (release notices, newest first) in `app/app.py` — all three are re-exported by `app.app`. Widget partials live in `app/templates/partials/widgets/*.html`.
 
 Engine invariants — each is a check in `tests/test_layout.py`:
 

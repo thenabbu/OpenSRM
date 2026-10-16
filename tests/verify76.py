@@ -43,7 +43,7 @@ chk('H5',  "cooldown: per-sync fail-counted context reset per request (init + re
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",
     has('app/app.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
-_pm = region('app/app.py', 'def parse_marks', '\ndef ')
+_pm = region('app/portal/parsers/marks.py', 'def parse_marks', '\ndef ')
 chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks)",
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))
 chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix)",
@@ -57,9 +57,9 @@ chk('M10', "login: creds validated before IP budget burn",
 chk('M11', "session expiry enforced at read (created check)",
     bool(re.search(r'created', region('app/app.py', 'def get_current_user', 'def api_login'))))
 chk('M12', "date cells recognized before score pairs (_DATE_CELL_RE)",
-    has('app/app.py', r'_DATE_CELL_RE') and len(re.findall(r'_DATE_CELL_RE', rd('app/app.py'))) >= 3)
+    has('app/portal/parsers/marks.py', r'_DATE_CELL_RE') and len(re.findall(r'_DATE_CELL_RE', rd('app/portal/parsers/marks.py'))) >= 3)
 chk('M13', "attendance: numeric-column guard vs shifted portal columns",
-    has('app/app.py', r'numeric columns must look numeric') and has('app/app.py', r'fullmatch\(r"-\?'))
+    has('app/portal/parsers/attendance.py', r'numeric columns must look numeric') and has('app/portal/parsers/attendance.py', r'fullmatch\(r"-\?'))
 chk('M14', "aggregate portal budget wired into preflight+login",
     len(re.findall(r'_check_portal_budget', rd('app/app.py'))) >= 3)
 
@@ -87,7 +87,7 @@ chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.gith
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))
-_nt_region = region('app/app.py', 'NOTICES = [', 'def _today_ticker')
+_nt_region = region('app/app.py', 'NOTICES = [', 'def _day_slots')
 _nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
 chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",
     _nt_head is not None and _nt_head.group(1) == _pyv,
