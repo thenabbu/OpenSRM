@@ -17,10 +17,12 @@ connection; on a fresh connection it is the whole transaction (closed here).
 The ContextVar lets repo calls inside a block join that block's connection,
 even outside a request.
 
-Repo functions below are the only place SQL lives — call sites never open or
-close a connection. Background threads get no request context, so every
-connection they take is fresh and closed here; push_store.get_conn() opens via
-connect() and closes itself (its portable-SQL boundary, unchanged).
+Repo functions below own every SQL statement the request paths run — call
+sites never open or close a connection. Two deliberate exceptions keep their
+own statements on connections these primitives manage: the one-time legacy
+timetable importer (app.py boot path) and push_store.py, whose portable-SQL
+boundary opens via connect() and closes itself. Background threads get no
+request context, so every connection they take is fresh and closed here.
 """
 import contextvars
 import itertools
