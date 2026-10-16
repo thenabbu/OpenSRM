@@ -48,8 +48,8 @@ chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))
 chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix)",
     has('app/app.py', r'zombie double-drive') and has('app/app.py', r'future\.cancel\(\)') and has('app/app.py', r'old_browser, _browser = _browser, None'))
-chk('M9',  "rate checkers atomic under threads (_rate_lock)",
-    len(re.findall(r'with _rate_lock', rd('app/app.py'))) >= 2)
+chk('M9',  "rate checkers atomic under threads (lock-guarded)",
+    len(re.findall(r'with (self\.lock|_rate_lock)', rd('app/state.py') + rd('app/app.py'))) >= 2)
 _login_region = region('app/app.py', 'def api_login(', '\ndef api_refresh')
 chk('M10', "login: creds validated before IP budget burn",
     'password' in _login_region and
@@ -122,7 +122,7 @@ chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has
 chk('L39', "HSTS header present (edge-secret gated, not bare cf-ray — audit #18)",
     bool(re.search(r'if _behind_cf\(\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
 chk('L40', "rate dict: prune stale keys, no full clear()",
-    not bool(re.search(r'\.clear\(\)', region('app/app.py', 'def _check_rate', 'def api_login'))) or has('app/app.py', r'_prune|prune'))
+    not bool(re.search(r'\.clear\(\)', region('app/state.py', 'def check', 'def charge'))) or has('app/state.py', r'prune'))
 chk('L41', "dead code: no duplicate threading alias", miss('app/app.py', r'import threading as _tw'))
 chk('L42', "dead code: photo_b64 gone from users SQL (comments excepted)",
     not any('photo_b64' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))

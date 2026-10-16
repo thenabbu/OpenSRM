@@ -113,9 +113,9 @@ finally:
 assert all("Sync in progress" in r["error"] for r in busy), busy
 assert netid not in A._login_attempts, "busy rejections must not consume the quota"
 
-A._portal_cooldown_until = time.time() + 60
+A.portal_health.cooldown_until = time.time() + 60
 cd = A.fetch_attendance(netid, "pw")
-A._portal_cooldown_until = 0
+A.portal_health.cooldown_until = 0
 assert "rate-limiting our server" in cd["error"], cd
 assert netid not in A._login_attempts, "cooldown rejections must not consume the quota"
 

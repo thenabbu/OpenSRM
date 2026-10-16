@@ -163,7 +163,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph backend["app/ — backend"]
-        APP["app.py<br/>create_app factory · views · sync<br/>auth · rate limits · progress tracker"]
+        APP["app.py<br/>create_app factory · views · sync<br/>auth · portal budget · session"]
+        STATE["state.py<br/>rate limits · progress · portal cooldown<br/>one lock + TTL pruning each"]
         BPS["blueprints/<br/>24 routes in 7 route tables<br/>auth dashboard marks timetable<br/>push feedback internal (+security.py)"]
         PARS["portal/parsers/<br/>attendance · marks · timetable<br/>exams · personal · feedback"]
         VIEWS["views/<br/>budgets · marks IE · ticker<br/>LAYOUT + WIDGETS registries"]
@@ -196,6 +197,7 @@ flowchart LR
     DATA[("DATA_DIR<br/>srm.db · fernet.key · secret")]
 
     APP --> SCR
+    APP --> STATE
     APP --> MIG
     APP --> LOG
     APP --> PARS
@@ -267,7 +269,7 @@ No cron is installed — run it by hand or wire your own scheduler.
 
 - Fernet-encrypted passwords at rest; session tokens stored as sha256 digests at rest (raw value only in the browser's cookie); cross-site state-changing requests refused by the Sec-Fetch-Site/Origin guard; `srm_session` cookie is HttpOnly + SameSite=Lax, Secure flag gated on a real `cf-ray` + HTTPS hop
 - CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts) with SRI `integrity` sha384 + `crossorigin` on both CDN tags (a tampered CDN payload fails closed)
-- Rate limiting per netid, per IP, plus an aggregate portal budget (bucketed: login / refresh / preflight), a bounded sync queue (waiters queue with logins ahead of refreshes) and escalating portal cooldown
+- Rate limiting per netid, per IP, plus an aggregate portal budget (bucketed: login / refresh / preflight), a bounded sync queue (waiters queue with logins ahead of refreshes) and escalating portal cooldown — every limit structure is lock-guarded with TTL pruning, so in-memory state stays bounded (memory bound in [SECURITY.md](SECURITY.md))
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses
 - Container runs non-root (uid 10001) behind a read-only rootfs, `cap_drop: ALL` (only `CHOWN`/`SETUID`/`SETGID` added back for the entrypoint), `no-new-privileges`, and `mem_limit`/`pids_limit` from measured RSS; the healthcheck polls `GET /healthz` (`SELECT 1`, no session, no portal contact)
