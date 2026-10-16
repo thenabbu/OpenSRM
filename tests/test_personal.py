@@ -1,5 +1,5 @@
 """Settings-tab personal-details DUT (23 checks): the Settings row list
-(personal-details row + Notifications card + Log out row), the personal row
+(personal-details row + Notifications card + Log out row + Delete my data row), the personal row
 collapsed by default, then the old panel's content inside the row (identity
 header + 4 checkbox collapse groups, responsive group defaults — all open on
 desktop / first on mobile, label-above-value grid with the 0<8<12 spacing
@@ -224,8 +224,9 @@ with sync_playwright() as p:
     page.wait_for_timeout(900)
     s = page.evaluate(STRUCT)
 
-    check('desktop: Settings = personal row + Notifications card + Log out row',
-          s['stackKids'] == ['personal-details', 'push-card', 'a'], str(s['stackKids']))
+    check('desktop: Settings = personal row + Notifications card + Log out row + Delete my data row',
+          s['stackKids'] == ['personal-details', 'push-card', 'a', 'delete-account-btn'],
+          str(s['stackKids']))
     check('desktop: exactly one /logout link, inside Settings, none in navbar',
           s['logoutN'] == 1 and s['logoutInSettings'] and not s['logoutInNavbar'] and s['hasPushCard'],
           f"n={s['logoutN']} inSettings={s['logoutInSettings']} inNavbar={s['logoutInNavbar']}")
@@ -283,7 +284,7 @@ with sync_playwright() as p:
     s = page.evaluate(STRUCT)
     check('mobile: personal row collapsed by default', s['rowChecked'] is False, str(s['rowChecked']))
     check('mobile: same Settings row list, logout only there',
-          s['stackKids'] == ['personal-details', 'push-card', 'a']
+          s['stackKids'] == ['personal-details', 'push-card', 'a', 'delete-account-btn']
           and s['logoutN'] == 1 and s['logoutInSettings'] and not s['logoutInNavbar'],
           f"kids={s['stackKids']} logoutN={s['logoutN']} navbar={s['logoutInNavbar']}")
 

@@ -283,6 +283,46 @@ if (fbSubmit) {
   });
 }
 
+// ── Delete my data (OPT-IN destructive) ──────────────────────────────
+// Same shape as the feedback flow: the settings ROW opens the explainer
+// modal; ONLY the confirm button inside the modal POSTs. Status shows in
+// the modal (+ the global toast on failure); success lands on /login
+// (the server also clears the session cookie).
+var delBtn = document.getElementById('delete-account-btn');
+var delConfirm = document.getElementById('del-confirm');
+if (delBtn) {
+  delBtn.addEventListener('click', function() { document.getElementById('delete-account-modal').showModal(); });
+}
+if (delConfirm) {
+  delConfirm.addEventListener('click', function() {
+    var status = document.getElementById('del-status');
+    delConfirm.disabled = true;
+    status.textContent = 'Erasing your data…';
+    status.className = 'mt-2 text-xs text-base-content/70';
+    fetch('/api/account/delete', {method: 'POST'})
+      .then(function(r) {
+        if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+        return r.json();
+      })
+      .then(function(j) {
+        if (!j.ok) {
+          status.textContent = j.error || 'failed — nothing was removed';
+          status.className = 'mt-2 text-xs text-error';
+          showError('Delete failed: ' + (j.error || 'unknown error'));
+          delConfirm.disabled = false;
+          return;
+        }
+        location.href = '/login';
+      })
+      .catch(function() {
+        status.textContent = 'network error — nothing was removed';
+        status.className = 'mt-2 text-xs text-error';
+        showError('Delete: network error — nothing was removed');
+        delConfirm.disabled = false;
+      });
+  });
+}
+
 // ── Outside-click dismiss for popover <details> (marks tag panel) ────
 // Tap-away is the expected dismiss gesture; without it the panel covers the
 // next card until Save or a re-tap of the pencil — Save must never be the

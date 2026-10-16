@@ -202,7 +202,7 @@ So for badges, buttons, and banners that carry small text:
 |---|---|---|
 | success | `badge-soft` / `btn-soft` / `alert-soft`, **or** solid + `text-accent-content` | soft ≈ 8:1; black on green 10.7:1; default label 1.9:1 |
 | warning | `-soft`, **or** solid + `text-accent-content` | soft ≈ 5.4–6.1:1; black on amber 7.2:1; default label 2.8:1 |
-| error | solid, default label | 4.4:1; `-soft` is weaker (≈ 3.6–4.0:1) |
+| error | solid + `text-base-content` label (measured 4.9:1 — the default `-content` label lands 4.4:1, under AA) | `-soft` is weaker (≈ 3.6–4.0:1) |
 | info | solid + `text-accent-content`, or soft | black 5.1:1; default 3.8:1; soft ≈ 4.0–4.5:1 |
 | secondary | solid + `text-accent-content` | black 5.7:1; default 3.4:1 |
 
@@ -240,7 +240,7 @@ Copy the nearest recipe here or the nearest existing markup in `dashboard.html`.
 | Secondary | `btn btn-outline btn-sm` | Transparent, `base-content` outline |
 | Tertiary / toolbar | `btn btn-ghost btn-sm` | Add `text-base-content/60` for quiet ones |
 | Confirm / save | `btn btn-success btn-sm text-accent-content` | Forces black label; the default label is 1.9:1 (§2.8) |
-| Destructive | `btn btn-error btn-sm` | Pair with a confirm step |
+| Destructive | `btn btn-error btn-sm text-base-content` | Pair with a confirm step; the label override is what clears 4.5:1 (§2.8) |
 | Icon only | `btn btn-ghost btn-sm btn-square` + `aria-label` | Inline SVG inside |
 
 At most one solid button per row; the rest are `btn-outline` or `btn-ghost`. Labels are verb-first ("Edit timetable", "Save").
