@@ -106,6 +106,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/guide_static.py
       - name: test_supply_chain (image tags + scan workflow pins)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_supply_chain.py
+      - name: healthz
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_healthz.py
       - name: test_db_concurrency (db() lock timeout + journal mode)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_concurrency.py
 

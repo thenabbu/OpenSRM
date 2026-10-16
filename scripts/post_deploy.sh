@@ -48,6 +48,16 @@ else
   res PASS deployed "prod image built from origin/main ${HEAD:0:7}"
 fi
 
+# ---- 0.5. GET /healthz: the endpoint the compose healthcheck polls must answer
+if [ "$DO_SMOKE" = 1 ]; then
+  HC=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/healthz")
+  if [ "$HC" = "200" ]; then
+    res PASS healthz "GET /healthz -> 200 (compose healthcheck endpoint is live)"
+  else
+    res FAIL healthz "GET /healthz -> $HC (compose healthcheck expects 200)"
+  fi
+fi
+
 # ---- 1. changed statics: git diff --name-only <merge-base>..origin/main -- app/static
 if [ "$ALL_STATIC" = 1 ]; then
   FILES=$(cd app/static && find . -type f | sed 's|^\./||')

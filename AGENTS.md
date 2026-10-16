@@ -16,7 +16,7 @@ app/app.py            # monolith: routes, parsers, session/auth, rate limits
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs at import (DATA_DIR)
 app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
-tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + guide_* (login UX guide suites)
+tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + test_healthz (container probe) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 docs/                 # audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
 scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
@@ -73,6 +73,7 @@ The trailing `# [runner]` column says which CI job runs that suite — `.github/
 .venv/bin/python tests/test_push_tick.py  # [unit] 21/21 (secret auth, dry-run, allowlist, deadline cut-off, overlap)
 .venv/bin/python tests/test_push_api.py   # [unit] 42/42 (401 style, validation, DB rate caps, test/receipt flows, per-type notification prefs)
 .venv/bin/python tests/test_supply_chain.py  # [unit] 26/26 (compose OPENSRM_TAG pin + byte-identical :latest default, build.yml VERSION tag + OCI version/revision labels, scans.yml report-only + SHA-pinned actions, SCANS.md flip-to-blocking docs) — no server
+.venv/bin/python tests/test_healthz.py  # [unit] 6/6 (GET /healthz: no cookie -> 200 {status:ok} <=32B, a valid session changes nothing, zero sockets opened = SELECT 1 only, DB failure -> 503 {status:error} with no leak, probe request line demoted to DEBUG while a non-probe request stays INFO+, a 503 still logs ERROR so ntfy pages) — self-booting, no server, red-tested on both guards
 
 export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 export DATA_DIR=/tmp/osrm-sw                # fresh dir; seed+mint happen inside the test
@@ -136,6 +137,11 @@ ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
 #   compose does NOT read the master /docker/.env for interpolation), then
 #   docker compose pull && docker compose up -d opensrm; unset to ride :latest again.
 # smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
+# GET /healthz → 200 {"status":"ok"} — the endpoint the compose healthcheck
+# polls (no session needed); at LOG_LEVEL=INFO its request lines are DEBUG, so
+# they never appear in `docker logs opensrm` — that absence means the LOG
+# LEVEL, not that the probe stopped (docker inspect opensrm --format
+# '{{.State.Health.Status}}' says 'healthy').
 # /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
 # POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
 # ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$ — the old

@@ -42,13 +42,26 @@ RUN ln -sf $(find /ms-playwright -name chrome-headless-shell -type f | head -1) 
 ENV CHROMIUM_PATH=/usr/local/bin/chromium
 ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 ENV LOG_LEVEL=INFO
+# the process is dropped to opensrm, whose passwd entry has no home dir, so
+# HOME would stay /root and gunicorn's arbiter logs
+# "Control server error: Permission denied: '/root/.gunicorn'" on every boot.
+# /tmp is the tmpfs the hardened compose mounts — writable in both phases.
+ENV HOME=/tmp
 WORKDIR /app
 
 COPY . .
 
-# ponytail: skip USER directive — Playwright needs root for --no-sandbox,
-# and the container is single-purpose behind Cloudflare tunnel.
-# Data directory writable at runtime via volume mount.
+# Non-root runtime. The old comment here claimed Playwright needs root; it
+# does not — app/app.py _get_browser() always passes --no-sandbox, so headless
+# Chromium runs fine as an unprivileged user (proved in the built image).
+#
+# No USER directive: entrypoint.sh must start as ROOT to chown the data volume
+# (every existing volume is root-owned from the root-era image), then it drops
+# to opensrm with setpriv and execs CMD in place — so PID 1 ends up non-root
+# with CapEff cleared, and nothing after that line ever runs as root.
+# absolute paths: the runtime ENV PATH above drops /usr/sbin
+RUN /usr/sbin/groupadd --gid 10001 opensrm \
+    && /usr/sbin/useradd --uid 10001 --gid opensrm --no-create-home opensrm
 
 EXPOSE 8080
 
