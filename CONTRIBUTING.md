@@ -77,7 +77,7 @@ Key rules:
 
 - **Flask + Jinja2** — templates in `app/templates/`, static files in `app/static/`
 - **Pure code lives outside the monolith** — portal parsers in `app/portal/parsers/`, dashboard view models in `app/views/`; `app.app` re-exports every moved name, so `from app.app import …` and the Dockerfile CMD (`app.app:app`) keep working
-- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access. All connections funnel through `app.app.db()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly
+- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access, all of it in the `app/db.py` repository layer. All connections funnel through `app.db.connect()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly. Request handlers get one request-scoped connection closed by the Flask teardown; multi-statement units use `with transaction():`
 - **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
 - **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
 - **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in).

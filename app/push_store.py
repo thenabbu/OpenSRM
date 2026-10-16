@@ -7,10 +7,12 @@ enforced by tests/test_push_store.py:
   - integer epoch timestamps, no SQL-side clock functions
   - no ``rowid``, no PRAGMA, no SQLite-only syntax
 The rest of the app's database (users/sessions/timetable) is NOT migrated
-here — those tables keep being read through app.db() as before.
+here — those tables live in the app/db.py repository layer as before.
 """
 import json
 import time
+
+from .db import connect  # the raw factory: caller-owned, closed here, no cycle
 
 # Sent-log statuses: claimed -> sent | failed | orphaned | skipped
 #   claimed : insert won; the claimer is about to send
@@ -24,9 +26,12 @@ STATUS_ORPHANED, STATUS_SKIPPED = "orphaned", "skipped"
 
 
 def get_conn():
-    """The single connection factory — swap this for Postgres/libSQL."""
-    from .app import db  # lazy: app imports this module at boot
-    return db()
+    """The single connection factory — swap this for Postgres/libSQL.
+
+    connect() (app/db.py) owns the A6 pragmas, so this boundary gets the same
+    10s busy timeout; the connection is caller-owned and closed by the
+    function that opened it, never the request-scoped one."""
+    return connect()
 
 
 # ── subscriptions ─────────────────────────────────────────────────────

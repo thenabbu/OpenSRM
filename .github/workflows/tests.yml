@@ -112,6 +112,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_healthz.py
       - name: test_db_concurrency (db() lock timeout + journal mode)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_concurrency.py
+      - name: test_db_layer (request-scoped connection + transaction isolation)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_layer.py
 
   docker:
     runs-on: ubuntu-latest
