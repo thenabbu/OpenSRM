@@ -1803,6 +1803,15 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.32.0", "date": "18 Oct", "title": "Your photo, and more personal details",
+     "body": "The profile card on the dashboard now shows your photo from the "
+             "official Scope student app instead of the generated blob avatar "
+             "(a photo the portal already has still wins), with a one-line "
+             "course · semester · section summary underneath. Settings -> "
+             "Personal details also picks up the extra facts the Scope app "
+             "knows - parents' names, date of birth, admitted date, address, "
+             "university and advisors - shown only where the portal doesn't "
+             "already list them."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "
