@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS builder
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /usr/local/bin/uv
 WORKDIR /app
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
     && cp -a /root/.cache/ms-playwright/. /ms-playwright/
 
 # -- Stage 2: Runtime -- (same verified digest as builder)
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \
