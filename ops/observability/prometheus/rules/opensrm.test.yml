@@ -1,0 +1,248 @@
+# promtool unit tests for opensrm.yml — every rule proven BOTH ways: it
+# fires on a crafted bad series and stays quiet on the matching good one.
+# Run: docker run --rm -v $PWD/ops/observability/prometheus:/etc/prometheus:ro \
+#        prom/prometheus:v3.13.4@sha256:87861b8c... promtool test rules \
+#        /etc/prometheus/rules/opensrm.test.yml
+# CI runs this via the promtool step in tests.yml.
+
+rule_files:
+  - opensrm.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ── OpenSRMAppDown ──────────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      - series: 'up{job="opensrm"}'
+        values: '0x15'          # down for 16m
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpenSRMAppDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: opensrm
+            exp_annotations:
+              summary: "OpenSRM /internal/metrics unreachable for 5m"
+              description: "up==0 for job opensrm. App down, container restarting, or the scrape token file no longer matches METRICS_SECRET. Check: docker ps + docker logs opensrm; then the secrets/metrics_token file."
+
+  - interval: 1m
+    input_series:
+      - series: 'up{job="opensrm"}'
+        values: '1x15'          # healthy the whole window
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: OpenSRMAppDown
+        exp_alerts: []
+
+  # ── OpenSRMPushTickStale ────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # gauge stamped at epoch 0 and never again = scheduler dead at boot
+      - series: 'opensrm_push_tick_last_success_timestamp_seconds'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: OpenSRMPushTickStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "No push tick for >10m"
+              description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. Check the Hermes cron job 'opensrm-push-tick' and /opt/data/cron/output/push-tick.log."
+
+  - interval: 1m
+    input_series:
+      # healthy: one tick per minute keeps the stamp == now
+      - series: 'opensrm_push_tick_last_success_timestamp_seconds'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: OpenSRMPushTickStale
+        exp_alerts: []
+
+  # ── OpenSRMSyncFailureRatioHigh ─────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # 3 errors/min vs 7 ok/min = 30% failure ratio, 600 syncs/hour
+      - series: 'opensrm_sync_total{pipeline="http",result="error",error="portal_down"}'
+        values: '0+3x130'
+      - series: 'opensrm_sync_total{pipeline="http",result="ok",error=""}'
+        values: '0+7x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMSyncFailureRatioHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: ">20% of syncs failing for 30m"
+              description: "error ratio over 1h above 0.2 with >=10 syncs in the window. If the error label reads portal_cooldown/markup_changed it is a portal-side problem; bad_credentials concentrated on one class is a user problem. See the error= label breakdown in Grafana."
+
+  - interval: 1m
+    input_series:
+      # healthy: 1% failure ratio
+      - series: 'opensrm_sync_total{pipeline="http",result="error",error="auth"}'
+        values: '0+1x130'
+      - series: 'opensrm_sync_total{pipeline="http",result="ok",error=""}'
+        values: '0+99x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMSyncFailureRatioHigh
+        exp_alerts: []
+
+  - interval: 5m
+    input_series:
+      # 100% failing but only ~6 syncs/hour — below the >=10 traffic floor,
+      # so the ratio must NOT page (a lone user with a bad password)
+      - series: 'opensrm_sync_total{pipeline="http",result="error",error="bad_credentials"}'
+        values: '0+0.5x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMSyncFailureRatioHigh
+        exp_alerts: []
+
+  # ── OpenSRMParseEmpty ───────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # page parsed empty once a minute = portal markup drift
+      - series: 'opensrm_parse_empty_total{page="attendance",pipeline="http"}'
+        values: '0+1x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMParseEmpty
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Portal pages parsed empty (markup drift?)"
+              description: "opensrm_parse_empty_total increased in the last hour. The portal likely changed format. Check the page= label to see which page, then compare a probe capture against app/portal/parsers/."
+
+  - interval: 1m
+    input_series:
+      - series: 'opensrm_parse_empty_total{page="attendance",pipeline="http"}'
+        values: '5x130'         # flat: no new empties
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMParseEmpty
+        exp_alerts: []
+
+  # ── OpenSRMSyncP95TooSlow ───────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # every observation lands in the 150s bucket -> p95 = 150 > 90
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="1"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="2"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="5"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="10"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="20"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="30"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="60"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="90"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="120"}'
+        values: '0x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="150"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="+Inf"}'
+        values: '0+10x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMSyncP95TooSlow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Sync p95 above 90s for an hour"
+              description: "Slowest decile of syncs exceeds the 90s duration bucket for 1h. Portal slowness or scrape-lock queueing. Correlate with the syncs/min and lock-rejection panels."
+
+  - interval: 1m
+    input_series:
+      # healthy: every observation inside the 2s bucket -> p95 = 2
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="1"}'
+        values: '0+5x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="2"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="5"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="10"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="20"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="30"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="60"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="90"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="120"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="150"}'
+        values: '0+10x130'
+      - series: 'opensrm_sync_duration_seconds_bucket{pipeline="http",le="+Inf"}'
+        values: '0+10x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMSyncP95TooSlow
+        exp_alerts: []
+
+  # ── OpenSRMScrapeLockRejectionsBurst ────────────────────────────────
+  - interval: 1m
+    input_series:
+      # one rejection per minute = 15 in the 15m window (>10 threshold)
+      - series: 'opensrm_scrape_lock_rejections_total{op="sync"}'
+        values: '0+1x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMScrapeLockRejectionsBurst
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Scrape-lock rejections bursting"
+              description: ">10 sync rejections in 15m (for 5m). The portal call is holding the scrape lock too long or syncs are piling up. Check the p95 duration alert and docker logs opensrm."
+
+  - interval: 1m
+    input_series:
+      # occasional: 12 rejections spread over 2h (~1 per 10m) — under threshold
+      - series: 'opensrm_scrape_lock_rejections_total{op="sync"}'
+        values: '0+0.1x130'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: OpenSRMScrapeLockRejectionsBurst
+        exp_alerts: []
+
+  # ── OpenSRMPortalCooldownActive ─────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # cooldown armed and never clearing (retries keep failing)
+      - series: 'opensrm_portal_cooldown_seconds'
+        values: '300x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: OpenSRMPortalCooldownActive
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Portal cooldown active >10m (retries still failing)"
+              description: "opensrm_portal_cooldown_seconds has stayed above 0 for 10m: the app is refusing syncs because consecutive portal attempts keep failing. Check opensrm.portal log lines and whether the portal is up at all."
+
+  - interval: 1m
+    input_series:
+      # cooldown arms for 5m then clears (portal recovered) — the for:10m
+      # guard must keep this quiet
+      - series: 'opensrm_portal_cooldown_seconds'
+        values: '300x5 0x25'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: OpenSRMPortalCooldownActive
+        exp_alerts: []

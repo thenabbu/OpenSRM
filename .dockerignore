@@ -28,6 +28,9 @@ egress/
 # not runtime code: suites run in CI from the checkout, deploy helpers run on
 # the host — neither belongs in the shipped image
 tests/
+# observability stack: runs NEXT TO the app on the host (ops/observability),
+# never inside its image
+ops/
 scripts/
 # ...except the two operational tools the runbooks invoke INSIDE the container:
 # SECURITY.md's key-rotation runbook (`docker exec opensrm python

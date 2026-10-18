@@ -9,6 +9,7 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-push-tick-")
 os.environ["PUSH_TICK_SECRET"] = "s3kr3t-tick"
 
 import app.app as A
+from app import metrics as M
 from app import push_store as S
 from app.push_calc import IST
 
@@ -130,6 +131,65 @@ gate.set(); t.join(5)
 check("tick B sees the claim -> 0 due", out_b["due"] == 0 and out_b["claimed"] == 0, str(out_b))
 check("exactly ONE push sent overall", len(sent_jobs) == 1, str(len(sent_jobs)))
 check("tick A completed", out_a.get("res", {}).get("sent") == 1, str(out_a))
+
+# ── dead-man metrics: opensrm_push_tick_total + last-success gauge ──────
+# (the observability stack scrapes these; no PII may ever enter a label)
+M.reset()
+A._PUSH_TICK_LAST_OK["ts"] = 0.0
+
+# a successful authenticated tick bumps outcome=ok and stamps the gauge
+r = cl.post("/internal/push/tick", headers={"X-Push-Tick": "s3kr3t-tick"})
+got_ok = M.get("opensrm_push_tick_total", outcome="ok")
+check("tick ok -> opensrm_push_tick_total{outcome=ok} counted",
+      r.status_code == 200 and got_ok == 1, f"{r.status_code} count={got_ok}")
+check("tick ok -> last-success gauge stamped (>0)",
+      A._PUSH_TICK_LAST_OK["ts"] > 0, str(A._PUSH_TICK_LAST_OK["ts"]))
+
+# an unauthenticated (wrong secret) tick must NOT move the dead-man signal:
+# an outside prober could otherwise fake scheduler liveness
+before_ok, before_ts = got_ok, A._PUSH_TICK_LAST_OK["ts"]
+r = cl.post("/internal/push/tick", headers={"X-Push-Tick": "wrong"})
+check("wrong-secret tick leaves counter AND gauge untouched",
+      r.status_code == 401
+      and M.get("opensrm_push_tick_total", outcome="ok") == before_ok
+      and A._PUSH_TICK_LAST_OK["ts"] == before_ts,
+      f"{r.status_code} ok={M.get('opensrm_push_tick_total', outcome='ok')} ts={A._PUSH_TICK_LAST_OK['ts']}")
+
+# a tick whose _run_tick raises counts outcome=error and does not stamp
+real_run, A._PUSH_TICK_LAST_OK["ts"] = A._run_tick, 0.0
+def _boom(**kw):
+    raise RuntimeError("tick exploded")
+A._run_tick = _boom
+try:
+    import werkzeug.serving  # noqa: F401
+    r = cl.post("/internal/push/tick", headers={"X-Push-Tick": "s3kr3t-tick"})
+finally:
+    A._run_tick = real_run
+got_err = M.get("opensrm_push_tick_total", outcome="error")
+check("raising tick -> outcome=error counted, gauge NOT stamped",
+      r.status_code == 500 and got_err == 1 and A._PUSH_TICK_LAST_OK["ts"] == 0.0,
+      f"{r.status_code} error={got_err} ts={A._PUSH_TICK_LAST_OK['ts']}")
+
+# the gauge renders through /internal/metrics (what Prometheus scrapes)
+os.environ["METRICS_SECRET"] = "s3kr3t-metrics"
+try:
+    M.reset()
+    M.inc("opensrm_push_tick_total", outcome="ok")
+    A._PUSH_TICK_LAST_OK["ts"] = 1792250000.0
+    r = cl.get("/internal/metrics", headers={"X-Metrics-Token": "s3kr3t-metrics"})
+    body = r.data.decode() if r.status_code == 200 else ""
+    check("/internal/metrics exposes the tick counter + gauge",
+          r.status_code == 200
+          and 'opensrm_push_tick_total{outcome="ok"} 1' in body
+          and "opensrm_push_tick_last_success_timestamp_seconds 1792250000.0" in body,
+          f"{r.status_code} {body[:200]!r}")
+    check("tick metrics carry no PII label (outcome only)",
+          'opensrm_push_tick_total{' in body
+          and "netid" not in body and "user=" not in body and "ip=" not in body,
+          "body contains netid/user/ip")
+finally:
+    os.environ.pop("METRICS_SECRET", None)
+    A._PUSH_TICK_LAST_OK["ts"] = 0.0
 
 print("ok  push tick" if not fails else f"FAILURES: {fails}")
 sys.exit(1 if fails else 0)

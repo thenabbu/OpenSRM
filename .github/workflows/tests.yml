@@ -84,6 +84,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_logging_telemetry.py
       - name: test_metrics (observability counters + /internal/metrics auth)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_metrics.py
+      - name: test_observability_assets (ops stack guard rails)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_observability_assets.py
       - name: test_sync_cache (refresh cache window + per-netid single flight)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_cache.py
       - name: test_sync_queue (bounded wait + priority + budget buckets)
@@ -137,6 +139,13 @@ jobs:
       # seeded literal on the page.
       - name: Boot on empty volume + authenticated render smoke
         run: bash scripts/ci_docker_smoke.sh
+
+      # promtool validates the observability stack's Prometheus config, the
+      # alert rules, and the rule unit tests — via the same pinned image the
+      # compose file deploys (config syntax is checked, series existence is
+      # the python suite above).
+      - name: promtool (observability config + rules + unit tests)
+        run: bash scripts/ci_promtool.sh
 
   e2e:
     runs-on: ubuntu-latest

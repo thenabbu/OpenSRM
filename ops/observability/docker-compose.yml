@@ -1,0 +1,143 @@
+# OpenSRM observability stack — OPTIONAL, sits next to the app, never inside
+# its image. Prometheus scrapes GET /internal/metrics (needs METRICS_SECRET
+# in /docker/opensrm/.env — see docs/runbook.md#observability), Grafana
+# renders the provisioned read-only dashboard, Alertmanager forwards firing
+# rules to ntfy (webhook + ntfy URL templating — no bridge container).
+#
+# NOTHING here is exposed publicly: every port binds 127.0.0.1 only and
+# access is `ssh -L`. This stack does not touch the Cloudflare tunnel.
+# Bring-up / secret files / panel+alert reference: docs/runbook.md.
+#
+# Images are pinned by tag AND digest (resolved from the registry, not
+# memory). Bump = re-resolve the digest:
+#   curl -sH "Authorization: Bearer $(curl -s 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:prom/prometheus:pull' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')" \
+#     -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+#     -I https://registry-1.docker.io/v2/prom/prometheus/manifests/v3.13.4 | grep docker-content-digest
+#
+# Secret files (create next to this compose file, never commit — ops/ is in
+# .dockerignore and secrets/ is in .gitignore):
+#   secrets/metrics_token  600  single line: the METRICS_SECRET value
+#   secrets/ntfy_url       600  single line: the ntfy topic URL WITH the
+#                               template query params (runbook has the exact
+#                               line; the topic name IS the secret)
+#   secrets/grafana_admin  600  single line: Grafana admin password
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
+    container_name: opensrm-prometheus
+    restart: unless-stopped
+    # measured run 2026-10-18 (docker stats + cgroup pids.current, full
+    # stack live: 1 scrape target, 7 rules, 2 alert jobs): 33 MiB RSS,
+    # 10 pids. Limits are ~9x memory (TSDB query headroom over 2GiB
+    # retention) / 8x pids.
+    mem_limit: 300m
+    pids_limit: 80
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # image default user is already nobody (65534); pinned here so a base
+    # image change can never silently promote the process to root.
+    user: "65534:65534"
+    ports:
+      # loopback only — ssh -L 9092:127.0.0.1:9092 to reach it (9090 is
+      # taken on the lab by Cockpit)
+      - "127.0.0.1:9092:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      # the scrape token: read via http_headers `files:`, never inline in
+      # the config (see prometheus.yml)
+      - ./secrets/metrics_token:/etc/prometheus/secrets/metrics_token:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 30d wall clock PLUS a size cap: the lab root fs had 15 GiB free at
+      # stack design time — 2 GiB is the ceiling this stack may ever use.
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=2GB
+      # config/rule reload endpoint OFF (kingpin's --[no-] flag form; the
+      # default is already off — a POST /-/reload answers 403, verified on
+      # v3.13.4 — but it is pinned explicit so a future default flip cannot
+      # silently open it): edits are a container restart, so a half-written
+      # config can never be hot-loaded into a running server.
+      - --no-web.enable-lifecycle
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    container_name: opensrm-alertmanager
+    restart: unless-stopped
+    # measured run 2026-10-18 (docker stats + cgroup pids.current, live
+    # ntfy deliveries flowing): 22 MiB RSS, 11 pids. Limits ~3.6x/2.9x.
+    mem_limit: 80m
+    pids_limit: 32
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "65534:65534"
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - alertmanager-data:/alertmanager
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # the ntfy topic URL is a secret (the topic name is unguessable-by-
+      # design) -> url_file, never inline in the config
+      - ./secrets/ntfy_url:/etc/alertmanager/secrets/ntfy_url:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=:9093
+
+  grafana:
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+    container_name: opensrm-grafana
+    restart: unless-stopped
+    # measured run 2026-10-18 (docker stats + cgroup pids.current, full
+    # stack live with a browser querying the dashboard): 340 MiB RSS
+    # settled, 103 pids — and Grafana 13 boots its whole bundled-plugin
+    # fleet first, CRASHING (`fatal error: newosproc`, Go thread creation)
+    # at pids_limit=80, so the boot transient sits above steady state.
+    # Limits: ~1.5x settled memory, ~5x steady pids (boot headroom) — the
+    # memory number is deliberately tight on this RAM-constrained host;
+    # raise to 768m if plugin updates push the boot peak past the cap.
+    mem_limit: 512m
+    pids_limit: 512
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # image default (grafana, 472) — pinned so a base change can't promote.
+    user: "472:472"
+    ports:
+      # loopback only — ssh -L 3000:127.0.0.1:3100 to reach it (host 3000
+      # is dockhand)
+      - "127.0.0.1:3100:3000"
+    environment:
+      - TZ=Asia/Kolkata
+      - GF_SECURITY_ADMIN_USER=admin
+      # password from a mounted secret file, never from the tree
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin
+      # no sign-up, no anonymous reader, no phoning home (grafana.ini has
+      # the analytics/update-check half)
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # sibling path, NOT nested under the provisioning bind above: a mount
+      # target inside a :ro mount fails (docker cannot mkdir the mountpoint
+      # on a read-only rootfs)
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./secrets/grafana_admin:/run/secrets/grafana_admin:ro
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
