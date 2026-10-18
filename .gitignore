@@ -13,3 +13,8 @@ build/
 .idea/
 requirements.txt
 .shots-*/
+# observability stack secrets — created on the deploy host only, never committed
+ops/observability/secrets/
+
+ops/observability/proof-override.yml
+ops/observability/proof/

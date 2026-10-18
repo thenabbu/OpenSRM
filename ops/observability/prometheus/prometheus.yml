@@ -1,0 +1,44 @@
+# OpenSRM scrape + rule loading. Validated in CI by the pinned image's
+# promtool (check config / check rules / test rules — see tests.yml).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+# Config/rule reloads are a container restart (--no-web.enable-lifecycle
+# in the compose file), so there is no reload endpoint to guard.
+
+rule_files:
+  # Deliberately NOT rules/*.yml: the promtool unit tests live beside the
+  # rules as opensrm.test.yml and a glob would load them as rules (promtool
+  # check config then fails on the test file's `tests:` key). List every
+  # rule file explicitly — one line per rules file you add.
+  - /etc/prometheus/rules/opensrm.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: opensrm
+    # the app's exposition lives at /internal/metrics (the default /metrics
+    # does not exist on this app)
+    metrics_path: /internal/metrics
+    # The app publishes only on 127.0.0.1:8083 and 172.31.0.1:8083 (the
+    # cloudflared_default bridge gateway — verified on the lab with
+    # `docker inspect opensrm`). A container's own 127.0.0.1 is NOT the
+    # host's, so the reachable target from this stack's network is the
+    # gateway address; verified from a throwaway container on a foreign
+    # bridge network (curl 172.31.0.1:8083/healthz -> 200).
+    static_configs:
+      - targets: ["172.31.0.1:8083"]
+        labels:
+          service: opensrm
+    # /internal/metrics demands X-Metrics-Token (hmac compare, bare 401 on
+    # mismatch). Prometheus >= 2.55 sends custom headers and reads the
+    # value from a file, so the token lives only in the mounted secret
+    # (mode 600), never in this config and never in git.
+    http_headers:
+      X-Metrics-Token:
+        files:
+          - /etc/prometheus/secrets/metrics_token

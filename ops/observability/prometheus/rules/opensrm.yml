@@ -1,0 +1,140 @@
+# OpenSRM alert rules. Every threshold below is a STARTING POINT picked at
+# stack design time (2026-10-17) with no production scrape history — retune
+# from real data once the stack has run a few weeks (how to tune:
+# docs/runbook.md#tuning). Each rule's comment says what a firing means and
+# why the number is what it is.
+#
+# Counters reset on every deploy (the app is in-process), so every rate/
+# increase window must be long enough to survive one: prod redeploys run
+# ~1/min tick traffic and a deploy drops ~1-2 minutes of samples at worst.
+
+groups:
+  - name: opensrm-availability
+    rules:
+      - alert: OpenSRMAppDown
+        # The scrape itself is the liveness probe: /internal/metrics answers
+        # with the same auth as everything else, so up==0 means the app is
+        # unreachable, crashed, or METRICS_SECRET rotated without updating
+        # the mounted token file. 5m tolerates a normal redeploy (pull +
+        # recreate is ~60-90s) without paging.
+        expr: up{job="opensrm"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenSRM /internal/metrics unreachable for 5m"
+          description: "up==0 for job opensrm. App down, container restarting, or the scrape token file no longer matches METRICS_SECRET. Check: docker ps + docker logs opensrm; then the secrets/metrics_token file."
+
+      - alert: OpenSRMPushTickStale
+        # Dead-man switch for the /internal/push/tick scheduler (closes the
+        # runbook's former 'dead-man gap'): the handler stamps this gauge on
+        # every successful tick, and the cron fires every minute, so >5m of
+        # silence means the Hermes cron job died, was disabled, or the host
+        # is gone. STARTING POINT 5m: the scheduler is per-minute and the
+        # existing Hermes-side chain already tolerates 3 consecutive
+        # failures (~3 min), so 5m of server-observed silence is genuinely
+        # abnormal. Retune if the tick cadence ever changes.
+        expr: time() - opensrm_push_tick_last_success_timestamp_seconds > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No push tick for >10m"
+          description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. Check the Hermes cron job 'opensrm-push-tick' and /opt/data/cron/output/push-tick.log."
+
+  - name: opensrm-sync-health
+    rules:
+      - alert: OpenSRMSyncFailureRatioHigh
+        # A sync fails for bad creds (per-user), portal cooldown, or a
+        # markup change (global). A handful of bad-password users must NOT
+        # page, so the rule fires on the RATIO of failing syncs, and only
+        # when there is enough traffic for the ratio to mean anything
+        # (>=10 syncs/hour floor). STARTING POINT 0.2 over 1h: the failure
+        # taxonomy in app.py shows outages are all-or-nothing (portal down
+        # -> nearly every sync fails), so 20% sustained is already far past
+        # 'a few users fat-fingered their password'. Retune once real
+        # failure-class distributions exist; consider splitting by the
+        # error label if auth errors dominate.
+        expr: |
+          (
+            sum(rate(opensrm_sync_total{result="error"}[1h]))
+            /
+            clamp_min(sum(rate(opensrm_sync_total[1h])), 0.0005)
+          ) > 0.2
+          and
+          sum(increase(opensrm_sync_total[1h])) >= 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: ">20% of syncs failing for 30m"
+          description: "error ratio over 1h above 0.2 with >=10 syncs in the window. If the error label reads portal_cooldown/markup_changed it is a portal-side problem; bad_credentials concentrated on one class is a user problem. See the error= label breakdown in Grafana."
+
+      - alert: OpenSRMParseEmpty
+        # The parsers return empty only when the portal's markup changed
+        # under us (rows present but unparseable, or a page that used to
+        # have data). This is the canary that fires BEFORE users report
+        # 'my attendance is gone'. STARTING POINT >0 over 1h: parse-empty
+        # is abnormal in ANY volume — there is no benign steady state — so
+        # even one event in an hour deserves a look. The 1h window (not
+        # 5m) keeps a single odd user/session from paging instantly while
+        # still catching a real markup change within the hour.
+        expr: sum(increase(opensrm_parse_empty_total[1h])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portal pages parsed empty (markup drift?)"
+          description: "opensrm_parse_empty_total increased in the last hour. The portal likely changed format. Check the page= label to see which page, then compare a probe capture against app/portal/parsers/."
+
+      - alert: OpenSRMSyncP95TooSlow
+        # p95 of the sync duration histogram, from the bucket series (the
+        # app exposes classic buckets up to 150s). 90s = the app's own 90s
+        # duration bucket: a p95 past it means the slowest decile of syncs
+        # is brushing the pipeline deadline, and users are waiting a
+        # minute and a half for a dashboard refresh. STARTING POINT 90s
+        # for 1h: syncs run ~2s warm; sustained p95 >= 90s means portal
+        # slowness or queue pileup, not one bad scrape. Retune down (60s)
+        # once steady-state numbers exist.
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (rate(opensrm_sync_duration_seconds_bucket[1h]))
+          ) > 90
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sync p95 above 90s for an hour"
+          description: "Slowest decile of syncs exceeds the 90s duration bucket for 1h. Portal slowness or scrape-lock queueing. Correlate with the syncs/min and lock-rejection panels."
+
+      - alert: OpenSRMScrapeLockRejectionsBurst
+        # Rejections happen when a sync arrives while another holds the
+        # scrape lock (or the queue wait times out). Occasional = normal
+        # concurrency. A BURST means students are repeatedly hitting 'Sync'
+        # during a long/ hung portal call. STARTING POINT >10 in 15m: one
+        # unlucky overlap produces 1-3 rejections; 10+ in 15m means the
+        # lock is held long enough that multiple users queue up. Retune
+        # once real rejection rates are visible.
+        expr: sum(increase(opensrm_scrape_lock_rejections_total[15m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape-lock rejections bursting"
+          description: ">10 sync rejections in 15m (for 5m). The portal call is holding the scrape lock too long or syncs are piling up. Check the p95 duration alert and docker logs opensrm."
+
+      - alert: OpenSRMPortalCooldownActive
+        # The app arms a portal cooldown after 3 consecutive failures
+        # (5 min doubling, capped 30 min). A short cooldown is the system
+        # WORKING; a cooldown that never clears means every retry keeps
+        # failing — the portal is down or we are blocked. N=10 min here:
+        # the first cooldown step is 5m, so surviving past 10m means at
+        # least one retry also failed. STARTING POINT 10m — raise toward
+        # the 30m cap if single-step cooldowns prove noisy in practice.
+        expr: opensrm_portal_cooldown_seconds > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portal cooldown active >10m (retries still failing)"
+          description: "opensrm_portal_cooldown_seconds has stayed above 0 for 10m: the app is refusing syncs because consecutive portal attempts keep failing. Check opensrm.portal log lines and whether the portal is up at all."

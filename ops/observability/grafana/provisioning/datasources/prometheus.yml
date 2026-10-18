@@ -1,0 +1,14 @@
+# The one datasource. `editable: false` keeps the UID/URL stable — a
+# hand-edit in the UI would silently diverge from what this file says.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090    # compose service name, container net
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 30s            # match the scrape interval

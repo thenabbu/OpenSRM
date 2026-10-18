@@ -15,6 +15,7 @@ from `main` at 4ef16cb (v1.25.0).
 | Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh lab 'docker exec opensrm ls /app/data'` |
 | Daily snapshots | `/data/ssd120/backups/opensrm/srm.YYYYMMDD.snapshot.db.gz`, taken ~03:0x IST, 7 kept | `ssh lab 'ls -1t /data/ssd120/backups/opensrm/'` |
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
+| Observability stack (optional, not yet deployed) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only ports 9092/9093/3100 | see [Observability stack](#observability-stack-optional) |
 | Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
 
 Note the two env files: the lab also keeps a master secret registry at
@@ -226,8 +227,166 @@ off (verified: `curl -s -o /dev/null -w '%{http_code}'
 http://127.0.0.1:8083/internal/metrics` → 401; `METRICS_SECRET` absent from
 container env and project `.env`). To enable: add `METRICS_SECRET=<value>` to
 `/docker/opensrm/.env`, `docker compose up -d opensrm`, then
-`curl -H "X-Metrics-Token: <value>" …/internal/metrics`. It is on-demand only
-— nothing scrapes it yet.
+`curl -H "X-Metrics-Token: <value>" …/internal/metrics`. The optional stack
+below is the only intended consumer.
+
+## Observability stack (optional)
+
+`ops/observability/` in the repo is a self-contained metrics stack —
+**Prometheus + Grafana + Alertmanager** — that runs NEXT TO the app
+(`ops/` is in `.dockerignore`; nothing here ships inside the app image).
+Design rules, all verified live on the lab daemon 2026-10-18:
+
+- **No existing stack to extend**: the lab had no Prometheus/Grafana/Loki/
+  ntfy containers (`docker ps`), and the classic ports are taken — 9090 is
+  Cockpit (served its login page), 3000 is dockhand. So the stack binds
+  `127.0.0.1:9092` (Prometheus), `127.0.0.1:9093` (Alertmanager) and
+  `127.0.0.1:3100` (Grafana) — **loopback only, access is `ssh -L`**, the
+  Cloudflare tunnel is never touched, nothing is publicly exposed.
+- Images pinned by tag AND digest (resolved from the registry): prometheus
+  v3.13.4, alertmanager v0.34.1, grafana 13.2.4. Non-root users, `cap_drop:
+  ALL`, `no-new-privileges`, `mem_limit`/`pids_limit` from a measured run
+  (see the compose comments for the numbers), named volumes, retention 30d
+  + 2GB size cap (the root fs had 15GiB free at design time).
+- The scrape target is the app's real container-reachable bind
+  `172.31.0.1:8083` (verified from a throwaway container: `wget -O-
+  http://172.31.0.1:8083/healthz` → `{"status":"ok"}`); `metrics_path:
+  /internal/metrics` and the `X-Metrics-Token` value comes from a mounted
+  **secret file**, never inline (Prometheus `http_headers: … files:` —
+  verified live: correct token scrapes `up == 1`, a deliberately-wrong
+  token file makes the job go `up == 0` with the app logging its bare 401).
+- Grafana: sign-up off, anonymous off, analytics + update checks off, admin
+  password from a secret file, dashboard provisioned **read-only**
+  (`allowUiUpdates: false` — panel edits in the UI are never saved; edit
+  the JSON in the repo and restart).
+- Alert delivery (verified end-to-end against a throwaway ntfy topic):
+  Alertmanager's own `webhook_configs` posts to an ntfy URL carrying
+  `?template=yes&title={{.commonLabels.alertname}}&message={{.commonAnnotations.summary}}`
+  — ntfy's URL templating renders a proper notification, so **no bridge
+  container and no Grafana-side contact point is needed**. The topic URL
+  lives in a mode-600 `url_file` (the ntfy topic name is a secret by ntfy's
+  design). The two rejected alternatives: a third-party alertmanager→ntfy
+  bridge image (extra unpinnable-trust container) and a Grafana contact
+  point (would need Grafana-managed alert rules duplicating the
+  promtool-tested ones — the rules live in git, so Prometheus is the source
+  of truth).
+
+### Bring-up (exact lab steps)
+
+The stack is a sibling compose project. One-time, on the lab host:
+
+```bash
+# 1. enable the app's metrics endpoint (project env file, NOT the master registry)
+echo 'METRICS_SECRET=<long-random-value>' >> /docker/opensrm/.env
+cd /docker/opensrm && docker compose up -d opensrm        # recreate with the env
+curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Metrics-Token: <value>' \
+  http://127.0.0.1:8083/internal/metrics                    # expect 200
+
+# 2. deploy the stack (copy ops/observability/ from the repo)
+mkdir -p /docker/opensrm-obs && cd /docker/opensrm-obs
+#    ... copy ops/observability/* here (docker-compose.yml, prometheus/, ...)
+
+# 3. create the secret files NEXT TO the compose file (never commit them —
+#    secrets/ is gitignored). ORDER MATTERS: the files must exist AND be
+#    readable by each container's uid BEFORE the first `up`, because
+#    Grafana seeds the admin password into its volume on FIRST boot only.
+printf '<the METRICS_SECRET value>'  > secrets/metrics_token     # no newline
+printf '<grafana admin password>'    > secrets/grafana_admin
+printf '<the ntfy topic URL incl. the template=... params from the compose file header>' > secrets/ntfy_url
+chmod 600 secrets/*
+
+# 4. bind mounts keep host ownership: the containers run as uid 65534
+#    (prometheus/alertmanager) and 472 (grafana) and CANNOT read a 600 file
+#    owned by your user. Hand the files over with a one-shot container
+#    (docker group membership is all that is needed, no sudo):
+docker run --rm -v "$PWD/secrets:/s" alpine:3.20 \
+  sh -c 'chown 65534:65534 /s/metrics_token /s/ntfy_url; chown 472:472 /s/grafana_admin'
+
+# 5. up
+docker compose up -d
+docker compose ps
+```
+
+Re-ordering gotchas burned into the steps above: if Grafana's first boot
+cannot read its password file, it seeds the DB with the fallback and the
+volume remembers it forever (fix = `docker compose down grafana && docker
+volume rm <project>_grafana-data && up` again, in the right order).
+
+### Access
+
+```bash
+ssh -L 3100:127.0.0.1:3100 lab    # Grafana   -> http://localhost:3100
+ssh -L 9092:127.0.0.1:9092 lab    # Prometheus -> http://localhost:9092
+ssh -L 9093:127.0.0.1:9093 lab    # Alertmanager
+```
+
+### What each panel means
+
+The dashboard (`opensrm-observability` uid, folder OpenSRM) has 10 panels:
+
+- **Scrape up** — `up{job="opensrm"}`: 1 = the endpoint answered the last
+  scrape. 0 = app down, restarting, or the token file stopped matching
+  `METRICS_SECRET` (e.g. the secret rotated on one side only).
+- **Push tick age** — seconds since the last successful
+  `POST /internal/push/tick`; the dead-man switch. Healthy ≈ 0–120s; the
+  alert trips past 300s.
+- **Portal cooldown** — live cooldown the app arms after 3 consecutive
+  portal failures (5min doubling, capped 30min). 0 = armed off; sustained
+  >0 = retries keep failing.
+- **Syncs per minute by pipeline and outcome** — `rate()` of
+  `opensrm_sync_total` (counters reset on every deploy — that's why every
+  panel uses rate/increase, never raw counter reads).
+- **Error classes (1h)** — failing syncs grouped by the typed `error=`
+  label; one class dominating names the cause without reading logs.
+- **Sync duration p50/p95** — from the histogram buckets (app buckets top
+  at 150s = the pipeline deadline).
+- **Cache hits vs joined vs real syncs** — how refreshes resolved: served
+  from the last sync's cache, joined an in-flight sync, or ran a real
+  portal sync. Cache+joined high = quota-friendly.
+- **Scrape-lock rejections** — syncs refused because the lock was held;
+  a burst = one long portal call is blocking everyone.
+- **Parse-empty by page (24h)** — pages that parsed to zero rows = portal
+  markup drift, the thing this stack exists to catch first.
+- **Captcha attempts per login (average)** — OCR health: ~1 = first-try
+  captcha reads; creeping up = the portal changed its captcha.
+
+### What each alert means (thresholds are STARTING POINTS)
+
+Every threshold was picked at design time with no production history —
+**retune from real data after a few weeks**; each rule's comment in
+`ops/observability/prometheus/rules/opensrm.yml` says what firing means:
+
+| Alert | Fires when | First action |
+|---|---|---|
+| OpenSRMAppDown | scrape down 5m | `docker ps` + `docker logs opensrm` |
+| OpenSRMPushTickStale | no tick >5m, 5m sustained | check the Hermes cron job + push-tick.log |
+| OpenSRMSyncFailureRatioHigh | >20% failing, ≥10 syncs/h | read the error= breakdown |
+| OpenSRMParseEmpty | any parse-empty in 1h | compare a capture vs `app/portal/parsers/` |
+| OpenSRMSyncP95TooSlow | p95 >90s for 1h | correlate lock rejections |
+| OpenSRMScrapeLockRejectionsBurst | >10 in 15m, 5m sustained | check p95 + app logs |
+| OpenSRMPortalCooldownActive | cooldown >0 for 10m | portal health / cooldown section above |
+
+The rule unit tests (`opensrm.test.yml`, run by the CI promtool step) prove
+each rule BOTH fires on crafted bad series and stays quiet on the matching
+good one.
+
+### Tuning
+
+- Edit `ops/observability/prometheus/rules/opensrm.yml` (or the dashboard
+  JSON) in a PR — the running stack picks changes up only via
+  `docker compose up -d --force-recreate` (the lifecycle/reload endpoint is
+  deliberately OFF: `--no-web.enable-lifecycle`).
+- Grafana UI panel edits are never saved (read-only provisioning) — edit
+  `grafana/dashboards/opensrm.json`.
+- Retention: `--storage.tsdb.retention.time=30d` + `.size=2GB` in the
+  compose file.
+
+### Restore / teardown
+
+The stack holds NO authoritative data — deleting everything loses only
+metrics history: `docker compose down -v` removes the three named volumes;
+`ops/observability/` + the secrets files in `/docker/opensrm-obs/` recreate
+it. The app runs with or without it (endpoint returns 401 to nothing).
 
 ## Push tick (scheduler, alerting, dead-man)
 
@@ -256,38 +415,50 @@ routinely drop a tick or two). Failures alert through two independent chains:
    ntfy, rate-limited 1/min (`app/logging_setup.py` `NtfyHandler`; on the lab:
    `grep -cE "^NTFY_ALERT_URL=.+" /docker/opensrm/.env` → 1).
 
-### Dead-man gap (PROPOSED — not installed)
+### Dead-man (implemented — Prometheus alert on the app's own gauge)
 
-Both alert chains are generated **inside the Hermes host**. If that host (or
-the cron job) dies or the job gets disabled, ticks stop and **nothing alerts**
-— no monitor watches a missing tick anywhere (verified: the job's
-`monitor_url`/`monitor_script` are null in `jobs.json`; Uptime Kuma has 29
-monitors, zero matching OpenSRM/push/cron/heartbeat:
-`sqlite3 kuma.db "select id,name,type from monitor where name like '%SRM%'
-or type in ('push','cron')"` → empty; Kuma's `hermes Docker` monitor only
-sees container down, not a stopped job). A missing tick is also silent for up
-to ~2 min by design (the 3-failure rule).
+Both alert chains used to be generated **inside the Hermes host**: if that
+host (or the cron job) died or the job got disabled, ticks stopped and
+**nothing alerted** — no monitor watched a missing tick anywhere (verified
+at design time: the job's `monitor_url`/`monitor_script` were null in
+`jobs.json`; Uptime Kuma had 29 monitors, zero matching
+OpenSRM/push/cron/heartbeat; Kuma's `hermes Docker` monitor only saw the
+container being down, not a stopped job). A missing tick was also silent for
+up to ~2 min by design (the 3-failure rule).
 
-**Proposed fix — a Kuma push (heartbeat) monitor, alarm outside Hermes:**
+**Implemented fix — the app itself is now the heartbeat (v1.25.x):** every
+successful `POST /internal/push/tick` increments
+`opensrm_push_tick_total{outcome="ok"|"error"}` and stamps the
+`opensrm_push_tick_last_success_timestamp_seconds` gauge (same `app/metrics.py`
+module, no PII in labels; auth-failed ticks deliberately move nothing — an
+outside prober must not be able to fake scheduler liveness). The
+observability stack's `OpenSRMPushTickStale` rule fires when the stamp goes
+>5 min stale for 5m sustained, and Alertmanager delivers it to ntfy — so the
+alarm lives OUTSIDE the process that fails, which was the whole point.
+Both the counter and the gauge are pinned by `tests/test_push_tick.py`
+(27/27) and the rule is promtool-tested both ways.
 
-1. In Uptime Kuma add a *Push* monitor, e.g. name `opensrm-push-tick`,
-   heartbeat interval **5 min** (tolerates the designed 2-min silence plus a
-   deploy), "Alert after 1 missed heartbeat".
-2. Copy its push URL into `/opt/data/secrets/kuma_push_url` (600) and have
-   `push-tick.sh` POST to it on each **successful** tick (one extra
-   `curl -fsS -m 5 -o /dev/null "$(cat …/kuma_push_url)"` line; failure to
-   ping must never fail the tick).
-3. The freshness signal is then the heartbeat itself: Hermes-dead,
-   job-disabled and script-hang all stop the pings, and the **alarm lives in
-   Kuma**, which is a different process on a different host than the failure
-   it detects — closing the same-process gap.
-
-Not installed: it needs a Kuma monitor + an edit to the Hermes-side script,
-both outside this repo. Flip this section from PROPOSED to a procedure when
-done.
+Not yet deployed on the lab: it needs the optional observability stack
+brought up (see [Observability stack](#observability-stack-optional)) —
+the metrics are in the app image, but until `METRICS_SECRET` + the stack
+go live, the dead-man watches nothing. The earlier proposal — a Uptime Kuma
+push monitor fed by `push-tick.sh` — stays a valid stack-free alternative
+(needs the Hermes-side script edit, outside this repo); the Prometheus
+route shipped instead because the rules are in git, promtool-tested, and
+the delivery path was verified end-to-end.
 
 ## Upgrade notes (accumulated)
 
+- **Observability stack (2026-10-18)** — first bring-up on the lab follows
+  the exact steps in [Observability stack](#observability-stack-optional):
+  set `METRICS_SECRET` in `/docker/opensrm/.env` and `docker compose up -d
+  opensrm` (recreate), copy `ops/observability/` to `/docker/opensrm-obs/`,
+  create the three 600-mode secret files there (`metrics_token` =
+  the METRICS_SECRET value, `grafana_admin`, `ntfy_url` with the template
+  params — exact strings in the compose file header), hand them to the
+  container uids with the one-shot `docker run … chown` line, then
+  `docker compose up -d`. ORDER MATTERS: Grafana seeds its admin password
+  from the secret file on first boot only.
 - **Snapshot before any release that carries migrations** — pinned recipe in
   Deploy step 0; ad-hoc pre-deploy snapshots on the lab have inconsistent
   names (`srm.db.predeploy-<unixts>`, `srm.db.bak-pre-<ver>-<stamp>`) and no

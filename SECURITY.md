@@ -45,6 +45,15 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - The rendered Prometheus text carries only counters/timers/gauges with
   low-cardinality labels (pipeline, error class, page, outcome) — no
   netids, no portal payloads, no PII
+- **The scrape itself is secret-gated twice over** when the optional
+  observability stack (ops/observability/) is up: the stack's Prometheus
+  reads its `X-Metrics-Token` value from a mounted secret file
+  (mode 600, owned by the container's uid, created on the deploy host —
+  never in the repo), and both Prometheus and Grafana bind 127.0.0.1 only,
+  reachable solely via `ssh -L` (the Cloudflare tunnel is untouched and
+  neither service is exposed publicly). The alertmanager's ntfy topic URL
+  is likewise a mode-600 `url_file` mount — the topic name is a secret by
+  ntfy's own design
 - Push endpoints use **DB-backed** rate limits (survive serverless): 10
   subscribes, 3 test pushes, 30 receipts per netid per hour
 - Reminder payloads contain only timetable facts (subject, time, room) and

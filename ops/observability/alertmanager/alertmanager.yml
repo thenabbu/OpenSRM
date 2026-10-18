@@ -1,0 +1,35 @@
+# OpenSRM Alertmanager — receives the rules' alerts from Prometheus and
+# forwards them to ntfy. Delivery path (chosen over the two alternatives,
+# see docs/runbook.md#alert-delivery):
+#
+#   Alertmanager webhook_configs -> ntfy ?template=yes URL templating
+#
+# Verified empirically against the real ntfy.sh API with a throwaway topic:
+# the alertmanager payload POSTed to a URL carrying
+#   ?template=yes&title={{.commonLabels.alertname}}&message={{.commonAnnotations.summary}}
+# comes back as a proper ntfy notification (HTTP 200, rendered title and
+# message) — ntfy's Go-template URL params do the reformatting, so NO bridge
+# container and no Grafana-side contact point is needed. Grafana's webhook
+# would work the same way but its alerts are UI-managed; these rules live in
+# git and are promtool-tested, so Prometheus is the source of truth.
+#
+# The ntfy topic URL is a secret (the topic name is the password — ntfy has
+# no auth on public topics), so it is read from url_file: and the file lives
+# next to this compose file, never in the tree.
+
+route:
+  receiver: ntfy
+  group_by: ["alertname"]
+  # one message per alertname burst, then re-notify if it keeps firing
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: ntfy
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/ntfy_url
+        send_resolved: false
+        # ntfy rate-limits by IP; a resolved message would double the
+        # traffic for every alert. Firing-only: silence = it recovered.
+        max_alerts: 0

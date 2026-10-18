@@ -3287,6 +3287,22 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
     return {"ok": True, **stats}
 
 
+# observability: dead-man signal for the tick scheduler. The gauge stamps
+# the epoch of the last SUCCESSFUL tick (0 = never); Prometheus alerts when
+# it goes >5m stale (OpenSRMPushTickStale), which is what closes the
+# runbook's dead-man gap — a dead Hermes cron job is otherwise silent from
+# inside the app. Counter by outcome pairs with it: ok should sit at ~1/min,
+# error means _run_tick raised (the 5xx chain already pages on that).
+_PUSH_TICK_LAST_OK = {"ts": 0.0}
+
+
+def _push_tick_last_ok_ts():
+    return _PUSH_TICK_LAST_OK["ts"]
+
+
+metrics.gauge("opensrm_push_tick_last_success_timestamp_seconds", _push_tick_last_ok_ts)
+
+
 def push_tick():
     """cron-job.org fires this every minute. Secret header, no session;
     wrong/missing secret => bare 401 with no detail (nothing to probe)."""
@@ -3305,7 +3321,16 @@ def push_tick():
     if not conf["tick_secret"] or not tick_ok:
         log_with_kv(log_push, logging.WARNING, "tick auth failed", ip=_client_ip())
         return _bare(401, "push tick auth failed — secret missing or wrong")
-    return _run_tick(conf=conf)
+    # auth-failed ticks deliberately do NOT touch the dead-man signal: an
+    # unauthenticated prober must never be able to move a metric.
+    try:
+        res = _run_tick(conf=conf)
+    except Exception:
+        metrics.inc("opensrm_push_tick_total", outcome="error")
+        raise
+    metrics.inc("opensrm_push_tick_total", outcome="ok")
+    _PUSH_TICK_LAST_OK["ts"] = time.time()
+    return res
 
 
 # ── Internal metrics (Prometheus text, secret-header auth) ──────────

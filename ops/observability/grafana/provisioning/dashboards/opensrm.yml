@@ -1,0 +1,17 @@
+# Dashboard provisioning: read-only by design. allowUiUpdates=false means
+# panel edits in the UI are NOT saved — the JSON in dashboards/ is the only
+# source of truth, so a hand-tweaked panel can never silently diverge from
+# what git ships. Edits = edit the JSON + restart the container.
+apiVersion: 1
+
+providers:
+  - name: opensrm
+    orgId: 1
+    folder: OpenSRM
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
