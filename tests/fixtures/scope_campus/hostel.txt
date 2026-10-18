@@ -1,0 +1,5 @@
+{
+  "Status": "Error",
+  "Message": "No Hostel Details Found ...",
+  "Data": ""
+}
