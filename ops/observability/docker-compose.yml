@@ -112,9 +112,14 @@ services:
     # image default (grafana, 472) — pinned so a base change can't promote.
     user: "472:472"
     ports:
-      # loopback only — ssh -L 3000:127.0.0.1:3100 to reach it (host 3000
-      # is dockhand)
-      - "127.0.0.1:3100:3000"
+      # LAN access (deliberate, password-gated): 0.0.0.0 — sign-up and
+      # anonymous access are off, admin is a 32-hex password from the
+      # secret file, so anyone who reaches the port still has to
+      # authenticate. The Cloudflare tunnel stays untouched: this is
+      # reachable inside the LAN only (home NAT), no TLS on the LAN
+      # (same as the lab's other dashboards). Prometheus/Alertmanager
+      # below remain loopback-only.
+      - "0.0.0.0:3100:3000"
     environment:
       - TZ=Asia/Kolkata
       - GF_SECURITY_ADMIN_USER=admin

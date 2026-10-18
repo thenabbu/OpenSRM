@@ -200,7 +200,12 @@ def t_compose_hardening():
     pub = [p for p in ports if ":" in p and not p.startswith("./")]
     assert pub, "no published ports found"
     for p in pub:
-        assert p.startswith("127.0.0.1:"), f"port not loopback-only: {p}"
+        # only Grafana (3100) is deliberately LAN-exposed (password-gated);
+        # Prometheus/Alertmanager must stay loopback-only
+        if ":3100:3000" in p:
+            assert p.startswith(("0.0.0.0:", "127.0.0.1:")), f"grafana port shape: {p}"
+        else:
+            assert p.startswith("127.0.0.1:"), f"port not loopback-only: {p}"
     for flag in ("cap_drop", "no-new-privileges", "mem_limit", "pids_limit"):
         assert flag in compose, f"compose missing hardening flag: {flag}"
     # retention: 30d wall clock AND a size cap

@@ -49,11 +49,14 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   observability stack (ops/observability/) is up: the stack's Prometheus
   reads its `X-Metrics-Token` value from a mounted secret file
   (mode 600, owned by the container's uid, created on the deploy host —
-  never in the repo), and both Prometheus and Grafana bind 127.0.0.1 only,
-  reachable solely via `ssh -L` (the Cloudflare tunnel is untouched and
-  neither service is exposed publicly). The alertmanager's ntfy topic URL
-  is likewise a mode-600 `url_file` mount — the topic name is a secret by
-  ntfy's own design
+  never in the repo), Prometheus and Alertmanager bind 127.0.0.1 only
+  (reachable solely via `ssh -L`), and Grafana binds all LAN interfaces
+  behind a generated 32-hex admin password — sign-up, anonymous access
+  and self-registration are all off, so reaching the port still requires
+  authenticating. The Cloudflare tunnel is untouched and neither service
+  is exposed publicly (home NAT forwards no port; LAN is not internet).
+  The alertmanager's ntfy topic URL is likewise a mode-600 `url_file`
+  mount — the topic name is a secret by ntfy's own design
 - Push endpoints use **DB-backed** rate limits (survive serverless): 10
   subscribes, 3 test pushes, 30 receipts per netid per hour
 - Reminder payloads contain only timetable facts (subject, time, room) and

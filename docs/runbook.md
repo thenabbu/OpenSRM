@@ -15,7 +15,7 @@ from `main` at 4ef16cb (v1.25.0).
 | Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh lab 'docker exec opensrm ls /app/data'` |
 | Daily snapshots | `/data/ssd120/backups/opensrm/srm.YYYYMMDD.snapshot.db.gz`, taken ~03:0x IST, 7 kept | `ssh lab 'ls -1t /data/ssd120/backups/opensrm/'` |
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
-| Observability stack (optional, not yet deployed) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only ports 9092/9093/3100 | see [Observability stack](#observability-stack-optional) |
+| Observability stack (optional, not yet deployed) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
 | Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
 
 Note the two env files: the lab also keeps a master secret registry at
@@ -240,9 +240,12 @@ Design rules, all verified live on the lab daemon 2026-10-18:
 - **No existing stack to extend**: the lab had no Prometheus/Grafana/Loki/
   ntfy containers (`docker ps`), and the classic ports are taken — 9090 is
   Cockpit (served its login page), 3000 is dockhand. So the stack binds
-  `127.0.0.1:9092` (Prometheus), `127.0.0.1:9093` (Alertmanager) and
-  `127.0.0.1:3100` (Grafana) — **loopback only, access is `ssh -L`**, the
-  Cloudflare tunnel is never touched, nothing is publicly exposed.
+  `127.0.0.1:9092` (Prometheus) and `127.0.0.1:9093` (Alertmanager) —
+  **loopback only** — and Grafana on `0.0.0.0:3100` so it opens from any
+  LAN device at `http://<lab-ip>:3100` (password-gated: sign-up and
+  anonymous access are off, admin is the 32-hex secret file). The
+  Cloudflare tunnel is never touched — LAN exposure does not imply
+  internet exposure; home NAT has no 3100 forward.
 - Images pinned by tag AND digest (resolved from the registry): prometheus
   v3.13.4, alertmanager v0.34.1, grafana 13.2.4. Non-root users, `cap_drop:
   ALL`, `no-new-privileges`, `mem_limit`/`pids_limit` from a measured run
@@ -315,9 +318,13 @@ volume rm <project>_grafana-data && up` again, in the right order).
 ### Access
 
 ```bash
-ssh -L 3100:127.0.0.1:3100 lab    # Grafana   -> http://localhost:3100
-ssh -L 9092:127.0.0.1:9092 lab    # Prometheus -> http://localhost:9092
-ssh -L 9093:127.0.0.1:9093 lab    # Alertmanager
+# Grafana — primary: any LAN device
+#   http://<lab-ip>:3100   (e.g. http://192.168.29.7:3100)
+#   admin password: docker exec -u 472:472 opensrm-grafana \
+#                     cat /run/secrets/grafana_admin
+ssh -L 3100:127.0.0.1:3100 lab    # Grafana — fallback (remote/VPN), same URL
+ssh -L 9092:127.0.0.1:9092 lab    # Prometheus (loopback-only)
+ssh -L 9093:127.0.0.1:9093 lab    # Alertmanager (loopback-only)
 ```
 
 ### What each panel means
