@@ -296,6 +296,34 @@ def delete_account_rows(netid):
     return counts
 
 
+# ── repository: SCOPE session + cold data (app/scope/, migration m018) ────
+
+def user_scope(netid):
+    """scope_sid bearer + numeric studentid — recoverable by design (m018:
+    it rides every SCOPE call, so unlike cookies m017 it cannot be hashed;
+    a re-login rotates it)."""
+    return _read("SELECT scope_sid, scope_studentid FROM users WHERE netid=?",
+                 (netid,), one=True)
+
+
+def save_scope_session(netid, sid, studentid):
+    with transaction() as c:
+        c.execute("UPDATE users SET scope_sid=?, scope_studentid=? WHERE netid=?",
+                  (sid, studentid, netid))
+
+
+def user_scope_data(netid):
+    """the cold blob readers key off: {"<op>": {"data": ..., "ts": ...}}."""
+    return _read("SELECT scope_json, scope_fetched_at FROM users WHERE netid=?",
+                 (netid,), one=True)
+
+
+def write_scope_data(netid, scope_json, fetched_at):
+    with transaction() as c:
+        c.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid=?",
+                  (scope_json, fetched_at, netid))
+
+
 # ── repository: cookies (web sessions) ───────────────────────────────
 
 def get_cookie(digest):
