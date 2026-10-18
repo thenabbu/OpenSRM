@@ -1784,6 +1784,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.26.0", "date": "18 Oct", "title": "Self-checking reminders",
+     "body": "The job that sends class-reminder pushes now reports its own "
+             "health on the server's metrics page, so if it ever stops "
+             "running, the server itself raises an alarm instead of the "
+             "reminders just quietly not arriving. Nothing changes in how "
+             "reminders look on your end."},
     {"ver": "v1.25.0", "date": "15 Oct", "title": "Delete my data",
      "body": "Settings now has a \"Delete my data\" row: it opens an explainer "
              "listing exactly what is erased (your account, login sessions, "
