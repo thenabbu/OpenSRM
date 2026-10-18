@@ -278,7 +278,7 @@ The stack is a sibling compose project. One-time, on the lab host:
 ```bash
 # 1. enable the app's metrics endpoint (project env file, NOT the master registry)
 echo 'METRICS_SECRET=<long-random-value>' >> /docker/opensrm/.env
-cd /docker/opensrm && docker compose up -d opensrm        # recreate with the env
+cd /docker/opensrm && docker compose up -d --force-recreate opensrm   # env is baked at create: a plain up -d leaves the old container Running with the OLD env
 curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Metrics-Token: <value>' \
   http://127.0.0.1:8083/internal/metrics                    # expect 200
 
@@ -452,7 +452,9 @@ the delivery path was verified end-to-end.
 - **Observability stack (2026-10-18)** — first bring-up on the lab follows
   the exact steps in [Observability stack](#observability-stack-optional):
   set `METRICS_SECRET` in `/docker/opensrm/.env` and `docker compose up -d
-  opensrm` (recreate), copy `ops/observability/` to `/docker/opensrm-obs/`,
+  --force-recreate opensrm` (the compose file passes the key through its
+  `environment:` list — without that line a .env key is never injected; and
+  a plain `up -d` does not recreate, so the env stays old), copy `ops/observability/` to `/docker/opensrm-obs/`,
   create the three 600-mode secret files there (`metrics_token` =
   the METRICS_SECRET value, `grafana_admin`, `ntfy_url` with the template
   params — exact strings in the compose file header), hand them to the
