@@ -352,8 +352,10 @@
     </div>
   </div>
   <div id="tab-settings" role="tabpanel" aria-labelledby="tab-settings-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
-    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER"]),
-                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group"]),
+    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER",
+                                   "University", "Program (Full)",
+                                   "Faculty Advisor", "Academic Advisor"]),
+                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group", "Admitted On"]),
                      ("Family", ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"]),
                      ("Contact", ["Address", "Pincode", "District", "State", "Personal Email ID",
                                   "Student Mobile No.", "Alternative Student Mobile No."])] %}
@@ -402,7 +404,8 @@
                       {% if key in personal %}
                       <div{% if key in ['Institution', 'Address'] %} class="sm:col-span-2"{% endif %}>
                         <div class="text-xs uppercase tracking-wide text-base-content/50">{{ key }}</div>
-                        <div class="text-sm font-mono break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
+                        {# addresses are prose -> wrap as text; other values are data (DESIGN §3 mono) #}
+                        <div class="text-sm{% if key != 'Address' %} font-mono{% endif %} break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
                       </div>
                       {% endif %}
                     {% endfor %}
