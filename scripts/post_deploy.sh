@@ -132,13 +132,16 @@ fi
 # ---- 4. authenticated render smoke (mint inside the container, delete the cookie row after)
 if [ "$DO_SMOKE" = 1 ]; then
   NETID=$(ssh lab 'docker exec opensrm python -c "import sqlite3;c=sqlite3.connect(\"file:/app/data/srm.db?mode=ro\",uri=True);print(c.execute(\"select netid from users limit 1\").fetchone()[0])"')
-  TOK=$(ssh lab "docker exec opensrm python -c \"from app.app import make_session_token; print(make_session_token('$NETID'))\"" | tail -1)
+  # -u 10001:10001: under cap_drop:ALL an exec'd ROOT cannot write the
+  # app-uid-owned DB (attempt to write a readonly database) — the mint and
+  # the cleanup below are writes, so they run as the app user
+  TOK=$(ssh lab "docker exec -u 10001:10001 opensrm python -c \"from app.app import make_session_token; print(make_session_token('$NETID'))\"" | tail -1)
   BODY=$(mktemp)
   CODE=$(curl -s -o "$BODY" -w '%{http_code}' -b "srm_session=$TOK" "$BASE_URL/")
   HITS=$(grep -c "$NETID" "$BODY" || true)
   # since v1.20.3 rows store sha256(token) (migration 17) — the raw $TOK is
   # what the cookie holds, so hash it before addressing the row.
-  CLEAN=$(ssh lab "docker exec opensrm python -c \"import hashlib,sqlite3;t=hashlib.sha256('$TOK'.encode()).hexdigest();c=sqlite3.connect('/app/data/srm.db');n=c.execute('delete from cookies where token=?',(t,)).rowcount;c.commit();left=c.execute('select count(*) from cookies where token=?',(t,)).fetchone()[0];print(n,left)\"")
+  CLEAN=$(ssh lab "docker exec -u 10001:10001 opensrm python -c \"import hashlib,sqlite3;t=hashlib.sha256('$TOK'.encode()).hexdigest();c=sqlite3.connect('/app/data/srm.db');n=c.execute('delete from cookies where token=?',(t,)).rowcount;c.commit();left=c.execute('select count(*) from cookies where token=?',(t,)).fetchone()[0];print(n,left)\"")
   rm -f "$BODY"
   set -- $CLEAN
   if [ "$CODE" = "200" ] && [ "${HITS:-0}" -gt 0 ] && [ "${1:-0}" = "1" ] && [ "${2:-0}" = "0" ]; then
