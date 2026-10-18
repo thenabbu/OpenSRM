@@ -3304,8 +3304,10 @@ metrics.gauge("opensrm_push_tick_last_success_timestamp_seconds", _push_tick_las
 
 
 def push_tick():
-    """cron-job.org fires this every minute. Secret header, no session;
-    wrong/missing secret => bare 401 with no detail (nothing to probe)."""
+    """The every-minute tick scheduler (the Hermes cron job opensrm-push-tick;
+    cron-job.org is the kept alternative scheduler, see docs/push.md) fires
+    this. Secret header, no session; wrong/missing secret => bare 401 with
+    no detail (nothing to probe)."""
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
     # audit run-1 (#16): hmac.compare_digest raises TypeError on non-ASCII
