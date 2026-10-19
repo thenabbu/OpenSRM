@@ -1,0 +1,569 @@
+[
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "-",
+    "description": "APPLIED BIOLOGY",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21BTB101T",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "A+",
+    "description": "INTRODUCTION TO COMPUTATIONAL BIOLOGY",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21BTB102T",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "-",
+    "description": "BIOLOGY",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21BTB103T",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "A+",
+    "description": "CHEMISTRY",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21CYB101J",
+    "credit": "5"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "-",
+    "description": "CHEMISTRY (LE)",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CYB102B",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "O",
+    "description": "CALCULUS AND LINEAR ALGEBRA",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21MAB101T",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "O",
+    "description": "ADVANCED CALCULUS AND COMPLEX ANALYSIS",
+    "completedmonthandyear": "MAY-2026",
+    "noofattempts": "1",
+    "subjectcode": "21MAB102T",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "grade": "-",
+    "description": "PROBABILITY AND QUEUEING THEORY",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21MAB204T",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "O",
+    "description": "PROGRAMMING FOR PROBLEM SOLVING",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21CSS101J",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "-",
+    "description": "COMPUTER ORGANIZATION AND ARCHITECTURE",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSS201T",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "-",
+    "description": "DATA SCIENCE",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSS303T",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "-",
+    "description": "DESIGN THINKING AND METHODOLOGY",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21DCS201P",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "A+",
+    "description": "ELECTRICAL AND ELECTRONICS ENGINEERING",
+    "completedmonthandyear": "MAY-2026",
+    "noofattempts": "1",
+    "subjectcode": "21EES101T",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "A+",
+    "description": "BASIC CIVIL AND MECHANICAL WORKSHOP",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21MES101L",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "grade": "O",
+    "description": "ENGINEERING GRAPHICS AND DESIGN",
+    "completedmonthandyear": "MAY-2026",
+    "noofattempts": "1",
+    "subjectcode": "21MES102L",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "grade": "O",
+    "description": "PHILOSOPHY OF ENGINEERING",
+    "completedmonthandyear": "DEC-2025",
+    "noofattempts": "1",
+    "subjectcode": "21GNH101J",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "grade": "-",
+    "description": "BEHAVIORAL PSYCHOLOGY",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21GNH401TA",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "grade": "O",
+    "description": "COMMUNICATIVE ENGLISH",
+    "completedmonthandyear": "MAY-2026",
+    "noofattempts": "1",
+    "subjectcode": "21LEH101T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "grade": "-",
+    "description": "RUSSIAN",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21LEH108T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "grade": "-",
+    "description": "SOCIAL ENGINEERING",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21PDH201T",
+    "credit": "2"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-1",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-2",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-3",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-4",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-5",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-6",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-7",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-8",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-9",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-10",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-11",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-12",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-13",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "grade": "-",
+    "description": "Non Credit Courses (M)-14",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Open Elective Courses (O)",
+    "grade": "-",
+    "description": "Open Elective Courses (O)-1",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Open Elective Courses (O)",
+    "grade": "-",
+    "description": "Open Elective Courses (O)-2",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Open Elective Courses (O)",
+    "grade": "-",
+    "description": "Open Elective Courses (O)-3",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "O",
+    "description": "OBJECT ORIENTED DESIGN AND PROGRAMMING",
+    "completedmonthandyear": "MAY-2026",
+    "noofattempts": "1",
+    "subjectcode": "21CSC101T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "DATA STRUCTURES AND ALGORITHMS",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC201J",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "OPERATING SYSTEMS",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC202J",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "ADVANCED PROGRAMMING PRACTICE",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC203P",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "DESIGN AND ANALYSIS OF ALGORITHMS",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC204J",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "DATABASE MANAGEMENT SYSTEMS",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC205P",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "ARTIFICIAL INTELLIGENCE",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC206T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "FORMAL LANGUAGE AND AUTOMATA",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC301T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "COMPUTER NETWORKS",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC302J",
+    "credit": "4"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "SOFTWARE ENGINEERING AND PROJECT MANAGEMENT",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC303J",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "COMPILER DESIGN",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC304J",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "grade": "-",
+    "description": "MACHINE LEARNING",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSC305P",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-1",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-2",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-3",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-4",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-5",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-6",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-7",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "grade": "-",
+    "description": "Professional Elective Courses (E)-8",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "-",
+    "credit": "-"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "MASSIVE OPEN ONLINE COURSE (MOOC)",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSP303T",
+    "credit": "3"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "MAJOR PROJECT",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSP401L",
+    "credit": "15"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "INTERNSHIP",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSP403L",
+    "credit": "5"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "COMMUNITY CONNECT",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21GNP301L",
+    "credit": "1"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "MAJOR PROJECT",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSP402L",
+    "credit": "10"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "grade": "-",
+    "description": "PROJECT",
+    "completedmonthandyear": "-",
+    "noofattempts": "-",
+    "subjectcode": "21CSP302L",
+    "credit": "3"
+  }
+]

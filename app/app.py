@@ -86,6 +86,7 @@ from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scr
     user_marks_personal,
     user_password,
     user_personal,
+    user_scope_data,
     user_sync_state,
     users_group_keys,
     weekly_slot_counts,
@@ -119,6 +120,7 @@ from .portal.parsers.timetable import (
     _tt_norm_clock,  # noqa: F401 — re-exported from app.app
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
+from .scope.ops import enabled_features
 from .security import require_login
 from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
     _RATE_CAP,
@@ -142,6 +144,9 @@ from .state import (  # noqa: F401 — re-exported: tests/recipes import these f
     portal_health,
     progress,
     rate_limiter,
+)
+from .views.academics import (
+    academics_view,  # noqa: F401 — re-exported from app.app
 )
 from .views.attendance import (
     ATTENDANCE_TARGET,
@@ -1664,6 +1669,11 @@ def index():
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
+    # Academics tab (SCOPE): stored cold blob only — no network on the render
+    # path. None = zero footprint (feature off / no academics ops stored / all
+    # sections empty), which is what gates the navbar item, dock item and panel.
+    academics = academics_view(user_scope_data(netid), enabled_features())
+
     # End-sem schedule card (official iden=126 table primary, scribe probe as
     # fallback; None -> card hidden). Rows are kept: _exam_stop needs the raw
     # dates for the budget horizon (spec §1.2).
@@ -1726,6 +1736,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        academics=academics,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
@@ -1784,6 +1795,15 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.29.0", "date": "19 Oct", "title": "Academics tab",
+     "body": "The Scope app's exam data now has a home: a new Academics tab "
+             "with your released results grouped by exam semester, an "
+             "estimated CGPA (the credit-weighted average of your grades - "
+             "estimated, because SRM does not publish its grade scale) plus "
+             "a per-semester SGPA, required-versus-acquired credit bars for "
+             "every course category, and the full list of your program's "
+             "subjects with grades and attempts for the ones already "
+             "completed. The tab appears once your Scope data has synced."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "
