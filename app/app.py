@@ -1784,6 +1784,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.26.1", "date": "19 Oct", "title": "Under-the-hood tidy-up",
+     "body": "A defensive fix so an unusually long subject code in the Today "
+             "widget can never push the page sideways on a phone — the code "
+             "truncates instead. Nothing changes with normal timetables. Also "
+             "adds the measuring tools used for the upcoming performance work."},
     {"ver": "v1.26.0", "date": "18 Oct", "title": "Self-checking reminders",
      "body": "The job that sends class-reminder pushes now reports its own "
              "health on the server's metrics page, so if it ever stops "
