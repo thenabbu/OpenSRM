@@ -1,0 +1,12 @@
+<!-- Render-time Tailwind classes: the scanner cannot see class names
+     assembled in Jinja (dashboard.html LAYOUT loop: col-span/row-span/
+     grid-cols/max-h cap) or Python (_BAND_BAR: progress band). Literal
+     tokens only — the @source inline(...) form did not work for the
+     arbitrary max-h value (the backslash escapes must be plain here).
+     UPDATE THIS when LAYOUT or _BAND_BAR gain a value:
+     tests/test_css_safelist.py fails if a rendered dynamic family token
+     is missing from app.css. -->
+<div class="lg:col-span-4 lg:col-span-8 lg:col-span-12 lg:row-span-2
+  sm:grid-cols-1 sm:grid-cols-2 sm:grid-cols-3
+  progress-success progress-warning progress-error
+  lg:max-h-[calc((100dvh-94px)*0.65)]"></div>

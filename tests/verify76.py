@@ -131,8 +131,12 @@ chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
     has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
 chk('L45', "a11y: progress bars have aria-label", len(re.findall(r'aria-label', rd('app/templates/dashboard.html'))) >= 5)
 chk('L46', "manifest linked on dashboard", has('app/templates/dashboard.html', r'rel="manifest"'))
-chk('L47', "CDN pinned: tailwind 4.3.3 + daisyui 5.7.46",
-    has('app/templates/partials/theme.html', r'@tailwindcss/browser@4\.3\.3') and has('app/templates/partials/theme.html', r'daisyui@5\.7\.46'))
+chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
+    has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
+    and not has('app/templates/partials/theme.html', r'jsdelivr')
+    and has('scripts/build-css.sh', r'TW_VERSION=4\.3\.3')
+    and has('scripts/build-css.sh', r'DAISY_VERSION=5\.7\.46')
+    and has('app/static/app.css', r'lg\\:col-span-8'))
 chk('L48', "entrypoint fails fast (set -eu)", has('entrypoint.sh', r'^set -eu', re.M))
 chk('L49', "VERDICT.md references solve_captcha_b64", has('egress/poc/VERDICT.md', r'solve_captcha_b64'))
 chk('L50', "CONTRIBUTING: shared playwright context note", has('CONTRIBUTING.md', r'context|shared', re.I))

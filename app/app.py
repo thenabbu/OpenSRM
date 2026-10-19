@@ -1506,8 +1506,8 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -1784,6 +1784,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.26.2", "date": "19 Oct", "title": "Faster first paint",
+     "body": "The app's stylesheet is now built ahead of time and served "
+             "straight from this server, instead of each phone compiling "
+             "CSS in the browser on every launch. The page shows sooner, "
+             "works with no third-party requests, and nothing changes in "
+             "how it looks."},
     {"ver": "v1.26.1", "date": "19 Oct", "title": "Under-the-hood tidy-up",
      "body": "A defensive fix so an unusually long subject code in the Today "
              "widget can never push the page sideways on a phone — the code "
@@ -2505,6 +2511,27 @@ def static_no_cache(filename):
         # files pass script-src 'self').
         resp.headers["Service-Worker-Allowed"] = "/"
     return resp
+
+
+# ── Versioned asset URLs (?v=<content-hash>, DESIGN §10.16 rule 2) ────
+# Templates reference CSS/JS through asset(); Phase 3 makes static_no_cache
+# serve these URLs immutable, so the browser never re-downloads an unchanged
+# file. Cache key = mtime_ns; a rebuild changes the hash automatically.
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+_asset_cache = {}
+
+
+def asset(name):
+    """Versioned /static/ URL: /static/<name>?v=<sha256[:10]>."""
+    path = os.path.join(_STATIC_DIR, name)
+    st = os.stat(path)
+    hit = _asset_cache.get(name)
+    if not hit or hit[0] != st.st_mtime_ns:
+        with open(path, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()[:10]
+        hit = (st.st_mtime_ns, digest)
+        _asset_cache[name] = hit
+    return "/static/%s?v=%s" % (name, hit[1])
 
 # ── Typed sync results ─────────────────────────────────────────────────
 # A failed sync carries a `kind`; its HTTP status comes from this table —
@@ -3727,6 +3754,7 @@ def create_app(config=None):
         # pre-warm ddddocr so the first real scrape isn't +3s cold (was a
         # module-level thread at import time)
         threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+    a.jinja_env.globals["asset"] = asset  # versioned /static/ URLs (DESIGN §10.16)
     return a
 
 

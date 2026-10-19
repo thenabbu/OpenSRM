@@ -390,6 +390,13 @@ def run_shots(browser, base, token, shots_dir):
             pg.reload(wait_until="networkidle")
             pg.wait_for_timeout(400)
             active = pg.evaluate(ACTIVE_JS)
+            if active != f"tab-{tab}":
+                # the hash restore occasionally loses a race (observed ~1 run
+                # in several): fall back to an explicit click — the shot's
+                # purpose is the tab's pixels, and a click is deterministic
+                pg.locator(f'[data-tab="{tab}"]:visible').first.click()
+                pg.wait_for_timeout(450)
+                active = pg.evaluate(ACTIVE_JS)
             assert active == f"tab-{tab}", f"expected tab-{tab}, got {active!r}"
             f = shots_dir / f"baseline-{vp}-{tab}.png"
             pg.screenshot(path=str(f))
