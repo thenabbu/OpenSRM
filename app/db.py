@@ -180,9 +180,10 @@ def set_cold_fetch(netid, ts):
 
 
 def user_dashboard(netid):
-    """one row read: marks/faculty live on the same users row (was three queries)"""
+    """one row read: marks/faculty/scope live on the same users row (was three queries)"""
     return _read("SELECT attendance_json, last_fetch, personal_details_json, "
-                 "exam_schedule_json, marks_json, faculty_map_json, fb_open "
+                 "exam_schedule_json, marks_json, faculty_map_json, fb_open, "
+                 "scope_json "
                  "FROM users WHERE netid=?", (netid,), one=True)
 
 

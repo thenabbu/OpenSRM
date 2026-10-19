@@ -155,6 +155,7 @@ from .views.attendance import (
     _title_case,
     _weekdays,  # noqa: F401 — re-exported from app.app
 )
+from .views.campus import campus_view
 from .views.layout import (
     LAYOUT,
     WIDGETS,
@@ -1719,6 +1720,14 @@ def index():
              "teach_groups": _teacher_groups(faculty_view)}
     layout = [c for c in LAYOUT
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
+    # Campus tab: shape-driven SCOPE cards off the same row (scope_json).
+    # Each card builds ONLY when its feature slug is on and it has rows, so
+    # every card self-hides — and with none left the tab is never registered
+    # (alive-empty = no UI, never an error). Scope toggles are a request-time
+    # knob, so the feature set is read per request like every other gate.
+    from app.scope.ops import enabled_features
+    campus = campus_view(_jload(row["scope_json"] if row else None, {}),
+                         enabled_features())
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
@@ -1736,7 +1745,8 @@ def index():
         timetable=timetable_html(group_key, attendance),
         tt_fetched_at=_tt_fetched_at(group_key),
         tt_editor_enabled=_tt_editor_enabled(),
-        personal=personal_data)
+        personal=personal_data,
+        campus=campus)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
 SLOTS = [
@@ -1784,6 +1794,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.31.0", "date": "18 Oct", "title": "Campus tab",
+     "body": "A new Campus tab gathers four cards - placement board, library, "
+             "hostel and transport, and campus notifications. Every card only "
+             "shows up once there is real data for it, so right now the tab "
+             "stays hidden and will appear on its own after a sync that brings "
+             "something in."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "
