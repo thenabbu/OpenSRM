@@ -86,6 +86,7 @@ from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scr
     user_marks_personal,
     user_password,
     user_personal,
+    user_scope_data,
     user_sync_state,
     users_group_keys,
     weekly_slot_counts,
@@ -119,6 +120,7 @@ from .portal.parsers.timetable import (
     _tt_norm_clock,  # noqa: F401 — re-exported from app.app
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
+from .scope.ops import enabled_features
 from .security import require_login
 from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
     _RATE_CAP,
@@ -155,6 +157,7 @@ from .views.attendance import (
     _title_case,
     _weekdays,  # noqa: F401 — re-exported from app.app
 )
+from .views.fees import _fees_view
 from .views.layout import (
     LAYOUT,
     WIDGETS,
@@ -1664,6 +1667,14 @@ def index():
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
+    # Fees tab: server-rendered from the cold SCOPE blob (marks-tab pattern;
+    # no new DB columns). Feature 'fees' off or no fee/finance rows -> None
+    # -> the template renders no navbar item and no panel (empty=hidden,
+    # DESIGN §4.12 — same self-hide rule as empty cards).
+    srow = user_scope_data(netid)
+    fees = _fees_view(_jload(srow["scope_json"] if srow else None, {}),
+                      enabled_features())
+
     # End-sem schedule card (official iden=126 table primary, scribe probe as
     # fallback; None -> card hidden). Rows are kept: _exam_stop needs the raw
     # dates for the budget horizon (spec §1.2).
@@ -1726,6 +1737,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        fees=fees,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
@@ -1784,6 +1796,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.30.0", "date": "18 Oct", "title": "Fees tab",
+     "body": "A new Fees tab shows what you still owe (or a quiet \"All clear\" "
+             "when nothing is due), your payments grouped by academic year, and "
+             "your full receipt history with tap-to-copy voucher numbers. It "
+             "reads the Scope app's backend, so it appears once your data has "
+             "synced."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "
