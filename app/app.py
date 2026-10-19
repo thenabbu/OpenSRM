@@ -86,6 +86,7 @@ from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scr
     user_marks_personal,
     user_password,
     user_personal,
+    user_scope_data,
     user_sync_state,
     users_group_keys,
     weekly_slot_counts,
@@ -119,6 +120,7 @@ from .portal.parsers.timetable import (
     _tt_norm_clock,  # noqa: F401 — re-exported from app.app
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
+from .scope.ops import enabled_features
 from .security import require_login
 from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
     _RATE_CAP,
@@ -154,6 +156,7 @@ from .views.attendance import (
     _status_for_pct,
     _title_case,
     _weekdays,  # noqa: F401 — re-exported from app.app
+    hourwise_view,
 )
 from .views.layout import (
     LAYOUT,
@@ -1616,6 +1619,40 @@ def _track(event, target="", detail="", user=""):
         log.info("usage track failed event=%s error=%r", event, e)
 
 # ── Routes ─────────────────────────────────────────────────
+def _hourwise_ctx(netid, group_key):
+    """Hourwise join context for the Attendance tab (Phase 2 join spec):
+    computed per request in the view layer from scope_json + timetable rows,
+    no new columns, nothing cached (O(days×6), contract). None unless EVERY
+    leg is present — feature 'hourwise' in SCOPE_FEATURES, a group with
+    slots, AND a non-empty getHourwiseAttendance — so a missing leg renders
+    the pre-existing chip list exactly as today and hides the day strip
+    (zero regression by construction). scope_json may be >36h old: it is
+    history, it still renders; the tab's sync-line caption carries its age.
+    """
+    if "hourwise" not in enabled_features() or not group_key:
+        return None
+    gid = group_id(group_key)
+    slots = day_slots(group_key)
+    if gid is None or not slots:
+        return None
+    row = user_scope_data(netid)
+    try:
+        stored = json.loads(row["scope_json"] or "{}") if row else {}
+    except (ValueError, TypeError):
+        stored = {}
+    hw = stored.get("getHourwiseAttendance") or {} if isinstance(stored, dict) else {}
+    rows = hw.get("data") if isinstance(hw, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    # custom subjects fall back to bare hN chips (join spec: never invent)
+    custom = {r[0] for r in group_subjects(gid) if r[3] and r[0]}
+    ctx = hourwise_view(rows, slots, custom)
+    ts = hw.get("ts") if isinstance(hw, dict) else None
+    ctx["ts"] = int(ts) if isinstance(ts, (int, float)) and ts else 0
+    ctx["full"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ctx["ts"])) if ctx["ts"] else "never"
+    return ctx
+
+
 @require_login
 def index():
     netid = get_current_user()
@@ -1697,6 +1734,14 @@ def index():
     # header-only (empty-state rule DESIGN §8); hide the whole block instead
     has_budgets = any(c.get("m90") is not None or c.get("m_end") is not None for c in courses)
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
+    # hourwise join (SCOPE): subject-named absence chips + the day strip —
+    # gated again per leg inside _hourwise_ctx (feature / group / scope_json)
+    hourwise = _hourwise_ctx(netid, group_key)
+    if hourwise:
+        for m in monthly:
+            for r in m["abs_rows"]:
+                if hourwise["chips"].get(r["date"]):
+                    r["chips"] = hourwise["chips"][r["date"]]
     dash = {
         # institute mail is NetID@srmist.edu.in (the portal login page states
         # it verbatim) — the personal Gmail from the profile is NOT shown here
@@ -1721,6 +1766,7 @@ def index():
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly,
+        hourwise=hourwise,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
@@ -1784,6 +1830,14 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.28.0", "date": "18 Oct", "title": "Which subject was that bunk?",
+     "body": "The Attendance tab's absence chips now name the subject of every "
+             "hour you were absent for (joined against your group's timetable "
+             "through the official Scope app data), grouped when consecutive "
+             "hours were the same class - and a new strip shows the last 14 "
+             "school days hour by hour (present / absent / OD). Hours with no "
+             "timetable slot still show as bare h-codes; your attendance "
+             "totals stay exactly as the portal reports them."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "
