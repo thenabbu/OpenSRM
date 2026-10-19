@@ -6,7 +6,7 @@ pipeline, Playwright fallback) and renders attendance/marks/timetable dashboards
 `VERSION` == `pyproject.toml` == `uv.lock` (tests/verify76.py M23 checks this).
 
 ## Where things run
-- **Local dev**: repo at `/opt/data/opensrm-repo` (hermes host), venv `.venv` (uv; NEVER npm — no frontend build, CDN only; pnpm if JS tooling is ever needed).
+- **Local dev**: repo at `/opt/data/opensrm-repo` (hermes host), venv `.venv` (uv; NEVER npm at runtime — CSS is compiled ahead of time with a pinned Tailwind CLI and committed as `app/static/app.css` (`scripts/build-css.sh`), no runtime CDN; pnpm only for isolated one-off JS tooling, never in the runtime image).
 - **Prod**: lab host, container `opensrm` (compose project at `/docker/opensrm` — the live file lags the repo copy until synced; `docs/runbook.md` Deploy sequences the sync), port `127.0.0.1:8083` + `172.31.0.1:8083` (cloudflared gateway), served at https://srm.200871.xyz via CF tunnel `c2308be7-6527-4da3-a96c-49c4b4c918c0`.
 - **Do NOT touch** `flights.200871.xyz` (DNS/ingress) — another agent owns that subdomain.
 
@@ -22,12 +22,12 @@ app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, 
 app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker, LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (Playwright fallback)
 app/migrations.py     # versioned schema; runs inside create_app() (per-app DATA_DIR)
-app/templates|static/ # daisyUI v5, CDN Tailwind (pinned versions + sha384 SRI in partials/theme.html)
+app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI build via scripts/build-css.sh; safelist for render-time classes), theme tokens in partials/theme.html
 tests/                # verify76.py (72 static) + test_sw/test_xss/test_exams*/test_push_* (DUTs + push units) + test_healthz (container probe) + guide_* (login UX guide suites)
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 ops/observability/    # OPTIONAL metrics stack, runs next to the app (never in the image): Prometheus (scrapes GET /internal/metrics with X-Metrics-Token from a 600-mode secret file) + Grafana (read-only provisioned dashboard) + Alertmanager (webhook -> ntfy); bring-up/panels/alerts/tuning: docs/runbook.md#observability-stack-optional; guard-railed by tests/test_observability_assets.py + the promtool CI step
-docs/                 # runbook.md (operator runbook: deploy/rollback/restore-drill/rotate/sync-damping/tick alerting) · audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · screenshots/ + pr/ (PR evidence) · logos
-scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · restore_drill.sh (offline restore drill: snapshot -> temp DB, integrity_check, row-count diff vs live) · url_map_dump.py (canonical route dump — diff two trees to prove a refactor didn't move a URL) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run)
+docs/                 # runbook.md (operator runbook: deploy/rollback/restore-drill/rotate/sync-damping/tick alerting) · audit/ record (findings + resolution) · push.md + push-device-test.md (Web Push) · SCANS.md (supply-chain scans, report-only) · perf/ (frontend perf baseline + campaign numbers) · screenshots/ + pr/ (PR evidence) · logos
+scripts/               # generate_push_keys.py (VAPID/tick-secret) · rotate_fernet_key.py (Fernet key rotation) · restore_drill.sh (offline restore drill: snapshot -> temp DB, integrity_check, row-count diff vs live) · url_map_dump.py (canonical route dump — diff two trees to prove a refactor didn't move a URL) · pr_preflight.sh (pre-merge checks) · post_deploy.sh (purge+smoke) · ci_docker_smoke.sh + ci_e2e_http.sh (CI jobs) · canary_sync.sh + canary_cookie.py (one offline-verifiable sync health canary run) · perf_baseline.py (frontend perf measurements + before/after shots, docs/perf/)
 VERSION pyproject.toml uv.lock   # release = bump all three together
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate, reusable) + build.yml (image :latest+:VERSION+:sha, gated on tests) + lint.yml + scans.yml (gitleaks/pip-audit/trivy, report-only); SHA-pinned actions; `uv lock --check`
 ```
@@ -37,6 +37,8 @@ VERSION pyproject.toml uv.lock   # release = bump all three together
 cd /opt/data/opensrm-repo
 uvx --quiet ruff check app/          # == CI lint
 uv lock --check                      # == CI lock check (after pyproject edits run `uv lock` first)
+# scripts/build-css.sh                # after template edits that add new utility
+#                                     # classes (app.css is committed; CI fails if stale)
 
 # pick a FREE port first — 8084/8085 get squatted by other local services:
 python3 -c "import socket;s=socket.socket();s.bind(('127.0.0.1',18099));print('free');s.close()"

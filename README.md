@@ -59,7 +59,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback |
 | Captcha | ddddocr (self-contained OCR) |
 | Database | SQLite with a versioned migration registry (16 migrations → schema v17) |
-| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pinned CDN, no build step), vanilla JS, Jinja2 |
+| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pre-compiled to `app/static/app.css` via a pinned CLI — no runtime CDN), vanilla JS, Jinja2 |
 | PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
 | CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` · Scans (gitleaks/pip-audit/trivy, report-only) |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS |
@@ -175,7 +175,7 @@ flowchart LR
         LOG["logging_setup.py<br/>TIMED level + key=value lines"]
     end
 
-    subgraph frontend["templates + static — CDN only, no build step"]
+    subgraph frontend["templates + static — pre-compiled app.css, no runtime CDN"]
         TPL["templates/<br/>login · dashboard<br/>partials/theme.html (openSRM)"]
         JS["static/<br/>login.js · dash.js<br/>timetable.js · gaze.js"]
         SWJS["sw.js — offline shell"]
@@ -269,7 +269,7 @@ No cron is installed — run it by hand or wire your own scheduler.
 ## Security
 
 - Fernet-encrypted passwords at rest; session tokens stored as sha256 digests at rest (raw value only in the browser's cookie); cross-site state-changing requests refused by the Sec-Fetch-Site/Origin guard; `srm_session` cookie is HttpOnly + SameSite=Lax, Secure flag gated on a real `cf-ray` + HTTPS hop
-- CSP headers (script-src 'self' + cdn.jsdelivr.net for the pinned Tailwind/daisyUI CDN — no inline scripts) with SRI `integrity` sha384 + `crossorigin` on both CDN tags (a tampered CDN payload fails closed)
+- CSP headers (script-src 'self', style-src 'self' 'unsafe-inline' — no inline scripts and no external origins at all). CSS is pre-compiled locally into `app/static/app.css`, which removed the jsDelivr supply-chain surface entirely; the build toolchain is version-pinned and sha256-verified in `scripts/build-css.sh`
 - Rate limiting per netid, per IP, plus an aggregate portal budget (bucketed: login / refresh / preflight), a bounded sync queue (waiters queue with logins ahead of refreshes) and escalating portal cooldown — every limit structure is lock-guarded with TTL pruning, so in-memory state stays bounded (memory bound in [SECURITY.md](SECURITY.md))
 - Strict JSON request bodies (no form-encoded login), 16 KB body cap, parameterized SQL
 - Cloudflare Tunnel for HTTPS termination; HSTS only served on `cf-ray` responses

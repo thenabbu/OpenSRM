@@ -94,8 +94,8 @@ chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})
     ev=f"head={_nt_head.group(1) if _nt_head else None} VERSION={_pyv}")
 
 # ---------- MEDIUM: docs ----------
-chk('D27', "README/SECURITY CSP claim matches reality (jsdelivr allowed)",
-    has('README.md', r"script-src[^`]*cdn\.jsdelivr\.net|jsdelivr") and has('SECURITY.md', r'jsdelivr'))
+chk('D27', "README/SECURITY carry no CDN origin (runtime CDN removed)",
+    not has('README.md', r'cdn\.jsdelivr\.net') and not has('SECURITY.md', r'cdn\.jsdelivr\.net'))
 chk('D28', "README gunicorn quick-start has -t 120", has('README.md', r'-t 120'))
 chk('D29', "DESIGN: theme is a shared partial (not duplicated)",
     not has('DESIGN.md', r'duplicated in both templates|duplicated in both templates'))
@@ -141,10 +141,10 @@ chk('L52', "login rate: empty-body POSTs don't burn IP budget (M10 companion)", 
 
 # ---------- docs-audit (13 findings, docs_audit.json) ----------
 DESIGN_T = rd('DESIGN.md'); README_T = rd('README.md')
-chk('D53', "docs1 README/SECURITY CSP claim corrected (jsdelivr)",
+chk('D53', "docs1 README/SECURITY describe the pre-compiled CSS (no runtime CDN)",
     # content check, not URL validation: a bare 'in' on a hostname literal is
-    # what py/incomplete-url-substring-sanitization flags, so match it as text
-    ("script-src 'self', no external scripts" not in README_T) and bool(re.search(r'cdn\.jsdelivr\.net', rd('SECURITY.md'))))
+    # what py/incomplete-url-substring-sanitization flags, so match as text
+    ("pre-compiled" in README_T) and (not bool(re.search(r'cdn\.jsdelivr\.net', rd('SECURITY.md')))) and ("third-party" in rd('SECURITY.md')))
 chk('D54', "docs2 SECURITY healthcheck claim true (compose has healthcheck+logging)",
     ('healthcheck' in rd('SECURITY.md').lower()) and ('healthcheck' in compose) and ('logging:' in compose))
 chk('D55', "docs3 README gunicorn -t 120", '-t 120' in README_T)

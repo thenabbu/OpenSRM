@@ -23,7 +23,7 @@
 9. **Borders, not shadows.** No gradients, glows, blur, glassmorphism, hover-lift, or colored shadows (§6).
 10. **Data is monospace.** Course codes, percentages, times, counts, dates, NetIDs → `font-mono`. Everything else uses the default sans (§3).
 11. **daisyUI 5 only.** `input-bordered`, `form-control`, and `label-text` do not exist in v5. Use `fieldset`, `floating-label`, `input`, `label`.
-12. **No build step, strict CSP.** Tailwind and daisyUI load from the jsDelivr CDN at runtime, pinned with SRI (`integrity` sha384 + `crossorigin` in `partials/theme.html`). No inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
+12. **Pre-compiled CSS, strict CSP.** Tailwind (pinned CLI) + daisyUI are compiled ahead of time into `app/static/app.css` (committed; CI fails if it is stale vs the templates — §10.16). No runtime CDN, no inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
 
 ### Cheat sheet: what am I styling?
 
@@ -82,7 +82,7 @@ Anatomy of the dashboard:
 
 ### 2.1 How the theme reaches the page
 
-The theme is authored as a daisyUI 5 custom theme (Appendix A), but the app has **no Tailwind build**. It ships as plain CSS variables under `html[data-theme="openSRM"]` in the shared partial `app/templates/partials/theme.html`, included by both `login.html` and `dashboard.html`. Do not use `@plugin "daisyui/theme"`; it only works in a build pipeline.
+The theme is authored as a daisyUI 5 custom theme (Appendix A), but the runtime theme is **not built in the browser**. It ships as plain CSS variables under `html[data-theme="openSRM"]` in the shared partial `app/templates/partials/theme.html`, included by both `login.html` and `dashboard.html` (the compiled `app.css` supplies daisyUI component layer around it — §10.16). Do not use `@plugin "daisyui/theme"` in runtime files; it only works inside the pinned build.
 
 ### 2.2 Tokens and roles
 
@@ -161,7 +161,7 @@ Thresholds live in `app/views/attendance.py` (re-exported by `app.app`): `ATTEND
 | `warn` | 65% to < 75% | `warning` | |
 | `danger` | < 65% | `error` | The Python value is `danger`; the CSS token is `error` |
 
-Template pattern, as used today (works because Tailwind runs in the browser; never build class names from user data):
+Template pattern, as used today (the compiled build cannot see class names created at render time — any dynamic family must be safelisted in `app/static/safelist/classes.html`, §10.16; never build class names from user data):
 
 ```jinja
 text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 'error' }}
@@ -634,6 +634,12 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
 
 **Motion** happens only in response to something the person did: the spinner and `animate-spin` on the refresh icon, a ≤ 200ms border/background transition on drag-and-drop targets. No entrance animations, scroll reveals, parallax, or looping decoration. Add `motion-reduce:animate-none` to anything that spins or pulses.
 
+**Interactive motion** (smoothness campaign, still action-triggered — never on load): a press feedback `scale(.97)` on `:active`; a tab-switch cross-fade up to 220 ms; a sheet/dialog slide up to 320 ms; the pull-to-refresh indicator. All animate **`transform` and `opacity` only** (never `width`/`height`/`top`/`left`/`margin`/`box-shadow`/`filter`), are **interruptible** (a new tap cancels the in-flight one), use the shared easing tokens (`--ease-out`, `--ease-spring`), and are **disabled under `prefers-reduced-motion`**. Hover lift/scale and entrance-on-load animation remain forbidden.
+
+**Avatar rule.** The blobatar's looping idle animation is paused (never removed — the pose is preserved) when scrolled offscreen, on any device whose `data-perf="low"` tier is detected, and while the tab is hidden. Pausing is what keeps an always-on animation from eating a weak phone's attention and battery.
+
+**Page-level refresh rule (§4.8).** A data refresh no longer opens a blocking modal: the refresh icon spins and content updates in place — no flash, scroll position holds, the refresh is interruptible. The modal pattern remains for confirmations and opt-in explainers (§4.8).
+
 ---
 
 ## 8. Copy
@@ -664,6 +670,10 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
 | Emoji, icon fonts, icon CDNs, remote images | Inline SVG |
 | Eyebrow labels above every heading, ALL CAPS everywhere, centered data | Sentence case, left aligned; uppercase only for Personal Details labels and dashboard `.wlabel`s (§4.17) |
 | Entrance animations, scroll reveals, hover lift | Motion only in response to an action |
+| Animating `width`/`height`/`top`/`left`/`margin`/`box-shadow`/`filter` | Animate `transform` and `opacity` only |
+| Full-page reload to show new data | Update the changed parts in place |
+| Runtime CSS build (CDN Tailwind), un-hashed static assets | Pre-compiled `app.css`, versioned (`?v=`) immutable assets |
+| A looping animation that never stops | Pause it offscreen, on low-tier devices, and when hidden |
 | `input-bordered`, `form-control`, `label-text` (daisyUI 4) | `fieldset`, `floating-label`, `input`, `label` |
 | `alert()` / `prompt()` in new flows | `modal` or an inline `alert` |
 | New component shapes or spacing values | The recipes in §4 and the spacing in §5 |
@@ -672,15 +682,15 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
 
 ## 10. Implementation constraints (silent-failure list)
 
-1. **No build step.** Tailwind v4 (`@tailwindcss/browser@4`) and daisyUI 5 (`daisyui@5`) load from jsDelivr and generate styles at runtime from the DOM. Classes written in Jinja or added by JS are picked up. There is no `tailwind.config.js`, no `@plugin`, and no `@apply` in plain CSS (`@apply` / `@theme` work only inside `<style type="text/tailwindcss">`). Both CDN URLs are pinned to exact versions in `partials/theme.html` (`@tailwindcss/browser@4.3.3`, `daisyui@5.7.46`) and carry SRI `integrity="sha384-…"` + `crossorigin="anonymous"`, so a changed CDN payload is rejected by the browser (fail-closed: unstyled, not compromised); `verify76` L47 fails the suite if a pin drifts.
-2. **Strict CSP** (`set_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` and jsDelivr only, so **no inline `<script>`**; styles from `'self'`, `'unsafe-inline'`, and jsDelivr; images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
+1. **CSS is compiled ahead of time, never at runtime.** `app/static/src.css` is the entry (Tailwind `@import`, the daisyUI `@plugin`, `@source` pointing at templates/views/safelist, then the hand-written sheets); `scripts/build-css.sh` compiles it with a version-pinned, sha256-verified Tailwind standalone CLI + daisyUI release into the committed `app/static/app.css`. There is no runtime CDN, no `tailwind.config.js`, and no `node_modules` in the runtime image — the build runs only on a developer machine or CI. Classes written in Jinja are picked up by the scanner **only if they appear literally in a scanned file**; families assembled at render time (grid spans, progress colors) live in `app/static/safelist/classes.html`. A CI check re-builds `app.css` and fails on `git diff --exit-code`, so the committed file can never go stale. `verify76` L47 pins the compiled build.
+2. **Strict CSP** (`_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` only, so **no inline `<script>`**; styles from `'self'` and `'unsafe-inline'` (the compiled `app.css` plus inline style attributes); images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. No third-party origin remains in the CSP — the jsDelivr entries left with the runtime CDN. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
 3. **Service worker** (`app/static/sw.js`): network-first for `/static/*` and HTML, with cache as the offline fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v14` → `opensrm-v15`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
 5. **Hand-written CSS uses variables, never hex:** `var(--color-base-200)`; tints via `color-mix(in oklab, var(--color-success) 8%, transparent)`.
 6. **PWA chrome** (`<meta name="theme-color">`, `manifest.json` `background_color` / `theme_color`, the service worker's offline page) uses `#111111` from the logo. Leave it unless asked. These are the only places hex is acceptable; take values from §2.2.
 7. **HTML built in Python or JS** (`timetable_html()`, `timetable.js`) uses the same tokens and classes as the templates, and must escape any interpolated data.
 8. Python changes must pass `ruff` (CI lint).
-9. **daisyUI wins inside its own components.** Measured on the CDN build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (the cascade is unchanged; note that SRI's `crossorigin="anonymous"` now loads this sheet CORS-mode, so its rules ARE readable from `cssRules` — the old no-`crossorigin` build hid them with a SecurityError). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
+9. **daisyUI wins inside its own components.** Measured on this build: `text-base-content` — even with `!important` — does **not** override `.badge-info`'s color (the cascade is unchanged; the stylesheet is same-origin so its rules ARE readable from `cssRules` — the old CDN load without `crossorigin` hid them behind a SecurityError). To restyle badge text, use another badge variant or hand-rolled span; never rely on a utility override.
 10. **Only the documented opacity steps render** (§2.5: `/40 /50 /60 /70 /90`). Measured: `text-base-content/55` silently rendered at full opacity while `/50` and `/60` applied. Stick to the ladder — arbitrary steps may not ship.
 11. **Two ways daisyUI's dock/active styling reaches the navbar tabs.** (a) **daisyUI's "active" fill is invisible on this surface:** `.btn-active` / `[aria-pressed]` / `[aria-current]` all set `--btn-bg: color-mix(in oklab, var(--color-base-200), #000 5%)` = `#090909` — byte-identical to the navbar, because `base-200` is already near-black. Measured: a selected navbar tab sat at **1.000:1** against the bar it lives in. On this theme "active" has to *lighten*: use a `base-content` tint (§4.9) and measure the selected/unselected pair before shipping; never trust daisyUI's default active/pressed state. (b) **`.dock-active:after{width:2.5rem}` also matches navbar tabs**, because `dash.js` toggles `dock-active` on every `[data-tab]` — so a `::after` indicator that declares `left`/`right` but not `width` renders at the leaked 40px (measured left 8 / right 41 inside an 89px pill) instead of its own insets. Declare `width: auto` in the rule that owns the bar; `test_navbar` asserts bar width == pill − 16.
 12. **A closed `<details>` still reports a layout rect for its hidden children** (Chrome lays them out via `content-visibility`), so a geometry audit that measures "card height vs deepest descendant" counts the hidden tag form (§4.13) and reports phantom negative slack. Filter measurement sweeps with `!el.closest('details:not([open])')`.
@@ -689,6 +699,17 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py
 15. **The desktop dashboard fit is a literal, not a formula.** `lg:h-[calc(100dvh-104px)]` assumes navbar 64px + `main` `py-5` (40px); change either and the grid over/under-fills by the same delta with no other symptom (page scrollbar returns, or a dead gap opens under the cards). `tests/test_dash_fit.py` pins the literal against measured chrome — `gridH == innerH − navH − padTop − padB` and bottom gap == `padB` — so a navbar/padding change fails the test instead of shipping a drifting gap (red run of v1.19.0: gridH 754 vs expected 796). Row sizing is `minmax(0,auto) minmax(0,1fr)` on purpose, each bound by a measurement: equal `1fr` rows starved the people card by 93px at 1280×900 while row 1 idled with 100px of slack, and %-capped rows got stretched to their limit by maximize-tracks (row 1 ate 65% even under normal data — dash_fit 2/20 red). The heavy-data ceiling therefore lives on the CARD: assess carries `LAYOUT["cap"]` → `lg:max-h-[calc((100dvh-104px)*0.65)]`, which clamps the track contribution — an uncapped `auto` row 1 blew up to 640px under a 14-exam stress load and crushed row 2 to 2px at 1024×768 (people card invisible, `minCard=2`). With the cap: row 1 ≤ 65% of the grid, row 2 ≥ 35%−26px on every display from 1024×768 to 3440×1440 (stress sweep green); normal data (row 1 ≈ 287px) sits far below the cap. Card residue scrolls inside the card (`lg:overflow-hidden` shell + `card-body` `lg:min-h-0 lg:overflow-y-auto`), and mobile (<lg) must keep natural page flow — the fit test asserts `scrollHeight > clientHeight` at 393 so nobody "fixes" the phone into a scrollless squeeze.
 
 ---
+
+### 10.16 Performance rules
+
+Front-end rules from the smoothness campaign (measured with `scripts/perf_baseline.py`, 6x CPU + Slow 4G; the committed baseline is `docs/perf/baseline.md`). The six that apply to everything written here:
+
+1. **No runtime CDN.** CSS is compiled ahead of time with a pinned Tailwind CLI and committed as `app/static/app.css` (§10.1); runtime CDN loading is not allowed anywhere.
+2. **Hashed immutable assets.** Every `/static/` CSS/JS reference goes through the `asset()` Jinja global (`?v=<content-hash>`) and is served `Cache-Control: public, max-age=31536000, immutable`; HTML and `sw.js` stay uncached.
+3. **No full-page reloads for data updates.** New data updates the page in place; scroll position, focus, open panels and active tab must survive a sync.
+4. **`transform`/`opacity` only** for anything animated (§7); never animate layout properties, never broad `will-change`.
+5. **Pause looping animations** when offscreen, when hidden, and on the low-end tier (§7 avatar rule).
+6. **Prove perf claims on a throttled machine** with `scripts/perf_baseline.py`, and report only measured numbers — a speed-up that was not measured is not a claim.
 
 ## 11. Workflow and checklist
 
@@ -707,9 +728,12 @@ Pre-flight checklist before you finish:
 - [ ] Status colors follow the thresholds, and each has a number, word, or icon beside it
 - [ ] Text is at least `/50`; small labels on status fills follow §2.8
 - [ ] No shadows, gradients, blur, hover-lift, or entrance animation added
+- [ ] New motion is `transform`/`opacity` only, interruptible, and off under `prefers-reduced-motion`
 - [ ] Data is in `font-mono`; copy is sentence case; errors say what to do
-- [ ] No inline script, external font, icon library, or remote image
+- [ ] No inline script, external font, icon library, remote image, or CDN-loaded CSS/JS
 - [ ] `CACHE_NAME` bumped if anything in `app/static/` changed
+- [ ] Templates gained new utility-class families? Added to `safelist/classes.html` + `app.css` rebuilt (§10.16)
+- [ ] A data-updating flow updates in place (no full-page reload); any new listener inside `<main>` is delegated or re-run idempotently
 - [ ] Looks right at 375px and 1280px, and keyboard focus is visible on every control I touched
 - [ ] Dashboard engine touched: `DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/test_layout.py` still passes (25 checks, §4.17)
 
@@ -738,7 +762,7 @@ Fix an item only when asked, or when you are already editing that exact rule. Th
 
 ## Appendix A. Theme source
 
-Canonical theme, as authored in the daisyUI generator (kept here as the reference for token values; **not** loadable as-is in this CDN setup):
+Canonical theme, as authored in the daisyUI generator (kept here as the reference for token values; the runtime theme still ships as the plain `html[data-theme]` block in `partials/theme.html`):
 
 ```css
 @plugin "daisyui/theme" {
@@ -808,8 +832,8 @@ html[data-theme="openSRM"] {
   <meta name="theme-color" content="#111111">
   <title>OpenSRM</title>
   <style>/* deployed theme block from Appendix A */</style>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css" integrity="sha384-kDFOM9ydHs3NQrHJycAPdF3M0eBnO7Q06ZRTOr2xwv8Wpk7nYYsrw9z1PaoAY050" crossorigin="anonymous">
+  <meta name="color-scheme" content="dark">
+  <link rel="stylesheet" href="{{ asset('app.css') }}">   <!-- pre-compiled Tailwind+daisyUI (§10.16); never a CDN -->
 </head>
 <body class="bg-base-100 text-base-content">
   <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 px-4 py-3"
