@@ -288,6 +288,32 @@
     </div>
     {% endif %}
 
+    {% if hourwise %}
+    <div class="att-h flex items-center gap-2">Last 14 school days
+      <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ hourwise.ts }}" data-full="{{ hourwise.full }}"></span>
+    </div>
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5" id="hourwise-strip">
+      <div class="flex justify-between gap-1" role="group" aria-label="Hourly attendance, last 14 school days">
+        {% for d in hourwise.strip %}
+        <div class="flex flex-col items-center gap-1 min-w-0 flex-1" title="{{ d.date }} · {{ d.dow }}">
+          <span class="sr-only">{{ d.date }} {{ d.dow }}:</span>
+          <div class="flex flex-col gap-0.5 w-full">
+            {% for c in d.cells %}
+            {% if c.state %}
+            <span class="block h-2.5 rounded-[2px] {{ 'bg-error' if c.state == 'A' else 'bg-info' if c.state == 'OD' else 'bg-base-300' }}"
+                  title="{{ d.date }} · h{{ c.n }} · {{ 'absent' if c.state == 'A' else 'OD' if c.state == 'OD' else 'present' }}{{ ' · ' + c.subject if c.subject }}"><span class="sr-only">h{{ c.n }} {{ 'absent' if c.state == 'A' else 'OD' if c.state == 'OD' else 'present' }}{{ ' ' + c.subject if c.subject }}</span></span>
+            {% else %}
+            <span class="block h-2.5 invisible" aria-hidden="true"></span>
+            {% endif %}
+            {% endfor %}
+          </div>
+          <span class="text-xs text-base-content/60 leading-none" aria-hidden="true">{{ d.dow[:1] }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     {% if monthly %}
     <div class="att-h">Absences</div>
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5 att-abs-card">
@@ -304,7 +330,13 @@
         {% if m.abs_rows %}
         <div class="flex flex-wrap gap-1.5 mt-2">
           {% for a in m.abs_rows %}
+          {% if a.chips %}
+          {% for c in a.chips %}
+          <span class="badge badge-soft badge-sm font-mono whitespace-normal max-w-full" title="{{ c.title }}">{{ c.label }}</span>
+          {% endfor %}
+          {% else %}
           <span class="badge badge-soft badge-sm font-mono" title="{{ a.hours }} hrs absent">{{ a.date }} · {{ a.hours }}h</span>
+          {% endif %}
           {% endfor %}
         </div>
         {% endif %}

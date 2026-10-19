@@ -96,3 +96,89 @@ def _title_case(s):
     join keys still go through _norm_subject, so casing is render-time only."""
     s = str(s or "")
     return s.title() if s.isupper() else s
+
+# ── Hourwise join (SCOPE getHourwiseAttendance × the user's timetable) ──────
+_HW_FMT = "%d-%b-%Y"  # SCOPE attendancedate: "16-Oct-2026"
+
+
+def hourwise_view(rows, slots, custom=frozenset(), limit=14):
+    """SCOPE getHourwiseAttendance rows + the user's timetable slots
+    ({day: {period: {"code", "name", ...}}}) -> the two views the hourwise
+    feature earns (join spec: validate, don't redesign):
+
+      chips: {"16 Oct": [{"label", "title"}]} — A hours only, contiguous
+        same-subject runs grouped ("14 Oct · h1,h2 COA"). A missing hour
+        key = no class scheduled = never an absence; any slot miss (weekend,
+        no row, NULL code, "CL" class-in-charge, custom subject) and any
+        h7+ hour (SCOPE only sends h1..h6 -> period 7 is UNKNOWN) falls back
+        to a bare hN chip. NEVER invents a subject.
+      strip: last `limit` school days, newest first — 6 period slots per
+        column (state P|A|OD, None = no class, kept for period alignment)
+        plus the joined subject for labels.
+
+    O(days×6) dict lookups, per-request, nothing cached (contract)."""
+    chips, strip = {}, []
+    parsed = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        try:
+            parsed.append((datetime.strptime(str(r.get("attendancedate", "")), _HW_FMT).date(), r))
+        except ValueError:
+            continue  # junk row: no date, no view — never a crash
+    parsed.sort(key=lambda t: t[0], reverse=True)
+
+    def _subject(day, n, r):
+        """The joined subject for hour n, or None = bare hN fallback.
+        period 7+ is deliberately None: SCOPE has no h7, so it can never be
+        named (and never be called an absence from the timetable side)."""
+        if n > 6:
+            return None, None
+        slot = (slots.get(day) or {}).get(n)
+        if not slot:
+            return None, None
+        code = str(slot.get("code") or "")
+        name = str(slot.get("name") or "")
+        if not code or not name or code == "CL" or code in custom:
+            return None, None  # NULL code / class-in-charge / custom slot
+        return name, code
+
+    for d, r in parsed:
+        day = d.strftime("%A")
+        disp = d.strftime("%d %b")
+        # chips: contiguous same-subject runs across h1..h6 (+ defensive h7)
+        runs = []
+        for n in range(1, 8):
+            v = r.get("h%d" % n)
+            if v is None:
+                continue  # missing key = no class scheduled, never an absence
+            if str(v).strip().upper() != "A":
+                continue  # P / OD / junk: not an absence hour
+            subj, code = _subject(day, n, r)
+            if runs and runs[-1]["subj"] == subj and runs[-1]["last"] == n - 1:
+                runs[-1]["last"] = n
+            else:
+                runs.append({"first": n, "last": n, "subj": subj, "code": code})
+        if runs:
+            out = []
+            for run in runs:
+                hrs = ",".join("h%d" % n for n in range(run["first"], run["last"] + 1))
+                if run["subj"]:
+                    out.append({"label": "%s · %s %s" % (disp, hrs, run["subj"]),
+                                "title": "Absent %s — %s (%s)" % (hrs, run["subj"], run["code"])})
+                else:
+                    out.append({"label": "%s · %s" % (disp, hrs),
+                                "title": "Absent %s — no subject on the timetable" % hrs})
+            chips[disp] = out
+        # day strip: newest `limit` rows, 6 fixed period slots each
+        if len(strip) < limit:
+            cells = []
+            for n in range(1, 7):
+                v = r.get("h%d" % n)
+                st = str(v).strip().upper() if v is not None else None
+                if st not in ("P", "A", "OD"):
+                    st = None  # no key / junk value = no class slot
+                subj, _ = _subject(day, n, r)
+                cells.append({"n": n, "state": st, "subject": subj})
+            strip.append({"date": disp, "dow": day[:3], "cells": cells})
+    return {"chips": chips, "strip": strip}
