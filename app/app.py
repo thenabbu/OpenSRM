@@ -1784,6 +1784,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.26.3", "date": "20 Oct", "title": "Instant repeat visits",
+     "body": "The app now remembers its own files: styles and scripts "
+             "that have not changed are no longer re-downloaded on every "
+             "launch, so opening the dashboard again is much faster and "
+             "uses less data. New versions still arrive automatically "
+             "right after each update."},
     {"ver": "v1.26.2", "date": "19 Oct", "title": "Faster first paint",
      "body": "The app's stylesheet is now built ahead of time and served "
              "straight from this server, instead of each phone compiling "
@@ -2493,23 +2499,31 @@ def static_no_cache(filename):
     # audit: was hardcoded "/app/app/static" — only worked inside the container
     # (local runs 404'd). Derive from __file__ like every other path here.
     resp = send_from_directory(os.path.join(os.path.dirname(__file__), "static"), filename)
-    # Manifest stays cacheable; .js revalidates every load so a deploy can't
-    # leave a stale shell (old API shape) cached for an hour (audit run-1 R1);
-    # everything else stays no-store. The SW itself benefits: no-cache makes
-    # worker updates land on the next navigation instead of after up to 1h.
-    if filename.endswith('.json'):
-        resp.headers["Cache-Control"] = "public, max-age=3600"
-    elif filename.endswith('.js'):
-        resp.headers["Cache-Control"] = "no-cache"
-    else:
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    # Cache policy (DESIGN §10.16 rule 2):
+    #  - versioned URLs (?v=<content hash> from asset()) are
+    #    content-addressed — the bytes under the URL can never change — so
+    #    they cache immutable for a year. This is what makes warm repeat
+    #    visits move zero CSS/JS bytes.
+    #  - sw.js revalidates every load so worker updates land on the next
+    #    navigation instead of after up to 1h (audit run-1 R1).
+    #  - manifest stays cacheable (3600), other unversioned statics stay
+    #    no-store (a deploy must never leave a stale shell).
     if filename == "sw.js":
+        resp.headers["Cache-Control"] = "no-cache"
         # audit 2026-09-27: without this header a scope of "/" is rejected
         # (default max scope = the script's directory, /static/) and
         # registration fails — swallowed by .catch(), so the PWA silently
         # never worked. Registration now lives in login.js/dash.js (external
         # files pass script-src 'self').
         resp.headers["Service-Worker-Allowed"] = "/"
+    elif request.args.get("v"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif filename.endswith('.json'):
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif filename.endswith('.js'):
+        resp.headers["Cache-Control"] = "no-cache"
+    else:
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
 
 
