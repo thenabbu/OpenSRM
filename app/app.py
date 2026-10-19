@@ -167,12 +167,6 @@ from .views.marks import (
     _marks_summary,
     _marks_view,
 )
-from .views.profile import (  # noqa: F401 — re-exported from app.app
-    merge_personal,
-    oneliner,
-    photo_uri,
-    scope_profile,
-)
 from .views.ticker import (
     _now_next_from_slots,
     _today_brief,
@@ -1662,12 +1656,6 @@ def index():
 
     # Extract student name from personal details
     personal_data = _jload(row["personal_details_json"] if row else None, {})
-    # SCOPE profile enrichment (slug `profile`) — gate-first: feature off or
-    # no stored scope data -> {} and every downstream join below is today's
-    # input unchanged. personal_data itself stays the portal's dict (it feeds
-    # the timetable group key / marks class key); only the rendered copy is
-    # merged, scope filling gaps, portal values winning (app/views/profile.py).
-    _scope_fields = scope_profile(_jload(row["scope_json"] if row else None, {}))
     student_name = personal_data.get("Student Name", "").title()
 
     # Marks: server-rendered (tab + dashboard widget). Re-synced hot data.
@@ -1714,9 +1702,6 @@ def index():
         # it verbatim) — the personal Gmail from the profile is NOT shown here
         "email": f"{netid}@srmist.edu.in",
         "reg_no": personal_data.get("Register No.", ""),
-        # SCOPE profile enrichment (slug `profile`): one-liner for the widget
-        # — scope fields first, portal fallback, "" (no line) when off/empty
-        "oneliner": oneliner(_scope_fields, personal_data),
         "today": _today_brief(group_key),
         "week": _week_updates(data.get("daily_absent", {})),
         "absent_today": any(
@@ -1751,11 +1736,7 @@ def index():
         timetable=timetable_html(group_key, attendance),
         tt_fetched_at=_tt_fetched_at(group_key),
         tt_editor_enabled=_tt_editor_enabled(),
-        # scope-filled copy of personal (portal values win, scope gaps only);
-        # avatar: portal photo_b64 first, scope studentphoto next, blobatar
-        # SVG fallback in the partial when the URI is ""
-        personal=merge_personal(personal_data, _scope_fields),
-        profile_photo=photo_uri(row, _scope_fields))
+        personal=personal_data)
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
 SLOTS = [
@@ -1803,15 +1784,6 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
-    {"ver": "v1.32.0", "date": "18 Oct", "title": "Your photo, and more personal details",
-     "body": "The profile card on the dashboard now shows your photo from the "
-             "official Scope student app instead of the generated blob avatar "
-             "(a photo the portal already has still wins), with a one-line "
-             "course · semester · section summary underneath. Settings -> "
-             "Personal details also picks up the extra facts the Scope app "
-             "knows - parents' names, date of birth, admitted date, address, "
-             "university and advisors - shown only where the portal doesn't "
-             "already list them."},
     {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
      "body": "We have started wiring the official Scope student app's backend "
              "into OpenSRM so its exam results, fee records, hostel/transport, "

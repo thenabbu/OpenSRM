@@ -180,12 +180,9 @@ def set_cold_fetch(netid, ts):
 
 
 def user_dashboard(netid):
-    """one row read: marks/faculty live on the same users row (was three
-    queries); photo_b64 + scope_json ride along for the profile widget so
-    the enrichment stays one query too (app/views/profile.py)."""
+    """one row read: marks/faculty live on the same users row (was three queries)"""
     return _read("SELECT attendance_json, last_fetch, personal_details_json, "
-                 "exam_schedule_json, marks_json, faculty_map_json, fb_open, "
-                 "photo_b64, scope_json "
+                 "exam_schedule_json, marks_json, faculty_map_json, fb_open "
                  "FROM users WHERE netid=?", (netid,), one=True)
 
 
