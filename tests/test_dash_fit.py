@@ -36,51 +36,7 @@ shutil.rmtree(DATA, ignore_errors=True)
 
 import tests._seed as seed_mod  # noqa: E402
 
-seed_mod.seed()  # group + base user FIRST (its INSERT OR REPLACE nulls other cols)
-
-import app.app as A  # noqa: E402
-
-# ---- rich fabricated payload so the grid is exercised at real load --------
-PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech]",
-            "Batch": "2025", "Semester": "III SEMESTER", "Section": "A",
-            "Student Name": "Test Student", "Register No.": "RA2500000000"}
-ATT = {"courses": [
-    {"code": "21CSC201J", "description": "DATA STRUCTURES AND ALGORITHMS", "max_hours": "46", "attended": "45", "absent": "1"},
-    {"code": "21CSC202J", "description": "OPERATING SYSTEMS", "max_hours": "44", "attended": "30", "absent": "14"},
-    {"code": "21CSC203P", "description": "ADVANCED PROGRAMMING PRACTICE", "max_hours": "55", "attended": "30", "absent": "25"},
-    {"code": "21CSS201T", "description": "COMPUTER ORGANIZATION AND ARCHITECTURE", "max_hours": "45", "attended": "43", "absent": "2"},
-    {"code": "21DCS201P", "description": "DESIGN THINKING AND METHODOLOGY", "max_hours": "30", "attended": "26", "absent": "4"},
-    {"code": "21LEM201T", "description": "PROFESSIONAL ETHICS", "max_hours": "11", "attended": "10", "absent": "1"},
-    {"code": "21MAB206T", "description": "NUMERICAL METHODS AND ANALYSIS", "max_hours": "44", "attended": "38", "absent": "6"},
-    {"code": "CL", "description": "CLASS IN CHARGE", "max_hours": "4", "attended": "2", "absent": "2"}],
-    "period": {"from": "20/Jul/2026", "to": "13/Oct/2026"},
-    "monthly": [{"month": "OCT / 2026", "present": "19", "absent": "5",
-                 "od_present": "0", "od_absent": "0", "ml": "0"}],
-    "daily_absent": {"OCT / 2026": [{"date": "01-10-2026", "hours": "1"},
-                                    {"date": "06-10-2026", "hours": "2"}]}}
-MARKS = [{"code": "21CSS201T", "title": "COMPUTER ORGANIZATION AND ARCHITECTURE",
-          "components": [{"name": "FT-I", "entered": "04/Sep/2026", "scored": 4.5, "max": 5.0}],
-          "scored_total": 4.5, "max_total": 5.0},
-         {"code": "21MAB206T", "title": "NUMERICAL METHODS AND ANALYSIS",
-          "components": [{"name": "FT-I", "entered": "21/Sep/2026", "scored": 5.0, "max": 5.0}],
-          "scored_total": 5.0, "max_total": 5.0}]
-EXAMS = [{"code": "21CSC201J", "name": "DATA STRUCTURES AND ALGORITHMS", "date": "25-11-2026", "session": "FN", "month": "11", "year": "2026"},
-         {"code": "21CSC202J", "name": "OPERATING SYSTEMS", "date": "28-11-2026", "session": "AN", "month": "11", "year": "2026"}]
-FACULTY = {"DATA STRUCTURES AND ALGORITHMS": {"subject_id": "90001", "staff": [["50001", "Dr.Test Alpha-Theory"], ["50002", "Dr.Test Beta-Theory"]]},
-           "OPERATING SYSTEMS": {"subject_id": "90004", "staff": [["50004", "Dr.Test Delta-Theory"]]},
-           "ADVANCED PROGRAMMING PRACTICE": {"subject_id": "90005", "staff": [["50005", "Dr.Test Epsilon-Practical"]]},
-           "COMPUTER ORGANIZATION AND ARCHITECTURE": {"subject_id": "90006", "staff": [["50006", "Dr.Test Zeta-Theory"]]},
-           "DESIGN THINKING AND METHODOLOGY": {"subject_id": "90007", "staff": [["50007", "Dr.Test Eta-Practical"]]},
-           "PROFESSIONAL ETHICS": {"subject_id": "90002", "staff": [["50003", "Dr.Test Gamma-Practical"]]},
-           "NUMERICAL METHODS AND ANALYSIS": {"subject_id": "90008", "staff": [["50008", "Dr.Test Theta-Theory"]]}}
-
-_c = A.db()
-_c.execute("""UPDATE users SET personal_details_json=?, attendance_json=?, marks_json=?,
-              exam_schedule_json=?, faculty_map_json=?, fb_open=?, last_fetch=?
-              WHERE netid='zz9999'""",
-           (json.dumps(PERSONAL), json.dumps(ATT), json.dumps(MARKS),
-            json.dumps(EXAMS), json.dumps(FACULTY), 1, int(time.time())))
-_c.commit(); _c.close()
+seed_mod.seed_rich()  # group + base user + rich payload FIRST (seed's INSERT OR REPLACE nulls other cols)
 token = seed_mod.mint_token()
 
 # gunicorn from the SAME venv as the python running this suite (CI has no
