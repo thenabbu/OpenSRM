@@ -604,10 +604,10 @@
       </div>
       <div class="mt-2 border-t border-base-300">
         {% for r in y.rows %}
-        <div class="flex items-baseline justify-between gap-3 py-1.5 border-b border-base-300">
-          <span class="text-sm flex-1 min-w-0 break-words">{{ r.head }}</span>
-          <span class="font-mono text-sm tabular-nums shrink-0">₹{{ r.amt }}</span>
-          <span class="font-mono text-xs text-base-content/60 shrink-0">{{ r.date }}</span>
+        <div class="grid grid-cols-[1fr_auto_auto] gap-3 items-baseline py-1.5 border-b border-base-300">
+          <span class="text-sm min-w-0 break-words">{{ r.head }}</span>
+          <span class="font-mono text-sm tabular-nums text-right">₹{{ r.amt }}</span>
+          <span class="font-mono text-xs text-base-content/60">{{ r.date }}</span>
         </div>
         {% endfor %}
       </div>
