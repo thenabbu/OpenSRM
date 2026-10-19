@@ -27,7 +27,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 - **Hot/cold data** — attendance + marks + the official timetable grid refreshed and persisted on every sync; personal details/courses reused until stale (24h); rendered timetable served from SQLite (cached rows render instantly, even when a fetch fails — preserve-if-empty), so the page shows cached data with a quiet background re-sync
 - **Telemetry** — usage events (page views, logins, syncs) counted per netid in the app's own SQLite, same database as everything else; no third-party scripts, no cookies
 - **Observability (ops, optional)** — `GET /internal/metrics` exposes counters/timers/gauges (sync outcomes by pipeline and error class, durations, cache hits, captcha attempts, portal cooldown, parse-empty counts, push-tick dead-man) behind a secret header; the sibling compose stack in `ops/observability/` (Prometheus + Grafana + Alertmanager → ntfy) scrapes it (Prometheus/Alertmanager loopback-only, Grafana on the LAN behind a password) — bring-up, panels, alerts and tuning in [docs/runbook.md](docs/runbook.md#observability-stack-optional)
-- **PWA** — installable on Android, iOS, Windows; offline shell with cached last-view (network-first so deploys never serve stale JS)
+- **PWA** — installable on Android, iOS, Windows; offline shell (HTML stays network-first with navigation preload; versioned assets are content-hashed and cache-first, so warm visits move zero asset bytes and deploys never serve stale)
 - **Class reminders** — Web Push notification a few minutes before each class (subject, start time, room when set), delivered even with the app closed; opt-in per device with 5/10/15/30-minute lead, a test button with server-side delivery receipts, and iOS Home-Screen guidance — driven by an external every-minute tick ([docs/push.md](docs/push.md))
 
 ---
@@ -60,7 +60,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Captcha | ddddocr (self-contained OCR) |
 | Database | SQLite with a versioned migration registry (16 migrations → schema v17) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pre-compiled to `app/static/app.css` via a pinned CLI — no runtime CDN), vanilla JS, Jinja2 |
-| PWA | Service worker (network-first for HTML and static, cache as offline fallback) |
+| PWA | Service worker (navigation-preload HTML, cache-first for versioned `?v=` assets, network-first for icons) |
 | CI/CD | GitHub Actions — Lint (ruff + lock) · Tests (`unit` + `docker` + `e2e`) · Build & Push (gated on both) → `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` · Scans (gitleaks/pip-audit/trivy, report-only) |
 | Deployment | Docker on lab, Cloudflare Tunnel for HTTPS |
 
@@ -73,7 +73,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 flowchart TD
     subgraph client["Client — installable PWA"]
         UI["Login + dashboard<br/>daisyUI · vanilla JS"]
-        SW["Service worker opensrm-v33<br/>network-first shell"]
+        SW["Service worker opensrm-v34<br/>preloaded HTML · ?v= assets cache-first"]
     end
 
     subgraph edge["Cloudflare edge"]
