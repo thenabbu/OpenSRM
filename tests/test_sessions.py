@@ -164,19 +164,17 @@ def t_token_stored_hashed_raw_never_at_rest():
 
 
 def t_pre_migration_rows_hashed_and_session_survives():
-    """Pre-migration fixture: a DB exactly as prod stood BEFORE the cookie-hash
-    release (schema v16, cookies.token holding the RAW token) must come out of
+    """Pre-migration fixture: a DB exactly as prod stood BEFORE this release
+    (schema v16, cookies.token holding the RAW token) must come out of
     migration 17 with the row hashed AND the browser's existing raw cookie
-    still authenticating — current sessions survive the deploy.
-    Versions >17 (later releases' migrations, e.g. m018 scope columns) are held
-    back too so the fixture stands at v16; the deploy pass then runs 17+."""
+    still authenticating — current sessions survive the deploy."""
     import app.migrations as M
     fx = Path(_td) / "pre-migration.db"
     conn = sqlite3.connect(fx)
     saved = M._registry[:]
     try:
         # state BEFORE this release: every migration except 17 registered
-        M._registry[:] = [m for m in saved if m["version"] <= 16]
+        M._registry[:] = [m for m in saved if m["version"] != 17]
         M.migrate_db(conn)
         ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
         assert ver == 16, f"fixture must stand at schema v16 before the migration, got v{ver}"
@@ -193,9 +191,7 @@ def t_pre_migration_rows_hashed_and_session_survives():
         "migration 17 must store sha256(raw) for the pre-existing row"
     assert stored != raw, "pre-migration row still holds the raw token"
     ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-    # the deploy pass runs every held-back migration (17, plus any later ones):
-    # the recorded version is the registry max, not 17 itself.
-    assert ver >= 17, f"schema_version must record at least 17 after the migration, got {ver}"
+    assert ver == 17, f"schema_version must record 17 after the migration, got {ver}"
     # the session survives: the browser still holds `raw` — it must resolve.
     # Repoint BOTH targets: module app config (request-context reads —
     # db.connect() resolves current_app.config["DB_PATH"] inside an app

@@ -1784,12 +1784,6 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
-    {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
-     "body": "We have started wiring the official Scope student app's backend "
-             "into OpenSRM so its exam results, fee records, hostel/transport, "
-             "library and placement data can show up here too. This release is "
-             "the foundation only - nothing new on screen yet; the new cards "
-             "start landing in the next updates."},
     {"ver": "v1.26.0", "date": "18 Oct", "title": "Self-checking reminders",
      "body": "The job that sends class-reminder pushes now reports its own "
              "health on the server's metrics page, so if it ever stops "

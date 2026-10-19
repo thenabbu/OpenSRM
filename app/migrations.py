@@ -307,20 +307,3 @@ def m009_timetable_edit_log(conn):
         created_at INTEGER DEFAULT (strftime('%s','now')),
         changes_json TEXT NOT NULL DEFAULT '[]')""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tt_edit_log_group ON timetable_edit_log(group_id, id)")
-
-@migration(version=18, description="SCOPE session + cold data on users (scope_sid bearer, scope_studentid, scope_json, scope_fetched_at)")
-def m018_scope_session(conn):
-    # ALTER-only like m013/m016 (idempotent on re-run) - the versioned
-    # registry runs every pending migration on fresh DBs too.
-    # scope_sid is a RECOVERABLE bearer token (used on every SCOPE call, so
-    # it cannot be hashed like the cookies tokens of m017); same threat
-    # model as the already-plaintext users.password column - a DB leak
-    # exposes scope sessions until a re-login rotates them. Deliberate,
-    # documented in SECURITY.md terms by the foundation PR.
-    for col in ("scope_sid TEXT", "scope_studentid TEXT",
-                "scope_json TEXT DEFAULT '{}'", "scope_fetched_at INTEGER DEFAULT 0"):
-        try:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e):
-                raise
