@@ -96,6 +96,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_marks_view.py
       - name: test_layout (card/widget engine)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_layout.py
+      - name: test_css_safelist (render-time classes exist in app.css)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_css_safelist.py
       - name: test_attendance_view (attendance view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_attendance_view.py
       - name: test_feedback (harvester + opt-in plan)

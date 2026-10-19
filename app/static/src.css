@@ -1,0 +1,22 @@
+/* OpenSRM compiled-CSS entry (DESIGN §10.1 / §10.16).
+   Build: scripts/build-css.sh — pinned Tailwind standalone CLI + daisyUI,
+   output committed as app/static/app.css, CI re-builds and fails if stale.
+   source(none) + explicit @source keeps the output DETERMINISTIC: editing
+   a doc must not churn app.css (the CI git-diff check would go red), so
+   only real class sources are scanned. */
+@import "tailwindcss" source(none);
+
+@plugin "daisyui" { themes: false; }
+
+@source "../templates";
+@source "../views";
+@source "../app.py";
+@source "./*.js";
+@source "./safelist";
+
+/* Hand-written sheets in the SAME order as the old <link> tags
+   (framework first, then timetable, motion, gaze). They stay unlayered,
+   so they override layered framework rules exactly as before. */
+@import "./timetable.css";
+@import "./motion.css";
+@import "./gaze.css";
