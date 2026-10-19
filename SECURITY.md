@@ -64,9 +64,9 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 
 ### Content Security Policy
 - `default-src 'self'` — everything falls back to same-origin
-- `script-src 'self' https://cdn.jsdelivr.net` — no inline scripts; the only external origin is the Tailwind/daisyUI CDN (both pages load it via `partials/theme.html`)
-- `style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net` — Tailwind/daisyUI loaded at runtime from jsDelivr
-- **Subresource Integrity on both CDN assets** — the Tailwind and daisyUI tags in `partials/theme.html` carry `integrity="sha384-…"` + `crossorigin="anonymous"`, so the browser refuses to execute or apply either file unless its bytes hash exactly to the pinned digest (a changed or tampered CDN response fails closed; the page renders unstyled instead of compromised). The digests were computed from the exact pinned URLs and confirmed against independent fetches; a locally served tampered copy is rejected by the browser while the untampered control loads.
+- `script-src 'self'` — no inline scripts and no external script origins (the Tailwind/daisyUI CDN was removed when the CSS moved to a pre-compiled `app.css`; both pages now load only same-origin files)
+- `style-src 'self' 'unsafe-inline'` — the pre-compiled `app.css` plus inline style attributes; no stylesheet is fetched from any third-party host
+- **No third-party payload to integrity-check** — Tailwind and daisyUI are compiled ahead of time from a version-pinned, sha256-verified toolchain (`scripts/build-css.sh`) into the committed `app/static/app.css`, so the browser never fetches third-party CSS or JS. The old SRI-on-CDN defence became unnecessary once the CDN itself was removed; the supply-chain surface it guarded no longer exists.
 - `img-src 'self' data:` — no remote image hosts
 - `connect-src 'self'` — no external API calls from the browser
 - `frame-ancestors 'none'` — cannot be embedded in iframes
