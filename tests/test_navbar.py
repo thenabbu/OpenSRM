@@ -231,6 +231,24 @@ with sync_playwright() as p:
         syncDisplay: getComputedStyle(sync).display,
         endOrder: [...nav.querySelector('.navbar-end').children].map(c => c.tagName),
         overflow: document.documentElement.scrollWidth - window.innerWidth,
+        // On failure the FAIL line must NAME the overflowing element (env
+        // font-metric changes moved this by 8px on the Ubuntu 26 runner):
+        // outermost elements whose right edge crosses the layout viewport.
+        offenders: (() => {
+          const iw = window.innerWidth, out = [];
+          for (const el of document.querySelectorAll('body *')) {
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.right > iw + 0.5) {
+              const pr = el.parentElement ? el.parentElement.getBoundingClientRect() : null;
+              if (!pr || pr.right <= iw + 0.5) {
+                out.push(el.tagName + '.' + String(el.className).slice(0, 70) +
+                         ' right=' + Math.round(r.right) + '/' + Math.round(iw) +
+                         ' :: ' + (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 50));
+              }
+            }
+          }
+          return out.slice(0, 12);
+        })(),
         gutter: parseFloat(getComputedStyle(document.querySelector('main')).paddingLeft),
         cardX: (() => { const p = document.getElementById('tab-dashboard');
           const f = [...p.children].find(e => e.getBoundingClientRect().width > 0);
@@ -245,7 +263,8 @@ with sync_playwright() as p:
     check('mobile: caption follows refresh in the DOM, hidden when fresh, no logout anchor',
           m['endOrder'] == ['BUTTON', 'SPAN'] and m['syncDisplay'] == 'none',
           f"{m['endOrder']} display={m['syncDisplay']}")
-    check('mobile: no horizontal overflow', m['overflow'] <= 0, str(m['overflow']))
+    check('mobile: no horizontal overflow', m['overflow'] <= 0,
+          str(m['overflow']) + ' offenders=' + str(m['offenders']))
     # DESIGN.md §5: 8px below lg (matches the mobile navbar's own 8px content
     # padding, so the column aligns) — never px-0, never the old 16px
     check('mobile: page gutter = 8px and column aligns with navbar content edge',

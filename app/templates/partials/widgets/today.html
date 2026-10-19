@@ -12,17 +12,13 @@
   {% if ticker.state != 'done' and ticker.prev %}
   <div class="flex items-center gap-3 h-7 opacity-50">
     <span class="w-10 shrink-0 font-mono text-xs tabular-nums">{{ ticker.prev.start }}</span>
-    <span class="text-xs">{{ ticker.prev.code }}</span>
+    <span class="text-xs min-w-0 truncate" title="{{ ticker.prev.code }}">{{ ticker.prev.code }}</span>
   </div>
   {% endif %}
   {% if ticker.now %}
   <div class="flex flex-col gap-0.5 px-2 py-2">
     <div class="flex items-baseline gap-2.5 min-w-0">
-      <span class="font-mono text-[22px] font-bold tabular-nums leading-none">{{ ticker.now.start }}</span>
-      {# flex children default to min-width:auto — without min-w-0 a long subject
-         code cannot shrink and pushes its row (and the page) past the viewport
-         (repro: xss-seeded ticker subject, mobile overflow 56px). The code gets
-         the ellipsis; the end time stays visible (shrink-0). #}
+      <span class="font-mono text-[22px] font-bold tabular-nums leading-none shrink-0">{{ ticker.now.start }}</span>
       <span class="text-sm font-bold min-w-0 truncate" title="{{ ticker.now.code }}">{{ ticker.now.code }}</span>
       <span class="font-mono text-xs text-base-content/50 shrink-0">&ndash;{{ ticker.now.end }}</span>
     </div>
@@ -36,7 +32,7 @@
   {% if ticker.next %}
   <div class="flex items-center gap-3 h-7 opacity-50">
     <span class="w-10 shrink-0 font-mono text-xs tabular-nums">{{ ticker.next.start }}</span>
-    <span class="text-xs">{{ ticker.next.code }}</span>
+    <span class="text-xs min-w-0 truncate" title="{{ ticker.next.code }}">{{ ticker.next.code }}</span>
   </div>
   {% endif %}
 </div>
