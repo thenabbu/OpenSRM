@@ -1786,6 +1786,9 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.30.0", "date": "20 Oct", "title": "Swipe to refresh",
+     "body": "Pull down from the top on your phone to refresh \u2014 the "
+             "same gesture you know from apps, right inside OpenSRM."},
     {"ver": "v1.29.0", "date": "20 Oct", "title": "Kind to weak phones",
      "body": "The animated avatar now rests when it is off screen, and "
              "weak devices get a calm version automatically \u2014 less "

@@ -192,6 +192,7 @@ jobs:
             test_softrefresh_dut \
             test_touchfeel_dut \
             test_lowtier_dut \
+            test_pull_dut \
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast guide_check
 
