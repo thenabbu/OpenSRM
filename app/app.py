@@ -71,6 +71,7 @@ from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scr
     replace_group_slots,
     save_portal_session,
     set_cold_fetch,
+    set_fb_open,
     set_official_times,
     slots_for_groups,
     transaction,
@@ -1675,11 +1676,12 @@ def index():
     faculty_map = _jload(row["faculty_map_json"] if row else None, {})
     faculty_view = _faculty_view(faculty_map, data.get("courses", []))
     # Preview of what the opt-in fill would submit (same builder as the endpoint).
-    # ARCHIVED while the portal's feedback window is closed (fb_open=0, learned
-    # by the last cold sync): empty plan -> the CTA and the modal both vanish
-    # (empty=hidden, DESIGN §4.12) and come back automatically on the next sync
-    # that finds the window open again. The Teachers list itself is historical
-    # data and stays.
+    # ARCHIVED while the portal's feedback window is closed (fb_open=0 — now
+    # learned by EVERY sync's probe, not just the daily cold one, plus the
+    # fill endpoint's portal-confirmed self-heal): empty plan -> the CTA and
+    # the modal both vanish (empty=hidden, DESIGN §4.12) and come back
+    # automatically on the next sync that finds the window open again. The
+    # Teachers list itself is historical data and stays.
     fb_open = row["fb_open"] if row and row["fb_open"] is not None else 1
     fb_plan = _fb_plan(faculty_map) if fb_open else []
 
@@ -1788,9 +1790,14 @@ NOTICES = [
      "body": "Taps now respond instantly, tabs glide instead of snapping, "
              "and dialogs slide up from the bottom on phones \u2014 the "
              "small motion touches that make it feel native."},
+    {"ver": "v1.27.1", "date": "20 Oct", "title": "Smarter feedback button",
+     "body": "The auto-fill feedback option now checks the portal before "
+             "showing itself: while the mid-sem feedback form is closed on "
+             "the portal, the button hides itself automatically and returns "
+             "on its own when the form opens again — no more dead buttons."},
     {"ver": "v1.27.0", "date": "20 Oct", "title": "Refresh without the flash",
      "body": "Refreshing now updates your numbers right where they are "
-             "\u2014 no more white flash, lost scroll position or "
+             "— no more white flash, lost scroll position or "
              "re-loading of the page after a sync."},
     {"ver": "v1.26.3", "date": "20 Oct", "title": "Instant repeat visits",
      "body": "The app now remembers its own files: styles and scripts "
@@ -2284,6 +2291,20 @@ def api_feedback_fill():
             # itself, so it is safe to hand to the student verbatim.
             log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
             _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+            if res.get("closed"):
+                # self-heal (2026-10-20): the portal itself just confirmed the
+                # window is shut — archive the CTA NOW so the stale button
+                # disappears on the next dashboard load instead of waiting
+                # for the next sync's probe. Closed refusals read as 409,
+                # same as the fb_open=0 pre-contact guard above.
+                try:
+                    set_fb_open(netid, 0)
+                    log_with_kv(log_portal, logging.INFO, "feedback CTA archived (portal-confirmed closed)",
+                                netid=netid)
+                except Exception as e:
+                    log_with_kv(log_portal, logging.WARNING, "fb_open self-heal write failed",
+                                netid=netid, error=str(e)[:80])
+                return {"ok": False, "error": res["error"]}, 409
             return {"ok": False, "error": res["error"]}, 502
         ms = int((time.monotonic() - t0) * 1000)
         log_with_kv(log_portal, logging.INFO, "feedback fill done",

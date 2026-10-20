@@ -190,6 +190,7 @@ jobs:
           bash scripts/ci_e2e_http.sh \
             test_sw test_xss test_navbar test_marks_dut test_personal \
             test_softrefresh_dut \
+            test_touchfeel_dut \
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast guide_check
 
