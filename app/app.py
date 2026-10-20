@@ -1786,10 +1786,17 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+<<<<<<< HEAD
     {"ver": "v1.28.0", "date": "20 Oct", "title": "Feels like an app",
      "body": "Taps now respond instantly, tabs glide instead of snapping, "
              "and dialogs slide up from the bottom on phones \u2014 the "
              "small motion touches that make it feel native."},
+=======
+    {"ver": "v1.27.2", "date": "20 Oct", "title": "Security upkeep",
+     "body": "A routine security update of the tools the server uses "
+             "under the hood. Nothing changes in how the app looks or "
+             "works."},
+>>>>>>> origin/main
     {"ver": "v1.27.1", "date": "20 Oct", "title": "Smarter feedback button",
      "body": "The auto-fill feedback option now checks the portal before "
              "showing itself: while the mid-sem feedback form is closed on "
