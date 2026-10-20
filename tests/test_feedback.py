@@ -352,5 +352,86 @@ h1 = rc_cli.get("/").get_data(as_text=True)
 check("render fb_open=1 (auto-unarchive): CTA + modal back",
       "fb-cta" in h1 and "fb-modal" in h1)
 
+print("== _fb_frag_state: live closed-window captures (2026-10-20 fix) ==")
+# live capture 2026-10-20: form shell renders, alert says "Service period
+# deactivated", zero subjects — prod misclassified this as "markup changed"
+# for a week (stale fb_open=1 kept the dead CTA clickable).
+_LIVE_CLOSED = ('<form id="feedback1"><input id="txtCourseTitle" value="">'
+                '<div class="alert alert-info"> Service period deactivated </div>'
+                '<script>var studentTotalFeedBackCount="";</script></form>')
+check("live 2026-10-20 fragment -> closed", HS._fb_frag_state(_LIVE_CLOSED) == "closed",
+      repr(HS._fb_frag_state(_LIVE_CLOSED)))
+check("live wording case-insensitive",
+      HS._fb_frag_state(_LIVE_CLOSED.replace("Service period deactivated",
+                                              "SERVICE PERIOD DEACTIVATED")) == "closed")
+# drifted shut-wording (unknown text) + zero subjects still archives — the
+# fallback that makes this bug class impossible to re-introduce by drift
+check("drifted wording: shell + zero subjects -> closed",
+      HS._fb_frag_state('<form id="feedback1"><input id="txtCourseTitle" value="">'
+                        "<div>The form window is no longer active</div></form>") == "closed")
+check("old 'Service closed' wording still closed",
+      HS._fb_frag_state('<div class="alert alert-info"> Service closed </div>') == "closed")
+check("open form -> open", HS._fb_frag_state(FRAG) == "open", "FRAG has subjects, must be open")
+check("login bounce -> dead", HS._fb_frag_state("<html>youLogin bounced</html>") == "dead")
+check("no shell -> broken", HS._fb_frag_state("<div>something else entirely</div>") == "broken")
+
+# the exact prod failure: harvest must classify the live capture as CLOSED,
+# not as a markup change that preserves the stale open flag
+HS._req = lambda *a, **k: (None, _LIVE_CLOSED.encode())
+try:
+    HS._fb_harvest(None, "https://x.invalid", {}, "zz9997")
+    check("live capture -> harvest raises FeedbackWindowClosed", False, "no raise")
+except HS.FeedbackWindowClosed:
+    check("live capture -> harvest raises FeedbackWindowClosed", True)
+except Exception as e:
+    check("live capture -> harvest raises FeedbackWindowClosed", False, repr(e))
+
+print("== _fb_probe: hot-sync availability probe ==")
+_orig_probe_req = HS._req
+HS._req = lambda *a, **k: (None, _LIVE_CLOSED.encode())
+check("probe: closed fragment -> 0", HS._fb_probe(None, "https://x.invalid", {}, "n") == 0)
+HS._req = lambda *a, **k: (None, FRAG.encode())
+check("probe: open fragment -> 1", HS._fb_probe(None, "https://x.invalid", {}, "n") == 1)
+HS._req = lambda *a, **k: (None, b"<html>youLogin bounced</html>")
+check("probe: dead session -> None (preserve stored)",
+      HS._fb_probe(None, "https://x.invalid", {}, "n") is None)
+def _transport_err(*a, **k):
+    raise HttpScraperError("connection reset")
+HS._req = _transport_err
+check("probe: transport failure -> None (preserve stored)",
+      HS._fb_probe(None, "https://x.invalid", {}, "n") is None)
+HS._req = _orig_probe_req
+
+print("== fill refusal: portal-confirmed closed self-heals fb_open ==")
+# fill_feedback's closed refusal carries the flag; the endpoint archives the
+# stale CTA (fb_open 1->0) and answers 409 — the "user clicked and got an
+# error" loop from 2026-10-20 dies here.
+HS.fill_feedback = lambda *a, **k: {
+    "error": "the mid-sem feedback window is closed on the portal — nothing submitted",
+    "closed": True}
+_SELFHEAL_NETID = "zz9994"
+c = AA.db()
+c.execute("""INSERT OR REPLACE INTO users(netid, password, faculty_map_json, fb_open)
+             VALUES(?, 'unused-by-tests', ?, 1)""",
+          (_SELFHEAL_NETID,
+           _json.dumps({"DATA STRUCTURES AND ALGORITHMS":
+                        {"subject_id": "90001", "staff": [["50001", "Dr.Test One-Theory"]]}})))
+c.execute("INSERT OR REPLACE INTO portal_sessions(netid, cookies_json, created) VALUES(?, ?, ?)",
+          (_SELFHEAL_NETID, _json.dumps([{"name": "JSESSIONID", "value": "synthetic"}]),
+           int(_time.time())))
+c.commit(); c.close()
+sh_cli = AA.app.test_client()
+sh_cli.set_cookie("srm_session", AA.make_session_token(_SELFHEAL_NETID))
+rsh = sh_cli.post("/api/feedback/fill")
+jsh = rsh.get_json() or {}
+check("portal-confirmed closed -> 409 + honest literal",
+      rsh.status_code == 409 and not jsh.get("ok") and "closed on the portal" in jsh.get("error", ""),
+      f"status={rsh.status_code} body={jsh}")
+c = AA.db()
+row = c.execute("SELECT fb_open FROM users WHERE netid=?", (_SELFHEAL_NETID,)).fetchone()
+c.close()
+check("self-heal: fb_open flipped 1->0 (CTA archived)", row and row[0] == 0, repr(row))
+HS.fill_feedback = _orig_fill
+
 print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed" if not FAILS else f"\nFAILED: {FAILS}")
 sys.exit(1 if FAILS else 0)
