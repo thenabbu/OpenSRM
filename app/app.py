@@ -1786,6 +1786,10 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.29.0", "date": "20 Oct", "title": "Kind to weak phones",
+     "body": "The animated avatar now rests when it is off screen, and "
+             "weak devices get a calm version automatically \u2014 less "
+             "battery and smoother scrolling for everyone."},
     {"ver": "v1.28.0", "date": "20 Oct", "title": "Feels like an app",
      "body": "Taps now respond instantly, tabs glide instead of snapping, "
              "and dialogs slide up from the bottom on phones \u2014 the "

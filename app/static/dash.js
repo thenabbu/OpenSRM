@@ -328,6 +328,18 @@ window.addEventListener('online', function() {
   el.textContent = '';
 });
 
+// Phase 6: pause the avatar's idle loops while it is offscreen. IO needs
+// no polling; paused pose is preserved (motion.css). Low-tier is paused by
+// CSS from perf.js (html[data-perf="low"]).
+(function() {
+  var wrap = document.querySelector('.blobatar-gaze');
+  if (!wrap || !('IntersectionObserver' in window)) return;
+  var root = wrap.querySelector('.mo-root') || wrap;
+  new IntersectionObserver(function(es) {
+    es.forEach(function(e) { root.classList.toggle('is-offscreen', !e.isIntersecting); });
+  }, {threshold: 0}).observe(wrap);
+})();
+
 // audit: register here too — a valid session lands on / directly and never
 // loads /login, so login.js alone would never register the SW for those users.
 if ("serviceWorker" in navigator && location.pathname !== "/login") {

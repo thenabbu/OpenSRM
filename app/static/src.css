@@ -40,3 +40,10 @@ button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; u
 @media (prefers-reduced-motion: reduce) {
   .pressable, .pressable:active { transition: none; transform: none; }
 }
+
+/* ── Phase 6: avatar idle loops pause on weak devices and offscreen ──
+   Pausing preserves the resolved pose (motion.css explains why). The tier
+   is set by perf.js before first paint; .is-offscreen is toggled by the
+   IntersectionObserver in dash.js. */
+html[data-perf="low"] .mo-root, html[data-perf="low"] .mo-root *,
+.mo-root.is-offscreen, .mo-root.is-offscreen * { animation-play-state: paused; }
