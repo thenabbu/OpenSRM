@@ -1784,6 +1784,10 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.27.0", "date": "20 Oct", "title": "Refresh without the flash",
+     "body": "Refreshing now updates your numbers right where they are "
+             "\u2014 no more white flash, lost scroll position or "
+             "re-loading of the page after a sync."},
     {"ver": "v1.26.3", "date": "20 Oct", "title": "Instant repeat visits",
      "body": "The app now remembers its own files: styles and scripts "
              "that have not changed are no longer re-downloaded on every "
@@ -3150,12 +3154,19 @@ def marks_tag():
     netid = get_current_user()
     if not netid:
         return redirect("/login")
+    # fetch callers (dash.js soft refresh) ask for JSON and morph in place;
+    # a plain form POST keeps the redirect round-trip as the no-JS fallback
+    wants_json = request.accept_mimetypes.best == "application/json"
+    def _back(err=None):
+        if wants_json:
+            return {"ok": not err, **({"error": err} if err else {})}
+        return redirect("/#marks")
     form = request.form
     code = (form.get("code") or "").strip()[:32]
     name = (form.get("component") or "").strip()[:32]
     role = form.get("role")
     if role not in ("IE-1", "IE-2", "none") or not code or not name:
-        return redirect("/#marks")
+        return _back("Invalid component")
     row = user_marks_personal(netid)
     try:
         marks = json.loads(row[0]) if row and row[0] else []
@@ -3165,13 +3176,13 @@ def marks_tag():
     scaled = next((cp.get("max", 0.0) for s in marks if s.get("code") == code
                    for cp in s.get("components", []) if cp.get("name") == name), 0.0)
     if not scaled:
-        return redirect("/#marks")
+        return _back("Component not found")
     # raw_max: the marks the component stands for on paper (50 / 60); 'none'
     # keeps it NULL — the row exists either way, which is what 'confirmed' means.
     raw = {"IE-1": 50.0, "IE-2": 60.0}.get(role)
     key = f"{_class_key(personal, netid)}|{code}|{name}"
     upsert_component_tag(key, role, raw, scaled, netid, int(time.time()))
-    return redirect("/#marks")
+    return _back()
 
 # ── Web push: config, tick endpoint ───────────────────────────────────
 # All secrets come from env (identical on every host / Vercel). The app
