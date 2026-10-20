@@ -105,6 +105,7 @@ export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
 .venv/bin/python tests/test_marks_dut.py  # [e2e] 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
 .venv/bin/python tests/test_softrefresh_dut.py  # [e2e] 18/18 soft refresh (phase 4): quiet sync preserves scroll/focus/open tag panel/att-view/avatar vars/push card and renders new data in place; clicked sync never navigates; post-morph delegated copy + tag save; dash.js location.reload only inside softRefresh; idiomorph sha256 pinned; needs seeded server on DUT_BASE
+.venv/bin/python tests/test_touchfeel_dut.py  # [e2e] 11/11 touch feel (phase 5): press/sheet tokens in app.css, old CSS tab transition gone, element.animate runs under normal motion and not under reduced-motion, per-tab scroll memo, exactly-one-panel invariant, keyboard-only tab focus; needs seeded server on DUT_BASE
 kill %1
 
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside,
