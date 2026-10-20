@@ -139,12 +139,6 @@
     <span class="dock-label">Settings</span>
   </button>
 </div>
-<dialog id="overlay" class="modal">
-  <div class="modal-box bg-base-200 flex flex-col items-center gap-3">
-    <span class="loading loading-spinner loading-lg"></span>
-    <span class="text-sm text-base-content/60">Refreshing attendance...</span>
-  </div>
-</dialog>
 <main class="px-2 py-5 pb-24 lg:pt-[15px] lg:pb-[15px] edge-x">
   <div id="tab-dashboard" role="tabpanel" aria-labelledby="tab-dashboard-tab" data-tabpanel style="">
     <!-- Card/widget engine: cards come from the LAYOUT registry, widgets from
@@ -418,7 +412,7 @@
       <!-- Notifications (Web Push): the ONE place the whole notification
            mechanism lives — card, lead time, per-type preferences, test send.
            Was scattered across the Timetable tab. All states rendered by push.js. -->
-      <div class="card bg-base-200 border border-base-300" id="push-card">
+      <div class="card bg-base-200 border border-base-300" id="push-card" data-morph="ignore">
         <div class="card-body p-4 gap-3">
           <div class="flex items-center justify-between flex-wrap gap-2">
             <h3 class="text-base font-semibold">Notifications</h3>
@@ -505,7 +499,7 @@
               <span class="inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs">{{ cpt.name }}</span>
               {% if cpt.date_disp %}<span class="text-xs font-mono text-base-content/50">{{ cpt.date_disp }}</span>{% endif %}
               <span class="font-mono text-xs tabular-nums ml-auto">{{ cpt.score_disp }}/{{ cpt.max_disp }}</span>
-              <details class="relative shrink-0">
+              <details class="relative shrink-0" id="tag-{{ s.code }}-{{ cpt.name|replace(' ', '-') }}">
                 <summary class="tooltip tooltip-left flex items-center justify-center w-6 h-6 rounded-full cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden text-base-content/50 hover:text-base-content/70"
                          data-tip="Mark {{ cpt.name }} as the IE-1/IE-2 exam">
                   <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -633,6 +627,7 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 <div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert" aria-live="assertive"></div>
+<script defer src="{{ asset('vendor/idiomorph.min.js') }}"></script>
 <script defer src="{{ asset('dash.js') }}"></script>
 <script defer src="{{ asset('gaze.js') }}"></script>
 <script defer src="{{ asset('drag-drop-touch.js') }}"></script>

@@ -334,15 +334,23 @@ Two idioms, both daisyUI 5. **Floating label + leading icon** is the login form:
 ### 4.8 Modal and loading
 
 ```html
-<dialog id="overlay" class="modal">
-  <div class="modal-box bg-base-200 border border-base-300 flex flex-col items-center gap-3">
-    <span class="loading loading-spinner loading-lg"></span>
-    <span class="text-sm text-base-content/60">Refreshing attendance…</span>
+<dialog id="feedback-modal" class="modal">
+  <div class="modal-box bg-base-200 border border-base-300 flex flex-col gap-3">
+    <h3 class="text-lg font-semibold">Feedback — before you submit</h3>
+    <p class="text-sm text-base-content/70">Read the list, then confirm.</p>
+    <div class="modal-action">
+      <button class="btn btn-primary">Confirm</button>
+    </div>
   </div>
 </dialog>
 ```
 
 `modal-box` defaults to `base-100`; the app overrides it to `base-200` to match every other container. Keep that.
+
+Page-level **data refresh never uses a blocking modal** (§7, §10.16 rule 3):
+the refresh icon spins and the content updates in place; a submit button
+disables itself and reports status inline (or via the toast) instead of
+freezing the screen behind a dialog.
 
 ### 4.9 Tables, lists, accordions, tabs
 

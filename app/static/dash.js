@@ -41,14 +41,90 @@ function renderSyncLines() {
 renderSyncLines();
 setInterval(renderSyncLines, 60000);   // "(15m ago)" must keep ageing, and reappear once fresh
 
+// ── Soft refresh: update the page in place (DESIGN §10.16 rule 3) ──
+// A data-changing sync morphs <main> from a freshly fetched '/' with
+// idiomorph: nodes with the same id are kept (their listeners survive),
+// client state listed in PRESERVE_ATTR survives, and [data-morph="ignore"]
+// subtrees (avatar wrapper, push card) are skipped wholesale. A full
+// location.reload() remains only as the catch net.
+function PRESERVE_ATTR(attr, el) {
+  // visible-tab display state lives on the panel's inline style
+  if (attr === 'style' && el.closest('[data-tabpanel]')) return true;
+  // attendance graph/table choice
+  if (attr === 'hidden' && (el.id === 'att-graph' || el.id === 'att-table')) return true;
+  // personal-details collapse groups (user-toggled at load)
+  if (attr === 'checked' && el.matches('.collapse input[type="checkbox"]')) return true;
+  // open marks-tag panels
+  if (attr === 'open' && el.tagName === 'DETAILS') return true;
+  return false;
+}
+
+var MORPH_OPTS = {
+  morphStyle: 'innerHTML',
+  ignoreActiveValue: true,
+  // no restoreFocus: it blurs elements without an id; nodes outside <main>
+  // (tab buttons etc.) are never morphed, so their focus survives untouched.
+  callbacks: {
+    beforeNodeMorphed: function (oldNode) {
+      return !(oldNode.nodeType === 1 && oldNode.closest('[data-morph="ignore"]'));
+    },
+    beforeAttributeUpdated: function (attr, el) { return !PRESERVE_ATTR(attr, el); }
+  }
+};
+
+function softRefresh() {
+  return fetch('/', {credentials: 'same-origin', headers: {Accept: 'text/html'}})
+    .then(function (r) {
+      // dead session: server 302s to /login — go there, not "network error".
+      if (r.redirected && new URL(r.url).pathname === '/login') { location.href = '/login'; return null; }
+      return r.text();
+    })
+    .then(function (html) {
+      if (html == null) return;                      // already leaving for /login
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      try {
+        Idiomorph.morph(document.querySelector('main'), doc.querySelector('main'), MORPH_OPTS);
+        // the opt-in feedback plan can change with the learned fb_open state:
+        // morph the modal too, but only while closed (an open modal is
+        // mid-conversation — never swap it under the user). outerHTML style:
+        // idiomorph 0.8.0's innerHTML path throws HierarchyRequestError when
+        // the target is a top-level <dialog> sliced from the fetched document;
+        // outerHTML morphs the dialog node in place instead (verified: same
+        // node kept, so the delegated submit listener survives).
+        var fbm = document.getElementById('fb-modal');
+        var fbmSrc = doc.getElementById('fb-modal');
+        if (fbm && fbmSrc && !fbm.open) {
+          Idiomorph.morph(fbm, fbmSrc, Object.assign({}, MORPH_OPTS, {morphStyle: 'outerHTML'}));
+        }
+      } catch (err) { console.error('softRefresh morph failed:', err); location.reload(); return; }   // safety net only
+      // navbar is outside <main>: update the sync captions by hand
+      var src = doc.querySelector('.sync-line');
+      if (src) document.querySelectorAll('.sync-line').forEach(function (el) {
+        el.dataset.ts = src.dataset.ts;
+        el.dataset.full = src.dataset.full;
+      });
+      renderSyncLines();
+      setupCopyTargets(document.querySelector('main'));
+    })
+    .catch(function (err) { console.error('softRefresh fetch failed:', err); location.reload(); });   // safety net only
+}
+
 // ── Refresh (all data-refresh buttons) ────────────────────────────
 function ref(quiet) {
   var btns = Array.prototype.slice.call(document.querySelectorAll('[data-refresh]'));
   var icons = document.querySelectorAll('.refresh-icon');
+  // disabling the focused button blurs it to <body> — remember it so the
+  // sync never visibly steals focus, then restore once the round trip ends
+  var focusedBtn = btns.indexOf(document.activeElement) !== -1 ? document.activeElement : null;
   btns.forEach(function(b) { b.disabled = true; });
   icons.forEach(function(i) { i.classList.add('animate-spin'); });
   document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); });
-  if (!quiet) document.getElementById('overlay').showModal();
+  function restore() {
+    btns.forEach(function(b) { b.disabled = false; });
+    icons.forEach(function(i) { i.classList.remove('animate-spin'); });
+    if (focusedBtn && document.activeElement === document.body) focusedBtn.focus();
+    renderSyncLines();
+  }
   fetch('/api/refresh', {method: 'POST'})
     .then(function (r) {
       // dead session: server 302s API calls to /login; fetch() followed it
@@ -60,19 +136,13 @@ function ref(quiet) {
       // cached answer (SYNC_MIN_INTERVAL_S): the server's stored data did
       // not change, so restore the UI in place — no reload flash, and the
       // sync-line keeps showing the honest age of the last real sync
-      if (d.ok && !d.cached) { location.reload(); return; }
-      document.getElementById('overlay').close();
-      btns.forEach(function(b) { b.disabled = false; });
-      icons.forEach(function(i) { i.classList.remove('animate-spin'); });
-      renderSyncLines();
+      if (d.ok && !d.cached) { softRefresh().then(restore); return; }
+      restore();
       if (d.ok) return;
       if (!quiet) showError(d.error || 'Refresh failed');
       else console.debug('background sync failed:', d.error);
     }).catch(function () {
-      document.getElementById('overlay').close();
-      btns.forEach(function(b) { b.disabled = false; });
-      icons.forEach(function(i) { i.classList.remove('animate-spin'); });
-      renderSyncLines();
+      restore();
       if (!quiet) showError('Network error \u2014 is the server reachable?');
     });
 }
@@ -128,52 +198,59 @@ tabButtons.forEach(function(b) {
 
 // ── Click-to-copy: any element with data-copy gets copied on click (task 10).
 //    Values only — keys/labels never carry data-copy.
-(function() {
-  function flash(el) {
-    if (el.dataset.origText === undefined) el.dataset.origText = el.textContent;
-    el.textContent = 'Copied!';
-    el.classList.add('text-success');
-    clearTimeout(el._copyTimer);
-    el._copyTimer = setTimeout(function() {
-      el.textContent = el.dataset.origText;
-      el.classList.remove('text-success');
-    }, 1200);
+function flash(el) {
+  if (el.dataset.origText === undefined) el.dataset.origText = el.textContent;
+  el.textContent = 'Copied!';
+  el.classList.add('text-success');
+  clearTimeout(el._copyTimer);
+  el._copyTimer = setTimeout(function() {
+    el.textContent = el.dataset.origText;
+    el.classList.remove('text-success');
+  }, 1200);
+}
+function copyText(t, el) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(function() { flash(el); }).catch(function() {});
   }
-  function copyText(t, el) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(t).then(function() { flash(el); }).catch(function() {});
-    }
-  }
-  // Static listeners for server-rendered values
-  document.querySelectorAll('[data-copy]').forEach(function(el) {
+}
+
+// Click-to-copy after a soft refresh: copy nodes inside <main> can be
+// replaced by the morph (no ids to key on), so the handlers live at
+// document level and setupCopyTargets() just re-stamps the a11y/cursor
+// attrs on any fresh nodes — idempotent, safe to re-run per morph.
+function setupCopyTargets(root) {
+  (root || document).querySelectorAll('[data-copy]').forEach(function(el) {
+    if (el.dataset.copyReady) return;
+    el.dataset.copyReady = '1';
     el.title = el.title || 'Click to copy';
     el.classList.add('cursor-copy');
     // audit a11y: div/span copy targets must be keyboard-operable
     el.setAttribute('tabindex', '0');
     el.setAttribute('role', 'button');
-    function trigger() {
-      copyText(el.dataset.copy || el.textContent.trim(), el);
-    }
-    el.addEventListener('click', trigger);
-    el.addEventListener('keydown', function(ev) {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); trigger(); }
-    });
   });
-  // Copy email button keeps its icon feedback
-  var copyBtn = document.getElementById('copyEmail');
-  if (copyBtn) copyBtn.addEventListener('click', function() {
-    var email = copyBtn.dataset.email || '';
-    function done() {
-      var span = copyBtn.querySelector('span');
-      var old = span.textContent;
-      span.textContent = 'Copied!';
-      setTimeout(function() { span.textContent = old; }, 1200);
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(email).then(done).catch(function() { showError('Copy failed'); });
-    } else { showError('Clipboard unavailable'); }
-  });
-})();
+}
+setupCopyTargets(document);
+document.addEventListener('click', function(ev) {
+  var el = ev.target.closest ? ev.target.closest('[data-copy]') : null;
+  if (el) { copyText(el.dataset.copy || el.textContent.trim(), el); return; }
+  var copyBtn = ev.target.closest ? ev.target.closest('#copyEmail') : null;
+  if (!copyBtn) return;
+  var email = copyBtn.dataset.email || '';
+  function done() {
+    var span = copyBtn.querySelector('span');
+    var old = span.textContent;
+    span.textContent = 'Copied!';
+    setTimeout(function() { span.textContent = old; }, 1200);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(email).then(done).catch(function() { showError('Copy failed'); });
+  } else { showError('Clipboard unavailable'); }
+});
+document.addEventListener('keydown', function(ev) {
+  if (ev.key !== 'Enter' && ev.key !== ' ') return;
+  var el = ev.target.closest ? ev.target.closest('[data-copy]') : null;
+  if (el) { ev.preventDefault(); copyText(el.dataset.copy || el.textContent.trim(), el); }
+});
 
 // ── Attendance view toggle (graph ↔ table). Persisted in localStorage;
 //    visibility via the `hidden` attribute ONLY (never a Tailwind class).
@@ -241,47 +318,75 @@ if ("serviceWorker" in navigator && location.pathname !== "/login") {
 // CTA opens the explainer modal; ONLY the confirm button inside the modal
 // writes to the portal (sync harvests read-only). Same builder rendered the
 // modal list, so what the student saw IS what gets sent.
-var fbCta = document.getElementById('fb-cta');
-var fbSubmit = document.getElementById('fb-submit');
-if (fbCta) {
-  fbCta.addEventListener('click', function() { document.getElementById('fb-modal').showModal(); });
-}
-if (fbSubmit) {
-  fbSubmit.addEventListener('click', function() {
-    var status = document.getElementById('fb-status');
-    fbSubmit.disabled = true;
-    status.textContent = 'Submitting to the portal…';
-    status.className = 'mt-2 text-xs text-base-content/70';
-    fetch('/api/feedback/fill', {method: 'POST'})
-      .then(function(r) {
-        if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
-        return r.json();
-      })
-      .then(function(j) {
-        if (!j.ok) {
-          status.textContent = j.error || 'failed — nothing submitted';
-          status.className = 'mt-2 text-xs text-error';
-          showError('Feedback autofill failed: ' + (j.error || 'unknown error'));
-          return;
-        }
-        var parts = [];
-        if (j.filled && j.filled.length) parts.push(j.filled.length + ' submitted');
-        if (j.already && j.already.length) parts.push(j.already.length + ' already filled');
-        if (j.failed && j.failed.length) {
-          parts.push(j.failed.length + ' failed: ' + j.failed.map(function(f) { return f[0]; }).join(', '));
-          showError('Feedback: ' + j.failed.map(function(f) { return f[0] + ' — ' + f[1]; }).join('; '));
-        }
-        status.textContent = parts.join(' · ') || 'nothing to submit';
-        status.className = 'mt-2 text-xs ' + (j.failed && j.failed.length ? 'text-error' : 'text-success');
-      })
-      .catch(function() {
-        status.textContent = 'network error — try again';
+// #fb-cta only renders when a plan exists and #fb-submit sits inside
+// #fb-modal, which softRefresh morphs while it is closed — both are
+// delegated at document level so post-morph nodes keep working.
+document.addEventListener('click', function(ev) {
+  if (!ev.target.closest) return;
+  if (ev.target.closest('#fb-cta')) {
+    var m = document.getElementById('fb-modal');
+    if (m) m.showModal();
+    return;
+  }
+  var fbSubmit = ev.target.closest('#fb-submit');
+  if (!fbSubmit) return;
+  var status = document.getElementById('fb-status');
+  fbSubmit.disabled = true;
+  status.textContent = 'Submitting to the portal…';
+  status.className = 'mt-2 text-xs text-base-content/70';
+  fetch('/api/feedback/fill', {method: 'POST'})
+    .then(function(r) {
+      if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+      return r.json();
+    })
+    .then(function(j) {
+      if (!j.ok) {
+        status.textContent = j.error || 'failed — nothing submitted';
         status.className = 'mt-2 text-xs text-error';
-        showError('Feedback autofill: network error — try again');
-      })
-      .finally(function() { fbSubmit.disabled = false; });
-  });
-}
+        showError('Feedback autofill failed: ' + (j.error || 'unknown error'));
+        return;
+      }
+      var parts = [];
+      if (j.filled && j.filled.length) parts.push(j.filled.length + ' submitted');
+      if (j.already && j.already.length) parts.push(j.already.length + ' already filled');
+      if (j.failed && j.failed.length) {
+        parts.push(j.failed.length + ' failed: ' + j.failed.map(function(f) { return f[0]; }).join(', '));
+        showError('Feedback: ' + j.failed.map(function(f) { return f[0] + ' — ' + f[1]; }).join('; '));
+      }
+      status.textContent = parts.join(' · ') || 'nothing to submit';
+      status.className = 'mt-2 text-xs ' + (j.failed && j.failed.length ? 'text-error' : 'text-success');
+    })
+    .catch(function() {
+      status.textContent = 'network error — try again';
+      status.className = 'mt-2 text-xs text-error';
+      showError('Feedback autofill: network error — try again');
+    })
+    .finally(function() { fbSubmit.disabled = false; });
+});
+
+// ── Marks tag save: fetch + soft refresh (no-JS fallback = plain POST) ──
+// The tag forms sit inside <main> and morph on refresh, so the submit is
+// delegated. The server returns JSON when the request asks for it and keeps
+// the POST/redirect for the no-JS path.
+document.addEventListener('submit', function(ev) {
+  var f = ev.target;
+  if (!(f instanceof HTMLFormElement)) return;
+  var action = f.getAttribute('action') || '';
+  if (action !== '/marks/tag') return;
+  ev.preventDefault();
+  fetch('/marks/tag', {method: 'POST', body: new FormData(f),
+                       credentials: 'same-origin',
+                       headers: {Accept: 'application/json'}})
+    .then(function(r) {
+      if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
+      return r.json();
+    })
+    .then(function(j) {
+      if (!j.ok) { showError(j.error || 'Tag not saved'); return; }
+      softRefresh();
+    })
+    .catch(function() { showError('Network error — tag not saved'); });
+});
 
 // ── Delete my data (OPT-IN destructive) ──────────────────────────────
 // Same shape as the feedback flow: the settings ROW opens the explainer

@@ -104,6 +104,7 @@ kill %1
 export DATA_DIR=/tmp/osrm-marks
 .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:18180 app.app:app &
 .venv/bin/python tests/test_marks_dut.py  # [e2e] 53/53 marks tab (colours, chips, uniform rows, tooltip, glance, dismiss, round-trip)
+.venv/bin/python tests/test_softrefresh_dut.py  # [e2e] 18/18 soft refresh (phase 4): quiet sync preserves scroll/focus/open tag panel/att-view/avatar vars/push card and renders new data in place; clicked sync never navigates; post-morph delegated copy + tag save; dash.js location.reload only inside softRefresh; idiomorph sha256 pinned; needs seeded server on DUT_BASE
 kill %1
 
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside,
@@ -194,7 +195,7 @@ drill, key rotation, sync damping, push-tick alerting): `docs/runbook.md`.
 - `ss` doesn't exist on this host — check ports with a python socket bind, not `ss -tln`.
 - Flask test client: pass cookies via `set_cookie`, a `Cookie` header in `headers=` is dropped.
 - Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v34; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
+- SW cache name (read from `sw.js` — current value v35; test_sw.py derives it) must bump when `app/static/` changes — `test_sw.py` asserts it, and README's architecture diagram must match (verify76 L37/D58).
 - Editing pyproject without `uv lock` fails CI (`uv lock --check`).
 - Login-page version badge comes from the `VERSION` file, not pyproject directly.
 - SQLite: every connection funnels through `app.db.connect()` (10s busy timeout, `SQLITE_JOURNAL_MODE` env, default `delete`) — never `sqlite3.connect` directly. Request handlers share ONE request-scoped connection (closed by the `teardown_appcontext` hook, even when a handler raises); scripts and background threads own + close their own. Forensic `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when WAL is on — or use `sqlite3 “.backup”` (the daily snapshot pipeline already does; it is WAL-safe). Raw `cp` under WAL silently misses recent commits.
