@@ -108,6 +108,8 @@ export DATA_DIR=/tmp/osrm-marks
 .venv/bin/python tests/test_touchfeel_dut.py  # [e2e] 11/11 touch feel (phase 5): press/sheet tokens in app.css, old CSS tab transition gone, element.animate runs under normal motion and not under reduced-motion, per-tab scroll memo, exactly-one-panel invariant, keyboard-only tab focus; needs seeded server on DUT_BASE
 .venv/bin/python tests/test_lowtier_dut.py  # [e2e] 14/14 low tier (phase 6): perf.js blocking head script + ?perf override, avatar loops 0 when low/offscreen and resume when back, gaze driver absent in low tier, drag-drop polyfill absent while TIMETABLE_EDITOR off, pause rule in app.css; needs seeded server on DUT_BASE
 .venv/bin/python tests/test_pull_dut.py  # [e2e] 12/12 pull-to-refresh (phase 7): coarse-pointer pull fires ref() in place via transform (no navigation), ignored off-top and on mouse devices, reduced-motion has no rotation/spring; needs seeded server on DUT_BASE
+.venv/bin/python tests/test_perf_budget.py  # [unit] 15/15 perf guardrails (phase 8): rendered pages have zero off-origin hosts + no CDN, CSP script-src self-only, app.css gz <= 35KB, immutable/no-cache/no-store matrix, dash.js reload only in softRefresh, sw.js navigationPreload + versioned cache-first + HTML never cached; no server
+.venv/bin/python tests/test_perf_budget_e2e.py  # [e2e] 8/8 guardrails at 6x CPU throttle: warm-panel 10 tab switches have no long task > 50ms in a switch window, data-changing sync has no navigation and keeps scroll/focus/active tab, ?perf=low has 0 avatar animations; needs seeded server on DUT_BASE
 kill %1
 
 # official-timetable DUT — self-boots gunicorn on a free port (seed+mint inside,
