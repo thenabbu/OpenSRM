@@ -151,18 +151,36 @@ document.querySelectorAll('[data-refresh]').forEach(function(b) {
 });
 
 // ── Tabs (desktop navbar + mobile dock) ───────────────────────────
-function switchTab(name, btn) {
-  document.querySelectorAll('[data-tabpanel]').forEach(function(p) {
-    var show = (p.id === 'tab-' + name);
-    if (show && p.style.display === 'none') {
-      p.style.display = '';
-      p.classList.add('tab-enter');
-      void p.offsetHeight;   // start from the invisible state, then let CSS transition in
-      p.classList.remove('tab-enter');
-    } else if (!show) {
-      p.style.display = 'none';
-    }
-  });
+var scrollMemo = {};   // per-tab reading position (phase 5)
+// CSSOM, not an attribute substring: the server renders display:none both
+// with and without a space — [style*="display: none"] picks a hidden panel
+// as "current" and then shows two panels at once (phase-0 lesson, ACTIVE_JS)
+function activePanel() {
+  var ps = document.querySelectorAll('[data-tabpanel]');
+  for (var i = 0; i < ps.length; i++) if (ps[i].style.display !== 'none') return ps[i];
+  return null;
+}
+function switchTab(name, btn, byKeyboard) {
+  var next = document.getElementById('tab-' + name);
+  if (!next) return;
+  var current = activePanel();
+  if (current && current !== next) {
+    scrollMemo[current.id] = window.scrollY;
+    current.style.display = 'none';
+  }
+  next.style.display = '';
+  window.scrollTo(0, scrollMemo[next.id] || 0);
+  // motion only in response to a tap/click (§7); element.animate runs off
+  // the main thread, forces no layout, and a new tap interrupts it cleanly
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var low = document.documentElement.dataset.perf === 'low';
+  if (!reduced) {
+    next.animate(
+      low
+        ? [{opacity: 0}, {opacity: 1}]
+        : [{opacity: 0, transform: 'translateY(6px)'}, {opacity: 1, transform: 'none'}],
+      {duration: 200, easing: 'cubic-bezier(.22,1,.36,1)'});
+  }
   document.querySelectorAll('[data-tab]').forEach(function(b) {
     var on = (b === btn) || (b.dataset.tab === name && !btn);
     b.classList.toggle('tab-active', on);   // navbar buttons
@@ -173,7 +191,9 @@ function switchTab(name, btn) {
     b.tabIndex = on ? 0 : -1;
   });
   if (history.replaceState) history.replaceState(null, '', '#' + name);
-  if (btn && btn.offsetParent) btn.focus();
+  // focus follows KEYBOARD navigation only — a tap or mouse click must not
+  // move focus (Safari never focuses buttons on tap; keep all platforms alike)
+  if (byKeyboard && btn && btn.offsetParent) btn.focus();
 }
 var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
 tabButtons.forEach(function(b) {
@@ -186,7 +206,7 @@ tabButtons.forEach(function(b) {
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = vis[(idx - 1 + vis.length) % vis.length];
     else if (e.key === 'Home') next = vis[0];
     else if (e.key === 'End') next = vis[vis.length - 1];
-    if (next) { e.preventDefault(); switchTab(next.dataset.tab, next); }
+    if (next) { e.preventDefault(); switchTab(next.dataset.tab, next, true); }
   });
 });
 // Restore tab from hash (survives refresh/reload); default dashboard

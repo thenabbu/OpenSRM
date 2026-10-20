@@ -1784,6 +1784,10 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.28.0", "date": "20 Oct", "title": "Feels like an app",
+     "body": "Taps now respond instantly, tabs glide instead of snapping, "
+             "and dialogs slide up from the bottom on phones \u2014 the "
+             "small motion touches that make it feel native."},
     {"ver": "v1.27.0", "date": "20 Oct", "title": "Refresh without the flash",
      "body": "Refreshing now updates your numbers right where they are "
              "\u2014 no more white flash, lost scroll position or "

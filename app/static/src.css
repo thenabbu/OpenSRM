@@ -20,3 +20,23 @@
 @import "./timetable.css";
 @import "./motion.css";
 @import "./gaze.css";
+
+/* ── Phase 5: touch feel (DESIGN §7 / §10.16 rule 4) ──────────────────
+   Press feedback is FAST down, slow up with a slight overshoot — that
+   asymmetry is what reads as physical. transform/opacity only, no hover
+   lift, disabled entirely under prefers-reduced-motion. Motion still
+   only in response to something the person did. */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: linear(0, .32 8%, .72 17%, .95 27%, 1.04 38%, 1.02 50%, 1 65%, 1);
+  --t-press: 60ms; --t-ui: 200ms; --t-sheet: 320ms;
+}
+html { overscroll-behavior-y: contain; }   /* contains scroll chains; pairs with pull.js (phase 7) */
+button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; user-select: none; }
+
+.pressable { transition: transform 220ms var(--ease-spring), background-color 150ms; }
+.pressable:active { transform: scale(.97); transition-duration: var(--t-press); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable, .pressable:active { transition: none; transform: none; }
+}
