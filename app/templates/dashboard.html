@@ -630,7 +630,7 @@
 <script defer src="{{ asset('vendor/idiomorph.min.js') }}"></script>
 <script defer src="{{ asset('dash.js') }}"></script>
 <script defer src="{{ asset('gaze.js') }}"></script>
-<script defer src="{{ asset('drag-drop-touch.js') }}"></script>
+{% if tt_editor_enabled %}<script defer src="{{ asset('drag-drop-touch.js') }}"></script>{% endif %}
 <script defer src="{{ asset('timetable.js') }}"></script>
 <script defer src="{{ asset('push.js') }}"></script>
 <div class="h-[env(safe-area-inset-bottom)]"></div>
