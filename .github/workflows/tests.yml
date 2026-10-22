@@ -98,6 +98,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_layout.py
       - name: test_css_safelist (render-time classes exist in app.css)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_css_safelist.py
+      - name: test_perf_budget (third-party-free pages, cache headers, reload sites)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_perf_budget.py
       - name: test_attendance_view (attendance view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_attendance_view.py
       - name: test_feedback (harvester + opt-in plan)
@@ -193,6 +195,7 @@ jobs:
             test_touchfeel_dut \
             test_lowtier_dut \
             test_pull_dut \
+            test_perf_budget_e2e \
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast guide_check
 
