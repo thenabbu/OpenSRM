@@ -19,7 +19,7 @@ docker compose up -d
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
 uv venv .venv && source .venv/bin/activate
-uv sync --frozen
+uv sync --frozen --extra browser
 playwright install chromium
 DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
@@ -80,7 +80,7 @@ Key rules:
 - **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access, all of it in the `app/db.py` repository layer. All connections funnel through `app.db.connect()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly. Request handlers get one request-scoped connection closed by the Flask teardown; multi-statement units use `with transaction():`
 - **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
 - **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
-- **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in).
+- **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in). The fallback pipeline is archived off by default (`PLAYWRIGHT_FALLBACK` unset); `uv sync --extra browser` plus an image built `--build-arg WITH_PLAYWRIGHT=1` re-enable it.
 - **No JS frameworks** — vanilla JS only. No build step.
 - **Service worker** — bump `CACHE_NAME` in `sw.js` when deploying static asset changes.
 
@@ -88,11 +88,11 @@ Key rules:
 
 - **Lint** — ruff (`app/` only) + `uv lock --check` on every push and PR
 - **Tests** (`.github/workflows/tests.yml`, on every PR to `main` and every push to `main`) — three jobs:
-  - `unit` — every suite that needs no server and no network, one step each, fresh `DATA_DIR` per step, `uv sync --frozen`
+  - `unit` — every suite that needs no server or network, one step each, fresh `DATA_DIR` per step, `uv sync --frozen --extra browser` (the extra covers the two tests that opt into the archived Playwright fallback)
   - `docker` — builds the image **without pushing**, boots it on an empty volume, then seeds a fabricated user, mints its session cookie inside the container and asserts an authenticated `GET /` is 200 with the seeded data on the page (`/login` alone only proves the shell boots)
-  - `e2e` — the Playwright suites, chromium headless shell only: the self-booting ones plus the server-needing ones (one gunicorn behind them, `scripts/ci_e2e_http.sh`); failure logs are uploaded as an artifact
+  - `e2e` — the Playwright suites (`uv sync --frozen --extra browser`), chromium headless shell only: the self-booting ones plus the server-needing ones (one gunicorn behind them, `scripts/ci_e2e_http.sh`); failure logs are uploaded as an artifact
   - `test_login_guide_server` is deliberately **not** in CI — it performs 7 real portal logins per run and the portal caps 10/hour per IP. `test_login_guide_check` **is** in CI: it mocks `/api/login` in the browser, so nothing reaches the portal
-- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` **plus `:<VERSION>` and `:<short-sha>`** (with `org.opencontainers.image.version`/`revision` labels), gated on `needs: [lint, tests]` so a red suite never pushes `:latest`. Deployments pin/roll back via `OPENSRM_TAG` (see AGENTS.md "Prod deploy")
+- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` **plus `:<VERSION>` and `:<short-sha>`** (with `org.opencontainers.image.version`/`revision` labels), gated on `needs: [lint, tests]` so a red suite never pushes `:latest`. The shipped image omits the browser fallback (`ARG WITH_PLAYWRIGHT=0` default — no Chromium, no playwright package); a variant that includes it builds with `--build-arg WITH_PLAYWRIGHT=1`. Deployments pin/roll back via `OPENSRM_TAG` (see AGENTS.md "Prod deploy")
 - **Scans** — `.github/workflows/scans.yml` (gitleaks on full history · pip-audit on the locked export · trivy HIGH/CRITICAL on the built image) — **report-only**: findings land in the job summary, never a red check. docs/SCANS.md documents what each would block on and how to flip one to blocking
 - **Deploy** — **manual**, there is no watcher: once CI is green on `main`, follow [docs/runbook.md](docs/runbook.md) (sync the compose file first, then `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'`) (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
 
@@ -101,7 +101,7 @@ Key rules:
 During testing, be aware:
 - Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a queue-wait timeout / `Sync in progress` / budget / cooldown rejection is free)
 - Refresh cache window: a refresh within `SYNC_MIN_INTERVAL_S` (default 300s, `0` disables) of an account's last completed sync is answered from stored data — no portal request, no quota charge; a second refresh while one is already running waits for and shares that sync instead of erroring
-- Sync queue: a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) for a running one, logins ahead of refreshes, before it gets the busy 503; `SYNC_MAX_CONCURRENCY` (default 1) is how many pipelines may run at once, and the Playwright fallback stays serialized at any value
+- Sync queue: a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) for a running one, logins ahead of refreshes, before it gets the busy 503; `SYNC_MAX_CONCURRENCY` (default 1) is how many pipelines may run at once, and the (archived, off-by-default) Playwright fallback stays serialized at any value
 - Per IP: 10 login attempts per hour
 - Aggregate server→portal budget: 30 requests per 10 minutes (full logins + preflights share 20, preflight capped at its own 10, refresh floor 10)
 

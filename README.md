@@ -16,7 +16,7 @@ A self-hosted attendance dashboard for the SRM Student Portal, built as a progre
 
 - **Dashboard** — a card/widget engine, not a fixed page: `LAYOUT` + `WIDGETS` registries in `app/views/layout.py` (re-exported by `app.app`) render a 12-column card grid (day column | marks + exams | attendance + teachers), each widget a self-guarding partial that hides itself when its data is empty and hides its whole card when every widget in it is empty. Widgets: profile (institute email, click-to-copy), a class ticker (previous/current/next class from the real slot grid), weekly absences, internal marks with stale-entry flags, the end-sem schedule with its countdown on the header line, a can-skip glance that mirrors the attendance tab's own numbers (never a second opinion), subject-grouped teachers with their Theory/Practical mode and a scrollable list, and a notices panel for release notes. Adding or removing a card or widget is one registry entry — no template, route or test churn beyond the widget's own partial. On desktop the whole grid fits the viewport exactly — no page scrollbar at 1280×900 (cards stretch to fill, leftover content scrolls inside the card, pinned by `tests/e2e/test_dash_fit.py`); mobile keeps normal page scrolling. The notices panel is the release-notes channel, and a notice for the *current* release is mandatory: test_audit_findings `M27` fails when the head notice stops equaling `VERSION`.
 - **Reliability** — a corrupt stored row degrades with a logged warning instead of a 500 on every load; a mid-scrape relogin re-reads the fresh portal page instead of the dead session's body and persists the fresh session for the next sync; stored marks/subjects survive a failed or empty fetch (preserve-if-empty, like attendance/personal/exams) and every keep logs its netid + preserved columns as `preserve kept stored data` in `opensrm.auth`; unhandled errors land in one greppable ERROR line with a traceback
-- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (Playwright fallback); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift); rejections are classified on the portal's own alert text, so a wrong password says "invalid credentials" on the first attempt instead of burning 3 captcha retries (and the portal's 3-attempts-per-NetID lockout), and every sync lockout names its real remaining time
+- **Login** — authenticates against the SRM portal via a pure-HTTP pipeline (the Playwright fallback is archived — off unless `PLAYWRIGHT_FALLBACK=enabled`, and only in images built with `--build-arg WITH_PLAYWRIGHT=1`); accepts netid or email; captcha auto-retry (up to 3 attempts in the HTTP pipeline, 5 via the fallback when enabled); live step-by-step progress bar while logging in; **preflight** — the login page warms the portal session and solves the captcha while you're still typing your password; guide-compliant form with floating labels, show/hide toggle, and a Caps-Lock hint that reserves its own row (zero layout shift); rejections are classified on the portal's own alert text, so a wrong password says "invalid credentials" on the first attempt instead of burning 3 captcha retries (and the portal's 3-attempts-per-NetID lockout), and every sync lockout names its real remaining time
 - **Sessions** — concurrent per account (phone, laptop, PWA each hold their own 30-day cookie); logging in on one device never evicts the others, `/logout` ignores Cloudflare speculation prefetches so a hover-adjacent touch can't silently kill the session, real logout/expiry events are one auth-log line each, session tokens are stored as sha256 digests (a leaked database yields no live sessions), and cross-site POST/PUT/PATCH/DELETE requests are refused with a 403
 - **Attendance** — meter rows per subject (§4.15): exact fill vs a white 75% tick, pinned numbers (attended / 75%-value / total), and the bare must-attend-or-can-skip count on a connector line; semester skip budgets (90-working-day and day-before-first-endsem models) in a quiet Estimates card; absences as `date · hours` chips merged with the monthly breakdown (one block per month, bar + chips together); no aggregate anywhere. Timetable rows carry a text glance signal (can skip N / attend N; neutral "no data" for unmatched or custom slots) and the today hero shows the current class's skip stat
 - **Internal Marks** — component-wise marks per subject (name + entered date + score), neutral numbers with a single muted outlier accent, IE-1/IE-2 roles derived from component maxima and confirmable per class (persisted for GPA prediction); glance widget on the dashboard
@@ -43,7 +43,7 @@ docker compose up -d
 
 # Development (venv)
 uv venv .venv && source .venv/bin/activate
-uv sync --frozen
+uv sync --frozen --extra browser
 playwright install chromium
 DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
@@ -56,7 +56,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 | Layer | Technology |
 |-------|------------|
 | Backend | Flask 3.1, Python 3.11, gunicorn (gthread, single worker) |
-| Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback |
+| Scraping | Pure HTTP (urllib) against the portal; Playwright (headless Chromium) fallback — archived, off unless `PLAYWRIGHT_FALLBACK=enabled` |
 | Captcha | ddddocr (self-contained OCR) |
 | Database | SQLite with a versioned migration registry (16 migrations → schema v17) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46 (pre-compiled to `app/static/app.css` via a pinned CLI — no runtime CDN), vanilla JS, Jinja2 |
@@ -84,7 +84,7 @@ flowchart TD
         FL["Flask + gunicorn<br/>sessions · rate limits · CSP"]
         PROG["Login progress tracker<br/>POST /api/login/progress · 600 ms poll"]
         HS["http_scraper<br/>pure-HTTP pipeline"]
-        PW["Playwright fallback<br/>headless Chromium · 5 captcha tries"]
+        PW["Playwright fallback (archived)<br/>off unless PLAYWRIGHT_FALLBACK=enabled"]
         DB[("SQLite srm.db<br/>users · portal_sessions · timetable · edit log<br/>schema_version 17")]
         FL --> PROG
         FL <--> DB
@@ -121,7 +121,7 @@ flowchart TD
 3. **Hot data** — attendance (`funSetFormId(9)`), internal marks (`funSetFormId(13)`, plus per-subject component drilldown), and the official Exam Time Table (`funSetFormId(126)`) fetched on every sync and persisted
 4. **Cold data** — profile/personal details/subject lists (`funSetFormId(1), 17, 7`) re-fetched only when older than 24h; timetable rendered from SQLite
 5. **Exams** — the official Exam Time Table (`iden=126`) rides the same fetch batch as a hot formId; the `ScribeInner.jsp` leak probe (Apr–Jun, Nov–Dec candidate windows) still runs alongside as the pre-release fallback, and the rows are parsed into the dashboard card
-6. **Store** — parsed JSON written to SQLite; if the HTTP pipeline dies during **login** (`HttpScraperError` from the login phase only), the login falls back to Playwright (5 captcha retries, 150 s hard cap); post-login JSP/portal failures are returned as errors, not retried
+6. **Store** — parsed JSON written to SQLite; if the HTTP pipeline dies during **login** (`HttpScraperError` from the login phase only), the failure returns a typed portal-down error — the Playwright fallback (5 captcha retries, 150 s hard cap) is archived and runs only when ops sets `PLAYWRIGHT_FALLBACK=enabled` on an image built with `--build-arg WITH_PLAYWRIGHT=1`; post-login JSP/portal failures are returned as errors, not retried
 
 ```mermaid
 sequenceDiagram
@@ -154,7 +154,7 @@ sequenceDiagram
     F-->>B: 200 OK
     B->>U: dashboard — cached shell paints instantly
 
-    Note over F,P: HttpScraperError or hard failure → Playwright fallback (5 captcha tries, 150 s cap)
+    Note over F,P: HttpScraperError or hard failure → typed error (Playwright fallback archived; PLAYWRIGHT_FALLBACK=enabled opts in)
 ```
 
 ---
@@ -228,7 +228,7 @@ flowchart LR
 | Rate limit (IP) | 10 per hour | Login attempts per IP |
 | Portal budget | 30 per 10 min | Aggregate server→portal requests, in three buckets: full logins + preflights share 20 (preflight capped at 10), refreshes hold a reserved floor of 10; one IP at most 6 unauth tokens |
 | Sync queue wait | 45 s | How long a sync waits for a running one before it returns "Sync in progress" (`SYNC_QUEUE_WAIT_S`; `0` = refuse immediately). Logins queue ahead of refreshes; waiters show "Waiting for N ahead…" on the login progress bar |
-| Sync concurrency | 1 | Portal pipelines allowed to run at once (`SYNC_MAX_CONCURRENCY`, read at startup). The Playwright fallback stays serialized at any value |
+| Sync concurrency | 1 | Portal pipelines allowed to run at once (`SYNC_MAX_CONCURRENCY`, read at startup). The Playwright fallback stays serialized at any value (and is archived off by default) |
 | Portal cooldown | 5 → 30 min | After 3 consecutive portal failures: 5 min, doubling, capped at 30 |
 | Session | 30 days | Cookie lifetime |
 | DB lock wait | 10 s | How long a SQLite statement waits for a lock before failing (was Python’s 5 s default) |
@@ -237,11 +237,12 @@ Environment variables:
 - `DATA_DIR` — SQLite data directory (default: `/app/data`; holds `srm.db`, `fernet.key`, `secret`)
 - `FERNET_KEYS` — optional comma-separated Fernet keys for data at rest: the **first key encrypts**, every key decrypts (key rotation without data loss). Unset/empty → the single `DATA_DIR/fernet.key` (default, unchanged). On the lab, set it in `/docker/opensrm/.env` and run the runbook in [SECURITY.md](SECURITY.md#key-rotation)
 - `SQLITE_JOURNAL_MODE` — SQLite journal mode, `delete` (default, rollback journal) or `wal`. WAL lets readers proceed during a write and pairs with `synchronous=NORMAL`; `delete` keeps today’s exact behaviour. The mode is set explicitly on every connection, so flipping the env takes effect on the next boot — including flipping back. **Backups:** if you switch to `wal`, a raw file copy of `srm.db` is not a safe backup (recent commits sit in `srm.db-wal` until a checkpoint) — copy the `-wal` and `-shm` sidecars too, or use `sqlite3 srm.db ".backup dest"`, which reads through the WAL and is safe in either mode
-- `CHROMIUM_PATH` — Chromium executable path (Playwright fallback)
+- `CHROMIUM_PATH` — Chromium executable path (archived Playwright fallback; only present in images built with `--build-arg WITH_PLAYWRIGHT=1`)
+- `PLAYWRIGHT_FALLBACK` — the browser fallback pipeline. Unset (default): archived — a failed HTTP sync returns a typed portal-down error and never launches a browser, and the shipped image contains neither Chromium nor the playwright package. `enabled`: on failure the sync falls back to Playwright (needs an image built with `--build-arg WITH_PLAYWRIGHT=1`, otherwise the app logs the missing package and returns the same error). Read per request — flips without a restart
 - `LOG_LEVEL` — Logging verbosity: DEBUG, INFO (default), WARNING, ERROR
 - `SYNC_MIN_INTERVAL_S` — refresh cache window in seconds (default 300; `0` disables). A `POST /api/refresh` inside the window of the account's last completed sync returns `{ok: true, cached: true, age_s}` from stored data — no portal contact, no per-account quota charge — and a second refresh for an account already syncing waits for and shares that sync's result instead of returning "Sync in progress". Values above 600 also answer the dashboard's background auto-sync from cache; the canary (`scripts/canary_sync.sh`) fails loudly if served a cached answer, since a canary run must really touch the portal
 - `SYNC_QUEUE_WAIT_S` — seconds a sync waits in the queue for a running sync to finish before returning the busy "Sync in progress" error (default 45; `0` restores the old refuse-immediately behaviour; read per-request, so it can be flipped without a restart). While waiting, the login progress bar shows "Waiting for N ahead…", and logins queue ahead of refreshes
-- `SYNC_MAX_CONCURRENCY` — how many portal pipelines may run at once (default 1, read at startup). Values above 1 are accepted but untested end-to-end; the Playwright fallback stays serialized on one browser at any value
+- `SYNC_MAX_CONCURRENCY` — how many portal pipelines may run at once (default 1, read at startup). Values above 1 are accepted but untested end-to-end; the (archived, off-by-default) Playwright fallback stays serialized on one browser at any value
 - `TZ` — Timezone (default: `Asia/Kolkata`)
 - `SRM_EGRESS_URL` + `SRM_PROXY_TOKEN` — optional: route portal traffic through the Cloudflare egress worker instead of direct egress (both must be set, otherwise direct)
 - `PUSH_ENABLED` (default off) / `PUSH_DRY_RUN` / `PUSH_ALLOW_NETIDS` — class-reminder rollout controls (see [docs/push.md](docs/push.md))

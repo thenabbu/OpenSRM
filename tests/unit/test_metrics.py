@@ -135,9 +135,12 @@ def t_sync_counter_playwright():
 
     H.fetch = _raise
     A._fetch_rich_optimized = _pw
+    # the fallback is archived off by default — this test opts it in
+    os.environ["PLAYWRIGHT_FALLBACK"] = "enabled"
     try:
         res = A.fetch_attendance("zz9992", "pw")
     finally:
+        os.environ.pop("PLAYWRIGHT_FALLBACK", None)
         H.fetch, A._fetch_rich_optimized = orig_fetch, orig_pw
         A._portal_ok()
     assert not res.get("ok"), res

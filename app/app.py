@@ -1156,6 +1156,14 @@ def _sync_result(pipeline, res, t0):
     return res
 
 
+def _pw_fallback_enabled():
+    """The Playwright fallback pipeline is archived off by default (Oct 2026:
+    prod's HTTP pipeline had never fallen back once). Ops opts in with
+    PLAYWRIGHT_FALLBACK=enabled — read per request, like the other knobs
+    (TIMETABLE_EDITOR, SCOPE_FEATURES)."""
+    return os.environ.get("PLAYWRIGHT_FALLBACK", "").strip().lower() in ("enabled", "1", "true")
+
+
 def fetch_attendance(netid, password, authorized=False, attempt=None):
     t_sync = time.monotonic()   # observability: sync outcome + duration anchor
     loop = future = None  # except block references both; may not be reached
@@ -1259,12 +1267,41 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                         log.debug("cold_fetch update failed err=%r", e)
                 return _sync_result("http", res, t_sync)
             except http_scraper.HttpScraperError as e:
+                _portal_fail_once()
+                if not _pw_fallback_enabled():
+                    log.warning("http pipeline failed (%r) — playwright fallback archived "
+                                "(PLAYWRIGHT_FALLBACK unset)", e)
+                    return _sync_result("http", sync_error("portal_down",
+                                        "SRM portal is not responding — try again in a few minutes."),
+                                        t_sync)
                 log.warning("http pipeline failed (%r) — falling back to playwright", e)
-                _portal_fail_once()
             except Exception as e:
-                log.warning("http pipeline crashed (%r) — falling back to playwright", e)
                 _portal_fail_once()
-        # ── Fallback: Playwright ──────────────────────────────────────
+                if not _pw_fallback_enabled():
+                    log.warning("http pipeline crashed (%r) — playwright fallback archived "
+                                "(PLAYWRIGHT_FALLBACK unset)", e)
+                    return _sync_result("http", sync_error("internal",
+                                        "Scrape failed server-side — check the server log, then try again."),
+                                        t_sync)
+                log.warning("http pipeline crashed (%r) — falling back to playwright", e)
+        # ── Fallback: Playwright (archived — opt in with PLAYWRIGHT_FALLBACK=enabled) ──
+        # With the knob unset the only way to reach this block is http_scraper
+        # failing to import — every pipeline failure returned in its except
+        # branch above.
+        if not _pw_fallback_enabled():
+            return _sync_result("http", sync_error("internal",
+                                "Scrape failed server-side — check the server log, then try again."),
+                                t_sync)
+        # An image built WITH_PLAYWRIGHT=0 has no playwright package: say so
+        # loudly instead of failing deep inside the submitted coroutine.
+        try:
+            import playwright.async_api  # noqa: F401
+        except ImportError:
+            log.error("PLAYWRIGHT_FALLBACK=enabled but the playwright package is not installed in this "
+                      "image — rebuild with --build-arg WITH_PLAYWRIGHT=1")
+            return _sync_result("playwright", sync_error("internal",
+                                "Scrape failed server-side — check the server log, then try again."),
+                                t_sync)
         # A10: the browser pipeline stays serialized whatever
         # SYNC_MAX_CONCURRENCY says — one shared persistent context cannot
         # drive two logins. Held through the zombie cleanup in the except
@@ -1786,6 +1823,10 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.31.0", "date": "24 Oct", "title": "Leaner under the hood",
+     "body": "The server got a much smaller update package, so future "
+             "updates download faster. Nothing you can see changes — same "
+             "app, lighter behind the scenes."},
     {"ver": "v1.30.0", "date": "20 Oct", "title": "Swipe to refresh",
      "body": "Pull down from the top on your phone to refresh \u2014 the "
              "same gesture you know from apps, right inside OpenSRM."},

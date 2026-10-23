@@ -77,7 +77,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
 - Per netid: 3 scrapes per 10 minutes — counted only when the sync actually runs; a rejection that never reaches the portal (sync queue wait exhausted, portal budget spent, cooldown active) costs nothing, so a busy server can't lock an account out of a sync it never performed; a refresh served from the last completed sync (`SYNC_MIN_INTERVAL_S`, default 300s) or shared from an already-running sync likewise never reaches the portal
 - Per IP: 10 login attempts per hour (counted only after credentials pass format validation)
 - Aggregate server→portal budget: 30 requests per 10 minutes, split into three buckets — full logins and preflights share 20 (preflight additionally capped at its own 10 so warm-logins can't drain the login pool), refreshes hold a reserved floor of 10 that unauthenticated work can never spend; one source IP holds at most 6 unauth tokens
-- Sync serialization: one portal pipeline at a time (`SYNC_MAX_CONCURRENCY`, default 1); a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) with logins queued ahead of refreshes, then gets the busy 503 — the wait is free, never charged against the account quota. The Playwright fallback stays serialized on one browser at any concurrency setting
+- Sync serialization: one portal pipeline at a time (`SYNC_MAX_CONCURRENCY`, default 1); a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) with logins queued ahead of refreshes, then gets the busy 503 — the wait is free, never charged against the account quota. The Playwright fallback stays serialized on one browser at any concurrency setting — and is archived off by default (`PLAYWRIGHT_FALLBACK` unset), so the shipped image carries no browser at all unless built with `--build-arg WITH_PLAYWRIGHT=1`
 - Portal cooldown: 3 consecutive portal failures arm a cooldown (5 min, doubling, capped at 30 min)
 - Memory bound: every rate-limit structure (per-netid and per-IP attempt windows, preflight admission state, the login-progress map and its per-IP read cap) is a dict in `app/state.py` behind one lock, pruned of expired keys on every access; when a map still passes 10,000 entries only its stale keys are dropped, with a hard clear at 2× as the blowout backstop for that one map. Worst case per map: ~20,000 keys × at most 10 timestamps each (10-minute or 1-hour window). The progress map additionally prunes on every write, so a login flow that never polls holds memory for at most its 10-minute TTL; the portal cooldown/failure counter is two scalars and cannot accumulate.
 
@@ -106,7 +106,8 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   `cap_drop: ALL` with only `CHOWN`/`SETUID`/`SETGID` back, `read_only`
   rootfs + `/tmp` tmpfs, `no-new-privileges`, and `mem_limit`/`pids_limit`
   sized from measured RSS and task counts
-- Chromium keeps `--no-sandbox` (headless Playwright in-container) — it no
+- Chromium keeps `--no-sandbox` (headless Playwright in-container; only
+  present in images built with `--build-arg WITH_PLAYWRIGHT=1`) — it no
   longer needs root for it; the container is single-purpose and only
   reachable through the Cloudflare tunnel (compose publishes loopback +
   the cloudflared bridge gateway only)
