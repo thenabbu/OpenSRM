@@ -37,7 +37,7 @@ echo "server up on :$PORT after ${i}s (DATA_DIR=$DATA_DIR)"
 rc_total=0
 for s in "$@"; do
   st=$(date +%s)
-  timeout 300 env DUT_BASE="http://127.0.0.1:$PORT" "$V/bin/python" "tests/$s.py" \
+  timeout 300 env DUT_BASE="http://127.0.0.1:$PORT" "$V/bin/python" "tests/e2e/$s.py" \
     >/tmp/suite-$s.log 2>&1
   rc=$?
   [ $rc -ne 0 ] && rc_total=1

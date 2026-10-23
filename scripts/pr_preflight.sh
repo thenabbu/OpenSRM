@@ -71,8 +71,8 @@ else
   res FAIL version-race "other refs already touched VERSION at $CUR — reuse that number, don't invent one:"$'\n'"$RACE"
 fi
 
-# ---- 5. sw.js cache name vs README (reuse tests/verify76.py, checks L37 + D58)
-V76=$("$PY" tests/verify76.py 2>&1)
+# ---- 5. sw.js cache name vs README (reuse tests/unit/test_audit_findings.py, checks L37 + D58)
+V76=$("$PY" tests/unit/test_audit_findings.py 2>&1)
 L37=$(printf '%s\n' "$V76" | grep -E '^L37' | head -1)
 D58=$(printf '%s\n' "$V76" | grep -E '^D58' | head -1)
 CACHE=$(grep -oE 'opensrm-v[0-9]+' app/static/sw.js | head -1)
@@ -81,7 +81,7 @@ if [ -n "$L37" ] && [ -n "$D58" ] \
    && ! printf '%s\n%s\n' "$L37" "$D58" | grep -q 'FAIL'; then
   res PASS sw-cache "L37 + D58 pass (sw.js CACHE_NAME=$CACHE)"
 else
-  res FAIL sw-cache "verify76 L37/D58 not both PASS:"$'\n'"$(printf '%s\n%s\n' "$L37" "$D58" | sed 's/^/    /')"
+  res FAIL sw-cache "test_audit_findings L37/D58 not both PASS:"$'\n'"$(printf '%s\n%s\n' "$L37" "$D58" | sed 's/^/    /')"
 fi
 
 printf '\npreflight: %d passed, %d failed\n' "$PASS_N" "$FAIL_N"
