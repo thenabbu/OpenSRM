@@ -63,7 +63,7 @@ jobs:
 
       # pip cannot resolve a git+ requirement for hashing, so the pinned-git
       # blobatar line (a commit-pinned supply-chain item covered by the
-      # Dockerfile digest pins + trivy image scan + verify76 M22) is dropped
+      # Dockerfile digest pins + trivy image scan + test_audit_findings M22) is dropped
       # from the export before auditing; everything else is audited.
       - name: Export locked requirements
         run: |

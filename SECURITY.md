@@ -119,7 +119,7 @@ Report vulnerabilities privately via [GitHub Security Advisories](https://github
   available) on every PR — **report-only** by design; docs/SCANS.md documents
   what each would block on and how the maintainer can flip one to blocking
 - The one git dependency (`blobatar`) is pinned to an exact commit hash
-  (`pyproject.toml` + `uv.lock`, enforced by `tests/verify76.py` M22) — a known,
+  (`pyproject.toml` + `uv.lock`, enforced by `tests/unit/test_audit_findings.py` M22) — a known,
   documented supply-chain gap (see docs/SCANS.md) reported rather than fixed
 
 ## Key rotation

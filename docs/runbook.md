@@ -444,7 +444,7 @@ outside prober must not be able to fake scheduler liveness). The
 observability stack's `OpenSRMPushTickStale` rule fires when the stamp goes
 >5 min stale for 5m sustained, and Alertmanager delivers it to ntfy — so the
 alarm lives OUTSIDE the process that fails, which was the whole point.
-Both the counter and the gauge are pinned by `tests/test_push_tick.py`
+Both the counter and the gauge are pinned by `tests/unit/test_push_tick.py`
 (27/27) and the rule is promtool-tested both ways.
 
 Not yet deployed on the lab: it needs the optional observability stack

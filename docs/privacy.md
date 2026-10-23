@@ -48,7 +48,7 @@ transaction:
 It is rate-limited (3 attempts per hour per account), requires you to be
 logged in, and leaves one `opensrm.auth` log line with the per-table counts.
 The schema is scanned on every test run: if a future migration adds any new
-column that can hold a NetID, `tests/test_account_delete.py` fails until the
+column that can hold a NetID, `tests/unit/test_account_delete.py` fails until the
 deleter covers it.
 
 ## What it never touches
