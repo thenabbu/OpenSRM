@@ -154,34 +154,61 @@ rotation) see [docs/runbook.md](docs/runbook.md).
    from it, so every visit paints instantly and a failed fetch degrades to
    the last good data instead of an error.
 
+## Architecture
+
+One Flask process, one SQLite file, one fetch pipeline — the whole data path,
+portal to pixel:
+
 ```mermaid
 flowchart LR
-    subgraph client["Installable PWA"]
-        UI["Dashboard<br/>Jinja2 + daisyUI"]
-        SW["Service worker<br/>offline shell"]
+    subgraph client["Client — installable PWA"]
+        UI["Dashboard · login · settings<br/>Jinja2 + daisyUI, vanilla JS"]
+        SW["Service worker<br/>offline shell · cached assets"]
     end
+
     subgraph edge["Cloudflare edge"]
         TUN["Tunnel → srm.200871.xyz<br/>HTTPS · HSTS"]
     end
-    subgraph app["OpenSRM container :8083"]
-        FL["Flask + gunicorn<br/>sessions · rate limits · CSP"]
-        SCR["Pure-HTTP scraper<br/>ddddocr captcha OCR"]
-        DB[("SQLite<br/>srm.db")]
-    end
-    P["SRM Student portal"]
 
-    UI -->|HTTPS| TUN --> FL
-    SW --> UI
-    FL <--> DB
-    FL --> SCR
-    SCR -->|"direct"| P
-    SCR -.->|"optional egress worker"| P
+    subgraph app["OpenSRM container — Flask + gunicorn :8083"]
+        AUTH["Sessions · rate limits · portal budget<br/>login progress stream 5% → 92%"]
+        subgraph pipe["Pure-HTTP pipeline — app/http_scraper.py"]
+            LOGIN["Preflight + captcha OCR<br/>solved and kept warm 150 s before you submit"]
+            FETCH["Every sync: attendance 9 · marks 13<br/>timetable 10 · exams 126<br/>cold ≥24 h: profile 17 · courses 7"]
+            PARSE["Pure parsers — app/portal/parsers/<br/>HTML tables in, JSON out"]
+        end
+        DB[("SQLite srm.db — schema v17<br/>hot + cold JSON per student · portal sessions<br/>shared timetable — every source converges here")]
+        VIEWS["View models — app/views/<br/>budgets · IE roles · ticker · widget registry"]
+    end
+
+    P["SRM student portal<br/>sp.srmist.edu.in"]
+
+    UI -->|"POST /api/login · /api/refresh"| TUN
+    TUN --> AUTH
+    AUTH --> LOGIN
+    LOGIN --> FETCH
+    FETCH <-->|"LoginServlet + JSP responses"| P
+    FETCH --> PARSE
+    PARSE --> DB
+    DB --> VIEWS
+    VIEWS --> UI
+    SW -.-> UI
+    FETCH -.->|"SRM_EGRESS_URL"| EG["egress worker<br/>Cloudflare (optional)"]
+    EG -.-> P
 
     classDef client fill:#3b82f6,stroke:#1e3a5f,color:#fff
     classDef ext fill:#fed7aa,stroke:#c2410c,color:#374151
+    classDef opt fill:#fef3c7,stroke:#b45309,color:#374151
     class UI,SW client
     class P ext
+    class EG opt
 ```
+
+A sync starts at your browser, crosses the tunnel, logs in with a captcha
+that was already solved while you typed, pulls the hot forms, parses them
+with pure functions and lands it all in SQLite — and every page renders
+straight from that store, so the dashboard keeps working from cache even
+when the portal doesn't.
 
 ## Tech stack
 
