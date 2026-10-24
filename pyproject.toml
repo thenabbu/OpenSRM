@@ -19,7 +19,7 @@ dependencies = [
 # unless built with --build-arg WITH_PLAYWRIGHT=1. Dev DUTs and the CI e2e job
 # install it with: uv sync --extra browser
 [project.optional-dependencies]
-browser = ["playwright==1.63.0"]
+browser = ["playwright==1.64.0"]
 
 [project.scripts]
 
