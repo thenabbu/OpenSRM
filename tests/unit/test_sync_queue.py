@@ -358,10 +358,13 @@ def t_playwright_serialized_at_pool_two():
     H.fetch = raise_to_fallback
     A._fetch_rich_optimized = fake_pw
     A._scrape_lock = threading.BoundedSemaphore(2)
+    # the fallback is archived off by default — this test opts it in
+    os.environ["PLAYWRIGHT_FALLBACK"] = "enabled"
     A._portal_ok()
     try:
         res = _run(2, lambda i: A.fetch_attendance(f"zzq810{i}", "pw"))
     finally:
+        os.environ.pop("PLAYWRIGHT_FALLBACK", None)
         H.fetch, A._fetch_rich_optimized, A._scrape_lock = orig_fetch, orig_pwfn, orig_lock
         A._portal_ok()
     assert not st["broken"], \
@@ -370,6 +373,42 @@ def t_playwright_serialized_at_pool_two():
         f"the Playwright fallback must stay serialized at pool=2, saw {pyst['max']} concurrent"
     assert all(not r.get("ok") for r in res), res
     assert A._sync_queue_depth() == 0, "the queue must drain"
+
+
+# ── 9. The fallback is archived off by default ────────────────────────────
+def t_fallback_archived_by_default():
+    """PLAYWRIGHT_FALLBACK unset (the shipped default): an HTTP pipeline
+    failure must never reach the browser — typed portal_down result counted
+    as pipeline=http, and the playwright path stays untouched."""
+    _reset()
+    st = _state()
+    orig_fetch, orig_pw = H.fetch, A._fetch_rich_optimized
+
+    def raise_transport(netid, password, helpers, cold=True, prepared=None, deadline=None):
+        raise H.HttpScraperError("transport boom")
+
+    def must_not_run(netid, password, cold=True):
+        st["ran"] = True
+        raise AssertionError("playwright fallback ran although PLAYWRIGHT_FALLBACK is unset")
+
+    H.fetch = raise_transport
+    A._fetch_rich_optimized = must_not_run
+    M.reset()
+    os.environ.pop("PLAYWRIGHT_FALLBACK", None)
+    A._portal_ok()
+    try:
+        res = A.fetch_attendance("zzq9990", "pw")
+    finally:
+        H.fetch, A._fetch_rich_optimized = orig_fetch, orig_pw
+        A._portal_ok()
+    assert not st.get("ran"), "the archived playwright path must not run when the knob is unset"
+    assert not res.get("ok"), res
+    assert res.get("kind") == "portal_down", \
+        f"a transport failure with the fallback archived must be portal_down, got {res!r}"
+    got = M.get("opensrm_sync_total", pipeline="http", result="error", error="portal_down")
+    assert got == 1, f"must count as pipeline=http error=portal_down, got {got}"
+    assert M.get("opensrm_sync_total", pipeline="playwright", result="error", error="internal") == 0, \
+        "no playwright-pipeline metric may be recorded while archived"
 
 
 for name, fn in [
@@ -381,6 +420,7 @@ for name, fn in [
     ("budget buckets: preflight cap, shared unauth pool, aggregate 30", t_budget_buckets),
     ("preflight refused by queue depth > 0, admitted at 0", t_preflight_refused_by_queue_depth),
     ("Playwright fallback stays serialized at pool=2", t_playwright_serialized_at_pool_two),
+    ("fallback archived by default: portal_down, no browser, pipeline=http", t_fallback_archived_by_default),
 ]:
     check(name, fn)
 
