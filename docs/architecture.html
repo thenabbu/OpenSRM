@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- source of truth for docs/architecture.png — diagram-design skill, import-mermaid redraw
+     (dials: doc-inline 960x600 · balanced · mixed; skin: openSRM, DESIGN.md Appendix A)
+     regen: python3 /opt/data/skills/creative/diagram-design/scripts/export_png.py <this file> out.png 2 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenSRM — data flow architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#161616; color:#ffffff; font-family:'Geist', system-ui, sans-serif; }
+  .wrap { padding:32px; }
+  .eyebrow { font-family:'Geist Mono', ui-monospace, monospace; font-size:8px; letter-spacing:.18em; text-transform:uppercase; color:rgba(255,255,255,0.50); }
+  h1 { font-family:'Instrument Serif', serif; font-weight:400; font-size:28px; margin:6px 0 20px; }
+  .diagram-container { width:100%; overflow-x:auto; }
+  svg { width:100%; min-width:960px; display:block; }
+  @media print { .diagram-container { overflow-x:visible; } svg { min-width:0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">OpenSRM · internals</div>
+  <h1>How a sync flows — portal to pixel</h1>
+  <div class="diagram-container">
+    <svg viewBox="0 0 960 600" width="960" height="600" role="img" aria-labelledby="architecture-title architecture-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="architecture-title">OpenSRM data flow architecture</title>
+      <desc id="architecture-desc">A sync flows from the installable PWA through the Cloudflare edge into the OpenSRM container — sessions and limits, login and fetch against the SRM student portal, pure parsers, and the SQLite store — then view models render every page back to the browser.</desc>
+<rect width="100%" height="100%" fill="#161616"/>
+<defs>
+<marker id="arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="rgba(255,255,255,0.60)"/></marker>
+<marker id="arch-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0082ce"/></marker>
+<marker id="arch-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#ffffff"/></marker>
+</defs>
+<rect x="440" y="120" width="476" height="404" rx="8" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.16)" stroke-width="0.8"/>
+<rect x="448" y="124" width="276" height="12" rx="2" fill="#161616"/>
+<text x="586" y="133" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">OPENSRM CONTAINER · FLASK + GUNICORN :8083</text>
+<line x1="232" y1="184" x2="256" y2="184" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<line x1="416" y1="184" x2="456" y2="184" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<line x1="652" y1="184" x2="676" y2="184" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<path d="M 740,216 V 248 Q 740,256 732,256 H 608 Q 600,256 600,264 V 296" fill="none" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<line x1="652" y1="320" x2="676" y2="320" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<path d="M 740,344 V 384 Q 740,392 732,392 H 528 Q 520,392 520,400 V 440" fill="none" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<path d="M 456,464 H 144 Q 136,464 136,456 V 216" fill="none" stroke="rgba(255,255,255,0.60)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
+<line x1="840" y1="152" x2="840" y2="96" stroke="#0082ce" stroke-width="1.2" marker-end="url(#arch-arrow-link)" marker-start="url(#arch-arrow-link)"/>
+<path d="M 696,152 V 80 Q 696,72 688,72 H 680" fill="none" stroke="#0082ce" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arch-arrow-link)"/>
+<line x1="680" y1="72" x2="724" y2="72" stroke="#0082ce" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arch-arrow-link)"/>
+<rect x="848" y="116" width="60" height="12" rx="2" fill="#161616"/>
+<text x="878" y="125" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">JSP CALLS</text>
+<rect x="704" y="100" width="88" height="12" rx="2" fill="#161616"/>
+<text x="748" y="109" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.06em">SRM_EGRESS_URL</text>
+<rect x="40" y="152" width="192" height="64" rx="6" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.50)" stroke-width="1"/><text x="136" y="182" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Dashboard</text><text x="136" y="195" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Jinja2 · daisyUI · vanilla JS</text>
+<rect x="256" y="152" width="160" height="64" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.30)" stroke-width="1"/><text x="336" y="176" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Cloudflare edge</text><text x="336" y="189" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">srm.200871.xyz · HTTPS</text><text x="336" y="202" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">HSTS on cf-ray</text>
+<rect x="456" y="152" width="196" height="64" rx="6" fill="#090909" stroke="#242424" stroke-width="1"/><text x="554" y="176" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Sessions + limits</text><text x="554" y="189" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">rate limits · portal budget</text><text x="554" y="202" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">progress 5% → 92%</text>
+<rect x="676" y="152" width="224" height="64" rx="6" fill="rgba(255,255,255,0.10)" stroke="#ffffff" stroke-width="1.4"/><text x="788" y="176" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Login + fetch</text><text x="788" y="189" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">preflight captcha · 3 tries</text><text x="788" y="202" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">hot 9·13·10·126 · cold 17·7@24h</text>
+<rect x="456" y="296" width="196" height="48" rx="6" fill="#090909" stroke="#242424" stroke-width="1"/><text x="554" y="318" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Pure parsers</text><text x="554" y="331" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">app/portal/parsers/ → JSON</text>
+<rect x="676" y="296" width="224" height="48" rx="6" fill="rgba(255,255,255,0.10)" stroke="#ffffff" stroke-width="1.4"/><text x="788" y="318" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SQLite store</text><text x="788" y="331" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">srm.db · schema v17 · sessions</text>
+<rect x="456" y="440" width="196" height="48" rx="6" fill="#090909" stroke="#242424" stroke-width="1"/><text x="554" y="462" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">View models</text><text x="554" y="475" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">app/views/ → Jinja widgets</text>
+<rect x="724" y="48" width="176" height="48" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.30)" stroke-width="1"/><text x="812" y="70" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SRM student portal</text><text x="812" y="83" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">sp.srmist.edu.in</text>
+<rect x="504" y="48" width="176" height="48" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.30)" stroke-width="1" stroke-dasharray="4,3"/><text x="592" y="70" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Egress proxy</text><text x="592" y="83" fill="rgba(255,255,255,0.60)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">optional · SRM_EGRESS_URL</text>
+<line x1="40" y1="540" x2="920" y2="540" stroke="rgba(255,255,255,0.16)" stroke-width="0.8"/>
+<text x="40" y="566" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">LEGEND</text>
+<rect x="112" y="556" width="16" height="12" rx="3" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.50)" stroke-width="1"/>
+<text x="134" y="566" fill="rgba(255,255,255,0.60)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">INPUT</text>
+<rect x="196" y="556" width="16" height="12" rx="3" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.30)" stroke-width="1"/>
+<text x="218" y="566" fill="rgba(255,255,255,0.60)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">EXTERNAL</text>
+<rect x="296" y="556" width="16" height="12" rx="3" fill="#090909" stroke="#242424" stroke-width="1"/>
+<text x="318" y="566" fill="rgba(255,255,255,0.60)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">BACKEND</text>
+<rect x="392" y="556" width="16" height="12" rx="3" fill="rgba(255,255,255,0.10)" stroke="#ffffff" stroke-width="1.4"/>
+<text x="414" y="566" fill="rgba(255,255,255,0.60)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">CORE</text>
+<line x1="468" y1="562" x2="488" y2="562" stroke="#0082ce" stroke-width="1.4" stroke-dasharray="4,3"/>
+<text x="496" y="566" fill="rgba(255,255,255,0.60)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.14em">OPTIONAL</text>
+    </svg>
+  </div>
+</div>
+</body>
+</html>

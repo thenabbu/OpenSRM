@@ -159,53 +159,15 @@ rotation) see [docs/runbook.md](docs/runbook.md).
 One Flask process, one SQLite file, one fetch pipeline — the whole data path,
 portal to pixel:
 
-```mermaid
-flowchart TB
-    subgraph client["Client — installable PWA"]
-        UI["Dashboard · login · settings<br/>Jinja2 + daisyUI · vanilla JS"]
-    end
+<p align="center">
+  <img src="docs/architecture.png" alt="OpenSRM architecture — PWA → Cloudflare edge → Flask container (sessions, login+fetch, parsers, SQLite) → view models, with the SRM portal and optional egress worker" width="100%">
+</p>
 
-    TUN["Cloudflare edge<br/>tunnel → srm.200871.xyz · HTTPS · HSTS"]
-
-    subgraph app["OpenSRM container — Flask + gunicorn :8083"]
-        AUTH["Sessions · rate limits · portal budget<br/>login progress stream 5% → 92%"]
-        subgraph pipe["Pure-HTTP pipeline — app/http_scraper.py"]
-            LOGIN["Login + fetch — preflight solves<br/>the captcha while you type"]
-            PARSE["Pure parsers — app/portal/parsers/<br/>HTML in, JSON out"]
-        end
-        DB[("SQLite srm.db — schema v17<br/>per-student data · portal sessions<br/>shared timetable")]
-        VIEWS["View models — app/views/<br/>→ Jinja widgets on every page"]
-    end
-
-    P["SRM student portal<br/>sp.srmist.edu.in"]
-    EG["egress worker · optional<br/>Cloudflare"]
-
-    UI --> TUN
-    TUN --> AUTH
-    AUTH --> LOGIN
-    LOGIN <-->|"LoginServlet · JSP responses"| P
-    LOGIN -.->|"SRM_EGRESS_URL"| EG
-    EG -.-> P
-    LOGIN --> PARSE
-    PARSE --> DB
-    DB --> VIEWS
-    VIEWS --> UI
-
-    classDef client fill:#3b82f6,stroke:#1e3a5f,color:#fff
-    classDef ext fill:#fed7aa,stroke:#c2410c,color:#374151
-    classDef opt fill:#fef3c7,stroke:#b45309,color:#374151
-    class UI client
-    class P ext
-    class EG opt
-```
-
-A sync starts at your browser, crosses the tunnel, logs in with a captcha
-that was already solved while you typed, pulls the hot forms — attendance
-(9), marks (13), timetable (10), exams (126) on **every** sync; profile (17)
-and courses (7) only when they go stale after 24 h — parses them with pure
-functions and lands it all in SQLite. Every page then renders straight from
-that store, so the dashboard keeps working from cache even when the portal
-doesn't.
+A sync starts at your browser, crosses the tunnel, lands every parsed
+payload in SQLite, and every page then renders straight from that store — so
+the dashboard keeps working from cache even when the portal doesn't. The
+*Login + fetch* box carries the hot/cold form split (attendance, marks,
+timetable and exams on every sync; profile and courses only after 24 h).
 
 A sync starts at your browser, crosses the tunnel, logs in with a captcha
 that was already solved while you typed, pulls the hot forms, parses them
