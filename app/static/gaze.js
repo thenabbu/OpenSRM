@@ -142,16 +142,23 @@
       face();
     };
 
-    const measure = () => {
+    let travelSet = false;
+    // recomputeTravel=false (scroll path): bbox only, once per frame — the
+    // computed-style read of --mo-track-travel is static per element and is
+    // recomputed on resize only (phase 6: no getComputedStyle mid-scroll)
+    const measure = (recomputeTravel = true) => {
       const r = el.getBoundingClientRect();
       cx = r.left + r.width / 2;
       cy = r.top + r.height / 2;
       radius = Math.max(1, Math.min(r.width, r.height) / 2);
       width = Math.max(1, r.width);
-      travelPx = parseFloat(getComputedStyle(target).getPropertyValue("--mo-track-travel")) || 0;
       if (!marks.length) face();
-      yaw = travelPx / frx;
-      pitch = travelPx / fry;
+      if (recomputeTravel || !travelSet) {
+        travelPx = parseFloat(getComputedStyle(target).getPropertyValue("--mo-track-travel")) || 0;
+        travelSet = true;
+        yaw = travelPx / frx;
+        pitch = travelPx / fry;
+      }
     };
 
     // Resolve target position based on mode
@@ -189,11 +196,15 @@
       }
     };
 
+    let geomDirty = false;
     const frame = (t) => {
       raf = 0;
       const dt = last ? Math.min(t - last, 64) : 16;
       last = t;
-      if (!target.isConnected) { resolve(); measure(); wx = wy = Infinity; }
+      if (!target.isConnected) { resolve(); measure(); travelSet = false; wx = wy = Infinity; }
+      // scroll set the flag; do the (batched) layout read HERE, once per
+      // frame, instead of once per scroll event (phase 6)
+      if (geomDirty) { geomDirty = false; measure(false); }
 
       resolveTarget();
 
@@ -244,7 +255,11 @@
 
     const onMove = (e) => { px = e.clientX; py = e.clientY; wake(); };
     const onLeave = () => { px = -1e6; py = -1e6; wake(); };
-    const onGeom = () => { measure(); wake(); };
+    // scroll: flag only, no layout read on the event (batched in frame())
+    const onScroll = () => { geomDirty = true; wake(); };
+    // resize: flag + full recompute (travelPx may change) — ResizeObserver
+    // coalesces its own bursts, measure still lands once per frame
+    const onGeom = () => { geomDirty = true; travelSet = false; wake(); };
 
     const resized = new ResizeObserver(onGeom);
 
@@ -256,7 +271,7 @@
         addEventListener("pointermove", onMove, { passive: true });
         addEventListener("pointerleave", onLeave, { passive: true });
       }
-      addEventListener("scroll", onGeom, { passive: true, capture: true });
+      addEventListener("scroll", onScroll, { passive: true, capture: true });
       addEventListener("resize", onGeom, { passive: true });
       wake();
     };
@@ -267,7 +282,7 @@
       resized.disconnect();
       removeEventListener("pointermove", onMove);
       removeEventListener("pointerleave", onLeave);
-      removeEventListener("scroll", onGeom, { capture: true });
+      removeEventListener("scroll", onScroll, { capture: true });
       removeEventListener("resize", onGeom);
       if (raf) cancelAnimationFrame(raf);
       raf = 0; last = 0;
@@ -330,6 +345,9 @@
 
   // Auto-init: find all .blobatar-gaze elements and attach
   function initGaze() {
+    // low tier (perf.js): no gaze driver at all — the avatar keeps its pose
+    // and the idle loops are paused by CSS; nothing to observe or animate
+    if (document.documentElement.dataset.perf === "low") return;
     document.querySelectorAll(".blobatar-gaze").forEach((svg) => {
       const travel = parseFloat(svg.dataset.travel) || 3;
       const settle = parseFloat(svg.dataset.settle) || SETTLE;

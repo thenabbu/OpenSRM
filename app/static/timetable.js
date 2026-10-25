@@ -336,7 +336,9 @@
         .then(function(data) {
             if (data.ok) {
                 closeEditor();
-                location.reload();
+                // archived editor: same contract as the main refresh — update in
+                // place, reload only as the fallback if softRefresh is unavailable
+                if (typeof softRefresh === 'function') { softRefresh(); } else { location.reload(); }
             } else {
                 showError('Save failed: ' + (data.error || 'unknown error'));
             }

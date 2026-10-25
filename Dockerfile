@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS builder
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377 AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /usr/local/bin/uv
 WORKDIR /app
@@ -6,18 +6,37 @@ COPY pyproject.toml uv.lock ./
 # git: needed by uv to resolve the blobatar git dependency (not present in slim image)
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
+# WITH_PLAYWRIGHT=1 ships the archived browser fallback (playwright wheel +
+# headless Chromium + its shared libs); the default 0 leaves all three out —
+# see README "Playwright fallback (archived)". Declared before uv sync so the
+# extra rides the same cache-mounted layer.
+ARG WITH_PLAYWRIGHT=0
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    if [ "$WITH_PLAYWRIGHT" = "1" ]; then \
+        uv sync --frozen --no-dev --no-install-project --extra browser; \
+    else \
+        uv sync --frozen --no-dev --no-install-project; \
+    fi
 
-# Playwright headless shell only. Cache-mounted so uv.lock bumps don't force a 278MB re-download.
 ENV PATH="/app/.venv/bin:$PATH"
+# Headless shell only, cache-mounted so uv.lock bumps don't force a 278MB
+# re-download. ffmpeg is dropped afterwards: Playwright only uses it for video
+# recording, which OpenSRM never does. Empty /ms-playwright (off) still copies
+# through so the runtime stage's COPY has a source either way.
 RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
-    PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright playwright install --only-shell chromium \
-    && mkdir -p /ms-playwright \
-    && cp -a /root/.cache/ms-playwright/. /ms-playwright/
+    mkdir -p /ms-playwright \
+    && if [ "$WITH_PLAYWRIGHT" = "1" ]; then \
+        PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright playwright install --only-shell chromium \
+        && cp -a /root/.cache/ms-playwright/. /ms-playwright/ \
+        && rm -rf /ms-playwright/ffmpeg-*; \
+    fi
 
 # -- Stage 2: Runtime -- (same verified digest as builder)
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377
+
+# Re-declared for the runtime stage: gates the Chromium shared-library stack
+# and the chromium symlink below (0 = the shipped default).
+ARG WITH_PLAYWRIGHT=0
 
 LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.description="Self-hosted attendance dashboard for the SRM Student Portal" \
@@ -26,18 +45,34 @@ LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="thenabbu"
 
+# Chromium's shared-library stack — only for WITH_PLAYWRIGHT=1; the pure-HTTP
+# pipeline needs none of it (this layer was 250 MB uncompressed / 81 MB
+# compressed on every pull).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
-    libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
-    libatspi2.0-0 libx11-xcb1 fonts-liberation
+    if [ "$WITH_PLAYWRIGHT" = "1" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+        libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+        libatspi2.0-0 libx11-xcb1 fonts-liberation; \
+    fi
+
+# Base image's system setuptools 79.0.1 vendors wheel 0.45.1 and
+# jaraco.context 5.3.0 — both flagged HIGH by trivy (the app runs from
+# /app/.venv and never touches setuptools, but it sits in the scanned
+# layer). Bump setuptools+wheel to current. pip is deliberately NOT
+# upgraded: base pip 24.0 has only MEDIUM CVEs, while pip 26.x ships a
+# vendored bom.cdx.json SBOM (urllib3 2.7.0 / msgpack 1.1.2) that trivy
+# parses as 4 new HIGH findings — trading 6 MEDIUM rows for 4 HIGH rows.
+RUN pip install --no-cache-dir -U setuptools wheel
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /ms-playwright /ms-playwright
 
-RUN ln -sf $(find /ms-playwright -name chrome-headless-shell -type f | head -1) /usr/local/bin/chromium
+RUN if [ "$WITH_PLAYWRIGHT" = "1" ]; then \
+        ln -sf "$(find /ms-playwright -name chrome-headless-shell -type f | head -1)" /usr/local/bin/chromium; \
+    fi
 
 ENV CHROMIUM_PATH=/usr/local/bin/chromium
 ENV PATH="/app/.venv/bin:/usr/local/bin:/usr/bin:/bin"

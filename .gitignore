@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 *.pyo
+# local coredumps (the onnxruntime/ddddocr teardown abort) — process memory,
+# never committed and never shipped in the image
+core.*
 .env
 *.db
 *.log
@@ -18,3 +21,4 @@ ops/observability/secrets/
 
 ops/observability/proof-override.yml
 ops/observability/proof/
+/node_modules/
