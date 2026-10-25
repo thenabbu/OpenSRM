@@ -17,7 +17,7 @@ the maintainer flips the ones worth gating on (see below).
 - `deps` drops the one `git+` line in the export (`blobatar`). pip cannot
   resolve a git URL for hash verification, and the dependency is
   **commit-pinned** (`rev = 7fb1eed2…` in `pyproject.toml` + `uv.lock`,
-  enforced by `tests/verify76.py` M22), so it is not a moving target: any
+  enforced by `tests/unit/test_audit_findings.py` M22), so it is not a moving target: any
   change to what it resolves to shows up as a lock diff in review. This is a
   known supply-chain gap — a git dependency is only as trustworthy as the repo
   that hosts it — and it is reported here rather than "fixed", because the

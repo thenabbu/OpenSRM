@@ -1,3 +1,5 @@
+<script src="{{ asset('perf.js') }}"></script>
+<meta name="color-scheme" content="dark">
 <style>
 html[data-theme="openSRM"] {
   --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);
@@ -42,6 +44,8 @@ html[data-theme="openSRM"] {
   height: 2px;
   background: currentColor;
 }
+/* First paint is dark even before app.css parses — no color jump
+   (the data-theme block above paints the tokens this matches). */
+html { background: oklch(20% 0 0); }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3" integrity="sha384-aJ9rL4k6lF+91guGvUFVSkpIcge7Zd9EiI4TQDLoK9kFaFJgKHgjEXVvG/qA5COj" crossorigin="anonymous"></script>
-<link href="https://cdn.jsdelivr.net/npm/daisyui@5.7.46" rel="stylesheet" type="text/css" integrity="sha384-kDFOM9ydHs3NQrHJycAPdF3M0eBnO7Q06ZRTOr2xwv8Wpk7nYYsrw9z1PaoAY050" crossorigin="anonymous" />
+<link rel="stylesheet" href="{{ asset('app.css') }}">

@@ -71,6 +71,7 @@ from .db import (  # noqa: F401 — db + SQLITE_TIMEOUT_SECS re-exported for scr
     replace_group_slots,
     save_portal_session,
     set_cold_fetch,
+    set_fb_open,
     set_official_times,
     slots_for_groups,
     transaction,
@@ -1158,6 +1159,14 @@ def _sync_result(pipeline, res, t0):
     return res
 
 
+def _pw_fallback_enabled():
+    """The Playwright fallback pipeline is archived off by default (Oct 2026:
+    prod's HTTP pipeline had never fallen back once). Ops opts in with
+    PLAYWRIGHT_FALLBACK=enabled — read per request, like the other knobs
+    (TIMETABLE_EDITOR, SCOPE_FEATURES)."""
+    return os.environ.get("PLAYWRIGHT_FALLBACK", "").strip().lower() in ("enabled", "1", "true")
+
+
 def fetch_attendance(netid, password, authorized=False, attempt=None):
     t_sync = time.monotonic()   # observability: sync outcome + duration anchor
     loop = future = None  # except block references both; may not be reached
@@ -1261,12 +1270,41 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                         log.debug("cold_fetch update failed err=%r", e)
                 return _sync_result("http", res, t_sync)
             except http_scraper.HttpScraperError as e:
+                _portal_fail_once()
+                if not _pw_fallback_enabled():
+                    log.warning("http pipeline failed (%r) — playwright fallback archived "
+                                "(PLAYWRIGHT_FALLBACK unset)", e)
+                    return _sync_result("http", sync_error("portal_down",
+                                        "SRM portal is not responding — try again in a few minutes."),
+                                        t_sync)
                 log.warning("http pipeline failed (%r) — falling back to playwright", e)
-                _portal_fail_once()
             except Exception as e:
-                log.warning("http pipeline crashed (%r) — falling back to playwright", e)
                 _portal_fail_once()
-        # ── Fallback: Playwright ──────────────────────────────────────
+                if not _pw_fallback_enabled():
+                    log.warning("http pipeline crashed (%r) — playwright fallback archived "
+                                "(PLAYWRIGHT_FALLBACK unset)", e)
+                    return _sync_result("http", sync_error("internal",
+                                        "Scrape failed server-side — check the server log, then try again."),
+                                        t_sync)
+                log.warning("http pipeline crashed (%r) — falling back to playwright", e)
+        # ── Fallback: Playwright (archived — opt in with PLAYWRIGHT_FALLBACK=enabled) ──
+        # With the knob unset the only way to reach this block is http_scraper
+        # failing to import — every pipeline failure returned in its except
+        # branch above.
+        if not _pw_fallback_enabled():
+            return _sync_result("http", sync_error("internal",
+                                "Scrape failed server-side — check the server log, then try again."),
+                                t_sync)
+        # An image built WITH_PLAYWRIGHT=0 has no playwright package: say so
+        # loudly instead of failing deep inside the submitted coroutine.
+        try:
+            import playwright.async_api  # noqa: F401
+        except ImportError:
+            log.error("PLAYWRIGHT_FALLBACK=enabled but the playwright package is not installed in this "
+                      "image — rebuild with --build-arg WITH_PLAYWRIGHT=1")
+            return _sync_result("playwright", sync_error("internal",
+                                "Scrape failed server-side — check the server log, then try again."),
+                                t_sync)
         # A10: the browser pipeline stays serialized whatever
         # SYNC_MAX_CONCURRENCY says — one shared persistent context cannot
         # drive two logins. Held through the zombie cleanup in the except
@@ -1509,8 +1547,8 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; "
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; worker-src 'self'; manifest-src 'self'")
     resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -1686,11 +1724,12 @@ def index():
     faculty_map = _jload(row["faculty_map_json"] if row else None, {})
     faculty_view = _faculty_view(faculty_map, data.get("courses", []))
     # Preview of what the opt-in fill would submit (same builder as the endpoint).
-    # ARCHIVED while the portal's feedback window is closed (fb_open=0, learned
-    # by the last cold sync): empty plan -> the CTA and the modal both vanish
-    # (empty=hidden, DESIGN §4.12) and come back automatically on the next sync
-    # that finds the window open again. The Teachers list itself is historical
-    # data and stays.
+    # ARCHIVED while the portal's feedback window is closed (fb_open=0 — now
+    # learned by EVERY sync's probe, not just the daily cold one, plus the
+    # fill endpoint's portal-confirmed self-heal): empty plan -> the CTA and
+    # the modal both vanish (empty=hidden, DESIGN §4.12) and come back
+    # automatically on the next sync that finds the window open again. The
+    # Teachers list itself is historical data and stays.
     fb_open = row["fb_open"] if row and row["fb_open"] is not None else 1
     fb_plan = _fb_plan(faculty_map) if fb_open else []
 
@@ -1796,18 +1835,46 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
-    {"ver": "v1.30.0", "date": "18 Oct", "title": "Fees tab",
-     "body": "A new Fees tab shows what you still owe (or a quiet \"All clear\" "
-             "when nothing is due), your payments grouped by academic year, and "
-             "your full receipt history with tap-to-copy voucher numbers. It "
-             "reads the Scope app's backend, so it appears once your data has "
-             "synced."},
-    {"ver": "v1.27.0", "date": "18 Oct", "title": "Scope app data, groundwork",
-     "body": "We have started wiring the official Scope student app's backend "
-             "into OpenSRM so its exam results, fee records, hostel/transport, "
-             "library and placement data can show up here too. This release is "
-             "the foundation only - nothing new on screen yet; the new cards "
-             "start landing in the next updates."},
+    {"ver": "v1.31.0", "date": "24 Oct", "title": "Leaner under the hood",
+     "body": "The server got a much smaller update package, so future "
+             "updates download faster. Nothing you can see changes — same "
+             "app, lighter behind the scenes."},
+    {"ver": "v1.30.0", "date": "20 Oct", "title": "Swipe to refresh",
+     "body": "Pull down from the top on your phone to refresh \u2014 the "
+             "same gesture you know from apps, right inside OpenSRM."},
+    {"ver": "v1.29.0", "date": "20 Oct", "title": "Kind to weak phones",
+     "body": "The animated avatar now rests when it is off screen, and "
+             "weak devices get a calm version automatically \u2014 less "
+             "battery and smoother scrolling for everyone."},
+    {"ver": "v1.28.0", "date": "20 Oct", "title": "Feels like an app",
+     "body": "Taps now respond instantly, tabs glide instead of snapping, "
+             "and dialogs slide up from the bottom on phones \u2014 the "
+             "small motion touches that make it feel native."},
+    {"ver": "v1.27.2", "date": "20 Oct", "title": "Security upkeep",
+     "body": "A routine security update of the tools the server uses "
+             "under the hood. Nothing changes in how the app looks or "
+             "works."},
+    {"ver": "v1.27.1", "date": "20 Oct", "title": "Smarter feedback button",
+     "body": "The auto-fill feedback option now checks the portal before "
+             "showing itself: while the mid-sem feedback form is closed on "
+             "the portal, the button hides itself automatically and returns "
+             "on its own when the form opens again — no more dead buttons."},
+    {"ver": "v1.27.0", "date": "20 Oct", "title": "Refresh without the flash",
+     "body": "Refreshing now updates your numbers right where they are "
+             "— no more white flash, lost scroll position or "
+             "re-loading of the page after a sync."},
+    {"ver": "v1.26.3", "date": "20 Oct", "title": "Instant repeat visits",
+     "body": "The app now remembers its own files: styles and scripts "
+             "that have not changed are no longer re-downloaded on every "
+             "launch, so opening the dashboard again is much faster and "
+             "uses less data. New versions still arrive automatically "
+             "right after each update."},
+    {"ver": "v1.26.2", "date": "19 Oct", "title": "Faster first paint",
+     "body": "The app's stylesheet is now built ahead of time and served "
+             "straight from this server, instead of each phone compiling "
+             "CSS in the browser on every launch. The page shows sooner, "
+             "works with no third-party requests, and nothing changes in "
+             "how it looks."},
     {"ver": "v1.26.1", "date": "19 Oct", "title": "Under-the-hood tidy-up",
      "body": "A defensive fix so an unusually long subject code in the Today "
              "widget can never push the page sideways on a phone — the code "
@@ -2288,6 +2355,20 @@ def api_feedback_fill():
             # itself, so it is safe to hand to the student verbatim.
             log_with_kv(log_portal, logging.WARNING, "feedback fill refused", netid=netid, error=res["error"][:80])
             _track("feedback_fill_fail", detail=res["error"][:60], user=netid)
+            if res.get("closed"):
+                # self-heal (2026-10-20): the portal itself just confirmed the
+                # window is shut — archive the CTA NOW so the stale button
+                # disappears on the next dashboard load instead of waiting
+                # for the next sync's probe. Closed refusals read as 409,
+                # same as the fb_open=0 pre-contact guard above.
+                try:
+                    set_fb_open(netid, 0)
+                    log_with_kv(log_portal, logging.INFO, "feedback CTA archived (portal-confirmed closed)",
+                                netid=netid)
+                except Exception as e:
+                    log_with_kv(log_portal, logging.WARNING, "fb_open self-heal write failed",
+                                netid=netid, error=str(e)[:80])
+                return {"ok": False, "error": res["error"]}, 409
             return {"ok": False, "error": res["error"]}, 502
         ms = int((time.monotonic() - t0) * 1000)
         log_with_kv(log_portal, logging.INFO, "feedback fill done",
@@ -2511,24 +2592,53 @@ def static_no_cache(filename):
     # audit: was hardcoded "/app/app/static" — only worked inside the container
     # (local runs 404'd). Derive from __file__ like every other path here.
     resp = send_from_directory(os.path.join(os.path.dirname(__file__), "static"), filename)
-    # Manifest stays cacheable; .js revalidates every load so a deploy can't
-    # leave a stale shell (old API shape) cached for an hour (audit run-1 R1);
-    # everything else stays no-store. The SW itself benefits: no-cache makes
-    # worker updates land on the next navigation instead of after up to 1h.
-    if filename.endswith('.json'):
-        resp.headers["Cache-Control"] = "public, max-age=3600"
-    elif filename.endswith('.js'):
-        resp.headers["Cache-Control"] = "no-cache"
-    else:
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    # Cache policy (DESIGN §10.16 rule 2):
+    #  - versioned URLs (?v=<content hash> from asset()) are
+    #    content-addressed — the bytes under the URL can never change — so
+    #    they cache immutable for a year. This is what makes warm repeat
+    #    visits move zero CSS/JS bytes.
+    #  - sw.js revalidates every load so worker updates land on the next
+    #    navigation instead of after up to 1h (audit run-1 R1).
+    #  - manifest stays cacheable (3600), other unversioned statics stay
+    #    no-store (a deploy must never leave a stale shell).
     if filename == "sw.js":
+        resp.headers["Cache-Control"] = "no-cache"
         # audit 2026-09-27: without this header a scope of "/" is rejected
         # (default max scope = the script's directory, /static/) and
         # registration fails — swallowed by .catch(), so the PWA silently
         # never worked. Registration now lives in login.js/dash.js (external
         # files pass script-src 'self').
         resp.headers["Service-Worker-Allowed"] = "/"
+    elif request.args.get("v"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif filename.endswith('.json'):
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif filename.endswith('.js'):
+        resp.headers["Cache-Control"] = "no-cache"
+    else:
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
+
+
+# ── Versioned asset URLs (?v=<content-hash>, DESIGN §10.16 rule 2) ────
+# Templates reference CSS/JS through asset(); Phase 3 makes static_no_cache
+# serve these URLs immutable, so the browser never re-downloads an unchanged
+# file. Cache key = mtime_ns; a rebuild changes the hash automatically.
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+_asset_cache = {}
+
+
+def asset(name):
+    """Versioned /static/ URL: /static/<name>?v=<sha256[:10]>."""
+    path = os.path.join(_STATIC_DIR, name)
+    st = os.stat(path)
+    hit = _asset_cache.get(name)
+    if not hit or hit[0] != st.st_mtime_ns:
+        with open(path, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()[:10]
+        hit = (st.st_mtime_ns, digest)
+        _asset_cache[name] = hit
+    return "/static/%s?v=%s" % (name, hit[1])
 
 # ── Typed sync results ─────────────────────────────────────────────────
 # A failed sync carries a `kind`; its HTTP status comes from this table —
@@ -3133,12 +3243,19 @@ def marks_tag():
     netid = get_current_user()
     if not netid:
         return redirect("/login")
+    # fetch callers (dash.js soft refresh) ask for JSON and morph in place;
+    # a plain form POST keeps the redirect round-trip as the no-JS fallback
+    wants_json = request.accept_mimetypes.best == "application/json"
+    def _back(err=None):
+        if wants_json:
+            return {"ok": not err, **({"error": err} if err else {})}
+        return redirect("/#marks")
     form = request.form
     code = (form.get("code") or "").strip()[:32]
     name = (form.get("component") or "").strip()[:32]
     role = form.get("role")
     if role not in ("IE-1", "IE-2", "none") or not code or not name:
-        return redirect("/#marks")
+        return _back("Invalid component")
     row = user_marks_personal(netid)
     try:
         marks = json.loads(row[0]) if row and row[0] else []
@@ -3148,13 +3265,13 @@ def marks_tag():
     scaled = next((cp.get("max", 0.0) for s in marks if s.get("code") == code
                    for cp in s.get("components", []) if cp.get("name") == name), 0.0)
     if not scaled:
-        return redirect("/#marks")
+        return _back("Component not found")
     # raw_max: the marks the component stands for on paper (50 / 60); 'none'
     # keeps it NULL — the row exists either way, which is what 'confirmed' means.
     raw = {"IE-1": 50.0, "IE-2": 60.0}.get(role)
     key = f"{_class_key(personal, netid)}|{code}|{name}"
     upsert_component_tag(key, role, raw, scaled, netid, int(time.time()))
-    return redirect("/#marks")
+    return _back()
 
 # ── Web push: config, tick endpoint ───────────────────────────────────
 # All secrets come from env (identical on every host / Vercel). The app
@@ -3751,6 +3868,7 @@ def create_app(config=None):
         # pre-warm ddddocr so the first real scrape isn't +3s cold (was a
         # module-level thread at import time)
         threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+    a.jinja_env.globals["asset"] = asset  # versioned /static/ URLs (DESIGN §10.16)
     return a
 
 

@@ -1,0 +1,279 @@
+"""Logging + telemetry regression suite — guards the Oct 2026 PR-B fixes.
+
+Every check here exercises a fix from the logging/telemetry audits:
+  * access log: >=400 at WARNING with error=, healthcheck urllib -> DEBUG
+  * tick-secret 401 + push-test failed outcome + rate-limit cause lines
+  * root logger stays INFO (no library DEBUG chatter), opensrm obeys LOG_LEVEL
+  * rotation: TimedRotatingFileHandler configured
+  * ntfy alerter: wired, rate-limited, best-effort
+  * usage_events: migration + _track() writes, never breaks a request
+
+Offline: no portal calls, no real network (ntfy posts are stubbed).
+"""
+import json
+import logging
+import os
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+from unittest import mock
+
+REPO = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "tests"))
+TMP = tempfile.mkdtemp(prefix="osrm-logtel-")
+os.environ["DATA_DIR"] = TMP  # test_audit_findings: no test DBs in-tree
+
+from app import app as A          # noqa: E402
+from app import logging_setup as LS  # noqa: E402
+from _seed import mint_token, seed  # noqa: E402
+
+FAILS = []
+
+
+TOTAL = [0]  # dynamic — a hardcoded 8 silently mis-reports after any added check
+
+
+def check(name, fn):
+    TOTAL[0] += 1
+    try:
+        fn()
+        print(f"  ok  {name}")
+    except AssertionError as e:
+        FAILS.append(name)
+        print(f"FAIL  {name}: {e}")
+    except Exception as e:
+        FAILS.append(name)
+        print(f"FAIL  {name}: raised {type(e).__name__}: {e}")
+
+
+# ── access log: WARNING + error= on >=400, DEBUG for healthcheck UA ──
+def t_access_log():
+    records = []
+
+    class Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r)
+
+    cap = Cap()
+    logging.getLogger("opensrm.http").addHandler(cap)
+    cl = A.app.test_client()
+    try:
+        r1 = cl.post("/api/login", data="not json", content_type="text/plain")
+        assert r1.status_code == 400, r1.status_code
+        r2 = cl.get("/definitely-not-a-route")
+        assert r2.status_code == 404
+        hc = cl.get("/", headers={"User-Agent": "Python-urllib/3.12"})
+    finally:
+        logging.getLogger("opensrm.http").removeHandler(cap)
+    warns = [r for r in records if r.levelno == logging.WARNING and r.getMessage() == "request"]
+    kv_err = [r for r in warns if getattr(r, "kv", {}).get("error")]
+    assert kv_err, f">=400 request lines must carry error=: {[getattr(r, 'kv', {}) for r in warns]}"
+    # fix kv-log-level-gate: log_with_kv() used to bypass isEnabledFor, so the
+    # healthcheck's DEBUG-demoted lines still wrote at LOG_LEVEL=INFO.
+    deb = [r for r in records if r.levelno == logging.DEBUG]
+    assert not deb, f"healthcheck kv lines must be suppressed at INFO: {[getattr(r, 'kv', {}) for r in deb]}"
+    assert logging.getLogger("opensrm.portal").getEffectiveLevel() == logging.DEBUG, \
+        "opensrm.portal must stay DEBUG at prod INFO (incident recipes read it)"
+
+
+def t_rate_limit_logged():
+    records = []
+
+    class Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r)
+
+    cap = Cap()
+    logging.getLogger("opensrm.auth").addHandler(cap)
+    cl = A.app.test_client()
+    orig = A.fetch_attendance
+    A.fetch_attendance = lambda n, p, **kw: {"ok": False, "error": "x"}
+    A._ip_attempts.clear()  # earlier tests may have burned this IP's budget
+    try:
+        for _ in range(11):
+            cl.post("/api/login", json={"netid": "zz9999", "password": "pw"},
+                    content_type="application/json")
+    finally:
+        A.fetch_attendance = orig
+        logging.getLogger("opensrm.auth").removeHandler(cap)
+    hits = [r for r in records if getattr(r, "kv", {}).get("ip") is not None
+            and "ip limited" in r.getMessage()]
+    assert hits, "per-IP 429 must log a cause line with the ip"
+
+
+# ── tick secret 401 ──────────────────────────────────────────────────
+def t_tick_auth_logged():
+    records = []
+
+    class Cap(logging.Handler):
+        def emit(self, r):
+            records.append(r)
+
+    cap = Cap()
+    logging.getLogger("opensrm.push").addHandler(cap)
+    cl = A.app.test_client()
+    try:
+        r = cl.post("/internal/push/tick", headers={"X-Push-Tick": "wrong"})
+        assert r.status_code == 401, r.status_code
+    finally:
+        logging.getLogger("opensrm.push").removeHandler(cap)
+    hits = [r for r in records if "tick auth failed" in r.getMessage()]
+    assert hits, "tick-secret 401 must log a WARNING (7 prod hits were invisible)"
+
+
+# ── root logger stays INFO; opensrm obeys LOG_LEVEL ─────────────────
+def t_root_level():
+    src = (REPO / "app" / "logging_setup.py").read_text()
+    assert "root.setLevel(logging.INFO)" in src, "root must stay INFO (library DEBUG chatter)"
+    assert 'logging.getLogger("opensrm").setLevel' in src, "opensrm.* must obey LOG_LEVEL"
+
+
+def t_rotation():
+    src = (REPO / "app" / "logging_setup.py").read_text()
+    assert "TimedRotatingFileHandler" in src, "rotation required (7.2MB unbounded)"
+    assert "backupCount=14" in src
+    assert "when=\"midnight\"" in src
+
+
+# ── ntfy alerter: wired, rate-limited, silent-failure safe ──────────
+def t_ntfy():
+    posts = []
+
+    def _wait_for(n, timeout=2.0):
+        # POST runs on a daemon thread (the logging hot path must not block
+        # on a slow ntfy) — poll instead of assuming synchronous delivery
+        end = time.monotonic() + timeout
+        while time.monotonic() < end and len(posts) < n:
+            time.sleep(0.01)
+
+    h = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    rec = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "request", None, None)
+    rec.kv = {"path": "/api/push/receipt", "status": 401, "error": "not logged in"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h.emit(rec)
+        _wait_for(1)
+        h.emit(rec)  # second call inside the 60s window must be dropped
+    assert len(posts) == 1, f"ntfy must rate-limit to 1 per 60s (got {len(posts)})"
+    body = posts[0].data.decode()
+    # the alert must carry the kv cause — an alert saying only "request" is useless
+    assert "error=not logged in" in body and "status=401" in body, body
+    # alert-fatigue gate: a routine 4xx (WARNING, status<500) must NOT page
+    h3 = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    rec_w = logging.LogRecord("opensrm.test", logging.WARNING, "x", 1, "request", None, None)
+    rec_w.kv = {"path": "/login", "status": 401, "error": "invalid credentials"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h3.emit(rec_w)
+        _wait_for(2, timeout=0.1)
+    assert len(posts) == 1, f"routine 4xx WARNING must not page (got {len(posts)} posts)"
+    # ...but the same WARNING with status=500 (access-log line) pages
+    rec_5 = logging.LogRecord("opensrm.test", logging.WARNING, "x", 1, "request", None, None)
+    rec_5.kv = {"path": "/", "status": 500, "error": "boom"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h3.emit(rec_5)
+        _wait_for(2)
+    assert len(posts) == 2, f"5xx must page even at WARNING (got {len(posts)} posts)"
+    assert "status=500" in posts[1].data.decode() and "error=boom" in posts[1].data.decode()
+    # emit() must never raise when the POST fails, and a failed send must
+    # RE-ARM the window (not eat the next 60s of alerts)
+    h2 = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    with mock.patch.object(urllib.request, "urlopen", side_effect=OSError("ntfy down")):
+        h2.emit(rec)  # must not raise
+        end = time.monotonic() + 2.0
+        while time.monotonic() < end and time.monotonic() - h2._last < 40:
+            time.sleep(0.01)
+    assert time.monotonic() - h2._last >= 40, \
+        f"failed send must re-arm the window (got age {time.monotonic() - h2._last:.1f}s)"
+    # wiring is env-gated
+    src = (REPO / "app" / "logging_setup.py").read_text()
+    assert "NTFY_ALERT_URL" in src
+
+
+# ── usage_events: table + _track ────────────────────────────────────
+def t_usage_events():
+    c = A.db()
+    c.execute("SELECT 1 FROM usage_events LIMIT 1")  # table exists (migration 12)
+    c.execute("DELETE FROM usage_events")  # earlier tests may have tracked events
+    c.commit(); c.close()
+    A._track("page_view", target="dashboard", user="zz9999")
+    A._track("login_ok", detail="123ms", user="zz9999")
+    c = A.db()
+    rows = c.execute("SELECT event, user, target FROM usage_events WHERE user='zz9999' ORDER BY id").fetchall()
+    c.close()
+    assert [r[0] for r in rows] == ["page_view", "login_ok"], [dict(r) for r in rows]
+    assert rows[0][2] == "dashboard"
+    # _track must never raise (telemetry never breaks a request)
+    A._track("page_view")  # no user: must still insert with '' ''
+
+
+def t_usage_env_passthrough():
+    src = (REPO / "docker-compose.yml").read_text()
+    assert "NTFY_ALERT_URL=${NTFY_ALERT_URL:-}" in src, "compose must pass the alert URL through"
+    assert "LOG_LEVEL=${LOG_LEVEL:-INFO}" in src, "compose default must be INFO"
+
+
+# ── control chars never reach the log line or the ntfy body (audit #16) ──
+def t_control_scrub():
+    lg = logging.getLogger("opensrm.scrubtest")
+    rec = lg.makeRecord(lg.name, logging.INFO, "x", 1,
+                        "GET path=/%sFORGED", ("\n0a",), None)
+    rec.kv = {"path": "/api/x\r\x00\x07evil"}
+    line = LS._Formatter().format(rec)
+    assert line.count("\n") == 0, f"one physical line required: {line!r}"
+    assert "\\x0a" in line and "FORGED" in line, line
+    assert "\\x0d" in line and "\\x00" in line and "\\x07" in line, line
+    # ntfy body: same scrub, asserted on the actual POST payload
+    posts = []
+    h = LS.NtfyHandler("http://127.0.0.1:1/nonexistent")
+    rec2 = logging.LogRecord("opensrm.test", logging.ERROR, "x", 1, "request", None, None)
+    rec2.kv = {"path": "/p\nFAKE status=200"}
+    with mock.patch.object(urllib.request, "urlopen",
+                           side_effect=lambda req, timeout=None: posts.append(req) or mock.Mock()):
+        h.emit(rec2)
+        end = time.monotonic() + 2.0
+        while time.monotonic() < end and len(posts) < 1:
+            time.sleep(0.01)
+    body = posts[0].data.decode()
+    assert "\\x0aFAKE" in body and "\nFAKE" not in body, body
+
+
+# ── non-ASCII X-Push-Tick: bare 401, never a 500 (audit #16) ─────────
+def t_tick_nonascii_header():
+    old = os.environ.get("PUSH_TICK_SECRET")
+    os.environ["PUSH_TICK_SECRET"] = "s3kr3t-tick"
+    cl = A.app.test_client()
+    try:
+        for hdr in ("wro\u00e9ng", "wrong\u2028x", "\uffff"):
+            r = cl.post("/internal/push/tick", headers={"X-Push-Tick": hdr})
+            assert r.status_code == 401, f"{hdr!r} -> {r.status_code} (want 401, old code gave 500)"
+    finally:
+        if old is None:
+            os.environ.pop("PUSH_TICK_SECRET", None)
+        else:
+            os.environ["PUSH_TICK_SECRET"] = old
+
+
+for name, fn in [
+    ("access log: >=400 WARNING+error=, healthcheck suppressed at INFO", t_access_log),
+    ("per-IP 429 logs a cause line", t_rate_limit_logged),
+    ("tick-secret 401 logs a WARNING", t_tick_auth_logged),
+    ("root logger INFO, opensrm obeys LOG_LEVEL", t_root_level),
+    ("rotation configured (midnight, 14 kept)", t_rotation),
+    ("ntfy alerter: rate-limited, silent-failure safe, env-gated", t_ntfy),
+    ("usage_events table + _track writes", t_usage_events),
+    ("compose: LOG_LEVEL INFO default + NTFY_ALERT_URL", t_usage_env_passthrough),
+    ("control chars scrubbed from log lines + ntfy body", t_control_scrub),
+    ("non-ASCII X-Push-Tick -> bare 401, never 500", t_tick_nonascii_header),
+]:
+    check(name, fn)
+
+print(f"\n{TOTAL[0] - len(FAILS)}/{TOTAL[0]} passed")
+if FAILS:
+    print("FAILED:", ", ".join(FAILS))
+    sys.exit(1)
+print("ok  logging + telemetry suite")

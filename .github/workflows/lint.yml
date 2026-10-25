@@ -24,3 +24,11 @@ jobs:
 
       - name: Lockfile freshness
         run: uv lock --check
+
+      # app.css is committed (DESIGN §10.1): rebuild it and fail if the
+      # result differs — a stale committed file can never ship. Downloads
+      # the pinned toolchain (~110 MB) into the runner's cache dir.
+      - name: Compiled CSS is current (build-css.sh + git diff)
+        run: |
+          bash scripts/build-css.sh
+          git diff --exit-code app/static/app.css
