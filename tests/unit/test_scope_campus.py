@@ -39,6 +39,7 @@ os.environ["OCR_PREWARM"] = "0"
 os.environ.pop("SCOPE_FEATURES", None)  # every gate check owns its env
 
 from app import app as A  # noqa: E402  (DATA_DIR first)
+from app.scope import ops as OPS  # noqa: E402
 from app.views.campus import campus_view, kv_rows, line_row, rows  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "scope_campus"
@@ -195,6 +196,34 @@ def t_rendered_full_tab_carries_every_value():
     assert 0 < i < j, "notifications not newest-first in the render"
 
 
+# ── default gate ───────────────────────────────────────────────────────────
+def t_campus_slugs_are_default_off():
+    """Untouched env -> the tab is dark for every user.
+
+    navya 2026-10-19: keep the feature, ship it off. The three slugs stay
+    implemented (FEATURES) but must not ride DEFAULT_FEATURES until the
+    portal operation mapping is worked out - opt in via SCOPE_FEATURES.
+    """
+    default = set(OPS.DEFAULT_FEATURES.split(","))
+    assert not ({"placement", "library", "campus"} & default), sorted(default)
+    assert {"placement", "library", "campus"} <= set(OPS.FEATURES)  # still shipped
+    os.environ.pop("SCOPE_FEATURES", None)          # the real user default
+    assert campus_view(SYNTHETIC_AS_SYNC, OPS.enabled_features())["show"] is False
+    set_scope(SYNTHETIC_AS_SYNC)                    # seasonal payloads present
+    html = GET()                                    # and no env opt-in:
+    assert 'id="tab-campus"' not in html, "campus tab rendered under defaults"
+    assert 'data-tab="campus"' not in html, "campus dock entry rendered"
+    set_scope({})
+    # one explicit slug is enough to bring exactly its card back
+    os.environ["SCOPE_FEATURES"] = "library"
+    try:
+        titles = [c["title"] for c in campus_view(SYNTHETIC_AS_SYNC,
+                                                  OPS.enabled_features())["cards"]]
+        assert titles == ["Library"], titles
+    finally:
+        os.environ.pop("SCOPE_FEATURES", None)
+
+
 # ── feature gates ──────────────────────────────────────────────────────────
 def t_each_slug_off_hides_only_its_card():
     want = {"placement": "Placement", "library": "Library", "campus": "Hostel & transport"}
@@ -241,6 +270,7 @@ TESTS = [
     ("cards in contract order", t_cards_in_contract_order),
     ("notifications newest-first", t_notifications_newest_first),
     ("full tab renders every value", t_rendered_full_tab_carries_every_value),
+    ("placement/library/campus default-off, single-slug opt-in", t_campus_slugs_are_default_off),
     ("each slug off -> only its card(s) absent", t_each_slug_off_hides_only_its_card),
     ("all slugs off -> no tab registration", t_all_features_off_registers_no_tab),
     ("alive-empty scope -> hidden navbar", t_alive_empty_scope_hides_the_tab),
