@@ -7,8 +7,8 @@
 # e2e   — the Playwright suites: self-booting ones plus those that need a
 #         server (one gunicorn behind them, guarded by require_own_server).
 #
-# guide_server.py is deliberately absent: it performs 7 REAL portal logins per
-# run and the portal caps 10/hour/IP. guide_check.py IS included — it mocks
+# test_login_guide_server is deliberately absent: it performs 7 REAL portal logins per
+# run and the portal caps 10/hour/IP. test_login_guide_check IS included — it mocks
 # /api/login in the browser, so nothing reaches the portal.
 #
 # Called from build.yml as a reusable workflow so the :latest publish can
@@ -46,84 +46,88 @@ jobs:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
 
-      - name: Sync dependencies (frozen lockfile)
-        run: uv sync --frozen
+      - name: Sync dependencies (frozen lockfile, browser extra for the fallback tests)
+        run: uv sync --frozen --extra browser
 
       # Each suite is its own step so a red one names itself in the checks UI.
       # DATA_DIR is inline per step: a fresh empty dir, so migrations run at
       # import and the suite seeds its own state.
-      - name: verify76 (static checks)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/verify76.py
+      - name: test_audit_findings (static checks)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_audit_findings.py
       - name: test_app_factory (create_app isolation)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_app_factory.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_app_factory.py
       - name: test_exams (end-sem parser)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_exams.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_exams.py
       - name: test_exams_view (exam card view model)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_exams_view.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_exams_view.py
       - name: test_tt_history (timetable edit log)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_tt_history.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_tt_history.py
       - name: test_tt_hero (hero attendance join passthrough)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_tt_hero.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_tt_hero.py
       - name: test_relogin_save (mid-scrape relogin)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_relogin_save.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_relogin_save.py
       - name: test_fernet_rotation (FERNET_KEYS MultiFernet + rotate script)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_fernet_rotation.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_fernet_rotation.py
       - name: test_official_tt (portal formId-10 parser + contract)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_official_tt.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_official_tt.py
       - name: test_sessions (session lifecycle contract)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sessions.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sessions.py
       - name: test_account_delete (schema-driven account-deletion residue)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_account_delete.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_account_delete.py
       - name: test_login_reject (rejection classifier + quotas)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_login_reject.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_login_reject.py
       - name: test_state_classes (rate/progress/portal-health locks + pruning)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_state_classes.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_state_classes.py
       - name: test_fault_handling (corrupt-row degradation)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_fault_handling.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_fault_handling.py
       - name: test_logging_telemetry (ntfy/rotation/scrub)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_logging_telemetry.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_logging_telemetry.py
       - name: test_metrics (observability counters + /internal/metrics auth)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_metrics.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_metrics.py
       - name: test_observability_assets (ops stack guard rails)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_observability_assets.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_observability_assets.py
       - name: test_sync_cache (refresh cache window + per-netid single flight)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_cache.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sync_cache.py
       - name: test_sync_queue (bounded wait + priority + budget buckets)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_sync_queue.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sync_queue.py
       - name: test_canary_sync (canary_sync.sh end-to-end)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_canary_sync.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_canary_sync.py
       - name: test_marks_view (marks view model)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_marks_view.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_marks_view.py
       - name: test_layout (card/widget engine)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_layout.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_layout.py
+      - name: test_css_safelist (render-time classes exist in app.css)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_css_safelist.py
+      - name: test_perf_budget (third-party-free pages, cache headers, reload sites)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
       - name: test_attendance_view (attendance view model)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_attendance_view.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_attendance_view.py
       - name: test_feedback (harvester + opt-in plan)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_feedback.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_feedback.py
       - name: test_push_calc (due window + blocks)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_calc.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_push_calc.py
       - name: test_push_store (claims + at-most-once)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_store.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_push_store.py
       - name: test_push_send (mocked pywebpush)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_send.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_push_send.py
       - name: test_push_tick (tick auth + allowlist)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_tick.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_push_tick.py
       - name: test_push_api (push REST endpoints)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_push_api.py
-      - name: guide_static (login flow, source level)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/guide_static.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_push_api.py
+      - name: test_login_guide_static (login flow, source level)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_login_guide_static.py
       - name: test_supply_chain (image tags + scan workflow pins)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_supply_chain.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_supply_chain.py
       - name: healthz
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_healthz.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_healthz.py
       - name: test_db_concurrency (db() lock timeout + journal mode)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_concurrency.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_db_concurrency.py
       - name: test_db_layer (request-scoped connection + transaction isolation)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_db_layer.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_db_layer.py
       - name: test_scope_client (SCOPE wire, toggles, m018, cold sync)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_scope_client.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_client.py
       - name: test_scope_academics (Academics tab, CGPA math + feature gate)
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_scope_academics.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_academics.py
 
   docker:
     runs-on: ubuntu-latest
@@ -166,8 +170,8 @@ jobs:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
 
-      - name: Sync dependencies (frozen lockfile)
-        run: uv sync --frozen
+      - name: Sync dependencies (frozen lockfile, browser extra for the DUTs)
+        run: uv sync --frozen --extra browser
 
       - name: Cache Playwright browsers
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -191,18 +195,23 @@ jobs:
         run: |
           bash scripts/ci_e2e_http.sh \
             test_sw test_xss test_navbar test_marks_dut test_personal \
+            test_softrefresh_dut \
+            test_touchfeel_dut \
+            test_lowtier_dut \
+            test_pull_dut \
+            test_perf_budget_e2e \
             test_delete_dut \
-            test_att_dut test_feedback_dut test_feedback_contrast guide_check
+            test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/test_dash_fit.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_dash_fit.py
 
-      - name: dut_official_tt (official timetable DUT, self-booting)
+      - name: test_dut_official_tt (official timetable DUT, self-booting)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/dut_official_tt.py
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_dut_official_tt.py
 
       # Boots its own three gunicorn instances (18185 unconfigured /
       # 18186 push-enabled / 18187 same DB with push env stripped) and runs
@@ -210,7 +219,7 @@ jobs:
       - name: Push DUTs (test_push_sw + test_push_ui)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: VENV="$PWD/.venv" bash tests/run_push_duts.sh
+        run: VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh
 
       - name: Collect failure logs
         if: failure()

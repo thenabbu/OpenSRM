@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v33';
+const CACHE_NAME = 'opensrm-v37';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -9,11 +9,19 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    // Navigation preload: the HTML request starts while the SW boots, so a
+    // controlled page doesn't pay worker startup latency on its document.
+    if (self.registration.navigationPreload) {
+      try {
+        const st = await self.registration.navigationPreload.getState();
+        if (!st.enabled) await self.registration.navigationPreload.enable();
+      } catch (err) { /* preload unsupported: the HTML branch just fetches */ }
+    }
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', e => {
@@ -38,11 +46,44 @@ self.addEventListener('fetch', e => {
   }
   if (url.pathname === '/login' || url.pathname.startsWith('/api/')) return;
 
-  // Static assets: network-first with cache fallback.
-  // Cache-first once served pre-deploy JS with post-deploy HTML → dead navbar
-  // until a hard refresh. Network-first keeps HTML+JS from the same deploy;
-  // the cache still serves offline. Only 2xx responses are cached (audit:
-  // resp.ok guard) so error pages can never be served as the offline copy.
+  // Versioned assets (?v=<content-hash> from asset()): CACHE-FIRST. The
+  // hash guarantees the bytes under this URL never change, so the cache can
+  // answer without touching the network — warm visits move zero CSS/JS
+  // bytes. On store, older ?v= generations of the same pathname are deleted
+  // so the cache never piles up deploy generations. Offline: a cached
+  // version still answers.
+  if (url.pathname.startsWith('/static/') && url.searchParams.get('v')) {
+    e.respondWith((async () => {
+      const hit = await caches.match(e.request);
+      if (hit) return hit;
+      try {
+        const resp = await fetch(e.request);
+        if (resp.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(e.request, resp.clone());
+          const keys = await cache.keys();
+          await Promise.all(keys.map(k => {
+            const ku = new URL(k.url);
+            return (ku.pathname === url.pathname && ku.search !== url.search)
+              ? cache.delete(k) : null;
+          }));
+        }
+        return resp;
+      } catch (err) {
+        const stale = await caches.match(e.request);
+        if (stale) return stale;
+        throw err;
+      }
+    })());
+    return;
+  }
+
+  // Unversioned static assets (icons, manifest): network-first with cache
+  // fallback. Cache-first once served pre-deploy JS with post-deploy HTML →
+  // dead navbar until a hard refresh. Network-first keeps HTML+JS from the
+  // same deploy; the cache still serves offline. Only 2xx responses are
+  // cached (audit: resp.ok guard) so error pages can never be served as the
+  // offline copy.
   if (url.pathname.startsWith('/static/')) {
     e.respondWith(
       fetch(e.request).then(resp => {
@@ -63,12 +104,20 @@ self.addEventListener('fetch', e => {
   // the next one. Offline now gets a generic page with zero account data;
   // static assets above stay offline-ready.
   if (e.request.headers.get('accept')?.includes('text/html')) {
-    e.respondWith(
-      fetch(e.request).catch(() => new Response(
-        '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline. Your dashboard needs a connection.</p><p>Connect to the internet and try again.</p></div></body></html>',
-        { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-      ))
-    );
+    e.respondWith((async () => {
+      try {
+        // navigation preload started the fetch while the worker booted —
+        // use it when present, else fetch now.
+        const preloaded = await e.preloadResponse;
+        if (preloaded) return preloaded;
+        return await fetch(e.request);
+      } catch (err) {
+        return new Response(
+          '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline. Your dashboard needs a connection.</p><p>Connect to the internet and try again.</p></div></body></html>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      }
+    })());
   }
 });
 

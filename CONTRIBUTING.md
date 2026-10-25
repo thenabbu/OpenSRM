@@ -1,6 +1,6 @@
 # Contributing to OpenSRM
 
-Thanks for wanting to help! Here's everything you need to get started.
+Thanks for wanting to help! This guide gets you from clone to merged PR.
 
 ## Setup
 
@@ -19,20 +19,46 @@ docker compose up -d
 git clone https://github.com/thenabbu/OpenSRM.git
 cd OpenSRM
 uv venv .venv && source .venv/bin/activate
-uv sync --frozen
+uv sync --frozen --extra browser
 playwright install chromium
 DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0.0:8084 app.app:app
 # Access at http://localhost:8084
 ```
 
+Python 3.11+ and [uv](https://docs.astral.sh/uv/) are the only toolchain
+requirements. There is no Node build: CSS is compiled ahead of time by
+`scripts/build-css.sh` and committed as `app/static/app.css`.
+
 ## Submitting changes
 
-1. **Branch** — create a feature branch from `main`
-2. **Lint** — `uvx ruff check app/` and `uv lock --check` before pushing (both are exactly what the Lint job runs; the lock check fails if `pyproject.toml` changed without `uv lock`)
-3. **Test** — run the suites your change touches (see the test matrix below); everything green before you push
-4. **Version** — for user-visible changes bump all three together: `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches (patch = fix, minor = feature, major = breaking/user-visible redesign; docs/tests-only changes get no bump). The number renders on the login page and dashboard navbar, and `tests/verify76.py` + CI both enforce the trio. **Also prepend a release entry to `NOTICES`** in `app/app.py` — verify76 `M27` fails the suite when the head notice's version stops equaling `VERSION`, so releases without notices cannot ship
-5. **Commit** — clear, descriptive messages. One logical change per commit
-6. **Push + PR** — open a PR against `main`. PR CI runs **Lint** (ruff + `uv lock --check`) and **Tests** (`unit` + `docker` + `e2e` — see the matrix below, every suite has a CI runner). The Docker image is built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>` only after the merge lands on `main`, and only if `lint` *and* `tests` are green there; the self-hosted deployment then picks it up manually. Merges use merge commits with a `merge: <summary>` subject (no squash), keeping the atomic commits intact
+1. **Branch** — create a feature branch from `main`.
+2. **Lint** — `uvx ruff check app/` and `uv lock --check` before pushing
+   (both are exactly what the Lint job runs; the lock check fails if
+   `pyproject.toml` changed without running `uv lock`).
+3. **Test** — run the suites your change touches; everything green before
+   you push. The full matrix with per-suite commands and CI runner tags is
+   in [AGENTS.md](AGENTS.md#test-matrix-all-green-before-push); the
+   conventions live in [tests/README.md](tests/README.md).
+4. **Version** — for user-visible changes bump all three together:
+   `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches
+   (patch = fix, minor = feature, major = breaking/user-visible redesign;
+   docs/tests-only changes get no bump). The number renders on the login
+   page and dashboard navbar, and `tests/unit/test_audit_findings.py` plus
+   CI both enforce the trio. **Also prepend a release entry to `NOTICES`**
+   in `app/app.py` — `test_audit_findings` `M27` fails the suite when the
+   head notice's version stops equaling `VERSION`, so releases without
+   notices cannot ship.
+5. **Commit** — one logical change per commit, message = finding + evidence
+   + fix + how it was verified.
+6. **Push + PR** — open a PR against `main`. PR CI runs **Lint**
+   (`uvx ruff check app/` + `uv lock --check`) and **Tests**
+   (`unit` + `docker` + `e2e`). The Docker image is pushed to
+   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`
+   only after the merge lands on `main` and only if lint *and* tests are
+   green there; deployment itself is manual (see
+   [docs/runbook.md](docs/runbook.md)). Merges use merge commits with a
+   `merge: <summary>` subject — never squash — so the atomic commits stay
+   intact.
 
 ### Commit format
 
@@ -45,67 +71,105 @@ docs: update README with new features
 ci: add PR trigger to lint workflow
 ```
 
-## Test matrix
+## Design system
 
-All plain scripts (no pytest), from the repo root with the repo venv. The `[runner]` tag names the CI job that runs the suite on every PR (`unit`/`e2e` in `.github/workflows/tests.yml`; `—` = local only):
+The app uses a custom dark daisyUI theme (`openSRM`). Read
+[DESIGN.md](DESIGN.md) before touching any template or CSS — the theme has
+unusual rules (e.g. `primary` is black, surfaces are inverted). The four
+that catch people out first:
 
-```bash
-.venv/bin/python tests/verify76.py          # 72/72 static checks (incl. doc claims)
-.venv/bin/python tests/test_exams.py        # 69/69 end-sem probe parser
-.venv/bin/python tests/test_exams_view.py   # exam card view model
-.venv/bin/python tests/test_marks_view.py   # internal-marks view model (fmt, IE derivation)
-# [e2e] Playwright DUTs need a dev server + PLAYWRIGHT_BROWSERS_PATH set:
-#   tests/test_sw.py (7/7) · tests/test_xss.py (9/9) · tests/test_marks_dut.py (53/53) — see AGENTS.md for the exact commands
-# [unit] guide_static.py · [e2e] guide_check.py (portal mocked in-test) · [—] guide_server.py (7 real logins, never CI)
-```
-
-**Careful with live-portal tests:** `guide_server.py` performs 7 real SRM logins per run and the portal rate-limits 10/hour per IP, which is why it is the one suite CI never runs. Tests mint session cookies and never hardcode credentials — keep it that way, and don't loop the live suites. Every fabricated id in a committed test uses the `zz9999` / `xx0001` placeholders: the repo is public.
-
-## What to know before editing
-
-### Design system
-
-The app uses a custom dark daisyUI theme (`openSRM`). Read `DESIGN.md` before touching any template or CSS — the theme has unusual rules (e.g., `primary` is black, surfaces are inverted).
-
-Key rules:
-- **Tokens only** — never use hex colors or Tailwind palette classes
-- **Status colors follow thresholds** — ≥75% success, 65–74.9% warning, <65% error
+- **Tokens only** — never hex colors or Tailwind palette classes
+- **Status colors follow thresholds** — ≥75% success, 65–74.9% warning,
+  <65% error
 - **`primary` is black** — use `accent` (white) for emphasis buttons
-- **Borders, not shadows** — no gradients, glows, or glassmorphism
+- **Borders, not shadows** — no gradients, glows or glassmorphism
 
-### Architecture
+## Architecture
 
-- **Flask + Jinja2** — the app boots through `create_app()` in `app/app.py` (data dir, secret key, migrations and the OCR prewarm live in the factory; typed boot config in `app/config.py` reads `DATA_DIR`/`OCR_PREWARM` once per app), templates in `app/templates/`, static files in `app/static/`. The module-level `app = create_app()` keeps the Dockerfile CMD (`app.app:app`) and set-`DATA_DIR`-before-import tests working. Route registration lives in the seven `app/blueprints/` route tables (auth, dashboard, marks, timetable, push, feedback, internal) — `FlatBlueprint` keeps endpoint names unprefixed — and shared decorators (e.g. `require_login`) in `app/security.py`
-- **Pure code lives outside the monolith** — portal parsers in `app/portal/parsers/`, dashboard view models in `app/views/`; `app.app` re-exports every moved name, so `from app.app import …` and the Dockerfile CMD (`app.app:app`) keep working
-- **SQLite** — no ORM, raw SQL with `sqlite3.Row` for dict-like access, all of it in the `app/db.py` repository layer. All connections funnel through `app.db.connect()` (10s busy timeout; `SQLITE_JOURNAL_MODE` env, default `delete`) — never open one directly. Request handlers get one request-scoped connection closed by the Flask teardown; multi-statement units use `with transaction():`
-- **Migrations** — versioned system in `app/migrations.py`. Add new migrations with `@migration(version=N, description="...")`.
-- **Logging** — structured logging via `app/logging_setup.py`. Use `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
-- **Playwright** — persistent browser instance launched lazily on first use; one shared context reused per netid (closed when a different netid logs in).
-- **No JS frameworks** — vanilla JS only. No build step.
-- **Service worker** — bump `CACHE_NAME` in `sw.js` when deploying static asset changes.
+- **Flask + Jinja2** — boots through `create_app()` in `app/app.py`;
+  templates in `app/templates/`, static in `app/static/`. Routes live in
+  seven `app/blueprints/` tables (auth, dashboard, marks, timetable, push,
+  feedback, internal), shared decorators in `app/security.py`.
+- **Pure code lives outside the monolith** — portal parsers in
+  `app/portal/parsers/`, dashboard view models in `app/views/`;
+  `app.app` re-exports every moved name so imports and the Dockerfile CMD
+  (`app.app:app`) keep working.
+- **SQLite** — no ORM, raw SQL through the `app/db.py` repository layer.
+  All connections funnel through `app.db.connect()` (10 s busy timeout);
+  request handlers share one request-scoped connection closed by the
+  teardown, multi-statement units use `with transaction():`.
+- **Migrations** — versioned registry in `app/migrations.py`. Add new ones
+  with `@migration(version=N, description="...")`.
+- **Logging** — `app/logging_setup.py`; use
+  `log_with_kv(logger, level, msg, key=value)` for machine-parseable output.
+- **Playwright (archived)** — the browser fallback is off by default
+  (`PLAYWRIGHT_FALLBACK` unset). When enabled it uses one persistent
+  browser instance with a shared context reused per netid (closed when a
+  different netid logs in).
+- **No JS frameworks** — vanilla JS only, no build step.
+- **Service worker** — bump `CACHE_NAME` in `sw.js` when deploying static
+  asset changes.
 
-### CI/CD
+## CI/CD
 
-- **Lint** — ruff (`app/` only) + `uv lock --check` on every push and PR
-- **Tests** (`.github/workflows/tests.yml`, on every PR to `main` and every push to `main`) — three jobs:
-  - `unit` — every suite that needs no server and no network, one step each, fresh `DATA_DIR` per step, `uv sync --frozen`
-  - `docker` — builds the image **without pushing**, boots it on an empty volume, then seeds a fabricated user, mints its session cookie inside the container and asserts an authenticated `GET /` is 200 with the seeded data on the page (`/login` alone only proves the shell boots)
-  - `e2e` — the Playwright suites, chromium headless shell only: the self-booting ones plus the server-needing ones (one gunicorn behind them, `scripts/ci_e2e_http.sh`); failure logs are uploaded as an artifact
-  - `guide_server.py` is deliberately **not** in CI — it performs 7 real portal logins per run and the portal caps 10/hour per IP. `guide_check.py` **is** in CI: it mocks `/api/login` in the browser, so nothing reaches the portal
-- **Build** — on push to `main`: Docker image built and pushed to `ghcr.io/thenabbu/opensrm` as `:latest` **plus `:<VERSION>` and `:<short-sha>`** (with `org.opencontainers.image.version`/`revision` labels), gated on `needs: [lint, tests]` so a red suite never pushes `:latest`. Deployments pin/roll back via `OPENSRM_TAG` (see AGENTS.md "Prod deploy")
-- **Scans** — `.github/workflows/scans.yml` (gitleaks on full history · pip-audit on the locked export · trivy HIGH/CRITICAL on the built image) — **report-only**: findings land in the job summary, never a red check. docs/SCANS.md documents what each would block on and how to flip one to blocking
-- **Deploy** — **manual**, there is no watcher: once CI is green on `main`, follow [docs/runbook.md](docs/runbook.md) (sync the compose file first, then `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d opensrm'`) (an auto-deploy watcher was deliberately removed at the maintainer's request — do not add one back)
+- **Lint** — ruff (`app/` only) + `uv lock --check` on every push and PR.
+- **Tests** (`.github/workflows/tests.yml`) — three jobs:
+  - `unit` — every suite that needs no server or network, one step each,
+    fresh `DATA_DIR` per step.
+  - `docker` — builds the image without pushing, boots it on an empty
+    volume, then seeds a fabricated user and asserts an *authenticated*
+    `GET /` renders it (`/login` alone only proves the shell boots).
+  - `e2e` — the Playwright suites against one gunicorn
+    (`scripts/ci_e2e_http.sh`) plus the self-booting DUTs.
+  - `test_login_guide_server` is deliberately **not** in CI — it performs
+    7 real portal logins per run and the portal caps 10/hour per IP.
+    `test_login_guide_check` **is** in CI: it mocks `/api/login` in the
+    browser, so nothing reaches the portal.
+- **Build** — on push to `main`: image pushed to
+  `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`,
+  gated on `needs: [lint, tests]` so a red suite never publishes
+  `:latest`. The shipped image omits the browser fallback; build with
+  `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
+  `OPENSRM_TAG` (see AGENTS.md "Prod deploy").
+- **Scans** — gitleaks / pip-audit / trivy in
+  `.github/workflows/scans.yml`, **report-only** by design:
+  [docs/SCANS.md](docs/SCANS.md) documents what each would block on and how
+  to flip one to blocking.
+- **Deploy** — **manual**, there is no watcher: once CI is green on `main`,
+  follow [docs/runbook.md](docs/runbook.md) (sync the compose file first,
+  then `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose
+  up -d opensrm'`). An auto-deploy watcher was deliberately removed at the
+  maintainer's request — do not add one back.
 
 ## Portal rate limits
 
-During testing, be aware:
-- Per netid: 3 scrapes per 10 minutes (counted only when the sync actually runs — a queue-wait timeout / `Sync in progress` / budget / cooldown rejection is free)
-- Refresh cache window: a refresh within `SYNC_MIN_INTERVAL_S` (default 300s, `0` disables) of an account's last completed sync is answered from stored data — no portal request, no quota charge; a second refresh while one is already running waits for and shares that sync instead of erroring
-- Sync queue: a second sync waits up to `SYNC_QUEUE_WAIT_S` (default 45s, `0` = refuse immediately) for a running one, logins ahead of refreshes, before it gets the busy 503; `SYNC_MAX_CONCURRENCY` (default 1) is how many pipelines may run at once, and the Playwright fallback stays serialized at any value
-- Per IP: 10 login attempts per hour
-- Aggregate server→portal budget: 30 requests per 10 minutes (full logins + preflights share 20, preflight capped at its own 10, refresh floor 10)
+OpenSRM protects the SRM portal on purpose. When testing, be aware:
+
+- **Per NetID:** 3 scrapes per 10 minutes — counted only when the sync
+  actually runs; a queue-timeout / busy / cooldown / budget rejection is
+  free.
+- **Refresh cache window:** a refresh within `SYNC_MIN_INTERVAL_S`
+  (default 300 s, `0` disables) of the last completed sync is answered from
+  stored data — no portal request, no quota charge.
+- **Sync queue:** a second sync waits up to `SYNC_QUEUE_WAIT_S` (default
+  45 s, `0` = refuse immediately) for a running one — logins ahead of
+  refreshes — before it gets the busy 503. `SYNC_MAX_CONCURRENCY`
+  (default 1) is how many pipelines may run at once.
+- **Per IP:** 10 login attempts per hour.
+- **Aggregate server→portal budget:** 30 requests per 10 minutes (full
+  logins + preflights share 20, preflight capped at its own 10, refresh
+  floor 10).
 
 Don't hammer the portal during testing.
+
+## Test hygiene
+
+- All suites are plain scripts (no pytest): `N/M passed`, non-zero exit on
+  failure. Always give a suite a fresh `DATA_DIR`.
+- Tests mint session cookies and never hardcode credentials — keep it that
+  way, and never loop the live-portal suites.
+- Every fabricated id in a committed test uses the `zz9999` / `xx0001`
+  placeholders: the repo is public.
 
 ## Questions?
 
