@@ -145,9 +145,9 @@ rotation) see [docs/runbook.md](docs/runbook.md).
    attempt — it never burns captcha retries or trips the portal's
    3-attempts-per-NetID lockout. Progress (5% → 92%) streams to the login
    screen.
-3. **Sync** — attendance, marks and the official timetable/exam forms are
-   fetched fresh on every sync and persisted; personal details and courses
-   only when older than 24 h. Everything is rate-limited per account, per IP
+3. **Sync** — the hot forms (attendance 9, marks 13, timetable 10, exams 126)
+   are fetched fresh on every sync and persisted; the cold forms (profile 17,
+   courses 7) only when older than 24 h. Everything is rate-limited per account, per IP
    and by an aggregate portal budget, serialized one pipeline at a time
    behind a bounded queue.
 4. **Serve** — parsed JSON lives in SQLite; the dashboard renders straight
@@ -163,11 +163,11 @@ portal to pixel:
   <img src="docs/architecture.png" alt="OpenSRM architecture — PWA → Cloudflare edge → Flask container (sessions, login+fetch, parsers, SQLite) → view models, with the SRM portal and optional egress worker" width="100%">
 </p>
 
-A sync starts at your browser, crosses the tunnel, lands every parsed
-payload in SQLite, and every page then renders straight from that store — so
-the dashboard keeps working from cache even when the portal doesn't. The
-*Login + fetch* box carries the hot/cold form split (attendance, marks,
-timetable and exams on every sync; profile and courses only after 24 h).
+A sync starts at your browser, crosses the tunnel as a normal HTTP
+request/response, and every page renders straight from the store — so the
+dashboard keeps working from cache even when the portal doesn't. The pipeline
+talks to the portal directly by default; the dashed detour through the egress
+worker only exists when `SRM_EGRESS_URL` is set.
 
 A sync starts at your browser, crosses the tunnel, logs in with a captcha
 that was already solved while you typed, pulls the hot forms, parses them
