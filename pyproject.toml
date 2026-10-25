@@ -1,19 +1,25 @@
 [project]
 name = "opensrm"
-version = "1.27.0"
+version = "1.31.0"
 description = "Self-hosted attendance dashboard for the SRM Student Portal"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "flask==3.1.3",
-    "playwright==1.63.0",
     "ddddocr==1.6.1",
     "gunicorn==26.2.0",
     "cryptography>=50.0.1",
     "blobatar[flask]",
     "pywebpush==2.5.0",
 ]
+
+# The archived Playwright fallback (README "Playwright fallback (archived)"):
+# runtime-off unless PLAYWRIGHT_FALLBACK=enabled, and not in the shipped image
+# unless built with --build-arg WITH_PLAYWRIGHT=1. Dev DUTs and the CI e2e job
+# install it with: uv sync --extra browser
+[project.optional-dependencies]
+browser = ["playwright==1.64.0"]
 
 [project.scripts]
 
