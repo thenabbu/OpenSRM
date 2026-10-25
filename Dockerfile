@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS builder
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377 AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /usr/local/bin/uv
 WORKDIR /app
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
     fi
 
 # -- Stage 2: Runtime -- (same verified digest as builder)
-FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377
 
 # Re-declared for the runtime stage: gates the Chromium shared-library stack
 # and the chromium symlink below (0 = the shipped default).
@@ -57,6 +57,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
         libatspi2.0-0 libx11-xcb1 fonts-liberation; \
     fi
+
+# Base image's system setuptools 79.0.1 vendors wheel 0.45.1 and
+# jaraco.context 5.3.0 — both flagged HIGH by trivy (the app runs from
+# /app/.venv and never touches setuptools, but it sits in the scanned
+# layer). Bump setuptools+wheel to current. pip is deliberately NOT
+# upgraded: base pip 24.0 has only MEDIUM CVEs, while pip 26.x ships a
+# vendored bom.cdx.json SBOM (urllib3 2.7.0 / msgpack 1.1.2) that trivy
+# parses as 4 new HIGH findings — trading 6 MEDIUM rows for 4 HIGH rows.
+RUN pip install --no-cache-dir -U setuptools wheel
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /ms-playwright /ms-playwright
