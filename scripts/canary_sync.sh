@@ -7,7 +7,7 @@
 #   The netid is an ARGUMENT — never hard-code it here, never commit one.
 #
 # Defaults target the prod container; every leg is overridable so the same
-# script runs against a local server (tests/test_canary_sync.py does):
+# script runs against a local server (tests/unit/test_canary_sync.py does):
 #   CANARY_BASE   base URL                 (default https://srm.200871.xyz)
 #   CANARY_MINT   cmd <netid> -> token     (default: docker exec opensrm ... cookie mint)
 #   CANARY_CHECK  cmd <netid> -> exit!=0 with the reason if attendance/marks empty

@@ -68,11 +68,13 @@ class HttpScraperError(Exception):
 
 
 class FeedbackWindowClosed(HttpScraperError):
-    """The portal's MidSemFeedback.jsp answers with its `Service closed`
-    info alert — the feedback window itself is shut (verified live 2026-10-13),
-    not a session or markup failure. Raised ONLY by _fb_harvest's fragment
-    check: callers map it to fb_open=0 (archive the CTA) while every other
-    harvest failure leaves stored fb_open untouched (unknown != closed)."""
+    """The portal's MidSemFeedback.jsp answers with its service-shut info
+    alert — the feedback window itself is closed, not a session or markup
+    failure. Observed live wordings: `Service closed` (2026-10-13) and
+    `Service period deactivated` (2026-10-20). Raised by _fb_frag_state's
+    classification: callers map it to fb_open=0 (archive the CTA) while
+    every other harvest failure leaves stored fb_open untouched
+    (unknown != closed)."""
 
 
 def _route():
@@ -534,6 +536,37 @@ def _fb_registered(frag):
     return False
 
 
+# The portal's shut-the-window alert, observed live: `Service closed`
+# (2026-10-13 capture) and `Service period deactivated` (2026-10-20 capture).
+# Matched case-insensitively; a drifted wording still archives through the
+# zero-subjects fallback in _fb_frag_state, so a text change can never
+# re-show a dead CTA.
+_FB_CLOSED_MARKERS = ("service closed", "service period deactivated")
+
+
+def _fb_frag_state(frag):
+    """Classify a MidSemFeedback iden=32 fragment: "dead" (login bounce),
+    "closed" (the portal shut the window), "broken" (unexpected fragment), or
+    "open" (subject list present). ONE classifier shared by the cold harvest,
+    the hot-sync probe and fill_feedback's refusal check, so every path reads
+    the same live fragment the same way."""
+    if "youLogin" in frag:
+        return "dead"
+    if any(m in frag.lower() for m in _FB_CLOSED_MARKERS):
+        return "closed"
+    if "txtCourseTitle" not in frag:
+        return "broken"
+    if not _fb_subjects(frag):
+        # Shell renders but no subject rows. Observed live 2026-10-20 (with
+        # the "Service period deactivated" alert); also what ANY drifted
+        # shut-wording looks like. Treat as closed — a genuine subject-list
+        # markup change leaves the fill equally unusable, so archived is the
+        # honest state either way, and the next open window harvests fresh
+        # and unarchives automatically.
+        return "closed"
+    return "open"
+
+
 def _fb_harvest(opener, base, xheaders, netid):
     """Read-only harvest of the subject->staff map. Returns
     {name: {"subject_id", "staff": [[id, name], ...]}} — no submissions.
@@ -552,21 +585,17 @@ def _fb_harvest(opener, base, xheaders, netid):
                      "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
     _u, body = _req(opener, url, headers, data=data)
     frag = body.decode("utf-8", errors="replace")
-    if "youLogin" in frag:
+    state = _fb_frag_state(frag)
+    if state == "dead":
         raise HttpScraperError("feedback form did not load (session dead)")
-    if "Service closed" in frag:
-        # the portal's own availability marker (live 2026-10-13: the form
-        # shell still renders txtCourseTitle, but the info alert says the
-        # service is shut and _fb_subjects finds nothing — that used to be
-        # misreported as "portal markup changed").
+    if state == "closed":
+        # the portal's own availability marker — see _FB_CLOSED_MARKERS for
+        # the observed live wordings; the zero-subjects shell is in here too.
         raise FeedbackWindowClosed("feedback window closed on the portal")
-    if "txtCourseTitle" not in frag:
+    if state == "broken":
         raise HttpScraperError("feedback form did not load (unexpected fragment)")
 
     subjects = _fb_subjects(frag)
-    if not subjects:
-        raise HttpScraperError("feedback form parsed but lists no subjects — "
-                               "portal markup changed, aborting")
 
     # 2. per subject: staff list (read-only)
     faculty_map = {}
@@ -624,6 +653,34 @@ def _fb_cold(opener, base, xheaders, netid):
     return fb, fb_open
 
 
+def _fb_probe(opener, base, xheaders, netid):
+    """Hot-sync availability probe: ONE fragment fetch, no per-subject
+    posts. Returns fb_open 1/0; None on transport failure or an unreadable
+    fragment (caller preserves stored). Keeps the CTA archive/unarchive
+    fresh on EVERY sync instead of only the daily cold one (2026-10-20: a
+    closed form must archive itself without waiting for the next cold
+    sync; an open one must come back the same way)."""
+    url = f"{base}{BASE_PATH}/students/Feedback/MidSemFeedback.jsp"
+    data = urllib.parse.urlencode({"iden": "32", "filter": "", "hdnFormDetails": "1",
+                                   "csrfPreventionSalt": ""}).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    try:
+        _u, body = _req(opener, url, headers, data=data)
+    except HttpScraperError as e:
+        log.info("feedback probe skipped netid=%s err=%r", netid, e)
+        return None
+    state = _fb_frag_state(body.decode("utf-8", errors="replace"))
+    if state == "closed":
+        log.info("feedback window closed (probe) netid=%s", netid)
+        return 0
+    if state == "open":
+        return 1
+    # dead/broken: availability unknown -> preserve stored
+    log.info("feedback probe netid=%s state=%s (unknown -> preserve)", netid, state)
+    return None
+
+
 def fill_feedback(netid, plan, cookies_json):
     """Opt-in submit: restore the cached portal session, re-verify the live form,
     then submit all-5 ratings + the comment for each planned subject.
@@ -670,7 +727,16 @@ def fill_feedback(netid, plan, cookies_json):
                      "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
     _u, body = _req(opener, url, headers, data=data)
     frag = body.decode("utf-8", errors="replace")
-    if "youLogin" in frag or "txtCourseTitle" not in frag:
+    state = _fb_frag_state(frag)
+    if state == "dead":
+        # refusal, not a fault: plain literal the caller may show verbatim
+        return {"error": "portal session expired — sync first"}
+    if state == "closed":
+        # refusal + confirmed-closed flag: the caller archives the CTA
+        # (fb_open=0) so the stale button can never be clicked again.
+        return {"error": "the mid-sem feedback window is closed on the portal — nothing submitted",
+                "closed": True}
+    if state != "open":
         # refusal, not a fault: plain literal the caller may show verbatim
         return {"error": "feedback window closed or session dead — nothing submitted"}
     common = _fb_common(frag)
@@ -1002,12 +1068,15 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
     # JSP batch (MidSemFeedback.jsp is a portal window — when closed, the whole
     # harvest raises and the sync still ships attendance/marks). Submitting is
     # OPT-IN from the dashboard (fill_feedback) — sync never writes to the portal.
-    # _fb_cold also classifies availability: fb_open 1/0/None (see its docstring).
+    # _fb_cold classifies availability on the daily cold sync; _fb_probe keeps
+    # it fresh on every hot sync too (one fragment POST, see its docstring).
     _chk("harvest")
     fb, fb_open = None, None
+    _prog("Checking mid-sem feedback…", 85)
     if cold:
-        _prog("Checking mid-sem feedback…", 85)
         fb, fb_open = _fb_cold(opener, base, xheaders, netid)
+    else:
+        fb_open = _fb_probe(opener, base, xheaders, netid)
 
     courses = []
     try:

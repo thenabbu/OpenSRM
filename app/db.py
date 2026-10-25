@@ -179,6 +179,14 @@ def set_cold_fetch(netid, ts):
         c.execute("UPDATE users SET cold_fetch=? WHERE netid=?", (ts, netid))
 
 
+def set_fb_open(netid, val):
+    """Archive/unarchive the feedback CTA outside a sync (0/1). Used by the
+    fill endpoint's self-heal: a portal-confirmed closed window archives the
+    stale button immediately instead of waiting for the next sync."""
+    with transaction() as c:
+        c.execute("UPDATE users SET fb_open=? WHERE netid=?", (val, netid))
+
+
 def user_dashboard(netid):
     """one row read: marks/faculty/scope live on the same users row (was three queries)"""
     return _read("SELECT attendance_json, last_fetch, personal_details_json, "
