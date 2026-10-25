@@ -280,28 +280,30 @@
     {% endif %}
 
     {% if hourwise %}
-    <div class="att-h flex items-center gap-2">Last 14 school days
+    <div class="att-h flex items-center gap-2">Detailed attendance
       <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ hourwise.ts }}" data-full="{{ hourwise.full }}"></span>
     </div>
-    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5" id="hourwise-strip">
-      <div class="flex justify-between gap-1" role="group" aria-label="Hourly attendance, last 14 school days">
-        {% for d in hourwise.strip %}
-        <div class="flex flex-col items-center gap-1 min-w-0 flex-1" title="{{ d.date }} · {{ d.dow }}">
-          <span class="sr-only">{{ d.date }} {{ d.dow }}:</span>
-          <div class="flex flex-col gap-0.5 w-full">
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5" id="hourwise-months">
+      {% for m in hourwise.months %}
+      <details class="hw-month" data-month="{{ m.label }}">
+        <summary class="hw-mrow">
+          <span class="hk-label">{{ m.side }}</span>
+          <span class="hk-num">{{ m.p }}P{% if m.a %} · {{ m.a }}A{% endif %}{% if m.od %} · {{ m.od }}OD{% endif %}</span>
+        </summary>
+        <div class="hw-grid-wrap">
+          <div class="hw-grid" style="--hw-n:{{ hourwise.hours|length }}" role="table" aria-label="{{ m.label }} hour by hour">
+            <div class="hw-hcell" role="columnheader">Date</div>
+            {% for h in hourwise.hours %}<div class="hw-hcell" role="columnheader">h{{ h }}</div>{% endfor %}
+            {% for d in m.days %}
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">{{ d.dow[:3] }}</span> <span class="hw-dt">{{ d.date }}</span></div>
             {% for c in d.cells %}
-            {% if c.state %}
-            <span class="block h-2.5 rounded-[2px] {{ 'bg-error' if c.state == 'A' else 'bg-info' if c.state == 'OD' else 'bg-base-300' }}"
-                  title="{{ d.date }} · h{{ c.n }} · {{ 'absent' if c.state == 'A' else 'OD' if c.state == 'OD' else 'present' }}{{ ' · ' + c.subject if c.subject }}"><span class="sr-only">h{{ c.n }} {{ 'absent' if c.state == 'A' else 'OD' if c.state == 'OD' else 'present' }}{{ ' ' + c.subject if c.subject }}</span></span>
-            {% else %}
-            <span class="block h-2.5 invisible" aria-hidden="true"></span>
-            {% endif %}
+            <div class="hw-c{% if c.state %} hw-c-{{ c.state|lower }}{% endif %}" role="cell" title="{{ c.title }}"{% if c.state %} aria-label="{{ c.title }}"{% endif %}>{{ c.state or '' }}</div>
+            {% endfor %}
             {% endfor %}
           </div>
-          <span class="text-xs text-base-content/60 leading-none" aria-hidden="true">{{ d.dow[:1] }}</span>
         </div>
-        {% endfor %}
-      </div>
+      </details>
+      {% endfor %}
     </div>
     {% endif %}
 

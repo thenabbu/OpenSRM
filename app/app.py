@@ -1657,15 +1657,12 @@ def _track(event, target="", detail="", user=""):
         log.info("usage track failed event=%s error=%r", event, e)
 
 # ── Routes ─────────────────────────────────────────────────
-def _hourwise_ctx(netid, group_key):
-    """Hourwise join context for the Attendance tab (Phase 2 join spec):
-    computed per request in the view layer from scope_json + timetable rows,
-    no new columns, nothing cached (O(days×6), contract). None unless EVERY
-    leg is present — feature 'hourwise' in SCOPE_FEATURES, a group with
-    slots, AND a non-empty getHourwiseAttendance — so a missing leg renders
-    the pre-existing chip list exactly as today and hides the day strip
-    (zero regression by construction). scope_json may be >36h old: it is
-    history, it still renders; the tab's sync-line caption carries its age.
+def _hourwise_data(netid, group_key):
+    """SCOPE hour rows + the join inputs for this user, or None when ANY leg
+    is missing — feature 'hourwise' in SCOPE_FEATURES, a group with slots,
+    and a non-empty getHourwiseAttendance — so a missing leg leaves today's
+    Absences card untouched (zero regression by construction). Nothing
+    cached: scope_json may be hours old, it is history and still renders.
     """
     if "hourwise" not in enabled_features() or not group_key:
         return None
@@ -1682,13 +1679,29 @@ def _hourwise_ctx(netid, group_key):
     rows = hw.get("data") if isinstance(hw, dict) else None
     if not isinstance(rows, list) or not rows:
         return None
-    # custom subjects fall back to bare hN chips (join spec: never invent)
+    # custom subjects keep the state but lose the name (join spec: never invent)
     custom = {r[0] for r in group_subjects(gid) if r[3] and r[0]}
-    ctx = hourwise_view(rows, slots, custom)
     ts = hw.get("ts") if isinstance(hw, dict) else None
-    ctx["ts"] = int(ts) if isinstance(ts, (int, float)) and ts else 0
-    ctx["full"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ctx["ts"])) if ctx["ts"] else "never"
-    return ctx
+    ts = int(ts) if isinstance(ts, (int, float)) and ts else 0
+    return rows, slots, custom, ts, \
+        (time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts)) if ts else "never")
+
+
+def _hourwise_section(netid, group_key, monthly):
+    """The Detailed attendance section's context, or None to keep the Absences
+    card. Month rows follow the portal's own monthly list (its `MMM / YYYY`
+    label, its bar %), and a month only SCOPE knows about still renders."""
+    hw = _hourwise_data(netid, group_key)
+    if not hw:
+        return None
+    rows_hw, slots_hw, custom_hw, ts_hw, full_hw = hw
+    grid = hourwise_view(rows_hw, slots_hw, custom_hw,
+                         {m["label"]: m for m in monthly})
+    if not grid["months"]:
+        return None
+    grid["ts"] = ts_hw
+    grid["full"] = full_hw
+    return grid
 
 
 @require_login
@@ -1773,14 +1786,14 @@ def index():
     # header-only (empty-state rule DESIGN §8); hide the whole block instead
     has_budgets = any(c.get("m90") is not None or c.get("m_end") is not None for c in courses)
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
-    # hourwise join (SCOPE): subject-named absence chips + the day strip —
-    # gated again per leg inside _hourwise_ctx (feature / group / scope_json)
-    hourwise = _hourwise_ctx(netid, group_key)
+    # Detailed attendance (SCOPE hourwise × timetable): replaces the Absences
+    # card when the feature, the group's timetable and the stored hour rows
+    # are all present; otherwise the card above renders exactly as on main.
+    hourwise = _hourwise_section(netid, group_key, monthly)
     if hourwise:
-        for m in monthly:
-            for r in m["abs_rows"]:
-                if hourwise["chips"].get(r["date"]):
-                    r["chips"] = hourwise["chips"][r["date"]]
+        monthly_abs = []
+    else:
+        monthly_abs = monthly
     dash = {
         # institute mail is NetID@srmist.edu.in (the portal login page states
         # it verbatim) — the personal Gmail from the profile is NOT shown here
@@ -1804,7 +1817,7 @@ def index():
     layout = [c for c in LAYOUT
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
     return render_template(
-        "dashboard.html", netid=netid, courses=courses, monthly=monthly,
+        "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
