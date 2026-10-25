@@ -179,13 +179,21 @@ def set_cold_fetch(netid, ts):
         c.execute("UPDATE users SET cold_fetch=? WHERE netid=?", (ts, netid))
 
 
+def set_fb_open(netid, val):
+    """Archive/unarchive the feedback CTA outside a sync (0/1). Used by the
+    fill endpoint's self-heal: a portal-confirmed closed window archives the
+    stale button immediately instead of waiting for the next sync."""
+    with transaction() as c:
+        c.execute("UPDATE users SET fb_open=? WHERE netid=?", (val, netid))
+
+
 def user_dashboard(netid):
     """one row read: marks/faculty live on the same users row (was three
-    queries); photo_b64 + scope_json ride along for the profile widget so
-    the enrichment stays one query too (app/views/profile.py)."""
+    queries); scope_json rides along so the profile enrichment stays one
+    query too (app/views/profile.py)."""
     return _read("SELECT attendance_json, last_fetch, personal_details_json, "
                  "exam_schedule_json, marks_json, faculty_map_json, fb_open, "
-                 "photo_b64, scope_json "
+                 "scope_json "
                  "FROM users WHERE netid=?", (netid,), one=True)
 
 

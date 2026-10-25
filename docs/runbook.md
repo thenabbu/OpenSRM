@@ -33,7 +33,9 @@ pushes `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` (from the
 the running container: `docker inspect opensrm --format
 '{{json .Config.Labels}}'` → `org.opencontainers.image.version: 1.23.0`).
 A red suite therefore blocks the image; there is no build step in the image
-itself beyond the multi-stage Dockerfile (CDN assets, no frontend bundler).
+itself — the CSS is pre-compiled on the dev side and committed
+(`app/static/app.css`, CI re-builds it and fails if stale), so the runtime
+image carries no node/npm and no bundler.
 
 Deploy is **manual** — no watcher exists, by maintainer decision
 (CONTRIBUTING.md "Deploy").
@@ -442,7 +444,7 @@ outside prober must not be able to fake scheduler liveness). The
 observability stack's `OpenSRMPushTickStale` rule fires when the stamp goes
 >5 min stale for 5m sustained, and Alertmanager delivers it to ntfy — so the
 alarm lives OUTSIDE the process that fails, which was the whole point.
-Both the counter and the gauge are pinned by `tests/test_push_tick.py`
+Both the counter and the gauge are pinned by `tests/unit/test_push_tick.py`
 (27/27) and the rule is promtool-tested both ways.
 
 Not yet deployed on the lab: it needs the optional observability stack

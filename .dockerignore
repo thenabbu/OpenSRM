@@ -1,6 +1,8 @@
 .git
 .github
 .gitignore
+# local coredumps from interpreter aborts — process memory, must never ship
+core.*
 .ruff_cache
 .venv
 __pycache__
@@ -23,6 +25,9 @@ LICENSE
 ruff.toml
 requirements.txt
 docs/
+# agent/design docs — read from the checkout, never at runtime
+AGENTS.md
+DESIGN.md
 # audit: research PoCs (had a hardcoded proxy token) must never ship in the image
 egress/
 # not runtime code: suites run in CI from the checkout, deploy helpers run on
