@@ -156,6 +156,27 @@ first, so a suite pointed at another agent's server (or a dead one, or a
 mismatched `DATA_DIR`) exits 1 with `FAIL[guard]: …` before any
 browser/login work instead of returning a phantom verdict.
 
+## Architecture diagram (docs/architecture.png)
+
+The README's diagram is a pre-rendered image — GitHub's mermaid engine
+cramps blocks (measured: 758px iframe vs 1063px layout) and mermaid v11
+ignores nested `direction`, so images are the only way to control the
+render. Full guideline: `docs/diagrams.md` (design rules, skin tokens,
+arrow semantics, verification checklist — read it before touching a diagram).
+
+```bash
+python3 scripts/build_arch_diagram.py      # regen docs/architecture.html (asserts grid/text/label rules)
+# PNG: python3 <diagram-design skill>/scripts/export_png.py docs/architecture.html docs/architecture.png 2
+#     python3 <diagram-design skill>/scripts/self_check.py docs/architecture.html
+```
+
+Rules that are easy to get wrong: every coord on the 4px grid; no formIds /
+percentages / schema versions / `app/...` paths in boxes (prose and
+Configuration own those); arrow kinds must all appear in the legend; HTTP
+boundaries are bidirectional; config gates (e.g. `SRM_EGRESS_URL`) are named
+in the legend, never drawn as connections. Ship html + png + generator
+together; `test_audit_findings` must stay 72/72.
+
 ## Git and release
 
 - **Branches: `main` only** (merged feature branches get deleted local+remote

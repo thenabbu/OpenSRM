@@ -256,6 +256,7 @@ Full details, including the key-rotation runbook: [SECURITY.md](SECURITY.md).
 - [docs/privacy.md](docs/privacy.md) — what is stored, what "Delete my data" erases
 - [AGENTS.md](AGENTS.md) — quickstart for coding agents: dev loop, test matrix, gotchas
 - [DESIGN.md](DESIGN.md) — the `openSRM` daisyUI theme: tokens, components, house rules
+- [docs/diagrams.md](docs/diagrams.md) — how repo diagrams are built (pre-rendered, verified, regen commands)
 - [docs/push.md](docs/push.md) — Web Push class reminders: architecture, env vars, rollout
 - [docs/runbook.md](docs/runbook.md) — operator runbook: build, deploy, rollback, restore, key rotation
 - [docs/audit/](docs/audit/) — incident and audit records
