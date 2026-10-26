@@ -180,6 +180,39 @@ try:
         pg.set_viewport_size({"width": 1280, "height": 900})
         pg.wait_for_timeout(300)
 
+        # ---- a sync must not shift the card frame (v1.31.1) ----------------
+        # softRefresh used an idiomorph innerHTML morph of <main>; on the real
+        # device that left the dashboard panel offset by one extra edge after a
+        # sync — card x and the top gutter doubled 15px -> 30px and stayed that
+        # way across tab switches. The morph also has to KEEP the open tab.
+        tab_before = pg.evaluate("() => [...document.querySelectorAll('[data-tabpanel]')]"
+                                 ".map(p => p.id + ':' + p.style.display).join('|')")
+        geo_before = pg.evaluate("""() => {
+          const g = document.querySelector('#tab-dashboard > .grid');
+          const c = g.querySelector(':scope > .card').getBoundingClientRect();
+          return {x: Math.round(c.x), y: Math.round(c.y)}; }""")
+        pg.evaluate("async () => { await softRefresh(); }")
+        geo_after = pg.evaluate("""() => {
+          const g = document.querySelector('#tab-dashboard > .grid');
+          const c = g.querySelector(':scope > .card').getBoundingClientRect();
+          return {x: Math.round(c.x), y: Math.round(c.y)}; }""")
+        tab_after = pg.evaluate("() => [...document.querySelectorAll('[data-tabpanel]')]"
+                                ".map(p => p.id + ':' + p.style.display).join('|')")
+        check("sync keeps the card frame (no doubled edge)", geo_after == geo_before,
+              f"before={geo_before} after={geo_after}")
+        check("sync keeps the open tab", tab_after == tab_before,
+              f"before={tab_before} after={tab_after}")
+        pg.evaluate("() => [...document.querySelectorAll('[data-tab=marks]')].find(e => e.offsetParent !== null).click()")
+        pg.wait_for_timeout(300)
+        pg.evaluate("() => [...document.querySelectorAll('[data-tab=dashboard]')].find(e => e.offsetParent !== null).click()")
+        pg.wait_for_timeout(300)
+        geo_trip = pg.evaluate("""() => {
+          const g = document.querySelector('#tab-dashboard > .grid');
+          const c = g.querySelector(':scope > .card').getBoundingClientRect();
+          return {x: Math.round(c.x), y: Math.round(c.y)}; }""")
+        check("frame survives a tab round-trip after a sync", geo_trip == geo_before,
+              f"before={geo_before} trip={geo_trip}")
+
         # ---- task 1: feedback CTA follows fb_open (render-level) ----------
         check("fb_open=1: Auto-fill CTA rendered",
               pg.locator("#fb-cta").count() == 1)

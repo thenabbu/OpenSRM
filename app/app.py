@@ -1823,6 +1823,10 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.31.1", "date": "26 Oct", "title": "The page stays put",
+     "body": "A refresh used to nudge the cards in from the left edge and "
+             "down from the menu after every sync. They now stay exactly "
+             "where they were."},
     {"ver": "v1.31.0", "date": "24 Oct", "title": "Leaner under the hood",
      "body": "The server got a much smaller update package, so future "
              "updates download faster. Nothing you can see changes — same "
