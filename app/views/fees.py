@@ -6,9 +6,15 @@ the template guards the navbar item and panel on (empty=hidden)."""
 
 import re
 
-# the first narration clause ends at the first period, tab or newline —
+# the first narration clause ends at the first tab, CR or LF —
 # SCOPE narrations carry bank-ref / payer / PayU-Razorpay garbage after it
-_CLAUSE = re.compile(r"[.\t\r\n]")
+_CLAUSE = re.compile(r"[\t\r\n]")
+# ...and the receipt's head cuts at the first real sentence end ("recd." and
+# "yr.2025" are abbreviations, so a ".""+space before a lowercase word is not
+# one), at THRU (the amount after it duplicates the amount column), and at
+# the bank-channel tail a PayU/Razorpay narration always carries.
+_HEAD_END = re.compile(r"\.\s+(?=[A-Z])|\s+THRU\s+|\s+Accounted\s")
+_CHANNEL = re.compile(r"\s+(?:fee\s+paid\s+)?through\s+online\b.*$", re.I)
 
 
 def _num(v):
@@ -75,6 +81,12 @@ def _first_clause(text):
     return _CLAUSE.split(text, 1)[0].strip()
 
 
+def _head_of(text):
+    """Narration -> one-line receipt head (see _HEAD_END/_CHANNEL). Never raises."""
+    clause = _first_clause(text)
+    return _CHANNEL.split(_HEAD_END.split(clause, 1)[0], 1)[0].strip().rstrip(":;-,. ")
+
+
 def _fees_view(scope_json, features):
     """Fees tab view model, or None when the 'fees' feature is off or no fee /
     finance rows are stored (=> no navbar item, no panel — same self-hide
@@ -135,9 +147,8 @@ def _fees_view(scope_json, features):
         ledger.append({
             "date": str(it.get("voucherdate") or ""),
             "amt": _money(amt) if amt is not None else str(it.get("amount") or ""),
-            "type": str(it.get("vouchertype") or ""),
             "vno": str(it.get("vouchernumber") or ""),
-            "clause": _first_clause(narr),
+            "head": _head_of(narr),
             "full": re.sub(r"\s+", " ", narr).strip() if isinstance(narr, str) else "",
         })
     ledger.sort(key=lambda e: e["date"], reverse=True)

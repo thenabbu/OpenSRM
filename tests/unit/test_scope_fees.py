@@ -22,7 +22,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from app.views.fees import _due_of, _fees_view, _first_clause, _parse_fee_rows  # noqa: E402
+from app.views.fees import _due_of, _fees_view, _first_clause, _head_of, _parse_fee_rows  # noqa: E402
 from app.scope.ops import enabled_features  # noqa: E402
 
 # verbatim from fixtures/fees.txt + fixtures/finance.txt (mission scope-integration)
@@ -92,8 +92,22 @@ def t_narration_first_clause_never_raises():
         clause = _first_clause(text)                        # must not raise
         assert isinstance(clause, str)
         assert "\t" not in clause and "\r" not in clause and "\n" not in clause, clause
-    assert _first_clause(FIN_ROWS[0]["narration"]) == "being recd"
+    assert _first_clause(FIN_ROWS[0]["narration"]) == "being recd. fee for the yr.2025-26 THRU 08-08-2025"
     assert _first_clause(FIN_ROWS[1]["narration"]).startswith("Being Fee received")
+
+
+def t_receipt_head_is_one_line():
+    """Receipt head = the one line the collapsed row shows: no channel tail,
+    no duplicated amount, no abbreviation cut, and junk never raises."""
+    assert _head_of(FIN_ROWS[0]["narration"]) == "being recd. fee for the yr.2025-26"
+    assert _head_of(FIN_ROWS[1]["narration"]) == "Being Fee received from student for Exam Fees"
+    # a real admission-fee narration: the "Accounted with bank transaction id
+    # …" tail is cut, the year stays
+    assert _head_of("Being Admission FEE  for the academic year 2025 - 2026  Accounted with bank transaction id 520623190760 on 2025-07-25") \
+        == "Being Admission FEE  for the academic year 2025 - 2026"
+    for junk in ("", "   ", "\t\t&\r\n", None, 12):
+        assert isinstance(_head_of(junk), str)
+    assert "\t" not in _head_of("a\tb") and "\n" not in _head_of("a\nb")
 
 
 def t_ledger_sorted_newest_first():
@@ -134,6 +148,7 @@ TESTS = [
     ("dues: paid=100 total=150 trailing=0 -> 50", t_dues_partial_amount_is_total_minus_paid),
     ("dues: trailing wins + view sum/level", t_dues_trailing_field_wins),
     ("narration first-clause split on unicode/garbage", t_narration_first_clause_never_raises),
+    ("receipt head is one clean line", t_receipt_head_is_one_line),
     ("ledger sorted newest voucherdate first", t_ledger_sorted_newest_first),
     ("feature gate off -> no tab (view + env + template guard)", t_feature_gate_off_no_tab),
 ]
