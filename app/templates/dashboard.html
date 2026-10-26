@@ -596,7 +596,7 @@
           {% for r in y.rows %}
           <div class="grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline">
             <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ r.date }}</span>
-            <span class="self-stretch border-l border-base-300" aria-hidden="true"></span>
+            <span class="w-1 -my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
             <span class="text-sm min-w-0 break-words">{{ r.head }}</span>
             <span class="font-mono text-sm tabular-nums text-right">₹{{ r.amt }}</span>
           </div>
@@ -619,7 +619,7 @@
         <details class="collapse collapse-arrow fees-rcpt{% if not loop.first %} border-t border-base-300{% endif %}">
             <summary class="collapse-title grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline text-sm min-h-0 py-1.5">
               <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ e.date }}</span>
-              <span class="self-stretch border-l border-base-300" aria-hidden="true"></span>
+              <span class="w-1 -my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
               <span class="text-sm min-w-0 truncate">{{ e.head }}</span>
               <span class="font-mono text-sm font-semibold tabular-nums text-right">₹{{ e.amt }}</span>
             </summary>
