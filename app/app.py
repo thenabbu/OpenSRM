@@ -1993,8 +1993,11 @@ def _budget_rows(courses):
 # landing surface for the SCOPE rotation instead of a duplicate of it.
 TOOLS = [
     ("fees", "Fees", "Dues, payments and receipts", "getFeeDetails"),
-    ("academics", "Academics", "Results, revaluation, subject history",
-     "getStudentExamProvisionalResult"),
+    # gates on the RELEASED-results op: the provisional/revaluation endpoints
+    # are empty outside their window, so keying the entry on them left Academics
+    # hidden even with a full grade history (caught in review).
+    ("academics", "Academics", "Results, grades and credits",
+     "getExamDetails"),
     ("library", "Library", "Issued books, due dates, fines",
      "getLibraryTransaction"),
     ("campus", "Hostel & transport", "Room, mess and bus route",
