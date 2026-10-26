@@ -1,5 +1,6 @@
-"""Academics tab view model — released results, derived CGPA/SGPA, credit
-progress, subject completion grid (SCOPE ops read from users.scope_json).
+"""Academics tab view model — the CGPA hero (which owns the semester
+results), and one combined credits + subjects card (SCOPE ops read from
+users.scope_json).
 
 Reads the stored cold blob only: no network, no new columns, no new
 endpoints. Every section builds independently so the template can self-hide
@@ -9,13 +10,13 @@ every section is empty — the tab then has ZERO footprint (no navbar item,
 per the SCOPE toggle contract).
 
 CGPA honesty contract (mission): credit-weighted over RELEASED results,
-2 decimals with ROUND_HALF_UP (Python round() is banker's), labelled
-"CGPA (est.)" — the grade -> point scale is not officially published by
-SRM, so it is never rendered as an official figure.
+2 decimals with ROUND_HALF_UP (Python round() is banker's). The figure is
+labelled plainly "CGPA" — it is a calculation, not an estimate — and the
+grade -> point scale note lives in a code comment + the PR body, never in
+the UI.
 """
 import html
 import json
-import time
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -75,47 +76,6 @@ def _gpa(rows):
     return f"{val:.2f}", den
 
 
-def _sgpa_rows(rows):
-    """Per-semester SGPA: same math bucketed by monthyear, newest first."""
-    buckets = {}
-    for r in rows or []:
-        if isinstance(r, dict):
-            buckets.setdefault(str(r.get("monthyear") or "").strip() or "-", []).append(r)
-    out = []
-    for label, rs in buckets.items():
-        val, _credits = _gpa(rs)
-        if val:
-            out.append({"label": label, "value": val})
-    out.sort(key=lambda s: _monthkey(s["label"]), reverse=True)
-    return out
-
-
-def _results_view(rows):
-    """Released results grouped by monthyear (semester-grouped rows),
-    newest semester first. Rows: mono code, title-cased name, grade chip,
-    failed flag (F / non-Pass renders as error TEXT, never a colored chip)."""
-    groups, order = {}, []
-    for r in rows or []:
-        if not isinstance(r, dict):
-            continue
-        label = str(r.get("monthyear") or "").strip() or "-"
-        g = groups.get(label)
-        if g is None:
-            g = {"label": label,
-                 "semester": str(r.get("semester") or "").strip(),
-                 "rows": []}
-            groups[label] = g
-            order.append(g)
-        g["rows"].append({
-            "code": str(r.get("subjectcode") or "").strip(),
-            "title": _title_case(r.get("subjectdesc") or ""),
-            "grade": str(r.get("grade") or "").strip(),
-            "failed": str(r.get("result") or "").strip().lower() != "pass",
-        })
-    order.sort(key=lambda g: _monthkey(g["label"]), reverse=True)
-    return order
-
-
 def _envelope_rows(data):
     """{Status, Message, Data} wrapper -> generic rows. Alive-empty
     (Data "" / "No data found") -> [] so the subsection self-hides; a season
@@ -152,14 +112,70 @@ def _envelope_rows(data):
     return out
 
 
-def _credits_view(status_rows, sem_rows):
-    """8 category meters + overall + the latest-semester summary line.
+def _subject_row(code, name, grade):
+    """One line per subject: `CODE | NAME`, grade on the right.
 
-    Fill/labels are derived HERE (route-side, never in the template):
-    NEUTRAL progress fill always, success fill ONLY at >=100% complete —
-    deliberately no attendance-threshold semantics (DESIGN §2.6 stays on the
-    attendance tab; a completed credit category is a fact, not a health
-    state). Every number sits next to its bar, so the hue is never the cue.
+    `tint_f` = a fail (F, or any grade the portal released as non-Pass) gets
+    the approved faint red; `tint_o` = O gets the soft blue. Pending rows
+    carry grade "-" and no hue at all — the grade letter itself always renders,
+    so neither tint is ever the only cue.
+    """
+    g = str(grade or "").strip()
+    return {
+        "code": str(code or "").strip(),
+        "title": _title_case(name or ""),
+        "grade": g,
+        "completed": g in GRADE_POINTS,
+        "tint_o": g == "O",
+        "tint_f": g == "F",
+    }
+
+
+def _semesters_view(exam):
+    """Per-semester dropdown rows for the CGPA hero, newest first.
+
+    Each row: `Semester N` left, `DEC 2025` right, SGPA + released credits in
+    the summary line; expanded shows that semester's subject rows, then the
+    provisional / revaluation envelopes when their payload is non-empty.
+    The semester number comes from the portal; rows that carry none fall
+    back to their chronological rank (1 = oldest).
+    """
+    buckets, order = {}, []
+    for r in exam or []:
+        if not isinstance(r, dict):
+            continue
+        label = str(r.get("monthyear") or "").strip() or "-"
+        b = buckets.get(label)
+        if b is None:
+            b = buckets[label] = {"label": label, "rows": []}
+            order.append(b)
+        b["rows"].append(r)
+    order.sort(key=lambda b: _monthkey(b["label"]))       # oldest first
+    ranked = []
+    for i, b in enumerate(order, 1):
+        sid = max((_int(r.get("semester")) for r in b["rows"]
+                   if isinstance(r, dict)), default=0)
+        val, credits = _gpa(b["rows"])
+        ranked.append({
+            "sem": sid or i,
+            "label": b["label"],
+            "sgpa": val or "-",
+            "credits": credits,
+            "rows": [_subject_row(r.get("subjectcode"), r.get("subjectdesc"), r.get("grade"))
+                     for r in b["rows"]],
+            "provisional": [], "revaluation": [],
+        })
+    ranked.reverse()                                      # newest first
+    return ranked
+
+
+def _credits_view(status_rows):
+    """Per-category meters: `acq/req` + the §4.15 bar.
+
+    Fill is derived HERE (route-side, never in the template): neutral
+    progress always, success fill ONLY at >=100% complete — deliberately no
+    attendance-threshold semantics (DESIGN §2.6 stays on the attendance tab;
+    a completed credit category is a fact, not a health state).
     """
     cats = []
     for r in status_rows or []:
@@ -175,61 +191,50 @@ def _credits_view(status_rows, sem_rows):
         })
     if not cats:
         return None
-    by_sem = {}
-    for r in sem_rows or []:
-        if not isinstance(r, dict):
-            continue
-        sid = _int(r.get("semesterid"))
-        if sid <= 0:
-            continue
-        acc = by_sem.setdefault(sid, {"id": sid, "req": 0, "acq": 0})
-        acc["req"] += _int(r.get("requiredcredits"))
-        acc["acq"] += _int(r.get("acquiredcredits"))
-    # latest semester = the newest one that actually EARNED credits;
-    # course-status-sem also lists future semesters at 0/N, and reporting
-    # the newest-planned as "latest" would print a meaningless 0/15.
-    latest = None
-    if by_sem:
-        latest = max((s for s in by_sem.values() if s["acq"] > 0) or by_sem.values(),
-                     key=lambda s: s["id"])
     return {"cats": cats,
             "overall": {"req": sum(c["req"] for c in cats),
-                        "acq": sum(c["acq"] for c in cats)},
-            "latest": latest}
+                        "acq": sum(c["acq"] for c in cats)}}
 
 
-def _subjects_view(rows):
-    """63-row completion grid grouped by category (portal order preserved,
-    inside one internal scroll like the teachers list). Completed rows carry
-    grade + month (+ a quiet 'N attempts' note when attempts > 1); pending
-    rows keep the portal's dim '-' grade (grade '-' = not yet completed)."""
-    groups, idx = [], {}
-    done = total = 0
-    for r in rows or []:
+def _courses_view(status, subject_rows):
+    """ONE combined card: a dropdown per degree category, summary = the
+    category's `acq/req` credits + its §4.15 meter, expanded = that
+    category's subjects — pending FIRST, completed LAST (navya's ordering).
+
+    Categories and their credit figures come from course-status; subjects
+    are matched to a category by name (both ops key on subjectcategory).
+    """
+    if not status:
+        return None
+    by_cat = {}
+    for r in subject_rows or []:
         if not isinstance(r, dict):
             continue
-        total += 1
         cat = html.unescape(str(r.get("subjectcategory") or "")).strip() or "Other"
-        g = idx.get(cat)
-        if g is None:
-            g = {"name": cat, "rows": []}
-            idx[cat] = g
-            groups.append(g)
-        grade = str(r.get("grade") or "").strip()
-        completed = grade in GRADE_POINTS
-        done += completed
         month = str(r.get("completedmonthandyear") or "").strip()
-        attempts = _int(r.get("noofattempts"))
-        g["rows"].append({
-            "code": str(r.get("subjectcode") or "").strip(),
-            "title": _title_case(r.get("description") or ""),
-            "grade": grade, "completed": completed, "failed": completed and grade == "F",
-            "month": "" if month == "-" else month,
-            "attempts": attempts if attempts > 1 else 0,
-        })
-    if not groups:
+        row = _subject_row(r.get("subjectcode"), r.get("description"), r.get("grade"))
+        row["month"] = "" if month == "-" else month
+        row["attempts"] = _int(r.get("noofattempts")) if row["completed"] else 0
+        by_cat.setdefault(cat, []).append(row)
+    cats = []
+    for c in status["cats"]:
+        rows = by_cat.pop(c["name"], [])
+        pending = [r for r in rows if not r["completed"]]
+        done = [r for r in rows if r["completed"]]
+        cats.append({**c, "pending": pending, "completed": done,
+                     "n": len(rows), "n_pending": len(pending)})
+    for cat, rows in by_cat.items():        # subjects with no credit row
+        pending = [r for r in rows if not r["completed"]]
+        done = [r for r in rows if r["completed"]]
+        cats.append({"name": cat, "req": 0, "acq": 0, "pct": 0.0, "done": False,
+                     "fill": "width:0%", "pending": pending, "completed": done,
+                     "n": len(rows), "n_pending": len(pending)})
+    if not cats:
         return None
-    return {"groups": groups, "done": done, "total": total}
+    pending = sum(c["n_pending"] for c in cats)
+    total = sum(c["n"] for c in cats)
+    return {"cats": cats, "overall": status["overall"],
+            "pending": pending, "total": total}
 
 
 def academics_view(scope_row, features):
@@ -252,32 +257,27 @@ def academics_view(scope_row, features):
         return cell.get("data") if isinstance(cell, dict) else None
 
     exam = data("getExamDetails") or []
-    results = _results_view(exam)
     cgpa_val, cgpa_cr = _gpa(exam)
-    credits = _credits_view(data("getSubCategoryWiseStatus"),
-                            data("getSubCategorySemesterWiseStatus"))
+    credits = _credits_view(data("getSubCategoryWiseStatus"))
+    sems = _semesters_view(exam)
+    prov = _envelope_rows(data("getStudentExamProvisionalResult"))
+    reval = _envelope_rows(data("getStudentExamRevaluationResult"))
+    if sems and (prov or reval):
+        # season payloads carry the newest semester's monthyear most often;
+        # attach them there and let the template render them only when set.
+        sems[0]["provisional"], sems[0]["revaluation"] = prov, reval
+    combined = _courses_view(credits, data("getProgramSubCategoryWiseSubjects"))
     view = {
-        "results": results,
-        "n_results": sum(len(g["rows"]) for g in results),
         "cgpa": None,
-        "credits": credits,
-        "subjects": _subjects_view(data("getProgramSubCategoryWiseSubjects")),
-        "provisional": _envelope_rows(data("getStudentExamProvisionalResult")),
-        "revaluation": _envelope_rows(data("getStudentExamRevaluationResult")),
-        "fetched_at": _int(scope_row["scope_fetched_at"] if scope_row else 0),
-        "fetched_disp": "",
+        "courses": combined,
     }
     if cgpa_val:
-        # the hero's credit line comes from course-status (earned/required);
-        # with only exam-details on hand we say what was actually released.
-        disp = (f"{credits['overall']['acq']}/{credits['overall']['req']} credits earned"
-                if credits else f"{cgpa_cr} credits released")
-        view["cgpa"] = {"value": cgpa_val, "credits_disp": disp,
-                        "sems": _sgpa_rows(exam)}
-    if view["fetched_at"]:
-        view["fetched_disp"] = time.strftime("%d %b %Y %H:%M",
-                                             time.localtime(view["fetched_at"]))
-    if not any([view["results"], view["cgpa"], view["credits"], view["subjects"],
-                view["provisional"], view["revaluation"]]):
+        view["cgpa"] = {
+            "value": cgpa_val,
+            "credits_disp": (f"{credits['overall']['acq']}/{credits['overall']['req']} credits earned"
+                             if credits else f"{cgpa_cr} credits released"),
+            "sems": sems,
+        }
+    if not any([view["cgpa"], view["courses"]]):
         return None   # op keys present but all empty -> still no tab
     return view

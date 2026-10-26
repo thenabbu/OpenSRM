@@ -5,10 +5,11 @@ Checks (mission contract):
   - CGPA: hand-computed 5-subject case, ROUND_HALF_UP at the x.xx5 edge
     (Decimal beats banker's round()), F counts as 0, grade "-" skipped,
     non-released rows skipped, 0-credit rows can't weight.
-  - SGPA: same math bucketed by monthyear, newest first.
-  - parsers: exam-details fixtures -> semester buckets; program-subjects
-    pending vs completed split; credits view (8 categories, overall,
-    latest-earned semester, success fill ONLY at 100%).
+  - semesters: one dropdown row per monthyear (Semester N left / DEC 2025
+    right / SGPA + released credits in the summary), newest first.
+  - parsers: exam-details fixtures -> semester buckets; the combined
+    credits+subjects card (8 categories, overall, pending-FIRST /
+    completed-LAST ordering, success fill ONLY at 100%).
   - {Status,Data} wrapper: provisional empty -> section absent; synthetic
     non-empty -> present (shape-driven, no field hardcoding).
   - courses op: credit-total cross-check ONLY (never rendered, YAGNI).
@@ -42,16 +43,15 @@ os.environ.pop("SCOPE_FEATURES", None)  # the gate test owns its own env
 
 from app.views.academics import (  # noqa: E402
     GRADE_POINTS,
+    _courses_view,
     _credits_view,
     _envelope_rows,
     _gpa,
-    _results_view,
-    _sgpa_rows,
-    _subjects_view,
+    _semesters_view,
     academics_view,
 )
 
-FX = Path(__file__).parent / "fixtures" / "scope"
+FX = Path(__file__).resolve().parent.parent / "fixtures" / "scope"
 NETID = "zz9999"                       # fabricated — repo is public
 
 
@@ -103,78 +103,107 @@ def t_cgpa_fail_counts_and_dash_skipped():
     assert _gpa([]) == (None, 0)
 
 
-def t_sgpa_bucketed_newest_first():
+def t_semester_rows_newest_first():
     rows = [
-        {"grade": "O", "credit": "4", "result": "Pass", "monthyear": "DEC 2025"},
-        {"grade": "A", "credit": "4", "result": "Pass", "monthyear": "DEC 2025"},
-        {"grade": "A+", "credit": "4", "result": "Pass", "monthyear": "MAY 2026"},
+        {"grade": "O", "credit": "4", "result": "Pass", "monthyear": "DEC 2025", "semester": "1"},
+        {"grade": "A", "credit": "4", "result": "Pass", "monthyear": "DEC 2025", "semester": "1"},
+        {"grade": "A+", "credit": "4", "result": "Pass", "monthyear": "MAY 2026", "semester": "2"},
         {"grade": "B", "credit": "4", "result": "Pass", "monthyear": "JUNK"},
     ]
-    sems = _sgpa_rows(rows)
-    labels = [s["label"] for s in sems]
+    sems = _semesters_view(rows)
+    labels = [x["label"] for x in sems]
     assert labels[0] == "MAY 2026", labels      # newest first
-    assert "DEC 2025" in labels and "JUNK" in labels
     assert labels[-1] == "JUNK"                 # unparsable sorts oldest
-    by = {s["label"]: s["value"] for s in sems}
-    assert by["DEC 2025"] == "9.00" and by["MAY 2026"] == "9.00"
+    by = {x["label"]: x for x in sems}
+    assert by["DEC 2025"]["sgpa"] == "9.00" and by["DEC 2025"]["credits"] == 8
+    assert by["MAY 2026"]["sgpa"] == "9.00" and by["MAY 2026"]["credits"] == 4
+    assert by["DEC 2025"]["sem"] == 1 and by["MAY 2026"]["sem"] == 2
+    assert len(by["DEC 2025"]["rows"]) == 2
+    # a label that is not a real month is NOT a semester: the portal rows
+    # carry the semester id, so the junk bucket keeps its neighbour's id
+    assert by["JUNK"]["sem"] == 1, by["JUNK"]["sem"]
+    assert _semesters_view([]) == []
 
 
 # ── parsers over the real fixtures ───────────────────────────────────
-def t_results_fixtures_semester_buckets():
-    groups = _results_view(fx("exam-details"))
-    assert [g["label"] for g in groups] == ["MAY 2026", "DEC 2025"]
-    assert [g["semester"] for g in groups] == ["2", "1"]
-    assert [len(g["rows"]) for g in groups] == [7, 9]
-    first = groups[0]["rows"][0]
+def t_semester_rows_fixtures():
+    sems = _semesters_view(fx("exam-details"))
+    assert [x["label"] for x in sems] == ["MAY 2026", "DEC 2025"]
+    assert [x["sem"] for x in sems] == [2, 1]
+    assert [len(x["rows"]) for x in sems] == [7, 9]
+    first = sems[0]["rows"][0]
     assert first["code"] and first["title"] and not first["title"].isupper(), first
-    assert all(r["grade"] and not r["failed"] for g in groups for r in g["rows"])
-    assert all(r["code"] for g in groups for r in g["rows"])
+    assert all(r["grade"] and r["completed"] for x in sems for r in x["rows"])
+    assert all(r["code"] for x in sems for r in x["rows"])
 
 
-def t_subjects_pending_completed_split():
-    view = _subjects_view(fx("program-subjects"))
-    assert view["total"] == 63 and view["done"] == 11, view
-    assert len(view["groups"]) == 8
-    rows = [r for g in view["groups"] for r in g["rows"]]
-    pending = [r for r in rows if not r["completed"]]
-    done = [r for r in rows if r["completed"]]
-    assert len(pending) == 52 and len(done) == 11
-    assert all(r["grade"] == "-" and not r["month"] and not r["attempts"] for r in pending)
-    assert all(r["grade"] in GRADE_POINTS and r["month"] not in ("", "-") for r in done)
-    assert all(r["attempts"] == 0 for r in rows), "attempts>1 is the only quiet note"
-    # a retake renders the quiet note
-    retake = _subjects_view([{"subjectcategory": "Basic Science Courses (B)",
-                              "description": "CHEMISTRY", "subjectcode": "21CYB101J",
-                              "grade": "C", "credit": "5", "noofattempts": "2",
-                              "completedmonthandyear": "DEC-2025"}])
-    assert retake["groups"][0]["rows"][0]["attempts"] == 2
+def t_subject_row_shape():
+    """`CODE | NAME` one-liners: the grade letter is the cue (O = soft blue,
+    a fail = faint red), so neither tint is ever the only signal."""
+    from app.views.academics import _subject_row
+    o = _subject_row("21CSC201J", "DATA STRUCTURES", "O")
+    assert (o["code"], o["title"], o["completed"]) == ("21CSC201J", "Data Structures", True)
+    assert o["tint_o"] is True and o["tint_f"] is False
+    f = _subject_row("21MAB101T", "CALCULUS", "F")
+    assert f["tint_f"] is True and f["tint_o"] is False and f["completed"] is True
+    a = _subject_row("21CSC202J", "OPERATING SYSTEMS", "A+")
+    assert a["tint_o"] is False and a["tint_f"] is False
+    p = _subject_row("21BTB101T", "APPLIED BIOLOGY", "-")
+    assert p["completed"] is False and p["tint_o"] is False and p["tint_f"] is False
+
+
+def t_courses_combined_pending_first():
+    """ONE combined card: per-category dropdowns whose subjects are PENDING
+    on top and completed at the bottom (navya's ordering)."""
+    status = _credits_view(fx("course-status"))
+    v = _courses_view(status, fx("program-subjects"))
+    assert len(v["cats"]) == 8
+    assert v["overall"] == {"req": 163, "acq": 43}, v["overall"]
+    assert v["total"] == 63 and v["pending"] == 52, (v["total"], v["pending"])
+    for c in v["cats"]:
+        assert not any(r["completed"] for r in c["pending"]), c["name"]
+        assert all(r["completed"] for r in c["completed"]), c["name"]
+        assert c["n"] == len(c["pending"]) + len(c["completed"])
+    basic = next(c for c in v["cats"] if c["name"].startswith("Basic Science"))
+    assert basic["pending"] and basic["completed"], basic["name"]
+    # a completed subject carries its month; pending rows stay bare
+    assert all(r["month"] for r in basic["completed"])
+    assert all(not r["month"] for r in basic["pending"])
+    # the retake note survives the merge
+    retake = _courses_view(
+        {"cats": [{"name": "Basic Science Courses (B)", "req": 5, "acq": 5, "pct": 100.0,
+                   "done": True, "fill": "width:100.0%;background:var(--color-success)"}],
+         "overall": {"req": 5, "acq": 5}},
+        [{"subjectcategory": "Basic Science Courses (B)", "description": "CHEMISTRY",
+          "subjectcode": "21CYB101J", "grade": "C", "credit": "5", "noofattempts": "2",
+          "completedmonthandyear": "DEC-2025"}])
+    assert retake["cats"][0]["completed"][0]["attempts"] == 2
+    assert retake["cats"][0]["pending"] == []
+    assert _courses_view(None, fx("program-subjects")) is None
 
 
 def t_credits_view():
-    v = _credits_view(fx("course-status"), fx("course-status-sem"))
+    v = _credits_view(fx("course-status"))
     assert len(v["cats"]) == 8
     assert v["overall"] == {"req": 163, "acq": 43}, v["overall"]
     # HTML entity in the portal payload is unescaped for display
     names = [c["name"] for c in v["cats"]]
     assert any(n.startswith("Humanities & Social") for n in names), names
     assert not any("&amp;" in n for n in names)
-    # neutral fill everywhere except a 100% category
+    # neutral fill everywhere; width derived route-side
     assert all("background" not in c["fill"] for c in v["cats"]), v["cats"]
     assert all(c["fill"].startswith("width:") for c in v["cats"])
-    # latest semester = newest one that actually EARNED credits (sem 2),
-    # never the newest-planned 0/N row (sem 8 would print a dead 0/15)
-    assert v["latest"] == {"id": 2, "req": 21, "acq": 21}, v["latest"]
     # synthetic: a finished category takes the success fill, 100% width
     done = _credits_view([{"subjectcategory": "Non Credit Courses (M)",
-                           "requiredcredits": "3", "acquiredcredits": "3"}], [])
+                           "requiredcredits": "3", "acquiredcredits": "3"}])
     c = done["cats"][0]
     assert c["done"] is True and c["pct"] == 100.0
     assert c["fill"] == "width:100.0%;background:var(--color-success)", c["fill"]
     # acquired > required clamps at 100, never a >100% bar
     over = _credits_view([{"subjectcategory": "X (X)", "requiredcredits": "3",
-                           "acquiredcredits": "5"}], [])
+                           "acquiredcredits": "5"}])
     assert over["cats"][0]["pct"] == 100.0
-    assert _credits_view([], []) is None
+    assert _credits_view([]) is None
 
 
 def t_envelope_empty_and_synthetic():
@@ -194,6 +223,13 @@ def t_envelope_empty_and_synthetic():
     assert r["code"] == "21CSC201J" and r["grade"] == "A+"
     assert r["title"] == "Data Structures", r["title"]
     assert ("result", "Pass") in r["meta"] and ("monthyear", "APR 2026") in r["meta"]
+    # a non-empty envelope attaches to the newest semester row, not a card
+    blob = json.loads(_full_row()["scope_json"])
+    blob["getStudentExamProvisionalResult"]["data"] = {"Status": "Success", "Data": [
+        {"subjectcode": "21CSC201J", "subjectdesc": "DATA STRUCTURES", "grade": "A+"}]}
+    v = academics_view({"scope_json": json.dumps(blob), "scope_fetched_at": 1}, {"academics"})
+    assert v["cgpa"]["sems"][0]["provisional"], v["cgpa"]["sems"][0]
+    assert v["cgpa"]["sems"][1]["provisional"] == []
 
 
 def t_courses_credit_crosscheck():
@@ -245,13 +281,15 @@ def t_feature_gate_off_or_no_data():
              "scope_fetched_at": 0}
     assert academics_view(empty, {"academics"}) is None
     assert academics_view(None, {"academics"}) is None
-    # enabled + data -> all four sections, CGPA honestly labelled upstream
+    # enabled + data -> exactly the hero (with its semester rows) + the
+    # combined card; nothing else
     v = academics_view(row, {"academics", "fees"})
-    assert v["results"] and v["cgpa"] and v["credits"] and v["subjects"]
-    assert v["n_results"] == 16
-    assert v["provisional"] == [] and v["revaluation"] == []
+    assert set(v) == {"cgpa", "courses"}, sorted(v)
     assert v["cgpa"]["credits_disp"] == "43/163 credits earned"
     assert [s["label"] for s in v["cgpa"]["sems"]] == ["MAY 2026", "DEC 2025"]
+    assert sum(len(s["rows"]) for s in v["cgpa"]["sems"]) == 16
+    assert v["cgpa"]["sems"][0]["provisional"] == []
+    assert v["courses"]["total"] == 63 and v["courses"]["pending"] == 52
 
 
 def t_rendered_tab_registers_and_gates():
@@ -277,12 +315,23 @@ def t_rendered_tab_registers_and_gates():
     assert 'id="tab-academics-tab"' in html, "tab button missing with feature on"
     assert 'id="tab-academics"' in html, "tabpanel missing with feature on"
     assert 'data-tab="academics"' in html
-    for needle in ("CGPA (est.)", "43/163 credits earned", "Results", "Credits",
-                   "Subjects", "MAY 2026", "Provisional", "Revaluation"):
-        if needle in ("Provisional", "Revaluation"):
-            assert needle not in html, f"{needle} must stay hidden while empty"
-        else:
-            assert needle in html, f"{needle} missing from the rendered tab"
+    for needle in ("CGPA", "43/163 credits earned", "Credits &amp; subjects",
+                   "Semester", "DEC 2025", "MAY 2026", "SGPA", "52 of 63 subjects pending"):
+        assert needle in html, f"{needle} missing from the rendered tab"
+    # the reorganisation removed these: no estimated label, no pass pill, no
+    # standalone Results/Credits/Subjects cards, no relative-time caption
+    tab = html[html.index('id="tab-academics"'):html.index("</main>")]
+    for gone in ("(est.)", "est. = scale not officially published", ">Pass<",
+                 ">Results<", ">Credits<", ">Subjects<", "sync-line"):
+        assert gone not in tab, f"{gone} must be gone from the academics tab"
+    # one line per subject: `CODE | NAME`, never a stacked name-over-code row
+    assert tab.count('aria-hidden="true">|</span>') >= 2
+    assert 'class="block mt-0.5 font-mono' not in tab
+    for needle in ("Provisional", "Revaluation"):
+        assert needle not in html, f"{needle} must stay hidden while empty"
+    # every semester row is a dropdown: N semesters -> N <details> in the hero
+    assert html.count('class="acad-sem') == 2, html.count('class="acad-sem')
+    assert html.count('class="acad-cat') == 8, html.count('class="acad-cat')
 
     # disabled -> no tab registration at all (view context AND markup)
     os.environ["SCOPE_FEATURES"] = "hourwise,fees"
@@ -300,10 +349,11 @@ TESTS = [
     ("CGPA hand-computed 5-subject case", t_cgpa_hand_computed),
     ("CGPA ROUND_HALF_UP at the x.xx5 edge", t_cgpa_half_up_rounding),
     ("CGPA F=0 / '-' skipped / unreleased skipped", t_cgpa_fail_counts_and_dash_skipped),
-    ("SGPA bucketed by monthyear, newest first", t_sgpa_bucketed_newest_first),
-    ("exam-details fixtures -> semester buckets", t_results_fixtures_semester_buckets),
-    ("program-subjects pending vs completed split", t_subjects_pending_completed_split),
-    ("credits: 8 categories + latest-earned semester", t_credits_view),
+    ("semester dropdown rows, newest first", t_semester_rows_newest_first),
+    ("exam-details fixtures -> semester rows", t_semester_rows_fixtures),
+    ("subject row: O tinted, fail tinted, '-' pending", t_subject_row_shape),
+    ("combined credits+subjects: pending first, done last", t_courses_combined_pending_first),
+    ("credits: 8 categories + success fill only at 100%", t_credits_view),
     ("{Status,Data}: empty hidden, synthetic present", t_envelope_empty_and_synthetic),
     ("courses credit-total cross-check", t_courses_credit_crosscheck),
     ("feature gate: off / no data -> no view", t_feature_gate_off_or_no_data),

@@ -49,7 +49,7 @@ from app.scope import ops as OPS                # noqa: E402
 from app.scope import sync as SYNC              # noqa: E402
 from app import app as A                        # noqa: E402,F401  # boots create_app: DATA_DIR DB + full migration chain (m018)
 
-FIXTURE = Path(__file__).parent / "fixtures" / "scope_flow18_envelope.txt"
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "scope_flow18_envelope.txt"
 DBFILE = os.path.join(_td, "srm.db")
 NETID = "zz9999"                                # fabricated — repo is public
 OLD_SID = "A" * 96
