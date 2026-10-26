@@ -188,12 +188,13 @@ with sync_playwright() as p:
           f"left={ind['on']['left']} right={ind['on']['right']}")
     # marks is the only panel taller than the viewport; its scrollbar appearing
     # used to narrow the layout viewport and slide the whole navbar (DESIGN
-    # §10.14). Headless uses overlay scrollbars so it cannot show the shift
-    # itself — assert the gutter reservation that prevents it plus one navW
-    # value across a marks round-trip (headed classic-scrollbar run: navW was
-    # 1280/1265/1280 before the reservation, 1265 on all three after).
+    # §10.14). v1.32.0 replaced the reserved gutter (a dead 15px strip on every
+    # page, phones included) with a self-hiding OVERLAY bar drawn over the
+    # content, and pinned the navbars to the viewport edges — so the bar can
+    # neither take layout width nor sit above the navbar, and one navW value
+    # must hold across a marks round-trip.
     cycle = page.evaluate("""async () => {
-      const navW = () => +[...document.querySelectorAll('.navbar')].filter(n => n.offsetParent !== null)[0].getBoundingClientRect().width.toFixed(1);
+      const navW = () => +[...document.querySelectorAll('.navbar')].filter(n => getComputedStyle(n).display !== 'none')[0].getBoundingClientRect().width.toFixed(1);
       const out = {gutter: getComputedStyle(document.documentElement).scrollbarGutter, widths: []};
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       for (const tab of ['dashboard', 'marks', 'dashboard']) {
@@ -203,8 +204,8 @@ with sync_playwright() as p:
       }
       return out;
     }""")
-    check('desktop: gutter reserved + navbar width identical across a marks round-trip',
-          cycle['gutter'] == 'stable' and len(set(cycle['widths'])) == 1,
+    check('desktop: no reserved gutter + navbar width identical across a marks round-trip',
+          cycle['gutter'] == 'auto' and len(set(cycle['widths'])) == 1,
           json.dumps(cycle))
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
     # DESIGN.md §5: uniform 15px edge — main and navbar share .edge-x, whose

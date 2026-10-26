@@ -1823,6 +1823,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v1.32.0", "date": "26 Oct", "title": "A cleaner edge",
+     "body": "The empty strip along the right side is gone, and the scrollbar "
+             "is now a thin bar that only appears while you are using it — it "
+             "floats over the page instead of pushing it around. The top bar "
+             "runs edge to edge and stays put while you scroll."},
     {"ver": "v1.31.1", "date": "26 Oct", "title": "The page stays put",
      "body": "A refresh used to nudge the cards in from the left edge and "
              "down from the menu after every sync. They now stay exactly "

@@ -106,7 +106,7 @@ floats inside the diagram area.
 3. Vision review at **1920 and 890px** — SHIP verdict, no label/arrow
    complaints; 890 is the README display width, check it explicitly.
 4. `test_audit_findings.py` still 72/72 (it pins README doc claims —
-   e.g. `opensrm-v39` must stay exactly once, in the PWA bullet).
+   e.g. `opensrm-v40` must stay exactly once, in the PWA bullet).
 5. Commit `architecture.html` + `architecture.png` + generator changes
    together; if README copy changed, refresh
    `docs/screenshots/readme/after-branch-readme-render.png` evidence.

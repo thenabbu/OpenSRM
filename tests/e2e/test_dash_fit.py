@@ -114,18 +114,20 @@ try:
         }""")
         check("no page scrollbar on desktop (scrollHeight <= clientHeight)",
               m["docSH"] <= m["docCH"], json.dumps(m))
-        # pins the 94px CSS constant: grid must equal innerH - navH - pads
-        expected = m["innerH"] - m["navH"] - m["padT"] - m["padB"]
-        check("grid height == innerH - navH - padTop - padBottom (94px chrome)",
+        # pins the 79px CSS constant. The navbar is FIXED (out of flow) since
+        # v1.32.0, so its 64px lives in main's padding-top (padT=79 includes it):
+        # grid must equal innerH - padTop - padBottom.
+        expected = m["innerH"] - m["padT"] - m["padB"]
+        check("grid height == innerH - padTop - padBottom (79px: fixed nav + edges)",
               abs(m["gridH"] - expected) <= 2,
               f"gridH={m['gridH']} expected={expected} navH={m['navH']} "
               f"padT={m['padT']} padB={m['padB']}")
         check("grid bottom leaves exactly the main bottom padding",
               abs((m["innerH"] - m["gridBottom"]) - m["padB"]) <= 2,
               f"bottom gap={m['innerH'] - m['gridBottom']} padB={m['padB']}")
-        check("grid starts below navbar + top padding",
-              abs(m["gridTop"] - (m["navH"] + m["padT"])) <= 2,
-              f"gridTop={m['gridTop']} navH+padT={m['navH'] + m['padT']}")
+        check("grid starts below the fixed navbar (= padTop)",
+              abs(m["gridTop"] - m["padT"]) <= 2,
+              f"gridTop={m['gridTop']} padT={m['padT']}")
         day = next((c for c in m["cards"] if c["span4"]), None)
         people = max((c for c in m["cards"] if not c["span4"]),
                      key=lambda c: c["h"], default=None)
@@ -148,22 +150,67 @@ try:
               nw is not None and nw["ch"] <= 320 and nw["sh"] >= nw["ch"],
               str(nw))
 
-        # ---- uniform edge (v1.20): the shell compensates the reserved
-        # scrollbar strip so BOTH card-column edges land on 15px (red on the
-        # pre-fix layout: left 16 / right 31 measured at 1920x1039) ----
+        # ---- uniform edge (v1.21): no reserved scrollbar strip any more, so
+        # the frame is a literal 15px on BOTH sides AND the navbar runs to the
+        # viewport edges (pre-fix: cards 15/0 and the navbar 0/15 — the right
+        # edge was pushed in by the reserved strip). ----
         edge = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');
           const r = g.getBoundingClientRect();
           const main = document.querySelector('main');
-          const nav = document.querySelector('.navbar.hidden');
+          const nav = [...document.querySelectorAll('.navbar')]
+            .find(n => getComputedStyle(n).display !== 'none');
+          const nr = nav.getBoundingClientRect();
           return {left: Math.round(r.x), right: Math.round(window.innerWidth - r.right),
                   gap: getComputedStyle(g).gap,
                   padL: parseFloat(getComputedStyle(main).paddingLeft),
-                  navPadL: parseFloat(getComputedStyle(nav).paddingLeft)}; }""")
+                  navPadL: parseFloat(getComputedStyle(nav).paddingLeft),
+                  navL: Math.round(nr.x), navR: Math.round(window.innerWidth - nr.right),
+                  gutter: getComputedStyle(document.documentElement).scrollbarGutter}; }""")
         check("desktop: card column 15px on BOTH sides, gap 15, navbar aligned",
               edge["left"] == edge["right"] == 15 and edge["gap"] == "15px"
               and edge["padL"] == edge["navPadL"] == edge["left"],
               json.dumps(edge))
+        check("desktop: navbar reaches both viewport edges (no reserved strip)",
+              edge["navL"] == 0 and edge["navR"] == 0 and edge["gutter"] == "auto",
+              json.dumps(edge))
+
+        # ---- overlay scrollbar (v1.32.0): no reserved strip, no layout width
+        # spent on it, and the navbar is pinned ABOVE the content while the page
+        # scrolls. Red pre-fix: gutter "stable" (15px dead strip) and a sticky
+        # navbar that scrolled with the page.
+        sc = pg.evaluate("""() => {
+          const de = document.documentElement;
+          const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
+          return {gutter: getComputedStyle(de).scrollbarGutter, width: getComputedStyle(de).scrollbarWidth,
+                  navPos: getComputedStyle(nav).position, navZ: getComputedStyle(nav).zIndex}; }""")
+        check("desktop: scrollbar is an overlay (no gutter, no reserved width)",
+              sc["gutter"] == "auto" and sc["width"] == "auto", json.dumps(sc))
+        pg.set_viewport_size({"width": 1280, "height": 520})
+        pg.evaluate("() => [...document.querySelectorAll('[data-tab=attendance]')]"
+                    ".filter(e => e.getBoundingClientRect().height > 0).pop().click()")
+        pg.wait_for_timeout(300)
+        pg.evaluate("() => window.scrollTo(0, 250)")
+        pg.wait_for_timeout(120)   # the scroll event fires after the call returns
+        slip = pg.evaluate("""() => {
+          const de = document.documentElement;
+          const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
+          const nr = nav.getBoundingClientRect();
+          const top = document.elementFromPoint(innerWidth / 2, nr.height / 2);
+          return {y: window.scrollY, sh: de.scrollHeight, ch: de.clientHeight,
+                  navTop: Math.round(nr.top), navCovers: nav.contains(top) || top === nav,
+                  scrolling: de.classList.contains('is-scrolling')}; }""")
+        check("desktop: navbar stays fixed over the scrolling page, bar shows on use",
+              slip["y"] > 0 and slip["sh"] > slip["ch"] and slip["navTop"] == 0
+              and slip["navCovers"] and slip["scrolling"], json.dumps(slip))
+        pg.wait_for_timeout(1500)
+        check("desktop: scroll indicator retracts when idle",
+              not pg.evaluate("() => document.documentElement.classList.contains('is-scrolling')"))
+        pg.evaluate("() => window.scrollTo(0, 0)")
+        pg.evaluate("() => [...document.querySelectorAll('[data-tab=dashboard]')]"
+                    ".filter(e => e.getBoundingClientRect().height > 0).pop().click()")
+        pg.set_viewport_size({"width": 1280, "height": 900})
+        pg.wait_for_timeout(300)
 
         # ---- widgets auto-adjust to the cell (v1.20): the two squeeze
         # viewports where the old fixed-height widgets made cards scroll while
@@ -249,6 +296,16 @@ try:
                   innerH: window.innerHeight}; }""")
         check("mobile keeps page flow (scrollHeight > clientHeight)",
               mm["docSH"] > mm["docCH"], json.dumps(mm))
+        # v1.32.0 made both navbars fixed: main must clear it on the phone too,
+        # or the bar eats the first 64px of every panel's controls (it covered
+        # the Attendance view toggle — test_att_dut's first click timed out).
+        gap = pg2.evaluate("""() => {
+          const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
+          const first = document.querySelector('#tab-dashboard > .grid > .card').getBoundingClientRect();
+          return {navBottom: Math.round(nav.getBoundingClientRect().bottom),
+                  cardTop: Math.round(first.top)}; }""")
+        check("mobile: content clears the fixed navbar (no overlap)",
+              gap["cardTop"] - gap["navBottom"] >= 8, json.dumps(gap))
         check("mobile grid not viewport-locked (natural stacked height)",
               mm["gridH"] > mm["innerH"], f"gridH={mm['gridH']}")
         check("mobile no horizontal overflow",
