@@ -593,9 +593,11 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
           {% for s in academics.cgpa.sems %}
           <details class="acad-sem{% if s.provisional or s.revaluation %} acad-sem-x{% endif %}">
             <summary class="flex items-center justify-between gap-2 min-h-11 py-2 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
+              {# Summary keeps the semester on the left and the released month-year on
+                 the right only; SGPA lives in the expanded body with the credits and
+                 subject rows (review: the summary is a header, not a stat row). #}
               <span class="flex items-baseline gap-2 min-w-0">
                 <span class="text-sm font-medium">Semester <span class="font-mono tabular-nums">{{ s.sem }}</span></span>
-                <span class="font-mono text-xs text-base-content/50 tabular-nums">SGPA {{ s.sgpa }}</span>
               </span>
               <span class="flex items-baseline gap-2 shrink-0">
                 <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ s.credits }} cr</span>
@@ -603,6 +605,11 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
                 <svg class="acad-chev w-4 h-4 text-base-content/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </span>
             </summary>
+            {# expanded body: SGPA + released credits, then the subject rows #}
+            <div class="flex items-baseline gap-3 pb-2 pt-1 text-xs">
+              <span class="font-mono text-base-content/60 tabular-nums">SGPA {{ s.sgpa }}</span>
+              <span class="font-mono text-base-content/60 tabular-nums">{{ s.credits }} credits</span>
+            </div>
             <ul class="pb-2 flex flex-col">
               {% for r in s.rows %}
               <li class="acad-srow flex items-baseline gap-2 py-1.5 text-sm">
