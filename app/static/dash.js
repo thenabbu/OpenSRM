@@ -104,6 +104,47 @@ function softRefresh() {
         el.dataset.full = src.dataset.full;
       });
       renderSyncLines();
+      // Swap <main>'s markup for the freshly rendered one. idiomorph left the
+      // dashboard panel offset by one extra edge after a sync (card x / top
+      // gutter 15px -> 30px on a real device, persisted across tab switches);
+      // a plain markup swap lands the panel AND the shells on the template's
+      // classes with nothing restored. What the morph callbacks used to protect
+      // is kept by hand: [data-morph="ignore"] subtrees stay the LIVE nodes,
+      // open <details>, the visible panel and the attendance view choice ride
+      // along, and the tab is re-shown after the swap.
+      (function () {
+        var mainEl = document.querySelector('main');
+        var keepTab = (mainEl.querySelector('[data-tabpanel]:not([style*="none"])') || {}).id;
+        var live = {};
+        mainEl.querySelectorAll('[data-morph="ignore"]').forEach(function (el) {
+          if (el.id) live[el.id] = el;
+        });
+        // live open panels stay the LIVE nodes: the tag form's submit listener
+        // and the user's focus ride on them (the old morph kept the node too)
+        var openDets = Array.prototype.slice.call(mainEl.querySelectorAll('details[open]'));
+        var attTable = !!(mainEl.querySelector('#att-table') && !mainEl.querySelector('#att-table').hidden);
+        while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
+        mainEl.append.apply(mainEl, Array.prototype.slice.call(doc.querySelector('main').childNodes));
+        Object.keys(live).forEach(function (id) {
+          var fresh = document.getElementById(id);
+          if (fresh && fresh !== live[id]) fresh.parentNode.replaceChild(live[id], fresh);
+        });
+        openDets.forEach(function (old) {
+          var fresh = old.id ? document.getElementById(old.id) : null;
+          if (!fresh || fresh === old) return;
+          var keepHost = fresh.parentNode;
+          keepHost.replaceChild(old, fresh);
+          old.open = true;
+        });
+        if (attTable) {
+          var g = mainEl.querySelector('#att-graph'), t = mainEl.querySelector('#att-table');
+          if (g && t) { g.hidden = true; t.hidden = false; }
+        }
+        var keep = keepTab && mainEl.querySelector('#' + keepTab);
+        if (keep) mainEl.querySelectorAll('[data-tabpanel]').forEach(function (p) {
+          p.style.display = (p === keep ? '' : 'none');
+        });
+      })();
       setupCopyTargets(document.querySelector('main'));
     })
     .catch(function (err) { console.error('softRefresh fetch failed:', err); location.reload(); });   // safety net only
