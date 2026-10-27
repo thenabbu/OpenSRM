@@ -1,0 +1,42 @@
+[
+  {
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "32",
+    "acquiredcredits": "20"
+  },
+  {
+    "subjectcategory": "Engineering Science Courses (S)",
+    "requiredcredits": "21",
+    "acquiredcredits": "12"
+  },
+  {
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "requiredcredits": "13",
+    "acquiredcredits": "8"
+  },
+  {
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "subjectcategory": "Open Elective Courses (O)",
+    "requiredcredits": "9",
+    "acquiredcredits": "0"
+  },
+  {
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "42",
+    "acquiredcredits": "3"
+  },
+  {
+    "subjectcategory": "Professional Elective Courses (E)",
+    "requiredcredits": "24",
+    "acquiredcredits": "0"
+  },
+  {
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "requiredcredits": "19",
+    "acquiredcredits": "0"
+  }
+]

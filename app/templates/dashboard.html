@@ -63,6 +63,19 @@
 /* Faint recent-update ring: a marks chip whose portal "Entered on" is today
    (grayscale lift — hue stays reserved for the alert states, DESIGN §2.7) */
 .mark-recent{box-shadow:0 0 0 1px color-mix(in oklab, var(--color-base-content) 35%, transparent)}
+/* Academics grade tints — measured against the card's base-200 surface.
+   A fail is the DESIGN-approved faint red (the §4.15 fill value, NOT the
+   full-saturation --color-error, which pulls the eye); O is the info hue at
+   the same faint level, as a wash behind the letter. The grade letter itself
+   always renders, so neither hue is ever the only cue. Measured ratios live
+   in the PR body table. */
+.acad-g{display:inline-block;min-width:2.75rem;padding:0 0.375rem;border-radius:0.25rem;text-align:center}
+.acad-g-f{background:oklch(58% 0.115 25 / 0.22);color:oklch(88% 0.06 25)}
+.acad-g-o{background:oklch(58% 0.158 241.966 / 0.24);color:oklch(88% 0.075 242)}
+/* Accordion chevron: rotate on open (transform only, §7). */
+.acad-chev{transition:transform .2s var(--ease-out, ease)}
+details[open]>summary .acad-chev{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.acad-chev{transition:none}}
 </style>
 </head><body class="bg-base-100 text-base-content">
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->
@@ -83,6 +96,10 @@
               aria-controls="tab-timetable" aria-selected="false" tabindex="-1">Timetable</button>
       <button role="tab" id="tab-marks-tab" class="btn btn-ghost btn-sm" data-tab="marks"
               aria-controls="tab-marks" aria-selected="false" tabindex="-1">Marks</button>
+      {% if academics %}
+      <button role="tab" id="tab-academics-tab" class="btn btn-ghost btn-sm" data-tab="academics"
+              aria-controls="tab-academics" aria-selected="false" tabindex="-1">Academics</button>
+      {% endif %}
       {% if fees %}
       <button role="tab" id="tab-fees-tab" class="btn btn-ghost btn-sm" data-tab="fees"
               aria-controls="tab-fees" aria-selected="false" tabindex="-1">Fees</button>
@@ -156,6 +173,11 @@
     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
     <span class="dock-label">Marks</span>
   </button>
+  {% if academics %}
+  <button data-tab="academics" aria-label="Academics tab">
+    <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.905 59.905 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5"/></svg>
+    <span class="dock-label">Academics</span>
+  {% endif %}
   {% if fees %}
   <button data-tab="fees" aria-label="Fees tab">
     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -651,6 +673,148 @@
     </div>
     {% endif %}
   </div>
+  <!-- Academics tab (SCOPE, feature-gated above): TWO sections on one scroll.
+       The CGPA hero is the tab's one loud object and OWNS the released results
+       (one dropdown per semester); the combined Credits & Subjects card is
+       quiet below it. Panels are <details> — no JS, no id churn, keyboard- and
+       screen-reader-native accordions. -->
+  {% if academics %}
+  <div id="tab-academics" role="tabpanel" aria-labelledby="tab-academics-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
+    <div class="flex flex-col gap-3">
+      {% if academics.cgpa %}
+      <!-- 1. Hero: CGPA + earned credits, then one dropdown per semester.
+           Label is plainly "CGPA" — it is a calculation, not an estimate. -->
+      <div class="bg-base-200 border border-base-300 rounded-box p-5">
+        <h3 class="text-sm font-semibold">CGPA</h3>
+        <div class="mt-1 font-mono font-bold text-[22px] leading-none tabular-nums">{{ academics.cgpa.value }}</div>
+        <div class="mt-2 font-mono text-sm text-base-content/60 tabular-nums">{{ academics.cgpa.credits_disp }}</div>
+
+        {% if academics.cgpa.sems %}
+        <div class="mt-4 pt-3 border-t border-base-300 flex flex-col">
+          {% for s in academics.cgpa.sems %}
+          <details class="acad-sem{% if s.provisional or s.revaluation %} acad-sem-x{% endif %}">
+            <summary class="flex items-center justify-between gap-2 min-h-11 py-2 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
+              {# Summary keeps the semester on the left and the released month-year on
+                 the right only; SGPA lives in the expanded body with the credits and
+                 subject rows (review: the summary is a header, not a stat row). #}
+              <span class="flex items-baseline gap-2 min-w-0">
+                <span class="text-sm font-medium">Semester <span class="font-mono tabular-nums">{{ s.sem }}</span></span>
+              </span>
+              <span class="flex items-baseline gap-2 shrink-0">
+                <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ s.credits }} cr</span>
+                <span class="font-mono text-xs text-base-content/60 tabular-nums uppercase">{% if s.label and s.label != '-' %}{{ s.label }}{% endif %}</span>
+                <svg class="acad-chev w-4 h-4 text-base-content/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </summary>
+            {# expanded body: SGPA + released credits, then the subject rows #}
+            <div class="flex items-baseline gap-3 pb-2 pt-1 text-xs">
+              <span class="font-mono text-base-content/60 tabular-nums">SGPA {{ s.sgpa }}</span>
+              <span class="font-mono text-base-content/60 tabular-nums">{{ s.credits }} credits</span>
+            </div>
+            <ul class="pb-2 flex flex-col">
+              {% for r in s.rows %}
+              <li class="acad-srow flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span>{{ r.title }}</span>
+                </span>
+                <span class="shrink-0 font-mono text-sm tabular-nums{% if r.tint_o or r.tint_f %}acad-g {% endif %}{% if r.tint_o %}acad-g-o{% endif %}{% if r.tint_f %}acad-g-f{% endif %}{% if not r.completed %} text-base-content/50{% endif %}">{{ r.grade if r.grade else '-' }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            {% if s.provisional %}
+            <div class="pb-2 pl-0 text-xs">
+              <div class="text-base-content/60 font-medium mb-1">Provisional</div>
+              {% for r in s.provisional %}
+              <div class="flex items-baseline gap-2 py-1">
+                <span class="min-w-0 flex-1 break-words">{% if r.code %}<span class="font-mono text-base-content/60">{{ r.code }}</span> <span class="text-base-content/50" aria-hidden="true">|</span> {% endif %}{{ r.title }}{% for kv in r.meta %} <span class="text-base-content/50">{{ kv[0] }} {{ kv[1] }}</span>{% endfor %}</span>
+                {% if r.grade %}<span class="shrink-0 font-mono">{{ r.grade }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if s.revaluation %}
+            <div class="pb-2 text-xs">
+              <div class="text-base-content/60 font-medium mb-1">Revaluation</div>
+              {% for r in s.revaluation %}
+              <div class="flex items-baseline gap-2 py-1">
+                <span class="min-w-0 flex-1 break-words">{% if r.code %}<span class="font-mono text-base-content/60">{{ r.code }}</span> <span class="text-base-content/50" aria-hidden="true">|</span> {% endif %}{{ r.title }}{% for kv in r.meta %} <span class="text-base-content/50">{{ kv[0] }} {{ kv[1] }}</span>{% endfor %}</span>
+                {% if r.grade %}<span class="shrink-0 font-mono">{{ r.grade }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </details>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if academics.courses %}
+      <!-- 2. Credits & Subjects, ONE card: a dropdown per degree category.
+           Summary = required/acquired credits + the §4.15 meter (neutral fill,
+           success fill ONLY at 100% — no attendance thresholds here);
+           expanded = that category's subjects, PENDING FIRST and the
+           completed ones LAST. -->
+      <div class="bg-base-200 border border-base-300 rounded-box p-4">
+        <div class="flex items-baseline justify-between gap-2">
+          <h3 class="text-base font-semibold">Credits &amp; subjects</h3>
+          <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ academics.courses.overall.acq }}/{{ academics.courses.overall.req }}</span>
+        </div>
+        <div class="mt-1 font-mono text-xs text-base-content/50 tabular-nums">{{ academics.courses.pending }} of {{ academics.courses.total }} subjects pending</div>
+        <div class="mt-2 flex flex-col">
+          {% for c in academics.courses.cats %}
+          <details class="acad-cat">
+            <summary class="py-2 min-h-11 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
+              <span class="flex items-center justify-between gap-2">
+                <span class="min-w-0 flex-1 text-sm" title="{{ c.name }}">{{ c.name }}</span>
+                <span class="shrink-0 flex items-baseline gap-2">
+                  <span class="font-mono text-xs tabular-nums text-base-content/60">{{ c.acq }}/{{ c.req }}</span>
+                  <svg class="acad-chev w-4 h-4 text-base-content/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </span>
+              {% if c.req %}
+              <div class="meter" role="img" aria-label="{{ c.name }}: {{ c.acq }} of {{ c.req }} credits{% if c.done %}, complete{% endif %}">
+                <i class="mz" style="{{ c.fill }}"></i>
+              </div>
+              {% endif %}
+            </summary>
+            <ul class="pb-2 flex flex-col">
+              {% for r in c.pending %}
+              <li class="flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span class="text-base-content/60">{{ r.title }}</span>
+                </span>
+                <span class="shrink-0 font-mono text-xs text-base-content/50 tabular-nums" title="Not completed yet">-</span>
+              </li>
+              {% endfor %}
+              {% for r in c.completed %}
+              <li class="acad-srow flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span>{{ r.title }}</span>
+                  {% if r.month %}<span class="font-mono text-xs text-base-content/50 tabular-nums whitespace-nowrap">{{ r.month }}</span>{% endif %}
+                  {% if r.attempts %}<span class="text-xs text-base-content/50 whitespace-nowrap">&middot; {{ r.attempts }} attempts</span>{% endif %}
+                </span>
+                <span class="shrink-0 font-mono text-sm tabular-nums{% if r.tint_o or r.tint_f %}acad-g {% endif %}{% if r.tint_o %}acad-g-o{% endif %}{% if r.tint_f %}acad-g-f{% endif %}">{{ r.grade }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            {% if not c.pending and not c.completed %}
+            <div class="pb-2 text-xs text-base-content/50">No subjects listed for this category.</div>
+            {% endif %}
+          </details>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
   {% if fees %}
   <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
     <!-- ONE hero: the tab's single loud number. Dues >= 1 rupee = warning,

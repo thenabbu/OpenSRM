@@ -1,0 +1,206 @@
+[
+  {
+    "semesterid": 1,
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "11",
+    "acquiredcredits": "11"
+  },
+  {
+    "semesterid": 1,
+    "subjectcategory": "Engineering Science Courses (S)",
+    "requiredcredits": "6",
+    "acquiredcredits": "6"
+  },
+  {
+    "semesterid": 1,
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "requiredcredits": "5",
+    "acquiredcredits": "5"
+  },
+  {
+    "semesterid": 1,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "0",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 2,
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "9",
+    "acquiredcredits": "9"
+  },
+  {
+    "semesterid": 2,
+    "subjectcategory": "Engineering Science Courses (S)",
+    "requiredcredits": "6",
+    "acquiredcredits": "6"
+  },
+  {
+    "semesterid": 2,
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "requiredcredits": "3",
+    "acquiredcredits": "3"
+  },
+  {
+    "semesterid": 2,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "0",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 2,
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "3",
+    "acquiredcredits": "3"
+  },
+  {
+    "semesterid": 3,
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "4",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 3,
+    "subjectcategory": "Engineering Science Courses (S)",
+    "requiredcredits": "7",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 3,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "0",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 3,
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "12",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 4,
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "4",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 4,
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "requiredcredits": "2",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 4,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 4,
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "11",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 4,
+    "subjectcategory": "Professional Elective Courses (E)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Basic Science Courses (B)",
+    "requiredcredits": "4",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "0",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Open Elective Courses (O)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "10",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Professional Elective Courses (E)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 5,
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "requiredcredits": "1",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Engineering Science Courses (S)",
+    "requiredcredits": "2",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Non Credit Courses (M)",
+    "requiredcredits": "0",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Open Elective Courses (O)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Professional Core Courses (C)",
+    "requiredcredits": "6",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Professional Elective Courses (E)",
+    "requiredcredits": "6",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 6,
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 7,
+    "subjectcategory": "Humanities &amp; Social Sciences including Management Courses (H)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 7,
+    "subjectcategory": "Open Elective Courses (O)",
+    "requiredcredits": "3",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 7,
+    "subjectcategory": "Professional Elective Courses (E)",
+    "requiredcredits": "12",
+    "acquiredcredits": "0"
+  },
+  {
+    "semesterid": 8,
+    "subjectcategory": "Project Work, Seminar, Internship In Industry / Higher Technical Institutions (P)",
+    "requiredcredits": "15",
+    "acquiredcredits": "0"
+  }
+]

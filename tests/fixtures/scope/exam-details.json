@@ -1,0 +1,178 @@
+[
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21BTB102T",
+    "credit": "2",
+    "subjectdesc": "INTRODUCTION TO COMPUTATIONAL BIOLOGY"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21CSS101J",
+    "credit": "4",
+    "subjectdesc": "PROGRAMMING FOR PROBLEM SOLVING"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21CYB101J",
+    "credit": "5",
+    "subjectdesc": "CHEMISTRY"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21GNH101J",
+    "credit": "2",
+    "subjectdesc": "PHILOSOPHY OF ENGINEERING"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21GNM101L",
+    "credit": "0",
+    "subjectdesc": "PHYSICAL AND MENTAL HEALTH USING YOGA"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21LEH103T",
+    "credit": "3",
+    "subjectdesc": "FRENCH"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21LEM101T",
+    "credit": "0",
+    "subjectdesc": "CONSTITUTION OF INDIA"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21MAB101T",
+    "credit": "4",
+    "subjectdesc": "CALCULUS AND LINEAR ALGEBRA"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "1",
+    "monthyear": "DEC 2025",
+    "marksobtained": "",
+    "subjectcode": "21MES101L",
+    "credit": "2",
+    "subjectdesc": "BASIC CIVIL AND MECHANICAL WORKSHOP"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21CSC101T",
+    "credit": "3",
+    "subjectdesc": "OBJECT ORIENTED DESIGN AND PROGRAMMING"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21CYM101T",
+    "credit": "0",
+    "subjectdesc": "ENVIRONMENTAL SCIENCE"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A+",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21EES101T",
+    "credit": "4",
+    "subjectdesc": "ELECTRICAL AND ELECTRONICS ENGINEERING"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21LEH101T",
+    "credit": "3",
+    "subjectdesc": "COMMUNICATIVE ENGLISH"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21MAB102T",
+    "credit": "4",
+    "subjectdesc": "ADVANCED CALCULUS AND COMPLEX ANALYSIS"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "O",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21MES102L",
+    "credit": "2",
+    "subjectdesc": "ENGINEERING GRAPHICS AND DESIGN"
+  },
+  {
+    "result": "Pass",
+    "valuationstatus": 1,
+    "grade": "A",
+    "semester": "2",
+    "monthyear": "MAY 2026",
+    "marksobtained": "",
+    "subjectcode": "21PYB102J",
+    "credit": "5",
+    "subjectdesc": "SEMICONDUCTOR PHYSICS AND COMPUTATIONAL METHODS"
+  }
+]
