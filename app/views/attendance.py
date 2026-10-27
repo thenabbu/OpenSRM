@@ -96,3 +96,101 @@ def _title_case(s):
     join keys still go through _norm_subject, so casing is render-time only."""
     s = str(s or "")
     return s.title() if s.isupper() else s
+
+# ── Hourwise join (SCOPE getHourwiseAttendance × the user's timetable) ──────
+_HW_FMT = "%d-%b-%Y"  # SCOPE attendancedate: "16-Oct-2026"
+_HW_STATES = ("P", "A", "OD")
+
+
+def _hw_subject(day, n, slots, custom):
+    """The timetable's subject for hour n of `day`, or None = no name.
+    period 7+ is deliberately None: SCOPE only sends h1..h6, so it can never
+    be named from timetable data. Any slot miss (weekend, no row, NULL code,
+    "CL" class-in-charge, custom subject) is None too — never invent one."""
+    if n > 6:
+        return None, None
+    slot = (slots.get(day) or {}).get(n)
+    if not slot:
+        return None, None
+    code = str(slot.get("code") or "")
+    name = str(slot.get("name") or "")
+    if not code or not name or code == "CL" or code in custom:
+        return None, None
+    return name, code
+
+
+def hourwise_view(rows, slots, custom=frozenset(), portal_months=None):
+    """SCOPE getHourwiseAttendance rows + the user's timetable slots
+    ({day: {period: {"code", "name", ...}}}) -> the Detailed attendance grid.
+
+    Returns {"hours": [1..N], "months": [{"label", "p", "a", "od", "days":
+    [{"date", "dow", "cells"}]}], "ts"} where each cell is
+    {"n", "state": "P"|"A"|"OD"|None, "subject", "code", "title"}.
+
+    Join contract (unchanged from the foundations PR): hN -> timetable period
+    N of that row's weekday; a missing hour key = no class delivered = never
+    an absence (state None, rendered as an empty placeholder); unmatched slot
+    (CL / custom / weekend) keeps the state but drops the name (bare hN).
+    `portal_months` = the portal's monthly rows ({"label": "Oct / 2026", ...}),
+    consumed among others to order the grid months and carry their own
+    labels/percentages through; a month only SCOPE knows about lands last.
+    O(days×6) dict lookups, per request, nothing cached.
+    """
+    parsed = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        try:
+            parsed.append((datetime.strptime(str(r.get("attendancedate", "")), _HW_FMT).date(), r))
+        except ValueError:
+            continue  # junk row: no date, no view — never a crash
+    parsed.sort(key=lambda t: t[0], reverse=True)
+
+    # hours SCOPE actually reported; a column no row ever carries is noise
+    hours = [n for n in range(1, 8) if any(r.get("h%d" % n) is not None for _, r in parsed)]
+    # period 7 has no SCOPE hour: a reported h7 gets a column but can never
+    # hold a state or a name (see _hw_subject) — the PR body states this.
+    if not hours:
+        hours = [1, 2, 3, 4, 5, 6]
+
+    portal_months = portal_months or {}
+    order = {lab.replace(" / ", " "): lab for lab in portal_months}
+    by_label, extra = {}, {}
+    for d, r in parsed:
+        day = d.strftime("%A")
+        label = d.strftime("%b %Y")
+        cells = []
+        for n in hours:
+            v = r.get("h%d" % n)
+            st = str(v).strip().upper() if v is not None else None
+            if st not in _HW_STATES or n > 6:
+                st = None  # missing key / junk value / period 7 = no state
+            subj, code = _hw_subject(day, n, slots, custom)
+            if st:
+                bits = [day, d.strftime("%d %b %Y"), "h%d" % n,
+                        {"P": "present", "A": "absent", "OD": "on duty"}[st]]
+                bits.append("%s (%s)" % (subj, code) if subj
+                            else "no subject on the timetable")
+                title = " · ".join(bits)
+            else:
+                title = "No class scheduled · h%d" % n
+            cells.append({"n": n, "state": st, "subject": subj, "code": code,
+                          "title": title})
+        rec = {"date": d.strftime("%d %b"), "full": d.strftime("%d %b %Y"),
+               "dow": day, "cells": cells}
+        (by_label if label in order else extra).setdefault(label, []).append(rec)
+
+    out = []
+    for label in list(order) + sorted(extra):
+        days = by_label.get(label) or extra.get(label)
+        if not days:
+            continue
+        p = portal_months.get(order.get(label, "")) or {}
+        out.append({"label": label,
+                    "side": p.get("label") or label,   # the portal's own wording
+                    "pct": p.get("pct"),
+                    "p": sum(1 for x in days for c in x["cells"] if c["state"] == "P"),
+                    "a": sum(1 for x in days for c in x["cells"] if c["state"] == "A"),
+                    "od": sum(1 for x in days for c in x["cells"] if c["state"] == "OD"),
+                    "days": days})
+    return {"hours": hours, "months": out}
