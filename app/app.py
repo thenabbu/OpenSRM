@@ -176,6 +176,10 @@ from .views.marks import (
     _marks_summary,
     _marks_view,
 )
+from .views.profile import (  # noqa: F401 — re-exported from app.app
+    merge_personal,
+    scope_profile,
+)
 from .views.ticker import (
     _now_next_from_slots,
     _today_brief,
@@ -1749,6 +1753,12 @@ def index():
 
     # Extract student name from personal details
     personal_data = _jload(row["personal_details_json"] if row else None, {})
+    # SCOPE profile enrichment (slug `profile`) — gate-first: feature off or
+    # no stored scope data -> {} and the Settings template is today's input
+    # unchanged. personal_data itself stays the portal's dict (it feeds the
+    # timetable group key / marks class key); only the rendered copy is
+    # merged, scope filling gaps, portal values winning (app/views/profile.py).
+    _scope_fields = scope_profile(_jload(row["scope_json"] if row else None, {}))
     student_name = personal_data.get("Student Name", "").title()
 
     # Marks: server-rendered (tab + dashboard widget). Re-synced hot data.
@@ -1860,7 +1870,9 @@ def index():
         timetable=timetable_html(group_key, attendance),
         tt_fetched_at=_tt_fetched_at(group_key),
         tt_editor_enabled=_tt_editor_enabled(),
-        personal=personal_data,
+        # scope-filled copy of personal (portal values win, scope gaps only);
+        # the profile widget's avatar stays the generated blobatar
+        personal=merge_personal(personal_data, _scope_fields),
         campus=campus,
         tools=_tools_entries(netid))
 
@@ -1911,6 +1923,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.4.0", "date": "27 Oct", "title": "More personal details",
+     "body": "Settings -> Personal details now picks up the extra facts the "
+             "official SCOPE student app already knows - parents' names, date of "
+             "birth, admitted date, address, university and advisors - shown only "
+             "where the portal doesn't already list them."},
     {"ver": "v2.3.0", "date": "27 Oct", "title": "Academics, in one place",
      "body": "A new Academics tab starts with your CGPA and the credits you have "
              "earned, then drops each semester open onto its subjects as one line "
