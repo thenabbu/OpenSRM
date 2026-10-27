@@ -22,3 +22,5 @@ ops/observability/secrets/
 ops/observability/proof-override.yml
 ops/observability/proof/
 /node_modules/
+.venv/
+.venv
