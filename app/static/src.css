@@ -31,6 +31,16 @@
   --ease-spring: linear(0, .32 8%, .72 17%, .95 27%, 1.04 38%, 1.02 50%, 1 65%, 1);
   --t-press: 60ms; --t-ui: 200ms; --t-sheet: 320ms;
 }
+/* ── Fees: nested per-receipt accordion rows ──────────────────────────────
+   daisyUI's .collapse is height:auto on a grid, so the content track never
+   shrinks to 0 and a receipt stayed 32px tall with its narration painted over
+   the following rows (measured). For a row that is NOT its parent's grid
+   item, honour the element's state: closed = content hidden, [open] = block. */
+.fees-rcpt > .collapse-content { display: none; }
+.fees-rcpt[open] > .collapse-content { display: block; }
+/* the arrow pseudo is positioned against the summary; paint it over the amount
+   instead of reserving 3rem, which starved the one-line grid's name cell */
+.fees-rcpt > summary.collapse-title { padding-inline-end: 0; }
 html { overscroll-behavior-y: contain; }   /* contains scroll chains; pairs with pull.js (phase 7) */
 button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; user-select: none; }
 
