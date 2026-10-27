@@ -32,9 +32,9 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# test_audit_findings forbids test DBs in-tree; the dir must outlive this module's import
+# verify76 forbids test DBs in-tree; the dir must outlive this module's import
 # (tests run after the import block), so mkdtemp + atexit cleanup, not `with`.
 _td = tempfile.mkdtemp(prefix="osrm-scope-")
 atexit.register(shutil.rmtree, _td, True)
@@ -42,13 +42,14 @@ os.environ["DATA_DIR"] = _td          # direct assignment: stale env must not wi
 os.environ["OCR_PREWARM"] = "0"
 os.environ.pop("SCOPE_FEATURES", None)  # every toggle test owns its env
 
-from app import app as A  # noqa: E402,F401  # boots create_app: DATA_DIR DB + full migration chain (m018)
-from app import migrations as MIG  # noqa: E402
-from app.scope import client as C  # noqa: E402
-from app.scope import ops as OPS  # noqa: E402
-from app.scope import sync as SYNC  # noqa: E402
+from app import db as DB                        # noqa: E402
+from app import migrations as MIG               # noqa: E402
+from app.scope import client as C               # noqa: E402
+from app.scope import ops as OPS                # noqa: E402
+from app.scope import sync as SYNC              # noqa: E402
+from app import app as A                        # noqa: E402,F401  # boots create_app: DATA_DIR DB + full migration chain (m018)
 
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "scope_flow18_envelope.txt"
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "scope_flow18_envelope.txt"
 DBFILE = os.path.join(_td, "srm.db")
 NETID = "zz9999"                                # fabricated — repo is public
 OLD_SID = "A" * 96
@@ -230,6 +231,49 @@ def t_migration_m018():
         shutil.rmtree(tmp, True)
 
 
+def t_tools_entries_gates():
+    """Tools panel gate: slug enabled AND its op holds data; else no row.
+
+    Three failure modes pinned here, all of which would put a dead row on the
+    Tools tab (or 500 the dashboard): a disabled slug with data behind it, an
+    enabled slug whose op never landed, and a stored entry that is not the
+    documented {"data","ts"} dict (corrupt/foreign scope_json).
+    """
+    import importlib
+    APP = importlib.import_module("app.app")
+
+    def rows(scope_json, features):
+        _seed_user(scope_json=scope_json)
+        os.environ["SCOPE_FEATURES"] = features
+        try:
+            return APP._tools_entries(NETID)
+        finally:
+            os.environ.pop("SCOPE_FEATURES", None)
+
+    blob = json.dumps({
+        "getFeeDetails": {"data": {"dues": 1200}, "ts": 1},
+        "getStudentExamProvisionalResult": {"data": [], "ts": 1},   # alive-empty
+        "getLibraryTransaction": "not-a-dict",                      # corrupt shape
+        "getHostelDetails": {"ts": 1},                              # no data key
+    })
+    # both slugs on: only fees qualifies (academics empty, library corrupt,
+    # campus has no data) -> exactly one row, and it is Fees.
+    got = rows(blob, "fees,academics,library,campus")
+    assert [r["slug"] for r in got] == ["fees"], got
+    assert got[0]["label"] == "Fees" and got[0]["op"] == "getFeeDetails", got
+    # fees disabled, academics enabled: fees' data must NOT leak in.
+    got = rows(blob, "academics")
+    assert got == [], got
+    # everything off: zero footprint, and no users-row read needed.
+    assert rows(blob, "off") == []
+    # empty / absent blob with features on: nothing to show.
+    assert rows("{}", "all") == []
+    assert rows(None, "all") == []
+    # whole blob the wrong shape must not raise (degrade to no tools).
+    assert rows('["unexpected"]', "all") == []
+    assert rows("{not json", "all") == []
+
+
 def t_cold_sync_stores_data():
     """Enabled ops land in scope_json as {data, ts}; fetched_at stamped."""
     _seed_user()
@@ -369,6 +413,7 @@ TESTS = [
     ("enabled_features 'off'/'': empty set", t_features_off_is_empty),
     ("ops_for dedup + catalog coverage", t_ops_for_dedup),
     ("migration m018 runs + idempotent re-runs", t_migration_m018),
+    ("Tools panel gate: enabled slug + landed data only", t_tools_entries_gates),
     ("cold sync stores {data, ts} + fetched_at", t_cold_sync_stores_data),
     ("cold sync preserve-if-empty + transport break", t_cold_sync_preserve_and_transport_break),
     ("cold sync alive-empty stored as-is", t_cold_sync_alive_empty_stored_as_is),
