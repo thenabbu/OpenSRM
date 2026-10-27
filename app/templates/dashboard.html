@@ -83,6 +83,10 @@
               aria-controls="tab-timetable" aria-selected="false" tabindex="-1">Timetable</button>
       <button role="tab" id="tab-marks-tab" class="btn btn-ghost btn-sm" data-tab="marks"
               aria-controls="tab-marks" aria-selected="false" tabindex="-1">Marks</button>
+      {% if fees %}
+      <button role="tab" id="tab-fees-tab" class="btn btn-ghost btn-sm" data-tab="fees"
+              aria-controls="tab-fees" aria-selected="false" tabindex="-1">Fees</button>
+      {% endif %}
       {% if tools %}
       <button role="tab" id="tab-tools-tab" class="btn btn-ghost btn-sm" data-tab="tools"
               aria-controls="tab-tools" aria-selected="false" tabindex="-1">Tools</button>
@@ -152,6 +156,16 @@
     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
     <span class="dock-label">Marks</span>
   </button>
+  {% if fees %}
+  <button data-tab="fees" aria-label="Fees tab">
+    <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <rect x="2.25" y="6" width="19.5" height="12" rx="2"/>
+      <circle cx="12" cy="12" r="2.5"/>
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12h1.5m7.5 0h1.5"/>
+    </svg>
+    <span class="dock-label">Fees</span>
+  </button>
+  {% endif %}
   {% if tools %}
   <button data-tab="tools" aria-label="Tools tab" aria-controls="tab-tools">
     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z"/></svg>
@@ -637,6 +651,82 @@
     </div>
     {% endif %}
   </div>
+  {% if fees %}
+  <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto" style="display:none">
+    <!-- ONE hero: the tab's single loud number. Dues >= 1 rupee = warning,
+         >= 100000 (semester-fee scale) = error (documented in views/fees.py).
+         Zero dues = the hero is ABSENT and the page opens at Paid. -->
+    {% if fees.due_disp %}
+    <div class="bg-base-200 border border-base-300 rounded-box p-4">
+      <div class="flex items-baseline justify-between gap-3">
+        <span class="text-sm font-semibold">Outstanding dues</span>
+        <span class="font-mono font-bold text-2xl tabular-nums {{ fees.level }}">₹{{ fees.due_disp }}</span>
+      </div>
+      <p class="text-xs text-base-content/50 mt-1">As reported by the SCOPE backend</p>
+    </div>
+    {% endif %}
+    {% if fees.years %}
+    <div class="flex items-baseline justify-between gap-3{% if fees.due_disp %} mt-5{% endif %}">
+      <h1 class="text-base font-semibold">Paid</h1>
+      <span class="font-mono text-sm text-base-content/60 tabular-nums">₹{{ fees.paid_total }}</span>
+    </div>
+    <!-- Groups: year header, extra gap beneath it (group gapping), then rows
+         separated by a tight uniform gap — no dividers between rows. Row is
+         date (leftmost, under the year) | rule | payment | amount (right). -->
+    <div class="flex flex-col gap-5 mt-3">
+      {% for y in fees.years %}
+      <section>
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="font-mono text-xs text-base-content/60">{{ y.year }}</h2>
+          <span class="font-mono text-sm font-semibold tabular-nums">₹{{ y.total }}</span>
+        </div>
+        <div class="flex flex-col gap-2 mt-4">
+          {% for r in y.rows %}
+          <div class="grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline">
+            <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ r.date }}</span>
+            <span class="w-1 -my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
+            <span class="text-sm min-w-0 break-words">{{ r.head }}</span>
+            <span class="font-mono text-sm tabular-nums text-right">₹{{ r.amt }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if fees.ledger %}
+    <!-- Receipts: closed by default. One line per receipt at rest (date, head,
+         amount); the narration + voucher number live inside a per-receipt
+         accordion so the list never reads as a wall of text. -->
+    <details class="collapse collapse-arrow bg-base-200 border border-base-300 rounded-box{% if fees.years %} mt-5{% endif %}">
+      <summary class="collapse-title text-sm font-semibold">
+        Receipts <span class="font-mono text-base-content/60 tabular-nums">({{ fees.ledger | length }})</span>
+      </summary>
+      <div class="collapse-content">
+        {% for e in fees.ledger %}
+        <details class="collapse collapse-arrow fees-rcpt{% if not loop.first %} border-t border-base-300{% endif %}">
+            <summary class="collapse-title grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline text-sm min-h-0 py-1.5">
+              <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ e.date }}</span>
+              <span class="w-1 -my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
+              <span class="text-sm min-w-0 truncate">{{ e.head }}</span>
+              <span class="font-mono text-sm font-semibold tabular-nums text-right">₹{{ e.amt }}</span>
+            </summary>
+            <div class="collapse-content pt-1">
+              {% if e.vno %}
+              <span class="font-mono text-xs text-base-content/60 cursor-pointer" data-copy="{{ e.vno }}"
+                    title="Click to copy voucher no.">#{{ e.vno }}</span>
+              {% endif %}
+              {% if e.full %}
+              <p class="text-xs text-base-content/60 break-words mt-1">{{ e.full }}</p>
+              {% endif %}
+            </div>
+        </details>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
 </main>
 <div id="offline-banner" role="status" aria-live="polite"></div>
 {% if fb_plan %}<dialog id="fb-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="fb-modal-title">

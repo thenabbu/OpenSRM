@@ -159,6 +159,7 @@ from .views.attendance import (
     _weekdays,  # noqa: F401 — re-exported from app.app
     hourwise_view,
 )
+from .views.fees import _fees_view
 from .views.layout import (
     LAYOUT,
     WIDGETS,
@@ -1752,6 +1753,14 @@ def index():
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
+    # Fees tab: server-rendered from the cold SCOPE blob (marks-tab pattern;
+    # no new DB columns). Feature 'fees' off or no fee/finance rows -> None
+    # -> the template renders no navbar item and no panel (empty=hidden,
+    # DESIGN §4.12 — same self-hide rule as empty cards).
+    srow = user_scope_data(netid)
+    fees = _fees_view(_jload(srow["scope_json"] if srow else None, {}),
+                      enabled_features())
+
     # End-sem schedule card (official iden=126 table primary, scribe probe as
     # fallback; None -> card hidden). Rows are kept: _exam_stop needs the raw
     # dates for the budget horizon (spec §1.2).
@@ -1824,6 +1833,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        fees=fees,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
@@ -1883,6 +1893,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.2.0", "date": "27 Oct", "title": "Fees, without the digging",
+     "body": "A Fees tab shows what you still owe, and once nothing is due it opens "
+             "straight into what you have paid, grouped by academic year with the "
+             "date first and the amount on the right. The full receipt history sits "
+             "in a collapsed ledger you can open when you actually need a voucher "
+             "number."},
     {"ver": "v2.1.0", "date": "26 Oct", "title": "Attendance, hour by hour",
      "body": "The absences list turns into a real attendance view: open any month "
              "and each date drops down as a row of periods showing P, A or OD, "
