@@ -162,6 +162,7 @@ from .views.attendance import (
     _weekdays,  # noqa: F401 — re-exported from app.app
     hourwise_view,
 )
+from .views.campus import campus_view
 from .views.fees import _fees_view
 from .views.layout import (
     LAYOUT,
@@ -1832,6 +1833,13 @@ def index():
              "teach_groups": _teacher_groups(faculty_view)}
     layout = [c for c in LAYOUT
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
+    # Campus tab: shape-driven SCOPE cards off the same row (scope_json).
+    # Each card builds ONLY when its feature slug is on and it has rows, so
+    # every card self-hides — and with none left the tab is never registered
+    # (alive-empty = no UI, never an error). Scope toggles are a request-time
+    # knob, so the feature set is read per request like every other gate.
+    campus = campus_view(_jload(row["scope_json"] if row else None, {}),
+                         enabled_features())
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
@@ -1853,6 +1861,7 @@ def index():
         tt_fetched_at=_tt_fetched_at(group_key),
         tt_editor_enabled=_tt_editor_enabled(),
         personal=personal_data,
+        campus=campus,
         tools=_tools_entries(netid))
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1897,6 +1906,7 @@ TIMETABLE_SOURCE = "official"
 # =enabled (read per-request so tests can flip it live; restart not needed).
 def _tt_editor_enabled():
     return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
+
 
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
