@@ -108,7 +108,7 @@ Two promises shape everything:
   (5/10/15/30 min), a test button with delivery receipts.
 
 - **Installable PWA** — Add to Home Screen on Android, iOS and Windows. The
-  service worker keeps an offline shell (`opensrm-v37` cache): HTML is
+  service worker keeps an offline shell (`opensrm-v39` cache): HTML is
   network-first with navigation preload, versioned assets are cache-first,
   so warm visits move zero bytes and deploys never serve stale files.
 
