@@ -127,6 +127,7 @@ the portal caps 10/hour per IP).
 .venv/bin/python tests/unit/test_push_send.py  # [unit] 16/16 mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline
 .venv/bin/python tests/unit/test_push_tick.py  # [unit] 27/27 secret auth, dry-run, allowlist, overlap, dead-man metrics, no PII labels
 .venv/bin/python tests/unit/test_push_api.py   # [unit] 42/42 401 style, validation, DB rate caps, test/receipt flows, notification prefs
+.venv/bin/python tests/unit/test_scope_client.py  # [unit] 17/17 SCOPE foundation: envelope byte-identity vs the captured pcap FLOW 18 wire fixture, blob AES round-trip + FIPS-256 ECB KAT, login UPPERCASE cred transform + no-sid rejection, data_op {studentid:sid, **FINGERPRINT} wire order, SCOPE_FEATURES toggles, ops_for dedup + every FEATURES op in the 43-op catalog, migration m018 fresh + idempotent, cold sync with mocked client, ScopeAuthError = one relogin then that op retried
 .venv/bin/python tests/unit/test_login_guide_static.py    # [unit] 9/9  Login Flow UX Guide (source level, no server)
 .venv/bin/python tests/unit/test_supply_chain.py  # [unit] 26/26 compose OPENSRM_TAG pin, build.yml tags/labels, scans report-only, SHA-pinned actions
 .venv/bin/python tests/unit/test_healthz.py  # [unit] 6/6 /healthz: <=32B, SELECT 1 only, 503 on DB failure, probe demoted to DEBUG

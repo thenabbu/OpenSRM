@@ -124,6 +124,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_db_concurrency.py
       - name: test_db_layer (request-scoped connection + transaction isolation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_db_layer.py
+      - name: test_scope_client (SCOPE wire, toggles, m018, cold sync, Tools gate)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_client.py
 
   docker:
     runs-on: ubuntu-latest
