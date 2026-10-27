@@ -25,7 +25,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]  # tests/unit -> repo root
 sys.path.insert(0, str(REPO))
 
 # the audit suite forbids test-DB files in the repo root / tests dir; mkdtemp
