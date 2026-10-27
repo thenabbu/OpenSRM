@@ -2080,20 +2080,31 @@ def _budget_rows(courses):
 # when that panel exists today and renders inert otherwise, so this stays a
 # landing surface for the SCOPE rotation instead of a duplicate of it.
 TOOLS = [
-    ("fees", "Fees", "Dues, payments and receipts", "getFeeDetails"),
+    # (slug, label, hint, gate op, tab). The tab is where the row sends you: a
+    # surface with its own panel names it, one that lives inside an existing
+    # tab points there. dash.js marks a row inert when that panel is absent, so
+    # a not-yet-mounted surface degrades to a disabled row, never a dead link.
+    ("fees", "Fees", "Dues, payments and receipts", "getFeeDetails", "fees"),
     # gates on the RELEASED-results op: the provisional/revaluation endpoints
     # are empty outside their window, so keying the entry on them left Academics
     # hidden even with a full grade history (caught in review).
     ("academics", "Academics", "Results, grades and credits",
-     "getExamDetails"),
+     "getExamDetails", "academics"),
+    # hourwise renders inside the Attendance tab, not a panel of its own, and
+    # its gate op is what the detailed grid needs (rows, not the summary list).
+    ("hourwise", "Attendance by hour", "Every period, joined to your timetable",
+     "getHourwiseAttendance", "attendance"),
+    # profile fills the Personal details section inside Settings.
+    ("profile", "Personal details", "Parents, date of birth, address",
+     "getStudentPersonalDetails", "settings"),
     ("library", "Library", "Issued books, due dates, fines",
-     "getLibraryTransaction"),
+     "getLibraryTransaction", "campus"),
     ("campus", "Hostel & transport", "Room, mess and bus route",
-     "getHostelDetails"),
+     "getHostelDetails", "campus"),
     ("campus", "Notifications", "Campus notices and circulars",
-     "getViewNotificationListJson"),
+     "getViewNotificationListJson", "campus"),
     ("placement", "Placement", "Offers, eligibility, registration",
-     "getStudentAllOfferedJobs"),
+     "getStudentAllOfferedJobs", "campus"),
 ]
 
 
@@ -2115,12 +2126,13 @@ def _tools_entries(netid):
     # and _jload's wrong-shape branch — audit B10).
     blob = _jload(row["scope_json"] if row else None, {})
     rows = []
-    for feat, label, hint, op in TOOLS:
+    for feat, label, hint, op, tab in TOOLS:
         if feat not in on:
             continue
         entry = blob.get(op)
         if isinstance(entry, dict) and entry.get("data"):
-            rows.append({"slug": feat, "label": label, "hint": hint, "op": op})
+            rows.append({"slug": feat, "label": label, "hint": hint,
+                         "op": op, "tab": tab})
     return rows
 
 
