@@ -161,8 +161,8 @@
 .hw-wd{font-family:monospace;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .hw-dt{font-family:monospace;font-variant-numeric:tabular-nums}
 .hw-c{min-height:24px;display:flex;align-items:center;justify-content:center;border-radius:3px;font-family:monospace;font-size:11px;font-weight:600;color:var(--color-base-content)}
-.hw-c-a{color:oklch(58% 0.115 25);background:color-mix(in oklab, oklch(58% 0.115 25) 22%, transparent)}
-.hw-c-od{color:oklch(63% 0.115 68);background:color-mix(in oklab, oklch(63% 0.115 68) 20%, transparent)}
+.hw-c-a{color:oklch(58% 0.115 25);background:color-mix(in oklab, oklch(58% 0.115 25) 13%, transparent)}
+.hw-c-od{color:oklch(63% 0.115 68);background:color-mix(in oklab, oklch(63% 0.115 68) 12%, transparent)}
 .hw-c:hover{background:color-mix(in oklab, var(--color-base-content) 8%, transparent)}
-.hw-c-a:hover{background:color-mix(in oklab, oklch(58% 0.115 25) 32%, transparent)}
-.hw-c-od:hover{background:color-mix(in oklab, oklch(63% 0.115 68) 30%, transparent)}
+.hw-c-a:hover{background:color-mix(in oklab, oklch(58% 0.115 25) 24%, transparent)}
+.hw-c-od:hover{background:color-mix(in oklab, oklch(63% 0.115 68) 22%, transparent)}

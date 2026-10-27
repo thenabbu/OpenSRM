@@ -13,7 +13,7 @@ as on main (chip text asserted verbatim) with no detailed section.
 Fixture rows = tests/fixtures/scope-attendance-hour.txt (byte-copy of the
 mission's LIVE getHourwiseAttendance output); slots = the seeded group's
 timetable (GRID fit, shared with scripts/seed_hourwise.py).
-Run: .venv/bin/python tests/test_hourwise_join.py  (offline, no server)
+Run: .venv/bin/python tests/unit/test_hourwise_join.py  (offline, no server)
 """
 import importlib.util
 import json
