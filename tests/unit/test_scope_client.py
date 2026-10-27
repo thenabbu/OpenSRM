@@ -42,12 +42,11 @@ os.environ["DATA_DIR"] = _td          # direct assignment: stale env must not wi
 os.environ["OCR_PREWARM"] = "0"
 os.environ.pop("SCOPE_FEATURES", None)  # every toggle test owns its env
 
-from app import db as DB                        # noqa: E402
-from app import migrations as MIG               # noqa: E402
-from app.scope import client as C               # noqa: E402
-from app.scope import ops as OPS                # noqa: E402
-from app.scope import sync as SYNC              # noqa: E402
-from app import app as A                        # noqa: E402,F401  # boots create_app: DATA_DIR DB + full migration chain (m018)
+from app import app as A  # noqa: E402,F401  # boots create_app: DATA_DIR DB + full migration chain (m018)
+from app import migrations as MIG  # noqa: E402
+from app.scope import client as C  # noqa: E402
+from app.scope import ops as OPS  # noqa: E402
+from app.scope import sync as SYNC  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "scope_flow18_envelope.txt"
 DBFILE = os.path.join(_td, "srm.db")
