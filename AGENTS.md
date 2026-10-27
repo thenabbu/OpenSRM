@@ -97,6 +97,7 @@ the portal caps 10/hour per IP).
 ```bash
 # ── unit (no server / no browser) ──────────────────────────────────────────
 .venv/bin/python tests/unit/test_audit_findings.py  # [unit] 72/72 static gates: findings, doc claims, pins, version trio
+.venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 (SCOPE fees: receipt head = one clean line, nothing past THRU/Accounted/bank-channel tail; ##-split parser on the real fixture row incl. amount-with-.00 + "13-Aug-2025" date + junk/short rows, dues logic (paid==total+trailing 0 -> 0; synthetic 100/150 -> 50; trailing=50 -> 50; view sum + warning/error level), narration first-clause split never raises on unicode/tab/CR/LF garbage, ledger sorted newest voucherdate first, feature gate off -> no tab (view None + SCOPE_FEATURES env + template {% if fees %} guard) — offline, no server/DB)
 .venv/bin/python tests/unit/test_app_factory.py  # [unit] 24/24 create_app factory: boot-env isolation between two apps, route surface + bare endpoint names, gunicorn app.app:app contract, OCR prewarm opt-out
 .venv/bin/python tests/unit/test_exams.py  # [unit] 69/69 official ETT parser + header drift + scribe fallback merge + transition/push events
 .venv/bin/python tests/unit/test_exams_view.py  # [unit] dashboard exam card view model (stamps, labels)
@@ -147,6 +148,9 @@ bash scripts/ci_e2e_http.sh test_sw test_xss test_navbar test_marks_dut \
   test_feedback_dut test_feedback_contrast test_login_guide_check
 .venv/bin/python tests/e2e/test_dash_fit.py        # [e2e] dashboard fit: no desktop page scrollbar, uniform grid, fb_open render toggle
 .venv/bin/python tests/e2e/test_dut_official_tt.py # [e2e] official-timetable archive contract + rim tiers + Now badge + no overflow
+.venv/bin/python tests/e2e/test_fees_dut.py       # [e2e] SCOPE fees tab: date|rule|name|amount paid rows, no row dividers + group gapping, ONE collapsed
+                                                     #       Receipts(N) with per-receipt accordions, no all-clear state, no type badges,
+                                                     #       WCAG contrast + geometry at 393x851 and 1280x900 (dues + all-paid arms)
 VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh  # [e2e] test_push_sw + test_push_ui (staggered boots)
 .venv/bin/python tests/e2e/test_login_guide_server.py    # [none] 7 live portal probes — NEVER loop it; green = 0 FAIL
 ```

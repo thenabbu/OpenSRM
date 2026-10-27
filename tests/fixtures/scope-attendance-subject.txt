@@ -1,0 +1,66 @@
+[
+  {
+    "total": "56",
+    "presentpercentage": "91.07",
+    "absent": "5",
+    "subjectcode": "21CSC201J",
+    "present": "51",
+    "subjectdesc": "DATA STRUCTURES AND ALGORITHMS"
+  },
+  {
+    "total": "50",
+    "presentpercentage": "88.00",
+    "absent": "5",
+    "subjectcode": "21CSC202J",
+    "present": "44",
+    "subjectdesc": "OPERATING SYSTEMS"
+  },
+  {
+    "total": "62",
+    "presentpercentage": "87.10",
+    "absent": "8",
+    "subjectcode": "21CSC203P",
+    "present": "54",
+    "subjectdesc": "ADVANCED PROGRAMMING PRACTICE"
+  },
+  {
+    "total": "51",
+    "presentpercentage": "94.12",
+    "absent": "3",
+    "subjectcode": "21CSS201T",
+    "present": "48",
+    "subjectdesc": "COMPUTER ORGANIZATION AND ARCHITECTURE"
+  },
+  {
+    "total": "36",
+    "presentpercentage": "83.33",
+    "absent": "6",
+    "subjectcode": "21DCS201P",
+    "present": "30",
+    "subjectdesc": "DESIGN THINKING AND METHODOLOGY"
+  },
+  {
+    "total": "12",
+    "presentpercentage": "91.67",
+    "absent": "1",
+    "subjectcode": "21LEM201T",
+    "present": "11",
+    "subjectdesc": "PROFESSIONAL ETHICS"
+  },
+  {
+    "total": "49",
+    "presentpercentage": "85.71",
+    "absent": "5",
+    "subjectcode": "21MAB206T",
+    "present": "42",
+    "subjectdesc": "NUMERICAL METHODS AND ANALYSIS"
+  },
+  {
+    "total": "9",
+    "presentpercentage": "66.67",
+    "absent": "2",
+    "subjectcode": "CL",
+    "present": "6",
+    "subjectdesc": "CLASS IN CHARGE"
+  }
+]
