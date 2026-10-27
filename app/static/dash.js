@@ -250,6 +250,21 @@ tabButtons.forEach(function(b) {
     if (next) { e.preventDefault(); switchTab(next.dataset.tab, next, true); }
   });
 });
+// Tools rows point at the panel their surface's own PR mounts (fees,
+// academics, ...). Until that PR lands the panel does not exist, so the row
+// must not write a hash that switches nothing — mark it inert instead
+// (aria-disabled, no pointer affordance, default click prevented).
+document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
+  if (document.getElementById('tab-' + a.dataset.toolTab)) return;
+  a.removeAttribute('href');
+  a.setAttribute('aria-disabled', 'true');
+  a.removeAttribute('data-tool-tab');
+  a.classList.remove('pressable');
+  a.classList.add('cursor-default');
+  a.querySelector('svg').classList.replace('text-base-content/60', 'text-base-content/50');
+  a.addEventListener('click', function(e) { e.preventDefault(); });
+});
+
 // Restore tab from hash (survives refresh/reload); default dashboard
 (function() {
   var h = (location.hash || '').replace('#', '');

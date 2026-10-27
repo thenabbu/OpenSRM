@@ -231,6 +231,24 @@ with sync_playwright() as p:
         logoRadius: getComputedStyle(nav.querySelector('img')).borderRadius,
         syncDisplay: getComputedStyle(sync).display,
         endOrder: [...nav.querySelector('.navbar-end').children].map(c => c.tagName),
+        // Mobile shell (Tools dock): refresh is the FAR-LEFT control, the
+        // wordmark is centred, settings is the FAR-RIGHT control — and
+        // settings is the phone's ONLY route to that tab (no dock entry).
+        // Both are icon-only: their name lives in aria-label, not in text.
+        startOrder: [...nav.querySelector('.navbar-start').children].map(c => c.tagName),
+        refreshLeftX: Math.round(nav.querySelector('[data-refresh]').getBoundingClientRect().x),
+        logoBox: (() => { const r = nav.querySelector('img').getBoundingClientRect();
+          return {x: Math.round(r.x), right: Math.round(r.right), w: Math.round(r.width)}; })(),
+        gearBox: (() => { const r = nav.querySelector('.navbar-end [data-tab=settings]').getBoundingClientRect();
+          return {x: Math.round(r.x), right: Math.round(r.right), w: Math.round(r.width)}; })(),
+        gearText: nav.querySelector('.navbar-end [data-tab=settings]').textContent.trim(),
+        gearLabel: nav.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-label'),
+        refreshText: nav.querySelector('[data-refresh]').textContent.trim(),
+        refreshLabel: nav.querySelector('[data-refresh]').getAttribute('aria-label'),
+        navInnerRight: nav.getBoundingClientRect().right - parseFloat(getComputedStyle(nav).paddingRight),
+        logoCentre: (() => { const r = nav.querySelector('img').getBoundingClientRect(); return Math.round((r.x + r.right) / 2 * 10) / 10; })(),
+        navCentre: (() => { const r = nav.getBoundingClientRect(); return Math.round((r.x + r.right) / 2 * 10) / 10; })(),
+        dockTabs: [...document.querySelectorAll('.dock [data-tab]')].map(x => x.dataset.tab),
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         // On failure the FAIL line must NAME the overflowing element (env
         // font-metric changes moved this by 8px on the Ubuntu 26 runner):
@@ -261,9 +279,79 @@ with sync_playwright() as p:
           m['versionBadges'] == 0 and f'v{VERSION}' not in m['navText'] and VERSION not in m['navText'],
           f"badges={m['versionBadges']} text={m['navText']!r}")
     check('mobile: wordmark radius = 4px (minor, not the 8px box token)', m['logoRadius'] == '4px', m['logoRadius'])
-    check('mobile: caption follows refresh in the DOM, hidden when fresh, no logout anchor',
-          m['endOrder'] == ['BUTTON', 'SPAN'] and m['syncDisplay'] == 'none',
-          f"{m['endOrder']} display={m['syncDisplay']}")
+    check('mobile: caption sits after refresh in navbar-start (sync reads left), hidden when fresh, no logout anchor',
+          m['startOrder'] == ['BUTTON', 'SPAN'] and m['syncDisplay'] == 'none' and 'Logout' not in m['navText'],
+          f"{m['startOrder']} display={m['syncDisplay']}")
+    # The mobile bar has room for exactly one label — the wordmark. Both icon
+    # controls must therefore be name-carrying but text-free (aria-label only,
+    # WCAG 4.1.2; a bare gear would announce nothing).
+    check('mobile: refresh far LEFT of the wordmark, icon-only with aria-label',
+          m['refreshLeftX'] <= 10 and m['refreshLeftX'] < m['logoBox']['x']
+          and m['refreshText'] == '' and m['refreshLabel'] == 'Refresh',
+          f"refreshX={m['refreshLeftX']} logoX={m['logoBox']['x']} text={m['refreshText']!r} label={m['refreshLabel']!r}")
+    check('mobile: settings far RIGHT of the wordmark, icon-only with aria-label',
+          m['gearBox']['right'] >= m['navInnerRight'] - 1 and m['gearBox']['x'] > m['logoBox']['right']
+          and m['gearText'] == '' and m['gearLabel'] == 'Settings',
+          f"gearRight={m['gearBox']['right']} innerRight={m['navInnerRight']} gearX={m['gearBox']['x']} logoRight={m['logoBox']['right']} text={m['gearText']!r} label={m['gearLabel']!r}")
+    check('mobile: wordmark centred in the bar (both icon controls sit outside it)',
+          abs(m['logoCentre'] - m['navCentre']) <= 1,
+          f"logoCentre={m['logoCentre']} navCentre={m['navCentre']}")
+    # Dock carries Settings' old slot to Tools. With no SCOPE feature seeded
+    # the Tools tab hides entirely, so the dock is the four core tabs and
+    # Settings must still be reachable — via the gear, its only route.
+    check('mobile: dock is Dashboard/Attendance/Timetable/Marks (+Tools when SCOPE data exists) and never Settings',
+          m['dockTabs'][:4] == ['dashboard', 'attendance', 'timetable', 'marks']
+          and m['dockTabs'] in (['dashboard', 'attendance', 'timetable', 'marks'],
+                                ['dashboard', 'attendance', 'timetable', 'marks', 'tools'])
+          and 'settings' not in m['dockTabs'],
+          str(m['dockTabs']))
+    page.click('.navbar-end [data-tab=settings]')
+    page.wait_for_timeout(250)
+    st = page.evaluate("""() => ({
+        shown: getComputedStyle(document.getElementById('tab-settings')).display,
+        hash: location.hash,
+        dashboardShown: getComputedStyle(document.getElementById('tab-dashboard')).display,
+        gearActive: document.querySelector('.navbar-end [data-tab=settings]').classList.contains('dock-active')
+      })""")
+    check('mobile: settings gear is the only route to Settings and it switches the tab',
+          st['shown'] != 'none' and st['dashboardShown'] == 'none' and st['hash'] == '#settings',
+          json.dumps(st))
+    page.go_back()
+    page.wait_for_timeout(250)
+    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.wait_for_timeout(400)
+    back = page.evaluate("""() => ({
+        shown: getComputedStyle(document.getElementById('tab-settings')).display,
+        active: document.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-selected'),
+        overflow: document.documentElement.scrollWidth - window.innerWidth
+      })""")
+    check('mobile: #settings hash restores the tab with the gear marked selected',
+          back['shown'] != 'none' and back['active'] == 'true' and back['overflow'] <= 0,
+          json.dumps(back))
+    # A visible caption grows the left cell; it must not push the wordmark off
+    # centre or the settings gear off the right edge (the widest caption is
+    # '(3d ago)' — pin the stale state, not just the fresh one).
+    stale = page.evaluate("""() => {
+        const nav = document.querySelector('.navbar.lg\\\\:hidden');
+        const el = nav.querySelector('.sync-line');
+        el.dataset.ts = String(Math.floor(Date.now() / 1000) - 86400 * 3);
+        renderSyncLines();
+        const lg = nav.querySelector('img').getBoundingClientRect();
+        const n = nav.getBoundingClientRect();
+        const gear = nav.querySelector('.navbar-end [data-tab=settings]').getBoundingClientRect();
+        return {caption: el.textContent, display: getComputedStyle(el).display,
+                logoCentre: Math.round((lg.x + lg.right) / 2 * 10) / 10,
+                navCentre: Math.round((n.x + n.right) / 2 * 10) / 10,
+                gearRight: Math.round(gear.right), innerRight: Math.round(n.right - parseFloat(getComputedStyle(nav).paddingRight)),
+                overflow: document.documentElement.scrollWidth - window.innerWidth};
+    }""")
+    check('mobile: a visible sync caption does not un-centre the wordmark or move the gear',
+          stale['display'] == 'block' and stale['caption'] == '(3d ago)'
+          and abs(stale['logoCentre'] - stale['navCentre']) <= 1
+          and stale['gearRight'] >= stale['innerRight'] - 1 and stale['overflow'] <= 0,
+          json.dumps(stale))
+    page.reload(wait_until='networkidle')
+    page.wait_for_timeout(400)
     check('mobile: no horizontal overflow', m['overflow'] <= 0,
           str(m['overflow']) + ' offenders=' + str(m['offenders']))
     # DESIGN.md §5: 8px below lg (matches the mobile navbar's own 8px content
