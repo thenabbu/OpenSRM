@@ -7,19 +7,19 @@ function showError(msg) {
   setTimeout(function() { t.classList.add('hidden'); }, 5000);
 }
 
-// ── Reserved scrollbar strip -> --sbw (dashboard shell CSS consumes it) ──
-// html{scrollbar-gutter:stable} reserves the classic-scrollbar strip on the
-// RIGHT only (the navbar-shift fix, DESIGN §10.14). The shell subtracts it
-// from its right padding so both edges read as one uniform 15px frame;
-// overlay-scrollbar platforms reserve 0 -> untouched. Re-measured on resize
-// (zoom/orientation changes the strip in device CSS px).
-function setSbw() {
-  var w = Math.max(0, window.innerWidth -
-    document.documentElement.getBoundingClientRect().width);
-  document.documentElement.style.setProperty('--sbw', w + 'px');
-}
-setSbw();
-window.addEventListener('resize', setSbw);
+// ── Scroll state for the overlay scrollbar (theme.html) ──
+// The bar is width 0 until the page is hovered or scrolled: `is-scrolling`
+// keeps it visible for a moment after the scroll ends so it does not blink.
+(function () {
+  var t;
+  window.addEventListener('scroll', function () {
+    document.documentElement.classList.add('is-scrolling');
+    clearTimeout(t);
+    t = setTimeout(function () {
+      document.documentElement.classList.remove('is-scrolling');
+    }, 1200);
+  }, {passive: true});
+})();
 
 // ── Sync lines (navbar): relative age, caption to the right of the sync
 //    button. Fresh (<5min) reads as nothing — the button itself is the status. ──
@@ -104,6 +104,47 @@ function softRefresh() {
         el.dataset.full = src.dataset.full;
       });
       renderSyncLines();
+      // Swap <main>'s markup for the freshly rendered one. idiomorph left the
+      // dashboard panel offset by one extra edge after a sync (card x / top
+      // gutter 15px -> 30px on a real device, persisted across tab switches);
+      // a plain markup swap lands the panel AND the shells on the template's
+      // classes with nothing restored. What the morph callbacks used to protect
+      // is kept by hand: [data-morph="ignore"] subtrees stay the LIVE nodes,
+      // open <details>, the visible panel and the attendance view choice ride
+      // along, and the tab is re-shown after the swap.
+      (function () {
+        var mainEl = document.querySelector('main');
+        var keepTab = (mainEl.querySelector('[data-tabpanel]:not([style*="none"])') || {}).id;
+        var live = {};
+        mainEl.querySelectorAll('[data-morph="ignore"]').forEach(function (el) {
+          if (el.id) live[el.id] = el;
+        });
+        // live open panels stay the LIVE nodes: the tag form's submit listener
+        // and the user's focus ride on them (the old morph kept the node too)
+        var openDets = Array.prototype.slice.call(mainEl.querySelectorAll('details[open]'));
+        var attTable = !!(mainEl.querySelector('#att-table') && !mainEl.querySelector('#att-table').hidden);
+        while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
+        mainEl.append.apply(mainEl, Array.prototype.slice.call(doc.querySelector('main').childNodes));
+        Object.keys(live).forEach(function (id) {
+          var fresh = document.getElementById(id);
+          if (fresh && fresh !== live[id]) fresh.parentNode.replaceChild(live[id], fresh);
+        });
+        openDets.forEach(function (old) {
+          var fresh = old.id ? document.getElementById(old.id) : null;
+          if (!fresh || fresh === old) return;
+          var keepHost = fresh.parentNode;
+          keepHost.replaceChild(old, fresh);
+          old.open = true;
+        });
+        if (attTable) {
+          var g = mainEl.querySelector('#att-graph'), t = mainEl.querySelector('#att-table');
+          if (g && t) { g.hidden = true; t.hidden = false; }
+        }
+        var keep = keepTab && mainEl.querySelector('#' + keepTab);
+        if (keep) mainEl.querySelectorAll('[data-tabpanel]').forEach(function (p) {
+          p.style.display = (p === keep ? '' : 'none');
+        });
+      })();
       setupCopyTargets(document.querySelector('main'));
     })
     .catch(function (err) { console.error('softRefresh fetch failed:', err); location.reload(); });   // safety net only
