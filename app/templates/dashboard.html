@@ -34,16 +34,13 @@
 .widget-scroll::-webkit-scrollbar-track{background:transparent}
 .widget-scroll::-webkit-scrollbar-thumb{border-radius:9999px;
   background:color-mix(in oklab, var(--color-base-content) 25%, transparent)}
-/* Uniform edge (v1.20): html{scrollbar-gutter:stable} reserves a classic-
-   scrollbar strip on the RIGHT only (the navbar-shift fix, DESIGN §10.14) —
-   it used to render 16px left / 31px right at 1920x1039. dash.js measures
-   the reserved strip into --sbw (0 on overlay scrollbars); the shell's edge
-   is then max(15px, strip) on BOTH sides, so the card column and the navbar
-   read as one uniform 15px frame wherever the scrollbar is <=15px. */
+/* Uniform edge (v1.21): every shell — both navbars, main, the card grid —
+   shares one 15px inset. There is no reserved scrollbar strip any more
+   (theme.html draws a self-hiding overlay bar over the content instead), so
+   the frame is a literal 15px and the navbar can run edge to edge. */
 @media (min-width:1024px){
-  :root{--edge:max(15px,var(--sbw,0px))}
-  main.edge-x,.navbar.edge-x{padding-left:var(--edge);
-    padding-right:calc(var(--edge) - var(--sbw,0px))}
+  :root{--edge:15px}
+  main.edge-x,.navbar.edge-x{padding-left:var(--edge);padding-right:var(--edge)}
   #tab-dashboard>.grid{gap:var(--edge)}
 }
 /* Widgets auto-adjust to their cell (v1.20): card-body is a flex column on
@@ -69,7 +66,7 @@
 </style>
 </head><body class="bg-base-100 text-base-content">
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->
-<div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-20 hidden lg:flex edge-x"
+<div class="navbar bg-base-200 border-b border-base-300 fixed top-0 left-0 right-0 z-20 hidden lg:flex edge-x"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start items-center gap-2 min-w-0">
     <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
@@ -166,15 +163,16 @@
   </button>
   {% endif %}
 </div>
-<main class="px-2 py-5 pb-24 lg:pt-[15px] lg:pb-[15px] edge-x">
+<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   <div id="tab-dashboard" role="tabpanel" aria-labelledby="tab-dashboard-tab" data-tabpanel style="">
     <!-- Card/widget engine: cards come from the LAYOUT registry, widgets from
          WIDGETS (app.py) — one include loop; each partial owns its label+box
          and renders NOTHING when empty (DESIGN §4.12). Unknown widget ids
          render nothing, never 500. Contract: engine-spec.md. -->
-    <!-- lg: the dashboard fits the viewport EXACTLY — grid height = 100dvh −
-         navbar (64px) − uniform 15px top/bottom edge (15+15) = 100dvh-94px:
-         no page scrollbar on desktop. Rows: minmax(0,auto) lets row 1
+    <!-- lg: the dashboard fits the viewport EXACTLY — navbar (64px) − uniform
+         15px top/bottom edge (15+15) = 100dvh-94px. Since v1.32.0 the navbar
+         is FIXED (out of flow), so main carries its 64px inside padding-top
+         (79px = 64+15) and the literal is unchanged. Rows: minmax(0,auto) lets row 1
          (marks+exams) hug its content, minmax(0,1fr) hands the REST to row 2
          (attendance+teachers) — equal 1fr rows starved row 2 by 93px at
          1280x900 while row 1 idled with 100px of slack (measured). A
@@ -190,7 +188,8 @@
          overflow-y-auto remains only as the last resort for content with
          no list. Mobile (<lg) keeps normal page flow. Pinned by
          tests/test_dash_fit.py (zero card-body residue at 1280x900,
-         1920x944 AND 1366x768; uniform edge; no page scrollbar). -->
+         1920x944 AND 1366x768; uniform edge; no page scrollbar). The
+         literal moves with the chrome: fixed navbar => 79px. -->
     <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-94px)] gap-6">
       {% for c in layout %}
       <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}{% if c.cap %} lg:max-h-[calc((100dvh-94px)*{{ c.cap }})]{% endif %} lg:overflow-hidden">
