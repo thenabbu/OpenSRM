@@ -121,6 +121,7 @@ from .portal.parsers.timetable import (
     _tt_norm_clock,  # noqa: F401 — re-exported from app.app
     parse_timetable,  # noqa: F401 — re-exported from app.app
 )
+from .scope.ops import enabled_features
 from .security import require_login
 from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
     _RATE_CAP,
@@ -156,6 +157,7 @@ from .views.attendance import (
     _status_for_pct,
     _title_case,
     _weekdays,  # noqa: F401 — re-exported from app.app
+    hourwise_view,
 )
 from .views.layout import (
     LAYOUT,
@@ -1655,6 +1657,53 @@ def _track(event, target="", detail="", user=""):
         log.info("usage track failed event=%s error=%r", event, e)
 
 # ── Routes ─────────────────────────────────────────────────
+def _hourwise_data(netid, group_key):
+    """SCOPE hour rows + the join inputs for this user, or None when ANY leg
+    is missing — feature 'hourwise' in SCOPE_FEATURES, a group with slots,
+    and a non-empty getHourwiseAttendance — so a missing leg leaves today's
+    Absences card untouched (zero regression by construction). Nothing
+    cached: scope_json may be hours old, it is history and still renders.
+    """
+    if "hourwise" not in enabled_features() or not group_key:
+        return None
+    gid = group_id(group_key)
+    slots = day_slots(group_key)
+    if gid is None or not slots:
+        return None
+    row = user_scope_data(netid)
+    try:
+        stored = json.loads(row["scope_json"] or "{}") if row else {}
+    except (ValueError, TypeError):
+        stored = {}
+    hw = stored.get("getHourwiseAttendance") or {} if isinstance(stored, dict) else {}
+    rows = hw.get("data") if isinstance(hw, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    # custom subjects keep the state but lose the name (join spec: never invent)
+    custom = {r[0] for r in group_subjects(gid) if r[3] and r[0]}
+    ts = hw.get("ts") if isinstance(hw, dict) else None
+    ts = int(ts) if isinstance(ts, (int, float)) and ts else 0
+    return rows, slots, custom, ts, \
+        (time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts)) if ts else "never")
+
+
+def _hourwise_section(netid, group_key, monthly):
+    """The Detailed attendance section's context, or None to keep the Absences
+    card. Month rows follow the portal's own monthly list (its `MMM / YYYY`
+    label, its bar %), and a month only SCOPE knows about still renders."""
+    hw = _hourwise_data(netid, group_key)
+    if not hw:
+        return None
+    rows_hw, slots_hw, custom_hw, ts_hw, full_hw = hw
+    grid = hourwise_view(rows_hw, slots_hw, custom_hw,
+                         {m["label"]: m for m in monthly})
+    if not grid["months"]:
+        return None
+    grid["ts"] = ts_hw
+    grid["full"] = full_hw
+    return grid
+
+
 @require_login
 def index():
     netid = get_current_user()
@@ -1737,6 +1786,14 @@ def index():
     # header-only (empty-state rule DESIGN §8); hide the whole block instead
     has_budgets = any(c.get("m90") is not None or c.get("m_end") is not None for c in courses)
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
+    # Detailed attendance (SCOPE hourwise × timetable): replaces the Absences
+    # card when the feature, the group's timetable and the stored hour rows
+    # are all present; otherwise the card above renders exactly as on main.
+    hourwise = _hourwise_section(netid, group_key, monthly)
+    if hourwise:
+        monthly_abs = []
+    else:
+        monthly_abs = monthly
     dash = {
         # institute mail is NetID@srmist.edu.in (the portal login page states
         # it verbatim) — the personal Gmail from the profile is NOT shown here
@@ -1760,7 +1817,8 @@ def index():
     layout = [c for c in LAYOUT
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
     return render_template(
-        "dashboard.html", netid=netid, courses=courses, monthly=monthly,
+        "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
+        hourwise=hourwise,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
@@ -1825,6 +1883,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.1.0", "date": "26 Oct", "title": "Attendance, hour by hour",
+     "body": "The absences list turns into a real attendance view: open any month "
+             "and each date drops down as a row of periods showing P, A or OD, "
+             "joined to your timetable so hovering a cell tells you which subject "
+             "that hour actually was."},
     {"ver": "v2.0.0", "date": "27 Oct", "title": "SRM's own app backend, and a Tools tab",
      "body": "OpenSRM now talks to the same backend the official SRM SCOPE student app uses, "
              "so fee records, exam results, library loans, hostelling and placement "
