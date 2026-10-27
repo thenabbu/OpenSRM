@@ -146,6 +146,9 @@ from .state import (  # noqa: F401 — re-exported: tests/recipes import these f
     progress,
     rate_limiter,
 )
+from .views.academics import (
+    academics_view,  # noqa: F401 — re-exported from app.app
+)
 from .views.attendance import (
     ATTENDANCE_TARGET,
     ATTENDANCE_WARN,  # noqa: F401 — re-exported from app.app
@@ -159,6 +162,7 @@ from .views.attendance import (
     _weekdays,  # noqa: F401 — re-exported from app.app
     hourwise_view,
 )
+from .views.campus import campus_view
 from .views.fees import _fees_view
 from .views.layout import (
     LAYOUT,
@@ -1763,6 +1767,10 @@ def index():
                              _load_component_tags(_class_key(personal_data, netid), marks_raw))
     marks_summary = _marks_summary(marks_raw)
 
+    # Academics tab (SCOPE): stored cold blob only — no network on the render
+    # path. None = zero footprint (feature off / no academics ops stored / all
+    # sections empty), which is what gates the navbar item, dock item and panel.
+    academics = academics_view(user_scope_data(netid), enabled_features())
     # Fees tab: server-rendered from the cold SCOPE blob (marks-tab pattern;
     # no new DB columns). Feature 'fees' off or no fee/finance rows -> None
     # -> the template renders no navbar item and no panel (empty=hidden,
@@ -1835,6 +1843,13 @@ def index():
              "teach_groups": _teacher_groups(faculty_view)}
     layout = [c for c in LAYOUT
               if not c.get("when") or any(_wctx.get(n) for n in c["when"])]
+    # Campus tab: shape-driven SCOPE cards off the same row (scope_json).
+    # Each card builds ONLY when its feature slug is on and it has rows, so
+    # every card self-hides — and with none left the tab is never registered
+    # (alive-empty = no UI, never an error). Scope toggles are a request-time
+    # knob, so the feature set is read per request like every other gate.
+    campus = campus_view(_jload(row["scope_json"] if row else None, {}),
+                         enabled_features())
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
@@ -1843,6 +1858,7 @@ def index():
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
+        academics=academics,
         fees=fees,
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         # card/widget engine: layout registry + derived widget data (route-side
@@ -1857,6 +1873,7 @@ def index():
         # scope-filled copy of personal (portal values win, scope gaps only);
         # the profile widget's avatar stays the generated blobatar
         personal=merge_personal(personal_data, _scope_fields),
+        campus=campus,
         tools=_tools_entries(netid))
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
@@ -1902,6 +1919,7 @@ TIMETABLE_SOURCE = "official"
 def _tt_editor_enabled():
     return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
 
+
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
@@ -1910,6 +1928,11 @@ NOTICES = [
              "official SCOPE student app already knows - parents' names, date of "
              "birth, admitted date, address, university and advisors - shown only "
              "where the portal doesn't already list them."},
+    {"ver": "v2.3.0", "date": "27 Oct", "title": "Academics, in one place",
+     "body": "A new Academics tab starts with your CGPA and the credits you have "
+             "earned, then drops each semester open onto its subjects as one line "
+             "each - code, name, grade - with credits and SGPA in the summary. "
+             "Failures wear a tinted red; everything else stays quiet."},
     {"ver": "v2.2.0", "date": "27 Oct", "title": "Fees, without the digging",
      "body": "A Fees tab shows what you still owe, and once nothing is due it opens "
              "straight into what you have paid, grouped by academic year with the "

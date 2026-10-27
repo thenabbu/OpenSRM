@@ -6,7 +6,10 @@ scope-integration; XSD-verified against the live WSDL 2026-10-18).
 FEATURES = feature slug -> ops it enables. Every SCOPE feature ships, gated
 by toggles (mission FACTS, user decision): unused-now features are fully
 supported but off until enabled. attendance + marks are the portal-parity
-fallback sources - enabled by default but UI-neutral. The exam-details /
+fallback sources - enabled by default but UI-neutral. placement / library /
+campus are implemented end to end but DEFAULT-OFF: their SCOPE payloads are
+alive-empty for every student today, so they stay dark until the portal
+operation mapping is mapped out and someone opts in. The exam-details /
 timetable JSP is deliberately NOT duplicated as a feature: the timetable
 stays portal-owned.
 
@@ -1980,7 +1983,9 @@ FEATURES = {
     "marks": ["getInternalMarkDetails"],
 }
 
-DEFAULT_FEATURES = "hourwise,academics,fees,placement,library,campus,profile,attendance,marks"
+# opt-in slugs (see FEATURES above): enable with SCOPE_FEATURES=all or an
+# explicit list, e.g. SCOPE_FEATURES=placement,library,campus
+DEFAULT_FEATURES = "hourwise,academics,fees,profile,attendance,marks"
 
 
 def enabled_features() -> set[str]:

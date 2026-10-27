@@ -597,6 +597,17 @@ Recipes (approved mockup values, computed — not eyeballed):
 DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/unit/test_layout.py
 ```
 
+### 4.18 Academics tab (SCOPE, v1.29.0)
+
+`academics_view()` (`app/views/academics.py`) builds the tab from `users.scope_json`; `index()` passes it as `academics`, and **None means zero footprint** — no navbar button, no dock button, no panel (feature off via `SCOPE_FEATURES`, no academics ops stored, or every section empty). Four self-hiding cards in ONE `max-w-3xl mx-auto` panel stacked with `flex flex-col gap-3`:
+
+- **Results** — §4.12 row anatomy: a `font-mono text-xs /60` monthyear header with the semester caption right, then rows of title-cased name over `font-mono text-xs /60` code. **Title spans WRAP, never `truncate`**: the measured probe found 16 clipped names at 393px (`truncate` + no hover = unreadable on touch). Grade chip = `badge badge-soft badge-sm font-mono min-w-9 justify-center`; result = `badge badge-outline badge-sm text-base-content/60` "Pass" (quiet — the loud-object budget keeps the CGPA figure as the tab's only accent). An **F grade is error TEXT, never a colored chip**: `.res-fail` (dashboard.html style block) = `color-mix(in oklab, var(--color-error) 70%, white)` — the §4.17 `.att-neg` recipe, because plain `--color-error` measures 4.1:1 on `base-200` (§2.8) — next to a solid `badge-error badge-sm text-base-content` "Fail" so the hue is never the only cue. Provisional/Revaluation subsections (`{Status, Message, Data}` envelopes) render only when `Data` is non-empty (alive-empty = the subsection does not exist).
+- **Hero** — the tab's ONE loud figure: `font-mono font-bold text-[22px] tabular-nums` (the §4.17 ticker's hero size, no new scale step), label `CGPA (est.)` carrying the tooltip "credit-weighted from released results; est. = scale not officially published" (never presented as official — the SRM scale is unpublished), `N/163 credits earned` under it, and per-monthyear SGPA rows under a divider, newest first. Freshness reuses `.sync-line` fed with `scope_fetched_at` (relative age, hidden while fresh — the navbar's caption pattern).
+- **Credits** — the SAME §4.15 `.meter` + `.mz` bar (never a new bar): **neutral fill always, `background:var(--color-success)` only at ≥100% complete** — deliberately no attendance thresholds (DESIGN §2.6 stays on the attendance tab; a finished credit category is a fact), with `acq/req` in mono beside every bar and a footer `Overall … · Semester N …` (latest semester = the newest one that actually earned credits, never the future 0/N plan row).
+- **Subjects** — the program completion grid as a LIST inside the shared `.widget-scroll` box: category subheads `text-sm font-semibold`, completed rows show the soft grade chip + month (+ a quiet `· N attempts` note when attempts > 1), pending rows keep the portal's `-` at `text-base-content/50` with a `title`.
+
+Pinned by `tests/test_scope_academics.py` (CGPA math incl. ROUND_HALF_UP vs banker's, parsers, envelope sections, the zero-footprint gate) and by the PR's measured evidence: contrast probe 0 fails (141 text/bg pairs at 393×851 and 1280×900), geometry (4 cards, one column x/width, uniform 12px gaps, no horizontal overflow).
+
 ---
 
 ## 5. Layout and responsive
