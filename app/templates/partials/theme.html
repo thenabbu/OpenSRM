@@ -15,11 +15,6 @@ html[data-theme="openSRM"] {
   --radius-selector: 0.5rem; --radius-field: 0.5rem; --radius-box: 0.5rem;
   --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
   color-scheme: dark;
-  /* Marks is the only tab taller than the viewport: its scrollbar appearing used to
-     shrink the layout viewport ~15px and slide the whole navbar (measured: tab x
-     432.4 -> 424.9, clientW 1280 -> 1265). Reserve the gutter so every tab lays
-     out at one width. Overlay-scrollbar platforms (mobile) reserve nothing. */
-  scrollbar-gutter: stable;
 }
 /* Selected navbar tab — two cues on purpose. The tint is the subtle background
    the bar needs; the 2px currentColor bar is the non-color state signal
@@ -43,6 +38,47 @@ html[data-theme="openSRM"] {
   bottom: 2px;
   height: 2px;
   background: currentColor;
+}
+/* Scroll affordance (v1.32.0): a thin, self-hiding overlay bar on desktop only.
+   NOT scrollbar-gutter:stable — that reserved a 15px dead strip on every page
+   (on phones too, where there is no scrollbar at all) and pushed the navbar's
+   right edge off the viewport edge. The bar is drawn OVER the content, so it
+   costs no layout width and the layout never moves when it appears.
+   Chromium/Safari: width 0 until the page is hovered or scrolled, then a 6px
+   rounded thumb at 35% white. Firefox has no hover state for ::-webkit-*, so
+   it gets the standard props: thin + a faint thumb, same colour.
+   Touch platforms never scroll with a visible bar -> hidden outright. */
+@media (hover: hover) and (pointer: fine) {
+  html { scrollbar-width: thin;
+         scrollbar-color: color-mix(in oklab, var(--color-base-content) 35%, transparent) transparent; }
+}
+@media (hover: none), (pointer: coarse) {
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { display: none; }
+}
+@supports selector(::-webkit-scrollbar) {
+  @media (hover: hover) and (pointer: fine) {
+    html { scrollbar-width: auto; scrollbar-color: auto; }
+    /* width 0 keeps it out of the way; the hover/scroll state below gives it
+       its 6px back. Track is always transparent — no gutter, no strip. */
+    html::-webkit-scrollbar { width: 0; height: 0; }
+    html::-webkit-scrollbar-track,
+    html::-webkit-scrollbar-corner { background: transparent; }
+    html::-webkit-scrollbar-thumb {
+      background: transparent;
+      border-radius: 9999px;
+      transition: background-color 200ms ease-out;
+    }
+    html:hover::-webkit-scrollbar,
+    html.is-scrolling::-webkit-scrollbar { width: 6px; height: 6px; }
+    html:hover::-webkit-scrollbar-thumb,
+    html.is-scrolling::-webkit-scrollbar-thumb {
+      background: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+    }
+    html::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+    }
+  }
 }
 /* First paint is dark even before app.css parses — no color jump
    (the data-theme block above paints the tokens this matches). */

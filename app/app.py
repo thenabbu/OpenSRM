@@ -1825,7 +1825,7 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
-    {"ver": "v2.0.0", "date": "25 Oct", "title": "SRM's own app backend, and a Tools tab",
+    {"ver": "v2.0.0", "date": "27 Oct", "title": "SRM's own app backend, and a Tools tab",
      "body": "OpenSRM now talks to the same backend the official SRM SCOPE student app uses, "
              "so fee records, exam results, library loans, hostelling and placement "
              "details can come from the source the college itself ships with. This "
@@ -1833,6 +1833,15 @@ NOTICES = [
              "Tools tab. The cards for each of those arrive over the next updates — "
              "phones also get a tidier bar, with refresh on the left of the logo and "
              "settings on the right, and Settings' place in the bottom bar goes to Tools."},
+    {"ver": "v1.32.0", "date": "26 Oct", "title": "A cleaner edge",
+     "body": "The empty strip along the right side is gone, and the scrollbar "
+             "is now a thin bar that only appears while you are using it — it "
+             "floats over the page instead of pushing it around. The top bar "
+             "runs edge to edge and stays put while you scroll."},
+    {"ver": "v1.31.1", "date": "26 Oct", "title": "The page stays put",
+     "body": "A refresh used to nudge the cards in from the left edge and "
+             "down from the menu after every sync. They now stay exactly "
+             "where they were."},
     {"ver": "v1.31.0", "date": "24 Oct", "title": "Leaner under the hood",
      "body": "The server got a much smaller update package, so future "
              "updates download faster. Nothing you can see changes — same "
