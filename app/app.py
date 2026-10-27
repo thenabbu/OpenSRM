@@ -1787,7 +1787,8 @@ def index():
         timetable=timetable_html(group_key, attendance),
         tt_fetched_at=_tt_fetched_at(group_key),
         tt_editor_enabled=_tt_editor_enabled(),
-        personal=personal_data)
+        personal=personal_data,
+        tools=_tools_entries(netid))
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
 SLOTS = [
@@ -1835,6 +1836,20 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.1.0", "date": "26 Oct", "title": "Fees, without the digging",
+     "body": "A Fees tab shows what you still owe, and once nothing is due it opens "
+             "straight into what you have paid, grouped by academic year with the "
+             "date first and the amount on the right. The full receipt history sits "
+             "in a collapsed ledger you can open when you actually need a voucher "
+             "number."},
+    {"ver": "v2.0.0", "date": "25 Oct", "title": "SRM's own app backend, and a Tools tab",
+     "body": "OpenSRM now talks to the same backend the official SRM SCOPE student app uses, "
+             "so fee records, exam results, library loans, hostelling and placement "
+             "details can come from the source the college itself ships with. This "
+             "release is the groundwork: the connection, the feature switches and this "
+             "Tools tab. The cards for each of those arrive over the next updates — "
+             "phones also get a tidier bar, with refresh on the left of the logo and "
+             "settings on the right, and Settings' place in the bottom bar goes to Tools."},
     {"ver": "v1.31.0", "date": "24 Oct", "title": "Leaner under the hood",
      "body": "The server got a much smaller update package, so future "
              "updates download faster. Nothing you can see changes — same "
@@ -1982,6 +1997,59 @@ def _budget_rows(courses):
             rows.append((name, f"+{skip}", 2))
         else:
             rows.append((name, "0", 1))
+    return rows
+
+
+# ── Tools tab (SCOPE-sourced surfaces) ──────────────────────────────
+# One entry per SCOPE surface. A row renders ONLY when its feature slug is
+# enabled AND its representative op landed a non-empty answer; nothing
+# qualifying = empty list = no entry, no tab (zero footprint — the mission
+# toggle contract, and the same self-hiding rule the dashboard widgets obey).
+# `tab` is the panel that surface's own PR mounts: the row navigates there
+# when that panel exists today and renders inert otherwise, so this stays a
+# landing surface for the SCOPE rotation instead of a duplicate of it.
+TOOLS = [
+    ("fees", "Fees", "Dues, payments and receipts", "getFeeDetails"),
+    # gates on the RELEASED-results op: the provisional/revaluation endpoints
+    # are empty outside their window, so keying the entry on them left Academics
+    # hidden even with a full grade history (caught in review).
+    ("academics", "Academics", "Results, grades and credits",
+     "getExamDetails"),
+    ("library", "Library", "Issued books, due dates, fines",
+     "getLibraryTransaction"),
+    ("campus", "Hostel & transport", "Room, mess and bus route",
+     "getHostelDetails"),
+    ("campus", "Notifications", "Campus notices and circulars",
+     "getViewNotificationListJson"),
+    ("placement", "Placement", "Offers, eligibility, registration",
+     "getStudentAllOfferedJobs"),
+]
+
+
+def _tools_entries(netid):
+    """Rows for the Tools panel: [{"slug","label","hint","op"}].
+
+    Two gates, both required: SCOPE_FEATURES enables the slug (the ops
+    contract) and the cold blob holds a non-empty answer for the op (an
+    enabled surface with nothing behind it must not advertise itself).
+    Costs one users-row read, and only when a feature is enabled at all.
+    """
+    from app.scope.ops import enabled_features  # lazy: app.scope imports app.db
+    on = enabled_features()
+    if not on:
+        return []
+    row = user_scope_data(netid)
+    # shape guard on both levels: a corrupt/foreign scope_json must degrade to
+    # "no tools", never 500 the dashboard (same rule as _stored in scope.sync
+    # and _jload's wrong-shape branch — audit B10).
+    blob = _jload(row["scope_json"] if row else None, {})
+    rows = []
+    for feat, label, hint, op in TOOLS:
+        if feat not in on:
+            continue
+        entry = blob.get(op)
+        if isinstance(entry, dict) and entry.get("data"):
+            rows.append({"slug": feat, "label": label, "hint": hint, "op": op})
     return rows
 
 
