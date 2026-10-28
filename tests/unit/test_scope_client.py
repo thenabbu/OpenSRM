@@ -400,6 +400,36 @@ def t_ensure_session_login_when_missing():
     assert _scope_row()[0] == NEW_SID, "session not persisted"
 
 
+
+def t_tools_rows_carry_a_real_tab():
+    """Every Tools row must name a tab the dashboard actually renders.
+
+    A row with no `tab` renders href="#" and switches nothing; a row pointing at
+    a panel that does not exist is what dash.js has to defuse at runtime. Both
+    are silent in a screenshot, so pin them here.
+    """
+    import app.app as A
+
+    # the catalog itself: every entry is a 5-tuple ending in a tab slug
+    for entry in A.TOOLS:
+        assert len(entry) == 5, f"TOOLS entry not (slug,label,hint,op,tab): {entry}"
+        assert entry[4] and isinstance(entry[4], str), f"no tab target: {entry}"
+
+    # and the two surfaces that live inside an existing tab are present at all
+    slugs = {e[0] for e in A.TOOLS}
+    assert "hourwise" in slugs, "hourwise has no Tools row (no phone route)"
+    assert "profile" in slugs, "profile has no Tools row (no phone route)"
+
+    # Each tab slug must name a tab that exists SOMEWHERE in the stack. A row
+    # whose panel is not mounted yet is legal — dash.js defuses it to a disabled
+    # row — but a slug that appears nowhere at all is a typo that ships a dead
+    # link. Known-tab list = every surface the SCOPE suite installs.
+    KNOWN = {"dashboard", "attendance", "timetable", "marks", "settings",
+             "tools", "fees", "academics", "campus"}
+    for slug, label, hint, op, tab in A.TOOLS:
+        assert tab in KNOWN, f"{label} -> #{tab}: not a known tab"
+
+
 TESTS = [
     ("envelope byte-identity vs pcap FLOW 18", t_envelope_byte_identity),
     ("blob AES round-trip (unicode + 1KB)", t_blob_roundtrip),
@@ -419,6 +449,7 @@ TESTS = [
     ("cold sync alive-empty stored as-is", t_cold_sync_alive_empty_stored_as_is),
     ("cold sync auth fault = one relogin then retry", t_cold_sync_auth_fault_relogins_once),
     ("ensure_scope_session logs in when sid missing", t_ensure_session_login_when_missing),
+    ("tools rows carry a real tab", t_tools_rows_carry_a_real_tab),
 ]
 
 if __name__ == "__main__":
