@@ -28,7 +28,7 @@ grid, font and arrow control and render identically everywhere.
 python3 scripts/build_arch_diagram.py            # regenerates docs/architecture.html (fails on grid/text/label violations)
 python3 <diagram-design-skill>/scripts/export_png.py docs/architecture.html docs/architecture.png 2
 python3 <diagram-design-skill>/scripts/self_check.py docs/architecture.html
-DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_audit_findings.py   # 72/72 — pins README doc claims
+DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_audit_findings.py   # 73/73 — pins README doc claims
 ```
 
 Hermes agents: load the `diagram-design` skill and follow its
@@ -105,7 +105,7 @@ floats inside the diagram area.
 2. `self_check.py` passes (accessible-SVG contract, single-file safety).
 3. Vision review at **1920 and 890px** — SHIP verdict, no label/arrow
    complaints; 890 is the README display width, check it explicitly.
-4. `test_audit_findings.py` still 72/72 (it pins README doc claims —
+4. `test_audit_findings.py` still 73/73 (it pins README doc claims —
    e.g. `opensrm-v40` must stay exactly once, in the PWA bullet).
 5. Commit `architecture.html` + `architecture.png` + generator changes
    together; if README copy changed, refresh

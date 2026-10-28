@@ -201,7 +201,7 @@ when the portal doesn't.
 | Backend | Flask 3.1, Python 3.11, gunicorn (gthread, single worker) |
 | Portal access | Pure HTTP (urllib) pipeline; an archived Playwright fallback stays off unless `PLAYWRIGHT_FALLBACK=enabled` |
 | Captcha | ddddocr (self-contained OCR, no external service) |
-| Database | SQLite with a versioned migration registry (16 migrations → schema v17) |
+| Database | SQLite with a versioned migration registry (17 migrations → schema v18) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/app.css` by a pinned, sha256-verified CLI — no runtime CDN. Vanilla JS, Jinja2 |
 | PWA | Service worker: navigation-preload HTML, cache-first `?v=` assets, network-first icons |
 | CI/CD | GitHub Actions — Lint · Tests (unit + docker + e2e) · Build & Push → `ghcr.io/thenabbu/opensrm` · report-only Scans |
