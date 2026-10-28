@@ -1433,8 +1433,10 @@ def _course_view(c):
             "skip_now": skip, "attend_now": attend,
             # fill tint: red = pct < 75 · orange(warn) = pct ≥ 75 AND skip-now == 0 · gray = comfortable
             "tint": "red" if pct < ATTENDANCE_TARGET * 100 else ("warn" if skip == 0 else "gray"),
-            # table view: attended − ceil(0.75·total); None = no classes held (no margin exists)
-            "margin": (attended - math.ceil(ATTENDANCE_TARGET * max_hours)) if max_hours > 0 else None}
+            # table view: the SAME signed _bunk_counts pair the dashboard widget shows
+            # (+skip / 0 / -attend) — one sign language, one threshold source. None =
+            # no classes held -> template renders `--`, never a fake 0.
+            "margin": (skip if skip is not None else -attend) if max_hours > 0 else None}
 
 _BAND_BAR = {"ok": "success", "warn": "warning", "danger": "error"}
 

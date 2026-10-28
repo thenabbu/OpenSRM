@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 # `with` block) so the DB dir outlives this module-level test body
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-att-view-")
 from app.app import (_absences_view, _attendance_budgets, _attendance_index, _title_case,
-                     _bunk_counts, _bunk_line, _course_view, _exam_stop,
+                     _bunk_counts, _bunk_line, _budget_rows, _course_view, _exam_stop,
                      _join_attendance, _tt_att_sig, _weekdays)
 
 fails = []
@@ -130,6 +130,28 @@ check("absences empty → []", _absences_view({}) == [])
 check("absences junk date shown raw", _absences_view({"X": [{"date": "?", "hours": "1"}]})[0]["rows"][0]["date"] == "?")
 check("title-case: ALL CAPS portal name", _title_case("DATABASE MANAGEMENT SYSTEMS") == "Database Management Systems")
 check("title-case: mixed-case custom untouched", _title_case("CN Lab") == "CN Lab")
+
+# 9) margin = the SAME signed _bunk_counts the dashboard widget shows — one sign
+#    language, one threshold. +skip (incl. 0) / -attend / None (nothing held → `--`).
+#    The four brief boundary cases first, then rounding/edge shapes.
+for (A, C, want) in [(41, 50, 4), (38, 50, 0), (31, 50, -26), (0, 0, None),
+                     (75, 100, 0), (74, 100, -4), (76, 100, 1), (3, 4, 0), (5, 5, 1)]:
+    cv = _course_view({"attended": A, "max_hours": C, "absent": C - A, "code": "M", "description": "M"})
+    check(f"margin {A}/{C} → {want}", cv["margin"] == want, str(cv["margin"]))
+
+# table margin must equal the dashboard widget's signed value for the same course
+for (A, C) in [(41, 50), (38, 50), (31, 50), (91, 100), (74, 100)]:
+    cv = _course_view({"attended": A, "max_hours": C, "absent": C - A, "code": "M", "description": "M"})
+    (_, widget, _risk), = _budget_rows([cv])
+    m = cv["margin"]
+    expect = "0" if m == 0 else (f"+{m}" if m > 0 else f"{m}")
+    check(f"table margin == widget {A}/{C}", widget == expect, f"table={m!r} widget={widget!r}")
+
+# malformed inputs must not raise or fabricate a margin
+check("margin junk attended → no crash",
+      _course_view({"attended": "x", "max_hours": "y", "description": "J"}).get("margin") is None)
+check("margin None attended/max → None",
+      _course_view({"description": "J"}).get("margin") is None)
 
 print(f"\n{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
 sys.exit(1 if fails else 0)
