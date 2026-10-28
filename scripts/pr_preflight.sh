@@ -59,16 +59,21 @@ else
   res FAIL version-trio "trio out of sync: VERSION=$CUR pyproject=$PYV uv.lock=$LOCKV"
 fi
 
+# Compare VERSION per REF, not via `git log -S`: -S lists commits that CHANGED
+# the string, so it flags HEAD's own bump and misses a sibling that merely
+# INHERITS the number. Origin alias skipped via %(symref).
 RACE=""
-for sha in $(git log --all -S"$CUR" --format=%H -- VERSION); do
-  git merge-base --is-ancestor "$sha" origin/main 2>/dev/null && continue
-  who=$(git branch -a --contains "$sha" 2>/dev/null | tr -d ' *+' | grep -v '^origin/main$' | head -1)
-  RACE="${RACE}    $sha ${who:-<detached>}"$'\n'
-done
+BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+while read -r ref sym; do
+  [ -n "$sym" ] && continue                      # symbolic refs (origin -> origin/main)
+  case "$ref" in main|origin/main|"$BR") continue;; esac   # never flag our own branch
+  v=$(git show "$ref:VERSION" 2>/dev/null | tr -d '[:space:]')
+  [ "$v" = "$CUR" ] && RACE="${RACE}    ${ref}=${v}"$'\n'
+done < <(git for-each-ref --format='%(refname:short) %(symref)' refs/heads refs/remotes/origin)
 if [ -z "$RACE" ]; then
-  res PASS version-race "no non-main ref carries $CUR in VERSION"
+  res PASS version-race "no other ref carries $CUR in VERSION"
 else
-  res FAIL version-race "other refs already touched VERSION at $CUR — reuse that number, don't invent one:"$'\n'"$RACE"
+  res FAIL version-race "other refs already hold $CUR — reuse/renumber instead of a second bump:"$'\n'"$RACE"
 fi
 
 # ---- 5. sw.js cache name vs README (reuse tests/unit/test_audit_findings.py, checks L37 + D58)
