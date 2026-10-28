@@ -1978,7 +1978,12 @@ FEATURES = {
                   "getPlacementRegistrationDetailsList", "getPlacementWillingnessRegistrationOpen"],
     "library": ["getLibraryTransaction"],
     "campus": ["getHostelDetails", "getTransportDetails", "getViewNotificationListJson"],
-    "profile": ["getPersonalDetails", "getStudentPhoto"],
+    # getStudentPhoto is deliberately ABSENT: it returns raw JPEG bytes, not a
+    # JSON envelope, and it is fetched on demand via client.photo(numeric_id).
+    # Listing it here made every sync try to json.loads() an image, raise
+    # "response decrypt failed", and abort the whole batch as a transport
+    # fault — profile never landed and 11 already-fetched ops were discarded.
+    "profile": ["getPersonalDetails"],
     "attendance": ["getCummulativeAttendance", "getSubjectwiseAttendance"],
     "marks": ["getInternalMarkDetails"],
 }
