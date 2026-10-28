@@ -291,7 +291,7 @@ def t_cold_sync_stores_data():
     finally:
         SYNC.data_op = orig
         os.environ.pop("SCOPE_FEATURES", None)
-    assert res == {"ok": 2, "skipped": 0, "ops": 2, "aborted": False}, res
+    assert res == {"ok": 2, "skipped": 0, "ops": 2, "fresh": 0, "aborted": False}, res
     assert [op for op, _ in calls] == ["getCummulativeAttendance", "getSubjectwiseAttendance"]
     assert all(sid == OLD_SID for _, sid in calls), calls
     sid, scope_json, fetched = _scope_row()
@@ -400,6 +400,147 @@ def t_ensure_session_login_when_missing():
     assert _scope_row()[0] == NEW_SID, "session not persisted"
 
 
+
+def t_sync_incremental_ttl():
+    """Fresh ops are NOT re-fetched; stale/missing ones are. TTL is the knob."""
+    now = int(time.time())
+    prior = {"getCummulativeAttendance": {"data": {"old": 1}, "ts": now},          # fresh
+             "getSubjectwiseAttendance": {"data": {"old": 2}, "ts": now - SYNC.SCOPE_TTL_S - 1}}  # stale
+    _seed_user(scope_json=json.dumps(prior))
+    os.environ["SCOPE_FEATURES"] = "attendance"
+    calls = []
+    orig = SYNC.data_op
+    SYNC.data_op = lambda op, sid: (calls.append(op), {"new": op})[1]
+    try:
+        res = SYNC.scope_cold_sync(NETID, "pw")
+    finally:
+        SYNC.data_op = orig
+        os.environ.pop("SCOPE_FEATURES", None)
+    assert calls == ["getSubjectwiseAttendance"], calls  # the fresh one was skipped
+    assert res["fresh"] == 1 and res["ok"] == 1 and res["ops"] == 2, res
+    stored = json.loads(_scope_row()[1])
+    assert stored["getCummulativeAttendance"] == prior["getCummulativeAttendance"], "fresh op was refetched"
+    assert stored["getSubjectwiseAttendance"]["data"] == {"new": "getSubjectwiseAttendance"}
+    # everything fresh -> no network at all, and no re-login either
+    calls.clear()
+    os.environ["SCOPE_FEATURES"] = "attendance"        # the assert below reads env
+    try:
+        assert SYNC.scope_needs_sync(NETID) is False, "fresh blob reported stale"
+        res2 = SYNC.scope_cold_sync(NETID, "pw")
+    finally:
+        os.environ.pop("SCOPE_FEATURES", None)
+    assert calls == [] and res2["ok"] == 0 and res2["fresh"] == 2, res2
+
+
+def t_sync_aborted_does_not_stamp_fresh():
+    """A transport abort keeps the OLD fetched_at — a partial run is not fresh."""
+    _seed_user()
+    os.environ["SCOPE_FEATURES"] = "attendance"
+    orig_op = SYNC.data_op
+    SYNC.data_op = lambda op, sid: {"op": op}
+    try:
+        SYNC.scope_cold_sync(NETID, "pw")
+    finally:
+        SYNC.data_op = orig_op
+    stamped = _scope_row()[2]
+    assert stamped > 0, "completed run did not stamp"
+
+    # force a stale blob, then abort mid-run
+    conn = sqlite3.connect(DBFILE)
+    conn.execute("UPDATE users SET scope_fetched_at=? WHERE netid=?", (12345, NETID))
+    conn.commit()
+    conn.close()
+    def boom(op, sid):
+        raise C.ScopeTransportError("upstream down")
+    SYNC.data_op = boom
+    try:
+        res = SYNC.scope_cold_sync(NETID, "pw", force=True)
+    finally:
+        SYNC.data_op = orig_op
+        os.environ.pop("SCOPE_FEATURES", None)
+    assert res["aborted"] is True, res
+    assert _scope_row()[2] == 12345, "aborted run overwrote fetched_at (claimed freshness)"
+    assert SYNC.scope_needs_sync(NETID) is True, "aborted run left the blob looking fresh"
+
+
+def t_trigger_is_single_flight():
+    """Two triggers for one netid start exactly ONE batch."""
+    started = []
+    orig = SYNC.scope_cold_sync
+
+    def slow(netid, password, force=False):
+        started.append(netid)
+        time.sleep(0.3)
+        return {}
+
+    SYNC.scope_cold_sync = slow
+    try:
+        A._scope_sync_running.discard(NETID)
+        A._scope_sync_trigger(NETID, "pw")
+        A._scope_sync_trigger(NETID, "pw")   # dropped: already in flight
+        A._scope_sync_trigger(NETID, "pw")
+        time.sleep(0.15)
+        assert A._scope_sync_state(NETID) in ("running", "stale", "complete", "off")
+        time.sleep(0.6)
+    finally:
+        SYNC.scope_cold_sync = orig
+    assert started == [NETID], started
+    assert NETID not in A._scope_sync_running, "lock leaked after the run"
+
+
+def t_trigger_never_blocks():
+    """The login/refresh path must return immediately — the fetch is background."""
+    orig = SYNC.scope_cold_sync
+    SYNC.scope_cold_sync = lambda netid, password, force=False: time.sleep(3)
+    try:
+        A._scope_sync_running.discard(NETID)
+        t0 = time.monotonic()
+        A._scope_sync_trigger(NETID, "pw")
+        elapsed = time.monotonic() - t0
+    finally:
+        SYNC.scope_cold_sync = orig
+    assert elapsed < 0.5, f"trigger blocked the request path for {elapsed:.2f}s"
+    assert A._scope_sync_state(NETID) == "running", A._scope_sync_state(NETID)
+
+
+def t_status_endpoint_scoped_and_auth():
+    """The status endpoint 401s logged out and answers only for the session user."""
+    c = A.app.test_client()
+    r = c.get("/api/scope/status")
+    assert r.status_code == 401, r.status_code
+    body = r.get_json()
+    assert body == {"ok": False, "error": "not logged in"}, body
+
+
+def t_tools_rows_carry_a_real_tab():
+    """Every Tools row must name a tab the dashboard actually renders.
+
+    A row with no `tab` renders href="#" and switches nothing; a row pointing at
+    a panel that does not exist is what dash.js has to defuse at runtime. Both
+    are silent in a screenshot, so pin them here.
+    """
+    import app.app as A
+
+    # the catalog itself: every entry is a 5-tuple ending in a tab slug
+    for entry in A.TOOLS:
+        assert len(entry) == 5, f"TOOLS entry not (slug,label,hint,op,tab): {entry}"
+        assert entry[4] and isinstance(entry[4], str), f"no tab target: {entry}"
+
+    # and the two surfaces that live inside an existing tab are present at all
+    slugs = {e[0] for e in A.TOOLS}
+    assert "hourwise" in slugs, "hourwise has no Tools row (no phone route)"
+    assert "profile" in slugs, "profile has no Tools row (no phone route)"
+
+    # Each tab slug must name a tab that exists SOMEWHERE in the stack. A row
+    # whose panel is not mounted yet is legal — dash.js defuses it to a disabled
+    # row — but a slug that appears nowhere at all is a typo that ships a dead
+    # link. Known-tab list = every surface the SCOPE suite installs.
+    KNOWN = {"dashboard", "attendance", "timetable", "marks", "settings",
+             "tools", "fees", "academics", "campus"}
+    for slug, label, hint, op, tab in A.TOOLS:
+        assert tab in KNOWN, f"{label} -> #{tab}: not a known tab"
+
+
 TESTS = [
     ("envelope byte-identity vs pcap FLOW 18", t_envelope_byte_identity),
     ("blob AES round-trip (unicode + 1KB)", t_blob_roundtrip),
@@ -418,7 +559,13 @@ TESTS = [
     ("cold sync preserve-if-empty + transport break", t_cold_sync_preserve_and_transport_break),
     ("cold sync alive-empty stored as-is", t_cold_sync_alive_empty_stored_as_is),
     ("cold sync auth fault = one relogin then retry", t_cold_sync_auth_fault_relogins_once),
+    ("sync incremental: TTL skips fresh ops", t_sync_incremental_ttl),
+    ("aborted sync does not stamp freshness", t_sync_aborted_does_not_stamp_fresh),
+    ("trigger is single-flight per netid", t_trigger_is_single_flight),
+    ("trigger never blocks the request", t_trigger_never_blocks),
+    ("status endpoint 401s when logged out", t_status_endpoint_scoped_and_auth),
     ("ensure_scope_session logs in when sid missing", t_ensure_session_login_when_missing),
+    ("tools rows carry a real tab", t_tools_rows_carry_a_real_tab),
 ]
 
 if __name__ == "__main__":

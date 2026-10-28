@@ -148,6 +148,24 @@ jobs:
       - name: Boot on empty volume + authenticated render smoke
         run: bash scripts/ci_docker_smoke.sh
 
+      # The old smoke only greps the netid on /, which passes even when every
+      # data-gated panel is empty - the exact hole that let a SCOPE integration
+      # ship "green" while the browser showed nothing. This asserts the chain:
+      # feature on -> stored data -> Tools row -> target panel in the DOM ->
+      # seeded content rendered.
+      - name: SCOPE surfaces actually render (panels + Tools links)
+        run: |
+          NAME=osrm-scope-ci
+          trap 'docker rm -f $NAME >/dev/null 2>&1 || true' EXIT
+          docker run -d --name $NAME -e SCOPE_FEATURES=all opensrm:ci >/dev/null
+          for i in $(seq 1 60); do
+            docker exec $NAME python -c "import app.app" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker cp scripts/scope_ui_smoke.py $NAME:/tmp/scope_ui_smoke.py
+          docker exec -e SCOPE_FEATURES=all $NAME \
+            sh -c "cd /app && DATA_DIR=/tmp/smoke PYTHONPATH=/app python /tmp/scope_ui_smoke.py"
+
       # promtool validates the observability stack's Prometheus config, the
       # alert rules, and the rule unit tests — via the same pinned image the
       # compose file deploys (config syntax is checked, series existence is

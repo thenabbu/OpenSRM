@@ -525,3 +525,33 @@ document.addEventListener('click', function(e) {
   var open = document.querySelector('details[open]');
   if (open && !open.contains(e.target)) open.open = false;
 });
+
+// ── SCOPE: the SCOPE surfaces fill in after a BACKGROUND sync (each SOAP op
+//    is 4-8s upstream), so the page they were rendered on can be missing them.
+//    Poll the status endpoint — bounded, backed off — and soft-refresh the
+//    dashboard exactly ONCE when the sync completes (no hard reload: the
+//    perf contract keeps location.reload to softRefresh's catch net, and a
+//    morph keeps the active tab). The server renders the state as 'complete'
+//    after that refresh, so the loop cannot restart: one refresh per
+//    completed run, never a poll storm, never an endless loop.
+(function () {
+  var body = document.body;
+  if (!body) return;
+  var state = body.getAttribute('data-scope-sync') || '';
+  if (state !== 'stale' && state !== 'running') return;
+  var tries = 0, MAX_TRIES = 45, delay = 4000, done = false;
+  function poll() {
+    if (done || tries++ > MAX_TRIES) return;
+    fetch('/api/scope/status', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.ok) { setTimeout(poll, delay); return; }
+        if (d.state === 'complete') { done = true; softRefresh(); return; }
+        if (d.state === 'off') { done = true; return; }
+        if (tries > 10) delay = 8000;   // back off once the wait gets long
+        setTimeout(poll, delay);
+      })
+      .catch(function () { setTimeout(poll, delay); });
+  }
+  setTimeout(poll, 1500);
+})();
