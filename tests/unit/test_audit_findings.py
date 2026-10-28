@@ -25,6 +25,9 @@ def region(p, start, end):
 # ---------- CRITICAL ----------
 chk('C1a', "migrations: @migration(version=1) on m001_base", has('app/migrations.py', r'@migration\(version=1'))
 chk('C1b', "migrations: excepts narrow to 'duplicate column'", has('app/migrations.py', r'duplicate column'))
+# Parallel agents pick the same version=N independently; the apply loop runs DDL
+# BEFORE recording, so an unguarded collision half-applies then aborts boot.
+chk('C1c', "migrations: duplicate version rejected at registration (no DDL)", has('app/migrations.py', r'duplicate migration version'))
 
 # ---------- HIGH ----------
 _tok_probe = '2178' + '1f95'  # split so this file doesn't trip its own scan

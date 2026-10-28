@@ -46,7 +46,7 @@ app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, 
 app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker,
                       # LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (archived Playwright fallback)
-app/migrations.py     # versioned schema (16 migrations → v17); runs inside create_app()
+app/migrations.py     # versioned schema (17 migrations → v18); runs inside create_app()
 app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI build via
                       # scripts/build-css.sh; safelist for render-time classes), theme tokens in
                       # partials/theme.html
@@ -96,7 +96,7 @@ the portal caps 10/hour per IP).
 
 ```bash
 # ── unit (no server / no browser) ──────────────────────────────────────────
-.venv/bin/python tests/unit/test_audit_findings.py  # [unit] 72/72 static gates: findings, doc claims, pins, version trio
+.venv/bin/python tests/unit/test_audit_findings.py  # [unit] 73/73 static gates: findings, doc claims, pins, version trio
 .venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 (SCOPE fees: receipt head = one clean line, nothing past THRU/Accounted/bank-channel tail; ##-split parser on the real fixture row incl. amount-with-.00 + "13-Aug-2025" date + junk/short rows, dues logic (paid==total+trailing 0 -> 0; synthetic 100/150 -> 50; trailing=50 -> 50; view sum + warning/error level), narration first-clause split never raises on unicode/tab/CR/LF garbage, ledger sorted newest voucherdate first, feature gate off -> no tab (view None + SCOPE_FEATURES env + template {% if fees %} guard) — offline, no server/DB)
 .venv/bin/python tests/unit/test_app_factory.py  # [unit] 24/24 create_app factory: boot-env isolation between two apps, route surface + bare endpoint names, gunicorn app.app:app contract, OCR prewarm opt-out
 .venv/bin/python tests/unit/test_exams.py  # [unit] 69/69 official ETT parser + header drift + scribe fallback merge + transition/push events
@@ -187,7 +187,7 @@ percentages / schema versions / `app/...` paths in boxes (prose and
 Configuration own those); arrow kinds must all appear in the legend; HTTP
 boundaries are bidirectional; config gates (e.g. `SRM_EGRESS_URL`) are named
 in the legend, never drawn as connections. Ship html + png + generator
-together; `test_audit_findings` must stay 72/72.
+together; `test_audit_findings` must stay 73/73.
 
 ## Git and release
 

@@ -23,8 +23,24 @@ _registry: list[dict] = []
 
 
 def migration(version: int, description: str):
-    """Decorator to register a migration function."""
+    """Decorator to register a migration function.
+
+    Duplicate versions are rejected AT REGISTRATION, not at apply time: the
+    apply loop runs each fn(conn) BEFORE recording it, so a collision would
+    execute both DDLs, record only the first, then abort boot on the
+    schema_version PRIMARY KEY — leaving the schema ahead of its own version
+    table. Two parallel agents picking the same N is the normal way this
+    happens, so the guard has to be free (no DDL) and loud.
+    """
     def decorator(fn: Callable[[sqlite3.Connection], None]):
+        for m in _registry:
+            if m["version"] == version:
+                raise ValueError(
+                    f"duplicate migration version {version}: "
+                    f"{m['description']!r} vs {description!r} — "
+                    f"two branches allocated the same number; renumber one "
+                    f"to max(version)+1 and re-run"
+                )
         _registry.append({"version": version, "description": description, "fn": fn})
         return fn
     return decorator
