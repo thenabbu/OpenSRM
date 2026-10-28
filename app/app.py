@@ -1733,10 +1733,19 @@ def _scope_sync_trigger(netid, password):
     Single-flight per account: a trigger while a run is already in flight is
     dropped, not queued — two concurrent batches would double the upstream
     load for no benefit.
+
+    No-ops when SCOPE is off (SCOPE_FEATURES unset/"off"/no ops). That is the
+    single gate every caller routes through, so a test or a deployment with
+    the integration disabled never makes an outbound call — test_canary_sync
+    boots a real server and asserts no network, and used to reach the live
+    SCOPE backend through /api/refresh.
     """
     if not netid or not password:
         return
+    from app.scope.ops import enabled_features, ops_for
     from app.scope.sync import scope_cold_sync
+    if not ops_for(enabled_features()):
+        return
     with _scope_sync_lock:
         if netid in _scope_sync_running:
             return
