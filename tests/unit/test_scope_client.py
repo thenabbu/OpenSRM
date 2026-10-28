@@ -7,7 +7,7 @@ Checks (mission contract):
     recovered by decrypting the fixture's own blob).
   - blob AES round-trip (unicode + 1KB) and the FIPS-256 ECB known-answer
     vector the reference CLI self-checks with.
-  - login UPPERCASE cred transform; data_op wire order
+  - login: uppercase netid + ALWAYS-empty password (backend ignores it); data_op wire order
     {studentid: sid, **FINGERPRINT} in the app's key order.
   - enabled_features(): default / "all" / unknown-slug / "off"; ops_for()
     dedup; every FEATURES op exists in the 43-op catalog.
@@ -103,8 +103,14 @@ def t_fips_kat():
     assert C.aes(key, b"\0" * 16, ct, "ECB", dec=True) == pt
 
 
-def t_login_uppercases_params():
-    """getStudentLogin sends UPPERCASE netid + password (the app's transform)."""
+def t_login_sends_uppercase_netid_and_no_password():
+    """getStudentLogin: netid upper-cased, password field ALWAYS empty.
+
+    Measured against the live backend: empty password -> valid sid; the real
+    password / a wrong one / the netid -> "Invalid NetID or Password". The
+    endpoint authenticates on NetID alone, so sending a password guarantees
+    rejection. Pin it so nobody "fixes" the transform back.
+    """
     seen = {}
     orig = C.soap_call
 
@@ -120,8 +126,12 @@ def t_login_uppercases_params():
         C.soap_call = orig
     assert seen["op"] == "getStudentLogin"
     assert seen["params"]["username"] == "NG2776", seen["params"]
-    assert seen["params"]["password"] == "HUNTER2"
+    assert seen["params"]["password"] == "", seen["params"]
     assert res["sid"] == "ab" * 48 and res["studentid"] == "709245"
+    # the password argument is optional and ignored: every existing caller
+    # (login/refresh pass the portal password, sync passes the decrypted one)
+    # must keep working without changing its call site
+    assert C.login.__defaults__ == (None,)
 
 
 def t_login_rejects_no_sid():
@@ -545,7 +555,7 @@ TESTS = [
     ("envelope byte-identity vs pcap FLOW 18", t_envelope_byte_identity),
     ("blob AES round-trip (unicode + 1KB)", t_blob_roundtrip),
     ("FIPS-256 ECB known-answer vector", t_fips_kat),
-    ("login UPPERCASE cred transform", t_login_uppercases_params),
+    ("login: uppercase netid, empty password", t_login_sends_uppercase_netid_and_no_password),
     ("login without sid = credential rejection", t_login_rejects_no_sid),
     ("data_op wire order {studentid, **FINGERPRINT}", t_data_op_wire_order),
     ("enabled_features default env", t_features_default_env),

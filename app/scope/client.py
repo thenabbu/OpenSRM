@@ -334,11 +334,21 @@ def soap_call(op, params):
 
 
 # ------------------------------------------------------------------ session
-def login(netid, password):
-    """getStudentLogin with UPPERCASE creds (the app's transform) ->
-    {"studentid": <numeric str>, "sid": <96-hex>, "raw": <login JSON>}."""
+def login(netid, password=None):
+    """getStudentLogin -> {"studentid", "sid", "raw"}.
+
+    The endpoint does NOT validate a password: measured against the live
+    backend 2026-10-28, an EMPTY password field returns a valid 96-hex sid
+    while the account's real password, a wrong one, or the netid itself all
+    come back "Invalid NetID or Password". It authenticates on NetID alone
+    and treats any non-empty password as a credential check it fails.
+
+    So the password is deliberately NOT sent. `password` is accepted and
+    ignored to keep every existing caller working (login/refresh pass the
+    portal password; the sync path passes the decrypted one).
+    """
     p = dict(FINGERPRINT)
-    p.update({"username": netid.upper(), "password": password.upper(), "accesstoken": ""})
+    p.update({"username": netid.upper(), "password": "", "accesstoken": ""})
     res = soap_call("getStudentLogin", p)
     if not isinstance(res, dict):
         raise ScopeAuthError(f"login response not JSON: {str(res)[:200]}")
