@@ -1715,6 +1715,81 @@ def _hourwise_section(netid, group_key, monthly):
     return grid
 
 
+# ── SCOPE background sync ─────────────────────────────────────────────
+# The SCOPE surfaces self-hide when their op holds no data, and NOTHING in
+# the app ever called scope_cold_sync — so prod carried scope_json={} for
+# every user and the whole SCOPE rotation was invisible in the browser.
+# The fetch is background work (each SOAP op is 4-8s upstream), so it never
+# runs inside a login/refresh HTTP response: it is kicked off after a
+# successful login/refresh and on an authenticated dashboard visit that finds
+# the blob missing or stale.
+_scope_sync_lock = threading.Lock()
+_scope_sync_running: set = set()
+
+
+def _scope_sync_trigger(netid, password):
+    """Start the SCOPE sync in the background. Never blocks the response.
+
+    Single-flight per account: a trigger while a run is already in flight is
+    dropped, not queued — two concurrent batches would double the upstream
+    load for no benefit.
+    """
+    if not netid or not password:
+        return
+    from app.scope.sync import scope_cold_sync
+    with _scope_sync_lock:
+        if netid in _scope_sync_running:
+            return
+        _scope_sync_running.add(netid)
+
+    def _run():
+        try:
+            scope_cold_sync(netid, password)
+        except Exception as e:  # a background job must never kill the worker
+            log.warning("scope.sync background failed netid=%s error=%s", netid, str(e)[:120])
+        finally:
+            with _scope_sync_lock:
+                _scope_sync_running.discard(netid)
+
+    threading.Thread(target=_run, daemon=True, name="srm-scope-sync").start()
+
+
+def _scope_sync_kick_if_stale(netid):
+    """Dashboard visit: kick the sync when the blob is missing or stale.
+
+    The cheap check runs first (one row read, no network, no login); the
+    stored credential is only decrypted when a sync is actually due.
+    """
+    try:
+        from app.scope.sync import scope_needs_sync
+        if not scope_needs_sync(netid):
+            return
+        row = user_password(netid)
+        if not row:
+            return
+        pw = decrypt_pw(row["password"])
+        if pw:
+            _scope_sync_trigger(netid, pw)
+    except Exception as e:
+        log.debug("scope.sync dashboard kick skipped: %s", str(e)[:120])
+
+
+def _scope_sync_state(netid):
+    """'off' | 'stale' | 'running' | 'complete' — the dashboard's one-shot
+    reload signal. No payload, no credentials, no cross-user data."""
+    try:
+        from app.scope.ops import enabled_features, ops_for
+        from app.scope.sync import scope_needs_sync
+        if not ops_for(enabled_features()):
+            return "off"
+        with _scope_sync_lock:
+            if netid in _scope_sync_running:
+                return "running"
+        return "stale" if scope_needs_sync(netid) else "complete"
+    except Exception:
+        return "off"
+
+
 @require_login
 def index():
     netid = get_current_user()
@@ -1852,6 +1927,9 @@ def index():
     # knob, so the feature set is read per request like every other gate.
     campus = campus_view(_jload(row["scope_json"] if row else None, {}),
                          enabled_features())
+    # an authenticated visit that finds the SCOPE blob missing/stale starts
+    # the background sync — the surfaces fill in on the next reload
+    _scope_sync_kick_if_stale(netid)
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
@@ -1876,7 +1954,8 @@ def index():
         # the profile widget's avatar stays the generated blobatar
         personal=merge_personal(personal_data, _scope_fields),
         campus=campus,
-        tools=_tools_entries(netid))
+        tools=_tools_entries(netid),
+        scope_sync_state=_scope_sync_state(netid))
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
 SLOTS = [
@@ -1925,6 +2004,13 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.4.1", "date": "28 Oct", "title": "SCOPE panels actually fill in",
+     "body": "The SCOPE tabs had data waiting on the backend but nothing ever asked "
+             "for it, so they stayed empty. Collection now starts in the background "
+             "after login and whenever the stored copy goes stale, and the page picks "
+             "it up on its own once it lands - so the Tools, Academics, Fees and "
+             "Campus panels show up. Attendance Margin also now reads the same as the "
+             "dashboard widget: +N classes you can still miss, -N you must attend."},
     {"ver": "v2.4.0", "date": "27 Oct", "title": "More personal details",
      "body": "Settings -> Personal details now picks up the extra facts the "
              "official SCOPE student app already knows - parents' names, date of "
@@ -3072,6 +3158,9 @@ def api_login():
     # the upsert now lives in persist_sync, password passed so the row is
     # created/rotated exactly as before
     persist_sync(netid, res, password=password)
+    # SCOPE is BACKGROUND work (each SOAP op is 4-8s upstream) — it must never
+    # sit in the login response. The dashboard reloads once when it lands.
+    _scope_sync_trigger(netid, password)
 
     token = make_session_token(netid)
     resp = make_response({"ok": True})
@@ -3217,6 +3306,9 @@ def api_refresh():
         # same single persistence path as login — no password arg: refresh
         # never rotates the stored credential
         persist_sync(netid, res)
+        # same rule as login: the SCOPE fetch runs in the background, never
+        # inside the refresh response
+        _scope_sync_trigger(netid, password)
         flight["res"] = {"ok": True}
         return {"ok": True}
     finally:
@@ -3225,6 +3317,24 @@ def api_refresh():
         with _flights_lock:
             _sync_flights.pop(netid, None)
         flight["done"].set()
+
+
+def api_scope_status():
+    """Minimal SCOPE sync status for the dashboard's one-shot reload.
+
+    Authenticated (the session cookie) and scoped to the CURRENT user: it
+    returns a state word and an op count — never a payload, never a
+    credential, never another user's data.
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    try:
+        from app.scope.ops import enabled_features, ops_for
+        ops = ops_for(enabled_features())
+    except Exception:
+        ops = []
+    return {"ok": True, "state": _scope_sync_state(netid), "ops": len(ops)}
 
 # ── Login preflight: browser fires this when the user focuses the
 #    password field — warms the portal session + solves the captcha

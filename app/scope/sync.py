@@ -25,6 +25,11 @@ log = logging.getLogger("opensrm.scope")
 
 PACE_S = 0.5  # courtesy pacing between ops (backend runs 4-8s/op)
 
+# A full pass is ~15 ops x 4-8s upstream = 1-2 minutes, so the backend's
+# slots are the scarce resource: re-fetch an op only when its payload is
+# missing or older than this. 30 min matches the app's own sync cadence.
+SCOPE_TTL_S = 1800
+
 # ponytail: one in-process lock per netid — ceiling = sync throughput per
 # account inside one process; upgrade path = per-account file locks if this
 # ever runs multi-worker.
@@ -63,17 +68,57 @@ def _stored(netid):
     return stored if isinstance(stored, dict) else {}
 
 
-def scope_cold_sync(netid, password):
-    """Fetch every enabled op into users.scope_json[<op>] = {"data": <parsed
-    response>, "ts": <epoch>}; scope_fetched_at stamped once at the end.
-    Returns {"ok", "skipped", "ops", "aborted"} for callers/tests."""
+def _pending_ops(stored, ops, now, force=False):
+    """The ops that actually need a fetch: missing, or older than the TTL.
+
+    Fresh ops are kept as-is — each op is a 4-8s upstream call, so re-fetching
+    a fresh one is pure waste (and burns the backend's slots).
+    """
+    if force:
+        return list(ops)
+    out = []
+    for op in ops:
+        e = stored.get(op) if isinstance(stored, dict) else None
+        ts = e.get("ts") if isinstance(e, dict) else None
+        if isinstance(ts, (int, float)) and ts and (now - int(ts)) < SCOPE_TTL_S:
+            continue
+        out.append(op)
+    return out
+
+
+def scope_needs_sync(netid, force=False):
+    """True when any enabled op is missing or stale. One users-row read.
+
+    The dashboard uses this as its cheap "is a sync due?" check — it must not
+    log in, fetch, or touch the network.
+    """
+    ops = ops_for(enabled_features())
+    if not ops:
+        return False
+    return bool(_pending_ops(_stored(netid), ops, int(time.time()), force))
+
+
+def scope_cold_sync(netid, password, force=False):
+    """Fetch the MISSING/STALE enabled ops into users.scope_json[<op>] =
+    {"data": <parsed response>, "ts": <epoch>}; scope_fetched_at stamped at
+    the end ONLY when the run completed (an aborted run is not fresh).
+    Returns {"ok", "skipped", "fresh", "ops", "aborted"} for callers/tests.
+
+    Incremental by design: fresh ops are never re-fetched, a per-op failure
+    keeps that op's stored payload+ts, and a transport fault aborts the run
+    with what landed preserved.
+    """
     with _lock_for(netid):
-        session = ensure_scope_session(netid, password)
         ops = ops_for(enabled_features())
         stored = _stored(netid)
+        pending = _pending_ops(stored, ops, int(time.time()), force)
+        if not pending:
+            log.info("scope.sync netid=%s nothing stale (%d op(s) fresh)", netid, len(ops))
+            return {"ok": 0, "skipped": 0, "fresh": len(ops), "ops": len(ops), "aborted": False}
+        session = ensure_scope_session(netid, password)
         ok = skipped = 0
         aborted = False
-        for i, op in enumerate(ops):
+        for i, op in enumerate(pending):
             if i:
                 time.sleep(PACE_S)
             try:
@@ -101,7 +146,13 @@ def scope_cold_sync(netid, password):
                 continue
             stored[op] = {"data": data, "ts": int(time.time())}
             ok += 1
-        write_scope_data(netid, json.dumps(stored, ensure_ascii=False), int(time.time()))
-        log.info("scope.sync netid=%s ops=%d ok=%d skipped=%d aborted=%s stored=%d",
-                 netid, len(ops), ok, skipped, aborted, len(stored))
-        return {"ok": ok, "skipped": skipped, "ops": len(ops), "aborted": aborted}
+        # an aborted run must NOT claim freshness — keep whatever stamp the row
+        # already had. (user_scope_data SELECTs scope_fetched_at, not the row.)
+        prev = user_scope_data(netid)
+        prev_at = (prev["scope_fetched_at"] or 0) if prev else 0
+        stamp = prev_at if aborted else int(time.time())
+        write_scope_data(netid, json.dumps(stored, ensure_ascii=False), stamp)
+        log.info("scope.sync netid=%s pending=%d ok=%d skipped=%d aborted=%s stored=%d",
+                 netid, len(pending), ok, skipped, aborted, len(stored))
+        return {"ok": ok, "skipped": skipped, "fresh": len(ops) - len(pending),
+                "ops": len(ops), "aborted": aborted}
