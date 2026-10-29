@@ -56,7 +56,7 @@ def row(title, desc=""):
 
 def add(title, desc, targets, kind="timeseries", w=12, h=8, unit="short",
         legend="bottom", stack=False, thresholds=None, instant=False,
-        span=10, calcs=("mean", "max", "lastNotNull")):
+        stat_calc="lastNotNull", calcs=("mean", "max", "lastNotNull")):
     """One panel in the current row, flowing left-to-right and wrapping.
 
     Layout cursor: `_line` is the y of the current line of panels, `_used`
@@ -91,7 +91,7 @@ def add(title, desc, targets, kind="timeseries", w=12, h=8, unit="short",
                        "placement": legend, "calcs": list(calcs)},
             "tooltip": {"mode": "multi", "sort": "desc"}}
     if kind in ("stat", "gauge"):
-        opts = {"reduceOptions": {"calcs": [span], "fields": "", "values": False},
+        opts = {"reduceOptions": {"calcs": [stat_calc], "fields": "", "values": False},
                 "orientation": "auto", "textMode": "auto",
                 "colorMode": "background" if kind == "stat" else "value",
                 "graphMode": "none"}
@@ -108,27 +108,27 @@ def add(title, desc, targets, kind="timeseries", w=12, h=8, unit="short",
 row("Liveness", "Is the app answering, is the scheduler ticking, how big is the process.")
 add("Scrape up", "1 = Prometheus reached /internal/metrics. 0 means the app is down OR the "
     "metrics token no longer matches METRICS_SECRET — check the secret file before assuming a crash.",
-    [('up{job="opensrm"}', "up")], kind="stat", w=4, h=4, span=1,
+    [('up{job="opensrm"}', "up")], kind="stat", w=4, h=4,
     thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 1}])
 add("Push tick age", "Seconds since the every-minute tick last succeeded. >300s means the Hermes "
     "cron job is dead, disabled, or the host is gone.",
     [("time() - opensrm_push_tick_last_success_timestamp_seconds", "age")],
-    kind="stat", w=4, h=4, span=1, unit="s",
+    kind="stat", w=4, h=4, unit="s",
     thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 120},
                 {"color": "red", "value": 300}])
 add("Portal cooldown", "Seconds the portal budget is still locked out. Non-zero means syncs are being "
     "refused for everyone right now.", [("opensrm_portal_cooldown_seconds", "cooldown")],
-    kind="stat", w=4, h=4, span=1, unit="s",
+    kind="stat", w=4, h=4, unit="s",
     thresholds=[{"color": "green", "value": None}, {"color": "red", "value": 1}])
 add("Process RSS", "Resident memory. A number that only climbs across days is a leak; the container "
     "limit is the ceiling to watch.",
-    [("opensrm_process_rss_bytes", "rss")], kind="stat", w=4, h=4, span=1,
+    [("opensrm_process_rss_bytes", "rss")], kind="stat", w=4, h=4,
     unit="bytes", thresholds=[{"color": "green", "value": None},
                               {"color": "orange", "value": 400 * 1024 * 1024}])
 add("Threads", "Gunicorn runs --threads 8; a number pinned at the ceiling means requests are queuing.",
-    [("opensrm_process_threads", "threads")], kind="stat", w=4, h=4, span=1)
+    [("opensrm_process_threads", "threads")], kind="stat", w=4, h=4)
 add("DB size", "srm.db on disk. Growth is fine, a step change means a retention path stopped pruning.",
-    [("opensrm_db_size_bytes", "db")], kind="stat", w=4, h=4, span=1, unit="bytes")
+    [("opensrm_db_size_bytes", "db")], kind="stat", w=4, h=4, unit="bytes")
 
 # ══════════════════════════════════════════════════════════════════
 # 2. HTTP — every request the app serves
@@ -163,7 +163,7 @@ add("Unmatched requests (24h)",
     "Requests for paths no route handles — scanners, stale bookmarks, or a frontend calling a removed API. "
     "A sudden jump usually means a deploy removed a route that clients still call.",
     [('sum(increase(opensrm_http_requests_total{route="<unmatched>"}[24h]))', "unmatched")],
-    w=12, h=8, kind="stat", span=1)
+    w=12, h=8, kind="stat")
 
 # ══════════════════════════════════════════════════════════════════
 # 3. Portal sync — the core business flow
