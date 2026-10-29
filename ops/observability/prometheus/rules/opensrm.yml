@@ -138,3 +138,76 @@ groups:
         annotations:
           summary: "Portal cooldown active >10m (retries still failing)"
           description: "opensrm_portal_cooldown_seconds has stayed above 0 for 10m: the app is refusing syncs because consecutive portal attempts keep failing. Check opensrm.portal log lines and whether the portal is up at all."
+
+  - name: opensrm-http
+    rules:
+      - alert: OpenSRMHttp5xxRatioHigh
+        # Server errors as a share of all requests. 5xx is never a user typo —
+        # it means a handler raised. A rate alone is misleading (traffic
+        # varies wildly), so this is a RATIO with a small floor: below 20
+        # requests over the window the ratio is noise and must not page.
+        # STARTING POINT 5% over 15m: a healthy build sits at zero, and one
+        # broken route taking every request lands far above this.
+        expr: |
+          (
+            sum(rate(opensrm_http_requests_total{status_class="5xx"}[15m]))
+            /
+            clamp_min(sum(rate(opensrm_http_requests_total[15m])), 0.0005)
+          ) > 0.05
+          and
+          sum(increase(opensrm_http_requests_total[15m])) >= 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: ">5% of HTTP requests return 5xx for 15m"
+          description: "A handler is raising, not a user typing badly. Check the Errors-by-route panel for which route, then docker logs opensrm for the traceback. NtfyHandler already pages on the first 5xx, so this catches a low-grade but persistent rate."
+
+      - alert: OpenSRMRouteLatencyDegraded
+        # Per-route p95 against a flat ceiling. Deliberately NOT compared
+        # across routes: /api/refresh legitimately runs seconds while /login
+        # runs in tens of ms, so one global threshold would either page on
+        # healthy syncs or never catch a slow static page. 5s is far above
+        # every non-sync route's normal p95 and far below a sync's.
+        # STARTING POINT 5s for 30m: sustained, not one slow scrape.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, route) (rate(opensrm_http_request_duration_seconds_bucket{route!="/api/refresh"}[30m]))
+          ) > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A non-sync route has p95 above 5s for 30m"
+          description: "Route {{ $labels.route }} p95 exceeded 5s for 30m. Only /api/refresh and the login sync path are expected to run seconds; anything else means a slow query, lock contention or an upstream timeout on that page."
+
+  - name: opensrm-storage
+    rules:
+      - alert: OpenSRMWalGrowing
+        # A WAL that only grows means checkpoints are not completing — the
+        # classic way a WAL-mode SQLite app eats its disk and slows every
+        # read at once. Healthy WALs cycle near zero between checkpoints.
+        # STARTING POINT 256MiB for 1h: far above any normal checkpoint
+        # residue, far below filling the data volume.
+        expr: opensrm_db_wal_bytes > 268435456
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQLite WAL above 256MiB for 1h"
+          description: "opensrm_db_wal_bytes stayed above 256MiB for 1h: checkpoints are not completing, usually because a long-lived reader holds the snapshot. Reads will slow and the disk fills. Check for a stuck sync holding a connection."
+
+      - alert: OpenSRMRetentionNotPruning
+        # push_sent_log (30d) and usage_events (365d) are pruned inside the
+        # every-minute tick. These tables are APPEND-ONLY between prunes, so a
+        # count that stops falling for a day means the prune path is broken —
+        # which otherwise only shows up when the disk fills.
+        # STARTING POINT: >500k rows for 2h (both tables are far below this
+        # in normal operation; retune from real counts once known).
+        expr: opensrm_rows_push_sent_log > 500000 or opensrm_rows_usage_events > 500000
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "A retention-managed table is not being pruned"
+          description: "push_sent_log or usage_events exceeded 500k rows for 2h. Both are pruned inside the every-minute push tick, so this means the tick is failing its retention step or the prune itself throws. Check the push tick log and the table's prune helper."
