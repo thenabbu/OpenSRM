@@ -173,6 +173,13 @@ jobs:
       - name: promtool (observability config + rules + unit tests)
         run: bash scripts/ci_promtool.sh
 
+      # The dashboard JSON is generated from scripts/build_dashboard.py.
+      # This fails when the committed JSON drifts from the generator, so a
+      # hand-edited panel is caught here instead of silently reverting the
+      # next time someone rebuilds.
+      - name: dashboard JSON is current (scripts/build_dashboard.py)
+        run: python3 scripts/build_dashboard.py --check
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15

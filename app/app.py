@@ -3854,7 +3854,7 @@ def _db_wal_bytes(c):
 
 
 def _count(table):
-    """Row count for one of a FIXED set of tables (never user input)."""
+    """Row count for one of the FIXED tables below (never user input)."""
     return lambda c: c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
 
@@ -3862,11 +3862,17 @@ metrics.gauge("opensrm_process_rss_bytes", _proc_rss_bytes)
 metrics.gauge("opensrm_process_threads", _proc_threads)
 metrics.gauge("opensrm_db_size_bytes", lambda: _db_stat(_db_size_bytes))
 metrics.gauge("opensrm_db_wal_bytes", lambda: _db_stat(_db_wal_bytes))
-# Table sizes worth watching: users (growth = real adoption), push
-# subscriptions (dead-device accumulation), and the two retention-managed
-# tables whose growth without pruning means the retention path broke.
-for _table in ("users", "push_subscriptions", "push_sent_log", "usage_events"):
-    metrics.gauge(f"opensrm_rows_{_table}", lambda t=_table: _db_stat(_count(t)))
+# Table sizes worth watching, registered explicitly rather than in a loop so
+# each series name is greppable as a literal in this file (the observability
+# asset guard asserts every series an asset references exists in app/).
+#   users              — growth = real adoption
+#   push_subscriptions — growth without users = dead devices accumulating
+#   push_sent_log      — retention-managed (30d); growth means pruning broke
+#   usage_events       — retention-managed (365d); same signal
+metrics.gauge("opensrm_rows_users", lambda: _db_stat(_count("users")))
+metrics.gauge("opensrm_rows_push_subscriptions", lambda: _db_stat(_count("push_subscriptions")))
+metrics.gauge("opensrm_rows_push_sent_log", lambda: _db_stat(_count("push_sent_log")))
+metrics.gauge("opensrm_rows_usage_events", lambda: _db_stat(_count("usage_events")))
 
 
 def push_tick():

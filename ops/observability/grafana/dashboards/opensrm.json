@@ -1,5 +1,5 @@
 {
-  "uid": "opensrm",
+  "uid": "opensrm-observability",
   "title": "OpenSRM",
   "description": "Everything OpenSRM measures, grouped by subsystem. Panels are generated from scripts/build_dashboard.py \u2014 edit that file, not this JSON.",
   "tags": [

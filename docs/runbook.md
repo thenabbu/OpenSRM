@@ -15,7 +15,7 @@ from `main` at 4ef16cb (v1.25.0).
 | Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh lab 'docker exec opensrm ls /app/data'` |
 | Daily snapshots | `/data/ssd120/backups/opensrm/srm.YYYYMMDD.snapshot.db.gz`, taken ~03:0x IST, 7 kept | `ssh lab 'ls -1t /data/ssd120/backups/opensrm/'` |
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
-| Observability stack (optional, not yet deployed) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
+| Observability stack (optional) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
 | Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
 
 Note the two env files: the lab also keeps a master secret registry at
@@ -220,17 +220,36 @@ failures; fabricated netids only. (`bash scripts/canary_sync.sh` reads its own
 defaults; `CANARY_BASE`/`CANARY_MINT`/`CANARY_CHECK`/`CANARY_DROP` override
 each leg — that is also how its unit test runs offline.)
 
-**`GET /internal/metrics`** — Prometheus text of sync outcomes/durations by
-pipeline and error class, cache hits / single-flight joins, captcha attempts,
-preflight fates, scrape-lock rejections, portal-cooldown seconds, parse-empty
-counts; no PII in labels. Guarded by the `X-Metrics-Token` header matching
-`METRICS_SECRET`; **unset = endpoint off** (bare 401). On the lab today it is
-off (verified: `curl -s -o /dev/null -w '%{http_code}'
-http://127.0.0.1:8083/internal/metrics` → 401; `METRICS_SECRET` absent from
-container env and project `.env`). To enable: add `METRICS_SECRET=<value>` to
+**`GET /internal/metrics`** — Prometheus text exposition of everything the app
+measures, in six groups; no PII in any label (verified by
+`tests/unit/test_observability_assets.py`, which asserts no netid/user/ip
+label reaches any observability asset):
+
+| Group | Series |
+|---|---|
+| HTTP | `opensrm_http_requests_total`, `opensrm_http_request_duration_seconds` — labelled by the matched **route rule** (`/api/marks/<netid>`, not the raw path) so a netid can never become a series |
+| Sync | `opensrm_sync_total` / `_duration_seconds` (by pipeline, result, error class), `_sync_cached_total`, `_sync_joined_total`, `_parse_empty_total` (by page), `_scrape_lock_rejections_total`, `_preflight_total`, `_captcha_attempts_per_login`, `_portal_cooldown_seconds` |
+| SCOPE | `opensrm_scope_calls_total`, `opensrm_scope_call_duration_seconds` — per SOAP operation, three literal outcomes (ok / http_error / transport_error) |
+| Push | `opensrm_push_send_total`, `opensrm_push_send_duration_seconds` (ok / retryable / dead / deadline / error), `opensrm_push_tick_total`, `opensrm_push_tick_last_success_timestamp_seconds` |
+| Database | `opensrm_db_queries_total`, `opensrm_db_query_duration_seconds` (by leading SQL verb), `opensrm_db_size_bytes`, `opensrm_db_wal_bytes`, `opensrm_rows_{users,push_subscriptions,push_sent_log,usage_events}` |
+| Process | `opensrm_process_rss_bytes`, `opensrm_process_threads` |
+
+Guarded by the `X-Metrics-Token` header matching `METRICS_SECRET`; **unset =
+endpoint off** (bare 401). To enable: add `METRICS_SECRET=<value>` to
 `/docker/opensrm/.env`, `docker compose up -d opensrm`, then
-`curl -H "X-Metrics-Token: <value>" …/internal/metrics`. The optional stack
-below is the only intended consumer.
+`curl -H "X-Metrics-Token: <value>" …/internal/metrics`. The stack below is
+the only intended consumer.
+
+Two design notes worth knowing before adding a series:
+
+- **Cardinality is the constraint, not storage.** Every label value must come
+  from a fixed vocabulary (a route rule, a SQL verb, a literal outcome class).
+  A label carrying a netid, a raw path, an endpoint URL or a free-text error
+  string creates one series per user and will bloat both the app's in-process
+  dicts and Prometheus.
+- **Gauges run at render time** (~once per 30s scrape). The DB gauges open
+  their own short-lived connection rather than using `db()`, so a scrape can
+  never join an in-flight transaction or block a writer.
 
 ## Observability stack (optional)
 
@@ -331,33 +350,80 @@ ssh -L 9093:127.0.0.1:9093 lab    # Alertmanager (loopback-only)
 
 ### What each panel means
 
-The dashboard (`opensrm-observability` uid, folder OpenSRM) has 10 panels:
+The dashboard (`opensrm-observability` uid, folder OpenSRM) is 38 panels
+organised as six collapsible subsystem **rows**. Collapse the rows you are not
+looking at; a row expands only when that subsystem is in question.
 
-- **Scrape up** — `up{job="opensrm"}`: 1 = the endpoint answered the last
-  scrape. 0 = app down, restarting, or the token file stopped matching
-  `METRICS_SECRET` (e.g. the secret rotated on one side only).
+**Liveness** — six stat panels, the first things to read when something is
+wrong:
+- **Scrape up** — `up{job="opensrm"}`: 1 = the endpoint answered. 0 = app
+  down, restarting, or the token file stopped matching `METRICS_SECRET` (secret
+  rotated on one side only).
 - **Push tick age** — seconds since the last successful
-  `POST /internal/push/tick`; the dead-man switch. Healthy ≈ 0–120s; the
-  alert trips past 300s.
-- **Portal cooldown** — live cooldown the app arms after 3 consecutive
-  portal failures (5min doubling, capped 30min). 0 = armed off; sustained
-  >0 = retries keep failing.
-- **Syncs per minute by pipeline and outcome** — `rate()` of
-  `opensrm_sync_total` (counters reset on every deploy — that's why every
-  panel uses rate/increase, never raw counter reads).
-- **Error classes (1h)** — failing syncs grouped by the typed `error=`
-  label; one class dominating names the cause without reading logs.
-- **Sync duration p50/p95** — from the histogram buckets (app buckets top
-  at 150s = the pipeline deadline).
-- **Cache hits vs joined vs real syncs** — how refreshes resolved: served
-  from the last sync's cache, joined an in-flight sync, or ran a real
-  portal sync. Cache+joined high = quota-friendly.
-- **Scrape-lock rejections** — syncs refused because the lock was held;
-  a burst = one long portal call is blocking everyone.
-- **Parse-empty by page (24h)** — pages that parsed to zero rows = portal
-  markup drift, the thing this stack exists to catch first.
-- **Captcha attempts per login (average)** — OCR health: ~1 = first-try
-  captcha reads; creeping up = the portal changed its captcha.
+  `POST /internal/push/tick`; the dead-man switch. Healthy ≈ 0–120s, alerts
+  past 300s.
+- **Portal cooldown** — live cooldown armed after 3 consecutive portal
+  failures (5min doubling, capped 30min). Sustained >0 = retries keep failing.
+- **Process RSS / Threads** — memory and thread count. RSS that only climbs
+  across days is a leak; threads pinned at the gunicorn `--threads` ceiling
+  means requests are queuing.
+- **DB size** — `srm.db` on disk.
+
+**HTTP requests**
+- **Requests/min by status class** — throughput split 2xx/3xx/4xx/5xx. A 5xx
+  bump is the fastest signal that a deploy broke a handler.
+- **Latency p50/p95/p99 across all routes** — server-side duration.
+- **Top routes by request rate** / **by p95 latency** — where the traffic and
+  the slowness are. Cardinality is bounded by the route table.
+- **Errors by route (5xx only)** — 4xx is excluded deliberately: bad logins and
+  bot 404s would drown the signal.
+- **Unmatched requests (24h)** — paths no route handles. A jump usually means a
+  deploy removed a route that clients still call.
+
+**Portal syncs**
+- **Syncs/min by pipeline and outcome** — `ok` vs `error` per pipeline (http /
+  playwright). Playwright is archived behind a flag, so flat zero is correct.
+- **Error classes (1h)** — failing syncs by the typed `error=` label
+  (bad_credentials, rate_limited, portal_cooldown, busy, portal_down,
+  markup_changed, internal, auth, captcha, other).
+- **Sync duration p50/p95** — buckets top at 150s = the pipeline deadline.
+- **Cache hits vs joined vs real syncs** — how refreshes resolved: cached,
+  joined an in-flight sync, or a real portal scrape. cached+joined should dwarf
+  real syncs; if not, every user pays full scrape cost.
+- **Parse-empty by page (24h)** — zero-row parses = markup drift. Alive-empty is
+  legitimate for seasonal pages; a normally-populated page going empty is the
+  earliest drift signal.
+- **Scrape-lock rejections** — syncs refused while the lock was held.
+- **Captcha attempts per login** — OCR health; creeping up = changed captcha.
+- **Preflight fates** — ready / consumed / wasted / busy / failed in the
+  captcha pre-warm path. High `wasted` = pre-warming sessions nobody uses.
+
+**SCOPE SOAP backend** (second data source; failures surface as empty tabs)
+- **Calls/min by operation** and **Outcome split** — ok / http_error /
+  transport_error. `transport_error` = host unreachable or timed out;
+  `http_error` = it answered with a fault.
+- **Latency p50/p95 by operation** — client timeout is 15s; approaching it
+  means imminent failures.
+- **Fault rate by operation** — a single op high here points at a contract
+  change on that op.
+
+**Push notifications**
+- **Delivery outcomes (1h)** — ok / retryable / dead / deadline / error.
+  `dead` is a 404/410 (subscription deleted); `deadline` means the tick ran out
+  of time and deferred the send.
+- **Send latency p50/p95** — per-send timeout is 5s.
+- **Delivery success rate** and **Push tick throughput**.
+
+**Database**
+- **Query rate by verb** — statements/min by leading SQL verb. A SELECT rate
+  climbing without traffic is an N+1 or a polling loop.
+- **Query latency p50/p95/p99** — reads should sit in single-digit ms; rising
+  write p95 means lock contention.
+- **DB and WAL size** — a WAL that only grows means checkpoints are not
+  completing.
+- **Row counts** — users = adoption; push_subscriptions growing without users =
+  dead devices; push_sent_log / usage_events are retention-managed, so growth
+  there means pruning broke.
 
 ### What each alert means (thresholds are STARTING POINTS)
 
@@ -374,6 +440,10 @@ Every threshold was picked at design time with no production history —
 | OpenSRMSyncP95TooSlow | p95 >90s for 1h | correlate lock rejections |
 | OpenSRMScrapeLockRejectionsBurst | >10 in 15m, 5m sustained | check p95 + app logs |
 | OpenSRMPortalCooldownActive | cooldown >0 for 10m | portal health / cooldown section above |
+| OpenSRMHttp5xxRatioHigh | >5% of requests 5xx, ≥20 requests, 15m | Errors-by-route panel, then `docker logs opensrm` for the traceback |
+| OpenSRMRouteLatencyDegraded | a non-sync route p95 >5s for 30m | that route's handler: slow query, lock contention or upstream timeout |
+| OpenSRMWalGrowing | WAL >256MiB for 1h | a long-lived reader is blocking checkpoints — look for a stuck sync |
+| OpenSRMRetentionNotPruning | push_sent_log or usage_events >500k rows for 2h | the push tick's retention step is failing or the prune throws |
 
 The rule unit tests (`opensrm.test.yml`, run by the CI promtool step) prove
 each rule BOTH fires on crafted bad series and stays quiet on the matching
@@ -381,12 +451,16 @@ good one.
 
 ### Tuning
 
-- Edit `ops/observability/prometheus/rules/opensrm.yml` (or the dashboard
-  JSON) in a PR — the running stack picks changes up only via
-  `docker compose up -d --force-recreate` (the lifecycle/reload endpoint is
-  deliberately OFF: `--no-web.enable-lifecycle`).
-- Grafana UI panel edits are never saved (read-only provisioning) — edit
-  `grafana/dashboards/opensrm.json`.
+- Edit `ops/observability/prometheus/rules/opensrm.yml` in a PR — the running
+  stack picks changes up only via `docker compose up -d --force-recreate` (the
+  lifecycle/reload endpoint is deliberately OFF:
+  `--no-web.enable-lifecycle`).
+- **Never hand-edit the dashboard JSON.** It is generated: change
+  `scripts/build_dashboard.py`, run it, commit both. Panel ids, grid positions
+  and refIds are derived there, so hand edits get silently reverted on the next
+  build. `python3 scripts/build_dashboard.py --check` exits non-zero when the
+  committed JSON is stale (CI runs it).
+- Grafana UI panel edits are never saved (read-only provisioning).
 - Retention: `--storage.tsdb.retention.time=30d` + `.size=2GB` in the
   compose file.
 

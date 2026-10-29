@@ -284,7 +284,7 @@ add("Row counts",
      ("opensrm_rows_usage_events", "usage_events")], w=12, h=9)
 
 dashboard = {
-    "uid": "opensrm",
+    "uid": "opensrm-observability",
     "title": "OpenSRM",
     "description": "Everything OpenSRM measures, grouped by subsystem. Panels are generated from "
                    "scripts/build_dashboard.py — edit that file, not this JSON.",
