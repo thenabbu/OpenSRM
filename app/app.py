@@ -2033,6 +2033,13 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.5.0", "date": "29 Oct", "title": "Everything, measured",
+     "body": "The app now keeps a running tally of what it is actually doing: every "
+             "page it serves and how long each took, every database query, every call to "
+             "the campus backend, every notification it tries to deliver, and its own "
+             "memory and storage use. Nothing about you is in it - the counts are grouped "
+             "by page and action, never by student. It is what turns a vague 'it feels "
+             "slow' into a named page and a named time."},
     {"ver": "v2.4.1", "date": "28 Oct", "title": "SCOPE panels actually fill in",
      "body": "The SCOPE tabs had data waiting on the backend but nothing ever asked "
              "for it, so they stayed empty. Collection now starts in the background "
