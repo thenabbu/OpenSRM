@@ -280,13 +280,28 @@ def _post(env, op):
         "SOAPAction": f'"http://ws.fipl.com/{op}"',
     }
     req = urllib.request.Request(ENDPOINT, data=env.encode(), headers=hdrs)
+    t0 = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
-            return r.status, r.read()
+            out = r.status, r.read()
+            _record(op, out[0], time.monotonic() - t0, "ok" if out[0] == 200 else "http_error")
+            return out
     except urllib.error.HTTPError as e:
-        return e.code, e.read()  # SOAP faults ride 500 — parse the body below
+        out = e.code, e.read()  # SOAP faults ride 500 — parse the body below
+        _record(op, out[0], time.monotonic() - t0, "http_error")
+        return out
     except (urllib.error.URLError, TimeoutError, OSError) as e:
+        _record(op, 0, time.monotonic() - t0, "transport_error")
         raise ScopeTransportError(f"network: {e}") from e
+
+
+def _record(op, status, seconds, outcome):
+    """One SCOPE round trip into metrics. Labels stay bounded: `op` is the
+    fixed SOAP method set (~12 names) and outcome is one of three literals —
+    never a netid, never a fault string (PII-free by construction)."""
+    from .. import metrics
+    metrics.inc("opensrm_scope_calls_total", op=op, outcome=outcome)
+    metrics.observe("opensrm_scope_call_duration_seconds", seconds, op=op)
 
 
 def _checked_text(status, body):
