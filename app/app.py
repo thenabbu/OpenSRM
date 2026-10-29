@@ -1464,8 +1464,28 @@ def _bare(code, reason):
 def _log_request_start():
     request._start_time = time.monotonic()
 
+def _route_label():
+    """Bounded label for the request metric: the matched rule's pattern
+    ('/api/marks/<netid>') rather than the raw path, so cardinality is the
+    route table (~26 rules), not one series per netid. Unmatched requests
+    fall back to the status class + 'unmatched' — a bot spray of random URLs
+    must not create a series each."""
+    rule = request.url_rule
+    if rule is None:
+        return "<unmatched>"
+    return str(rule.rule)
+
 def _log_request(resp):
-    duration_ms = int((time.monotonic() - getattr(request, "_start_time", time.monotonic())) * 1000)
+    duration_s = time.monotonic() - getattr(request, "_start_time", time.monotonic())
+    duration_ms = int(duration_s * 1000)
+    # every request counts, including the healthcheck: the compose probe is
+    # 66k lines of log noise but it is a REAL latency sample, and the metric
+    # path is cheap (one dict increment behind a lock).
+    metrics.inc("opensrm_http_requests_total",
+                route=_route_label(), method=request.method,
+                status_class=f"{resp.status_code // 100}xx")
+    metrics.observe("opensrm_http_request_duration_seconds", duration_s,
+                    route=_route_label(), method=request.method)
     # audit 2026-10-07: 86% of the log file was the docker healthcheck's
     # urllib GET pair (66,003 of 76,857 lines) — synthetic traffic now logs
     # at DEBUG. Real 4xx responses log at WARNING with the error body, 5xx at
@@ -2013,6 +2033,13 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.5.0", "date": "29 Oct", "title": "Everything, measured",
+     "body": "The app now keeps a running tally of what it is actually doing: every "
+             "page it serves and how long each took, every database query, every call to "
+             "the campus backend, every notification it tries to deliver, and its own "
+             "memory and storage use. Nothing about you is in it - the counts are grouped "
+             "by page and action, never by student. It is what turns a vague 'it feels "
+             "slow' into a named page and a named time."},
     {"ver": "v2.4.1", "date": "28 Oct", "title": "SCOPE panels actually fill in",
      "body": "The SCOPE tabs had data waiting on the backend but nothing ever asked "
              "for it, so they stayed empty. Collection now starts in the background "
@@ -3765,6 +3792,94 @@ def _push_tick_last_ok_ts():
 
 
 metrics.gauge("opensrm_push_tick_last_success_timestamp_seconds", _push_tick_last_ok_ts)
+
+
+# ── Process and storage gauges ────────────────────────────────────────────
+# Everything here is a RENDER-TIME callback (metrics.gauge runs it once per
+# scrape, ~1/30s), so it must stay cheap and never raise. The whole block
+# answers "is this process healthy and is the data growing" — the questions
+# the existing sync/push counters cannot see at all.
+
+def _proc_rss_bytes():
+    """Resident set size from /proc/self/statm (pages * page_size).
+    Linux-only by design: prod is a Linux container. On any other platform
+    or a missing file the gauge renders 0 rather than raising."""
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        return 0.0
+
+
+def _proc_threads():
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("Threads:"):
+                    return float(line.split()[1])
+    except (OSError, ValueError):
+        pass
+    return 0.0
+
+
+def _db_stat(fn):
+    """Run one read-only DB probe for a gauge; 0 on any failure.
+
+    Deliberately NOT using db() — a gauge must never open a request-scoped
+    connection or join an in-flight transaction (it would render mid-commit
+    state and could deadlock a scrape against a busy writer). A private
+    short-lived connection reads the same WAL snapshot safely.
+    """
+    try:
+        from . import db as dbmod
+        c = dbmod.connect()
+        try:
+            return float(fn(c))
+        finally:
+            c.close()
+    except Exception:
+        return 0.0
+
+
+def _db_size_bytes(c):
+    return c.execute("SELECT page_count * page_size FROM pragma_page_count(), "
+                     "pragma_page_size()").fetchone()[0]
+
+
+def _db_wal_bytes(c):
+    """WAL file size on disk.
+
+    PRAGMA wal_checkpoint returns (busy, log, checkpointed) where busy=-1
+    means "another connection held it" — NOT a size. An earlier version
+    multiplied that -1 by the page size and published a negative byte count.
+    Read the file instead: it exists exactly when SQLite has a WAL.
+    """
+    try:
+        return float(os.path.getsize(str(DB_PATH) + "-wal"))
+    except OSError:
+        return 0.0
+
+
+def _count(table):
+    """Row count for one of the FIXED tables below (never user input)."""
+    return lambda c: c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+
+metrics.gauge("opensrm_process_rss_bytes", _proc_rss_bytes)
+metrics.gauge("opensrm_process_threads", _proc_threads)
+metrics.gauge("opensrm_db_size_bytes", lambda: _db_stat(_db_size_bytes))
+metrics.gauge("opensrm_db_wal_bytes", lambda: _db_stat(_db_wal_bytes))
+# Table sizes worth watching, registered explicitly rather than in a loop so
+# each series name is greppable as a literal in this file (the observability
+# asset guard asserts every series an asset references exists in app/).
+#   users              — growth = real adoption
+#   push_subscriptions — growth without users = dead devices accumulating
+#   push_sent_log      — retention-managed (30d); growth means pruning broke
+#   usage_events       — retention-managed (365d); same signal
+metrics.gauge("opensrm_rows_users", lambda: _db_stat(_count("users")))
+metrics.gauge("opensrm_rows_push_subscriptions", lambda: _db_stat(_count("push_subscriptions")))
+metrics.gauge("opensrm_rows_push_sent_log", lambda: _db_stat(_count("push_sent_log")))
+metrics.gauge("opensrm_rows_usage_events", lambda: _db_stat(_count("usage_events")))
 
 
 def push_tick():

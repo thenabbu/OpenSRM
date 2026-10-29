@@ -29,6 +29,7 @@ import itertools
 import logging
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 
 from flask import current_app, g, has_app_context, has_request_context
@@ -63,6 +64,48 @@ def _db_path():
     return DB_PATH
 
 
+class _TimedConnection(sqlite3.Connection):
+    """A connection that times every statement into metrics.
+
+    sqlite3 lets you pass a class via `factory=`, so this is the ONE place
+    every query passes through — db(), transaction() and every raw
+    connect() caller inherit it for free. Statements are bucketed by their
+    leading verb (SELECT/INSERT/UPDATE/DELETE/PRAGMA/...) rather than the
+    full SQL: the verb set is ~8 values, so the series count stays flat.
+    ponytail: verb granularity, not per-statement — split by table if a
+    single table ever needs its own latency view.
+    """
+
+    def execute(self, sql, *args):
+        t0 = time.monotonic()
+        try:
+            return super().execute(sql, *args)
+        finally:
+            _record_query(sql, time.monotonic() - t0)
+
+    def executemany(self, sql, *args):
+        t0 = time.monotonic()
+        try:
+            return super().executemany(sql, *args)
+        finally:
+            _record_query(sql, time.monotonic() - t0)
+
+
+def _record_query(sql, seconds):
+    if not _track_queries:
+        return
+    from . import metrics
+    verb = str(sql).lstrip().split(None, 1)[0].upper()[:12] or "other"
+    metrics.observe("opensrm_db_query_duration_seconds", seconds, verb=verb)
+    metrics.inc("opensrm_db_queries_total", verb=verb)
+
+
+# A guard for the observability endpoint itself: rendering /internal/metrics
+# reads the metric dicts, never the DB, but a future panel that queries SQL
+# inside the scrape would otherwise recurse. Cheap enough to always leave on.
+_track_queries = True
+
+
 def connect():
     """A raw connection: A6 pragmas, sqlite3.Row rows, caller owns/closes it.
 
@@ -70,7 +113,8 @@ def connect():
     module-level DB_PATH default (env-driven DATA_DIR; tests repoint it
     there), imported per call — app.app imports this module at boot (same
     lazy-import rule push_store/http_scraper use to dodge the cycle)."""
-    c = sqlite3.connect(_db_path(), timeout=SQLITE_TIMEOUT_SECS)
+    c = sqlite3.connect(_db_path(), timeout=SQLITE_TIMEOUT_SECS,
+                        factory=_TimedConnection)
     c.row_factory = sqlite3.Row
     c.execute(f"PRAGMA busy_timeout={SQLITE_TIMEOUT_SECS * 1000}")
     # journal_mode persists in the DB file; set it explicitly on every

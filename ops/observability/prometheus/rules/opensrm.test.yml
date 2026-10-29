@@ -246,3 +246,122 @@ tests:
       - eval_time: 20m
         alertname: OpenSRMPortalCooldownActive
         exp_alerts: []
+
+  # ── OpenSRMHttp5xxRatioHigh ─────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # 100 req/min total, 20 of them 5xx = 20% (well over the 5% bar) and
+      # the 20-request floor is cleared immediately
+      - series: 'opensrm_http_requests_total{status_class="5xx",route="/api/refresh",method="POST"}'
+        values: '0+20x40'
+      - series: 'opensrm_http_requests_total{status_class="2xx",route="/",method="GET"}'
+        values: '0+80x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OpenSRMHttp5xxRatioHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: ">5% of HTTP requests return 5xx for 15m"
+              description: "A handler is raising, not a user typing badly. Check the Errors-by-route panel for which route, then docker logs opensrm for the traceback. NtfyHandler already pages on the first 5xx, so this catches a low-grade but persistent rate."
+
+  - interval: 1m
+    input_series:
+      # a normal 4xx-heavy day: bad logins and bot 404s, zero 5xx
+      - series: 'opensrm_http_requests_total{status_class="4xx",route="<unmatched>",method="GET"}'
+        values: '0+60x40'
+      - series: 'opensrm_http_requests_total{status_class="2xx",route="/",method="GET"}'
+        values: '0+40x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: OpenSRMHttp5xxRatioHigh
+        exp_alerts: []
+
+  # ── OpenSRMRouteLatencyDegraded ─────────────────────────────────────
+  - interval: 1m
+    input_series:
+      # every /login request lands past the 5s bucket: le=5 stays at 0 while
+      # +Inf climbs, so p95 interpolates inside (5, +Inf) and exceeds 5
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="2.5"}'
+        values: '0+0x45'
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="5"}'
+        values: '0+0x45'
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="10"}'
+        values: '0+10x45'
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="+Inf"}'
+        values: '0+10x45'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: OpenSRMRouteLatencyDegraded
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              route: "/login"
+            exp_annotations:
+              summary: "A non-sync route has p95 above 5s for 30m"
+              description: "Route /login p95 exceeded 5s for 30m. Only /api/refresh and the login sync path are expected to run seconds; anything else means a slow query, lock contention or an upstream timeout on that page."
+
+  - interval: 1m
+    input_series:
+      # fast pages: everything inside the 5s bucket
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="5"}'
+        values: '0+10x45'
+      - series: 'opensrm_http_request_duration_seconds_bucket{route="/login",le="+Inf"}'
+        values: '0+10x45'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: OpenSRMRouteLatencyDegraded
+        exp_alerts: []
+
+  # ── OpenSRMWalGrowing ───────────────────────────────────────────────
+  - interval: 1m
+    input_series:
+      - series: 'opensrm_db_wal_bytes'
+        values: '536870912x130'   # 512MiB, held for the whole window
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: OpenSRMWalGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "SQLite WAL above 256MiB for 1h"
+              description: "opensrm_db_wal_bytes stayed above 256MiB for 1h: checkpoints are not completing, usually because a long-lived reader holds the snapshot. Reads will slow and the disk fills. Check for a stuck sync holding a connection."
+
+  - interval: 1m
+    input_series:
+      - series: 'opensrm_db_wal_bytes'
+        values: '1048576x130'     # 1MiB, a healthy cycling WAL
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: OpenSRMWalGrowing
+        exp_alerts: []
+
+  # ── OpenSRMRetentionNotPruning ──────────────────────────────────────
+  - interval: 1m
+    input_series:
+      - series: 'opensrm_rows_push_sent_log'
+        values: '900000x200'      # 900k rows, never pruned
+      - series: 'opensrm_rows_usage_events'
+        values: '1000x200'
+    alert_rule_test:
+      - eval_time: 150m
+        alertname: OpenSRMRetentionNotPruning
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "A retention-managed table is not being pruned"
+              description: "push_sent_log or usage_events exceeded 500k rows for 2h. Both are pruned inside the every-minute push tick, so this means the tick is failing its retention step or the prune itself throws. Check the push tick log and the table's prune helper."
+
+  - interval: 1m
+    input_series:
+      - series: 'opensrm_rows_push_sent_log'
+        values: '4000x200'        # normal size after routine pruning
+      - series: 'opensrm_rows_usage_events'
+        values: '2000x200'
+    alert_rule_test:
+      - eval_time: 150m
+        alertname: OpenSRMRetentionNotPruning
+        exp_alerts: []

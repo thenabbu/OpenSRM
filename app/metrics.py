@@ -23,6 +23,20 @@ ATTEMPT_BUCKETS = (0, 1, 2, 3, 4, 5)
 _BUCKET_SETS = {
     "opensrm_sync_duration_seconds": DURATION_BUCKETS,
     "opensrm_captcha_attempts_per_login": ATTEMPT_BUCKETS,
+    # HTTP request latency: healthchecks land <10ms, dashboard renders 10-300ms,
+    # a sync-backed refresh runs 2-150s. One bucket set spans all three so a
+    # single histogram answers "how slow is anything" without label-splitting
+    # the bucket layout.
+    "opensrm_http_request_duration_seconds": (0.005, 0.01, 0.025, 0.05, 0.1,
+                                              0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150),
+    # scope SOAP round trips: warm 150-400ms, cold 1-3s, timeout 15s
+    "opensrm_scope_call_duration_seconds": (0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 15, 30),
+    # portal page fetches: each is one HTTP GET through the egress proxy
+    "opensrm_portal_fetch_duration_seconds": (0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60),
+    # sqlite statements: a healthy read is <1ms, a busy write can hit seconds
+    "opensrm_db_query_duration_seconds": (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5, 1, 5),
+    # push delivery: the push service either answers fast or times out at 5s
+    "opensrm_push_send_duration_seconds": (0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10),
 }
 
 

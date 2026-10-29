@@ -44,6 +44,34 @@ def _run_one(job, deadline):
 def send_one(job):
     """One push. `job` = {sub: subscription row, payload: dict, ttl: int, ...}.
     Returns the job with `outcome` attached: {ok, http_status, dead, retryable}."""
+    t0 = time.monotonic()
+    _send_one_inner(job)
+    _record(job, time.monotonic() - t0)
+    return job
+
+
+def _record(job, seconds):
+    """One delivery attempt into metrics. `outcome` is derived from the same
+    dict the retry logic reads, so the dashboard can never disagree with what
+    the retry path actually decided. No endpoint, no subscription hash — the
+    labels are literal classes only."""
+    from . import metrics
+    out = job.get("outcome") or {}
+    if out.get("ok"):
+        cls = "ok"
+    elif out.get("reason") == "deadline":
+        cls = "deadline"
+    elif out.get("dead"):
+        cls = "dead"
+    elif out.get("error"):
+        cls = "error"
+    else:
+        cls = "retryable"
+    metrics.inc("opensrm_push_send_total", outcome=cls)
+    metrics.observe("opensrm_push_send_duration_seconds", seconds, outcome=cls)
+
+
+def _send_one_inner(job):
     sub = job["sub"]
     if not _destination_ok(sub["endpoint"]):
         job["outcome"] = {"ok": False, "http_status": None, "dead": False,
