@@ -2033,6 +2033,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.5.1", "date": "30 Oct", "title": "Status tiles show their numbers",
+     "body": "The small status tiles on the ops dashboard - the ones that reduce a "
+             "whole chart to a single number - were drawing in their alert colour no "
+             "matter what the value was, so a perfectly healthy service still looked "
+             "like it was down. They now show the real reading. Nothing about the app "
+             "itself changed."},
     {"ver": "v2.5.0", "date": "29 Oct", "title": "Everything, measured",
      "body": "The app now keeps a running tally of what it is actually doing: every "
              "page it serves and how long each took, every database query, every call to "

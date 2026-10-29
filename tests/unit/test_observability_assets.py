@@ -188,6 +188,25 @@ def t_dashboard_valid():
         for t in p.get("targets", []):
             assert re.search(r"opensrm_[a-z0-9_]+|\bup\{", t["expr"]), \
                 f"panel {p['id']} expr references no opensrm_/up series: {t['expr']!r}"
+    # Stat/gauge panels reduce the series to ONE number. Grafana takes that
+    # reducer as a NAME ("lastNotNull", "mean", "max") — an integer there is
+    # not an error to Grafana, it just silently fails to reduce and the stat
+    # renders its first threshold colour, which is how every stat panel
+    # shipped solid red while the series behind them read healthy. Assert the
+    # TYPE, not just presence: the generator passing a count where a calc name
+    # belonged is exactly this bug.
+    valid_calcs = {"lastNotNull", "last", "first", "firstNotNull", "mean",
+                   "min", "max", "sum", "count", "range", "delta", "diff",
+                   "allIsZero", "allIsNull", "changeCount", "distinctCount"}
+    for p in dash["panels"]:
+        if p["type"] not in ("stat", "gauge"):
+            continue
+        calcs = p["options"]["reduceOptions"]["calcs"]
+        assert calcs, f"panel {p['id']} ({p['type']}) has no reduction calc"
+        for c in calcs:
+            assert isinstance(c, str) and c in valid_calcs, \
+                f"panel {p['id']} ({p['title']!r}) calc {c!r} is not a Grafana reducer name — " \
+                f"the stat will render its first threshold colour instead of the value"
 
 
 # ── 6. provisioning: read-only + allowUiUpdates false ─────────────────────
