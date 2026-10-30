@@ -2075,6 +2075,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.7.0", "date": "30 Oct", "title": "Timetable, rebuilt around your subject names",
+     "body": "The timetable is one clean card per class now - the subject name leads, the "
+             "course code and room sit underneath it, and your attendance tag moves to the "
+             "far right of the same line, so a phone fits a whole day without scrolling. "
+             "Breaks read as quiet dashed rules between cards instead of crowding the list."},
     {"ver": "v2.6.1", "date": "30 Oct", "title": "Campus data arrives much faster",
      "body": "The second data source that feeds your fees, results and subject list was "
              "being asked for one item at a time, waiting for each answer before asking "

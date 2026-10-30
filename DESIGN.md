@@ -422,14 +422,16 @@ freezing the screen behind a dialog.
 `timetable_html()` in `app.py` emits the markup and `app/static/timetable.css` styles it. That file already uses `var(--color-*)` tokens throughout. When you touch a rule, keep it token-based:
 
 ```css
-.tt-row--current  { border-color: var(--color-success);
-                    background: color-mix(in oklab, var(--color-success) 8%, transparent); }
-.tt-badge--soon   { background: color-mix(in oklab, var(--color-base-content) 14%, transparent);
-                    color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
-.tt-time          { color: color-mix(in oklab, var(--color-base-content) 50%, transparent); }
+/* v2.7.0: one solid card per class on [72px mono time | name + code/room/tag] */
+.tt-row           { background: var(--color-base-200); border-radius: 10px;
+                    padding: 14px 18px; }
+.tt-row--now      { border-color: color-mix(in oklab, var(--color-success) 45%, transparent);
+                    background: color-mix(in oklab, var(--color-success) 7%, var(--color-base-200)); }
+.tt-tag--warn     { background: oklch(78% 0.115 68 / .18); color: oklch(78% 0.115 68); }
+.tt-tag--danger   { background: oklch(72% 0.135 25 / .18); color: oklch(72% 0.135 25); }
 ```
 
-Meaning map: current class = `success` border + 8% tint (the hero states it — the "Now" chip was removed in the attention review: one state, one indicator) · next/soon = quiet neutral chip (base-content mix — `accent` pulled the eye) · selected day pill = `accent` fill with `accent-content` text · break = `warning` · drop target hover = `base-content` border · filled cell = `success` border.
+Meaning map: live class = `tt-row--now` success tint (the hero states it in words — no chip, one state, one indicator) · comfortable / zero-margin / must-attend = the `.tt-tag` three tiers (number always beside the word, never colour alone) · selected day pill = `base-content` fill with `base-100` text · break = dashed `base-content/30` rules · the subject NAME is the row's primary line, the course code its 12px mono subline · the piece that stays a rule: **a tag's hue is lifted toward white on dark surfaces** — the raw status tokens measure 3.8:1 and 3.0:1 against `base-200` and fail AA for 11px text, so tag tiers use 78%/72% lightness (7.2:1 / 5.9:1). Never reuse `.att-pos`/`.att-neg` values on a dark surface for the same reason.
 
 ### 4.12 End-sem schedule card (dashboard)
 
@@ -534,7 +536,7 @@ Two label rows sandwich the meter (2026-10/v1.15.0): the **class-count line ABOV
 - **Meter grid:** `.mrows` is `repeat(auto-fit, minmax(280px, 1fr))` — bar width stays in a 270–345px band at every viewport; the old hard `min-width:768px` flip snapped bars from 650px to 345px at one pixel (the "75% mark changes width with screen size" report).
 - **Pole collisions (number row only):** within 9% of the pole the row renders ONE right-anchored `attended / total` cluster (`pn-tot` carries both) with `pn-75` staying at the tick — `pn-now` and the nudges are dropped there. A fixed-px nudge can't pay for label width near the pole: the old `nudP`/`nud2P` still overlapped 13.5px at 119/120 (measured 393 + 1280), and the DUT's boundary seeds red-test the cluster. The % scale needs no collision handling: `0%` and `75%` are fixed marks 75 percentage points apart.
 
-- **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always. **Values are the faint approved-mockup tints — `oklch(58% 0.115 25)` / `oklch(63% 0.115 68)`** — NOT the `--color-error`/`--color-warning` theme tokens: those are full-saturation and pull the eye (attention review R1; the timetable `.tt-riskbar`/hero rims use the same faint values).
+- **Fill tint, FILL only:** `mz--red` = pct < 75 · `mz--warn` = pct ≥ 75 AND skip-now == 0 (orange rule — "one miss costs") · plain `mz` (grayscale) = comfortable. Track stays `--color-base-300` always. **Values are the faint approved-mockup tints — `oklch(58% 0.115 25)` / `oklch(63% 0.115 68)`** — NOT the `--color-error`/`--color-warning` theme tokens: those are full-saturation and pull the eye (attention review R1; the timetable `.tt-tag` warn/danger tiers are the dark-surface exception — see §4.11).
 - **Pinned numbers:** attended @fill%, `ceil(0.75·C)` @75% (38 when C=50), total @right pole. `pnums`/`pconn` alphas are ladder steps only (50%/60% via `color-mix`); the connector's action number is `base-content` (100%) punched out on `base-200`.
 - **Connector line** spans fill↔tick and carries the BARE action count (must-attend below 75, skippable above) — no words under the bar; the aria-label carries the sentence for screen readers (never "X of Y classes"). Renders **only when the count > 0** (review R3): a lone "0" on a hairline read as a bug; the orange fill already carries zero-margin.
 - **Nudges** (±6px <9%, ±14px <3%) separate the `pn-now`/`pn-75` labels near the tick; they nudge AWAY from each other (`nudL`/`nud2L` when fill < 75, `nudR`/`nud2R` when fill > 75).
@@ -543,7 +545,7 @@ Two label rows sandwich the meter (2026-10/v1.15.0): the **class-count line ABOV
 - **Estimates + Absences cards** (quiet): `.att-h` heading + `.att-n` note ("can skip: 90 working days (excl. Sat/Sun) · till {stop} (day before first endsem)" — dates derived from `_exam_stop`, never hardcoded), a `qgrid` (Subject | 90 days · N left | till D · N left) of semester budgets, and ONE merged Absences card (2026-10, v1.13.0): one `.att-month` block per month — the monthly attendance `progress` bar with that month's absence chips (`date · Nh`, `badge badge-soft badge-sm font-mono`) wrapped directly beneath it; the old standalone "Monthly breakdown" `<details>` is gone (its rows ARE the card). `date · hours` ONLY still — no subject column (daily_absent rows carry none). Months with a drill-down but no cumulative row degrade to a chip-only block.
 - **Attention budget:** the meter row is attention-budget-compliant by construction — grayscale default, hue only on the fill of a deviation, numbers neutral, no aggregate anywhere (no overall %, no overall bunk line, no summed totals).
 
-Timetable glance (same PR, restyled per attention review R2/R6-R10): the 2px `.tt-riskbar` rim is the **sole can-be-missed indicator** (faint danger/warn tints, same values as the meter fills) and the bare action number in `.tt-sig` is data — the shape glyph was removed (two indicators for one fact). The today's-slot hero is a quiet card: `Now · ends HH:MM` at /50, Title-Case subject, and ONE loud object — the 22px `tt-hero-num` stat; hue appears only on the faint left rim when the stat is a deviation. No dot, no "Now" chip. Unmatched/custom slots render neutral "no data" at `opacity .5`. Subject names are Title-Cased at render (`_title_case`: ALL-CAPS portal names only; custom mixed-case names untouched; join keys still go through `_norm_subject`).
+Timetable glance: **superseded in v2.7.0** — the 2px `.tt-riskbar` left rim and the `.tt-sig` number block became the single inline `.tt-tag` in the row's subline (number + word together, three tiers: neutral comfortable / warn zero-margin / danger must-attend). The hero is an icon disc plus a 16px Title-Case subject and a 12px subline carrying the code, the time and the skip phrase; there is no `tt-hero-num` stat and no left rim any more. Unmatched/custom slots render a neutral `tt-tag--none` reading "no data". Subject names are Title-Cased at render (`_title_case`: ALL-CAPS portal names only; custom mixed-case names untouched; join keys still go through `_norm_subject`).
 
 ### 4.16 Teachers card (dashboard home, faculty map)
 
