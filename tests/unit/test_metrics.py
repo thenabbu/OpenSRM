@@ -365,6 +365,70 @@ def t_status_line_reasons():
         "the deliberately bare tick 401 must still carry its reason on the LOG line"
 
 
+
+# ── tab beacon + per-user labels ─────────────────────────────────────
+def _tab_count():
+    with A.app.app_context():
+        c = A.db()
+        try:
+            return c.execute(
+                "SELECT COUNT(*) FROM usage_events WHERE event='tab_view'"
+            ).fetchone()[0]
+        finally:
+            c.close()
+
+
+def t_user_label_is_hashed():
+    """The metric label must never be the netid: this repo is public and its
+    dashboards are LAN-served. Proves the handle is stable, distinct, opaque."""
+    a = A._user_label("ng2776")
+    assert a == A._user_label("ng2776"), "label must be stable for one user"
+    assert a != A._user_label("ng2777"), "different users must not collide"
+    assert "ng2776" not in a, f"netid leaked into the label: {a}"
+    assert a.startswith("u") and len(a) == 11, f"unexpected label shape: {a}"
+    assert A._user_label("") == "anonymous", "logged-out traffic needs its own series"
+
+
+def t_tab_beacon():
+    """POST /api/track/tab: allowlisted tabs record, junk does not, the
+    response is 204 on EVERY path, and the per-user floor suppresses floods."""
+    cl = A.app.test_client()
+    # set_cookie, NOT a raw Cookie header: Werkzeug's test client does not
+    # parse a hand-built header into request.cookies here, so the raw form
+    # silently authenticates as nobody and every assertion below would test
+    # the logged-out path instead of the one it names.
+    cl.set_cookie("srm_session", A.make_session_token("zz9999"), domain="localhost")
+
+    A._tab_beacon_last.clear()
+    before = _tab_count()
+    r = cl.post("/api/track/tab", json={"tab": "marks"})
+    assert r.status_code == 204, f"valid tab must be 204, got {r.status_code}"
+    assert _tab_count() == before + 1, "valid tab must be recorded"
+
+    # junk tab: still 204 (never an error to the UI) but NOT recorded
+    A._tab_beacon_last.clear()
+    mid = _tab_count()
+    r = cl.post("/api/track/tab", json={"tab": "<script>"})
+    assert r.status_code == 204, "junk tab must still answer 204"
+    assert _tab_count() == mid, "a non-allowlisted tab must not be recorded"
+
+    # flood floor: three rapid switches to another tab record at most once
+    A._tab_beacon_last.clear()
+    start = _tab_count()
+    for _ in range(3):
+        cl.post("/api/track/tab", json={"tab": "fees"})
+    assert _tab_count() - start <= 1, \
+        f"per-user 2s floor must suppress a burst, recorded {_tab_count() - start}"
+
+    # logged out: 204, nothing recorded
+    A._tab_beacon_last.clear()
+    out = _tab_count()
+    fresh = A.app.test_client()          # a NEW client with no cookie = logged out
+    r = fresh.post("/api/track/tab", json={"tab": "attendance"})
+    assert r.status_code == 204, "logged-out beacon must still be 204"
+    assert _tab_count() == out, "logged-out beacon must not record a tab"
+
+
 for name, fn in [
     ("counters + timers are thread-safe (8x500)", t_thread_safety),
     ("sync counter: pipeline http / ok + duration", t_sync_counter_http_ok),
@@ -376,6 +440,8 @@ for name, fn in [
     ("/internal/metrics auth: off/unset, bare 401, secret 200", t_metrics_auth),
     ("usage_events retention: 365d default, env, once-a-day, logged", t_usage_retention),
     ("every >=400 status line carries error=", t_status_line_reasons),
+    ("user metric label is hashed, never the netid", t_user_label_is_hashed),
+    ("tab beacon: allowlist, 204 always, per-user floor", t_tab_beacon),
 ]:
     check(name, fn)
 

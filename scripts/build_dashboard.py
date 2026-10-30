@@ -258,6 +258,70 @@ add("Push tick throughput (1h)",
 # ══════════════════════════════════════════════════════════════════
 # 6. Database and data growth
 # ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════
+# 6. Users and usage — who comes, when, and what they read
+# ══════════════════════════════════════════════════════════════════
+row("Users and usage", "Who is actually using the app, when they show up, and which tabs they read. "
+    "Users are shown as a short hash (u + sha256[:10]) — never the netid.")
+add("Active users (5m)", "Distinct users who did anything in the last 5 minutes. The live read on "
+    "\"is anyone using this right now\".",
+    [('count(count by (uid) (rate(opensrm_active_users_total{uid!="anonymous"}[5m])))', "active")],
+    kind="stat", w=4, h=4)
+add("Users today", "Distinct users active since midnight. Compare against the user-row count in the "
+    "Database row: a gap means accounts exist that nobody logs into.",
+    [('count(count by (uid) (increase(opensrm_active_users_total{uid!="anonymous"}[24h])))', "today")],
+    kind="stat", w=4, h=4)
+add("Requests per user per hour", "Load per person. One series per user (hashed), so a single heavy "
+    "client stands out from the crowd.",
+    [('topk(8, sum by (uid) (rate(opensrm_events_total{uid!="anonymous"}[1h]) * 3600))', "{{uid}}")],
+    w=8, h=8)
+add("Activity by hour of day (IST)", "When students actually open the app. This is the curve that "
+    "decides when a sync or a push is worth running, and when the box sits idle.",
+    [('sum(rate(opensrm_events_total[1h])) * 3600', "events/hour")],
+    w=12, h=9)
+add("Events by type (1h)", "What people do: page views, successful syncs, cached syncs, logins, "
+    "tab switches, feedback fills. A shift in the mix is a behaviour change, not a bug.",
+    [('sum by (event) (increase(opensrm_events_total[1h]))', "{{event}}")],
+    w=12, h=9)
+add("Top tabs (24h)", "Which tab people actually read after the dashboard. Tabs switch client-side, "
+    "so this is the only place that is measurable at all.",
+    [('topk(9, sum by (target) (increase(opensrm_events_total{event="tab_view"}[24h])))', "{{target}}")],
+    w=12, h=8)
+add("Tab switch rate", "Tab switches per minute. A sustained high rate on one tab is a sign people "
+    "are hunting for something the page is not giving them.",
+    [('sum by (target) (rate(opensrm_events_total{event="tab_view"}[15m]) * 60)', "{{target}}")],
+    w=12, h=8)
+add("Logged-out traffic", "Events with no user attached: prefetches, bots, expired sessions. A jump "
+    "here with real users flat means something is scanning the site.",
+    [('sum(rate(opensrm_events_total{uid="anonymous"}[1h])) * 3600', "anonymous/hour")],
+    w=12, h=8)
+add("Sync outcomes per user (1h)", "Who is syncing and how it went. A single user going all-error is "
+    "their credentials; everyone erroring is the portal.",
+    [('topk(8, sum by (uid) (increase(opensrm_events_total{event=~"sync_ok|sync_fail|sync_cached"}[1h])))', "{{uid}}")],
+    w=12, h=8)
+
+# ══════════════════════════════════════════════════════════════════
+# 7. Sync cost attribution — where the seconds actually go
+# ══════════════════════════════════════════════════════════════════
+row("Sync cost by data source", "One sync has three costs: the SRM portal (JSP pages over HTTP), the "
+    "SCOPE SOAP backend, and writing the result to SQLite. This row answers \"which one is slow today\".")
+add("Time per phase p50", "Median wall time of each phase. Portal should dominate; SCOPE should be "
+    "small and steady; persist should be milliseconds.",
+    [('histogram_quantile(0.50, sum by (le, phase) (rate(opensrm_sync_phase_duration_seconds_bucket[1h])))', "{{phase}} p50")],
+    w=12, h=8, unit="s")
+add("Time per phase p95", "The tail. A p95 far above the p50 means a minority of syncs are dragging — "
+    "usually the portal throttling, not our code.",
+    [('histogram_quantile(0.95, sum by (le, phase) (rate(opensrm_sync_phase_duration_seconds_bucket[1h])))', "{{phase}} p95")],
+    w=12, h=8, unit="s")
+add("Share of sync time by phase", "The same data as a proportion: what fraction of a user's wait is "
+    "the portal, SCOPE, and disk. This is the number to quote when arguing about where to optimise.",
+    [('sum by (phase) (rate(opensrm_sync_phase_duration_seconds_sum[1h])) / clamp_min(sum(rate(opensrm_sync_phase_duration_seconds_sum[1h])), 0.0001)', "{{phase}}")],
+    w=12, h=8, unit="percentunit")
+add("SCOPE ops per sync", "How many SOAP ops a SCOPE run touched: 0 (everything fresh), 1-3, or 4+. "
+    "High counts mean the cached SCOPE data keeps going stale.",
+    [('sum by (bucket) (increase(opensrm_sync_phase_ops_total{phase="scope"}[24h]))', "{{bucket}}")],
+    w=12, h=8)
+
 row("Database", "SQLite health: statement latency by verb, file/WAL size, and the tables whose "
     "growth means adoption — or a broken retention path.")
 add("Query rate by verb",

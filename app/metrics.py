@@ -37,6 +37,13 @@ _BUCKET_SETS = {
     "opensrm_db_query_duration_seconds": (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5, 1, 5),
     # push delivery: the push service either answers fast or times out at 5s
     "opensrm_push_send_duration_seconds": (0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10),
+    # one sync split by data source: portal JSP pages vs SCOPE SOAP vs local
+    # parse/persist. Answers "who is the sync actually waiting on".
+    "opensrm_sync_phase_duration_seconds": (0.01, 0.05, 0.1, 0.25, 0.5, 1, 2,
+                                            5, 10, 20, 30, 60, 90, 150),
+    # time from page request to first byte, per tab
+    "opensrm_tab_render_duration_seconds": (0.005, 0.01, 0.025, 0.05, 0.1,
+                                            0.25, 0.5, 1, 2.5, 5),
 }
 
 

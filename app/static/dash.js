@@ -232,6 +232,22 @@ function switchTab(name, btn, byKeyboard) {
     b.tabIndex = on ? 0 : -1;
   });
   if (history.replaceState) history.replaceState(null, '', '#' + name);
+  // Which tab a student actually reads is invisible to the server — tabs
+  // switch client-side with no page load, so every visit looks like
+  // "dashboard" from the request log. Fire-and-forget beacon so page usage
+  // is measurable at all. Wrapped: a failed beacon must never break the UI,
+  // and keepalive lets it survive a tab-switch-while-navigating-away.
+  try {
+    if (self.fetch) {
+      self.fetch('/api/track/tab', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tab: name}),
+        keepalive: true,
+        credentials: 'same-origin'
+      }).catch(function () {});
+    }
+  } catch (e) {}
   // focus follows KEYBOARD navigation only — a tap or mouse click must not
   // move focus (Safari never focuses buttons on tap; keep all platforms alike)
   if (byKeyboard && btn && btn.offsetParent) btn.focus();
