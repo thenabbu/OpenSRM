@@ -279,6 +279,22 @@ check("hero says the live class ends", "now &middot; ends" in html_now)
 check("Soon badge retired — absent everywhere",
       "Soon" not in html_now and "tt-badge--soon" not in html_out)
 
+# ── room chip renders (the stock seed carries NO locations, so this branch was
+#    never exercised): a room shows as a chip, a long one stays whole, and a
+#    slot with no room renders no chip rather than an empty pill ──
+c = A.db()
+_gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (GK,)).fetchone()[0]
+_LONG = "Computer Lab-3 (Block C, 2nd Floor)"
+c.execute("UPDATE timetable_slots SET location=? WHERE group_id=? AND day='Monday' AND period=1",
+          (_LONG, _gid))
+c.execute("UPDATE timetable_slots SET location='' WHERE group_id=? AND day='Monday' AND period=2",
+          (_gid,))
+c.commit(); c.close()
+_html_room = A.timetable_html(GK)
+check("room with text renders a chip", 'class=tt-chip' in _html_room)
+check("long room name is emitted whole (no truncation in markup)", _LONG in _html_room, _LONG)
+check("a slot with no room renders no empty chip", 'class=tt-chip></span>' not in _html_room)
+
 # location carry (same rule as the editor path): unchanged code keeps the
 # room, swapped subject drops it (review #3)
 c = A.db()
