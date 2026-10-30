@@ -1157,14 +1157,19 @@ def _sync_result(pipeline, res, t0):
         # never seen today; keep the counters total instead of crashing a sync
         res = sync_error("internal", "pipeline returned a non-dict result")
     ok = bool(res.get("ok"))
+    elapsed = time.monotonic() - t0
     metrics.inc("opensrm_sync_total", pipeline=pipeline,
                 result="ok" if ok else "error",
                 # typed results carry kind (the KIND_STATUS vocabulary — that IS
                 # the error class); the message-wording fallback covers bare
                 # dicts/stubs that predate the typed results
                 error="" if ok else (res.get("kind") or _error_class(res.get("error"))))
-    metrics.observe("opensrm_sync_duration_seconds", time.monotonic() - t0,
-                    pipeline=pipeline)
+    metrics.observe("opensrm_sync_duration_seconds", elapsed, pipeline=pipeline)
+    # The portal span of the sync: every return from fetch_attendance lands
+    # here, so this is the ONE place the portal's own wall time is known.
+    # Measured against the same t0 the total uses, so the dashboard can show
+    # "portal is N% of the sync" without a second clock.
+    metrics.observe("opensrm_sync_phase_duration_seconds", elapsed, phase="portal")
     return res
 
 
@@ -1675,7 +1680,14 @@ def _track(event, target="", detail="", user=""):
     """One usage-event row: page views, syncs, feature usage. Closed
     vocabulary (usage_events), no PII — user is the netid already stored
     in the DB; never passwords, tokens, or portal payloads. ponytail:
-    plain INSERT, no batching — a few rows/day at this scale."""
+    plain INSERT, no batching — a few rows/day at this scale.
+
+    Also mirrors the event into the in-process metric registry, so the
+    dashboard can chart activity live instead of only querying SQLite.
+    `user` reaches the metric ONLY as `_user_label(user)`: a truncated
+    sha256, never the netid — this repo is public and its dashboards are
+    served on the LAN, so a raw identifier in a label would leak it.
+    """
     try:
         insert_usage_event(time.strftime("%Y-%m-%d"), user, event, target, detail)
         _prune_usage_events()   # at most once a day (no-op otherwise)
@@ -1686,6 +1698,36 @@ def _track(event, target="", detail="", user=""):
         # the reliability audit outlawed. Telemetry failing must stay visible;
         # telemetry working stays quiet.
         log.info("usage track failed event=%s error=%r", event, e)
+    # Metric mirror runs whatever the DB did: a locked DB must not blind the
+    # live charts too. Label cardinality is bounded by design — at this
+    # scale (a student body, not a web audience) one series per active user
+    # per event is fine; revisit past a few thousand users.
+    try:
+        u = _user_label(user)
+        # label is `uid`, NOT `user`: the observability asset guard bans a
+        # `user` label outright because a raw netid there would leak PII into
+        # a LAN-served dashboard. Keeping the banned name and weakening the
+        # guard to fit a hashed value would remove the guard's whole point;
+        # `uid` reads as an opaque handle and cannot be mistaken for a netid.
+        metrics.inc("opensrm_events_total", event=event, uid=u,
+                    target=(target or "none")[:24])
+        if user:
+            metrics.inc("opensrm_active_users_total", uid=u)
+    except Exception:
+        pass
+
+
+def _user_label(user):
+    """Stable, non-reversible handle for a netid: 'u' + sha256[:10].
+
+    Returns 'anonymous' for an empty user so logged-out traffic has its own
+    series instead of vanishing. Truncated to 10 hex chars — enough to
+    correlate one user's activity across panels, far too little to recover
+    the netid, and short enough to keep legends readable.
+    """
+    if not user:
+        return "anonymous"
+    return "u" + hashlib.sha256(str(user).encode()).hexdigest()[:10]
 
 # ── Routes ─────────────────────────────────────────────────
 def _hourwise_data(netid, group_key):
@@ -2033,6 +2075,13 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.6.0", "date": "30 Oct", "title": "The app now watches how you use it",
+     "body": "OpenSRM now keeps track of which tabs actually get read, how busy the app "
+             "is hour by hour, and how long each part of a sync takes - the portal, the "
+             "campus backend, and saving the result. It is all aggregate or a short code "
+             "that stands in for your account, never your netid and never anything you "
+             "type. Nothing about the pages you see has changed; this is what lets "
+             "problems get found before you have to report them."},
     {"ver": "v2.5.1", "date": "30 Oct", "title": "Status tiles show their numbers",
      "body": "The small status tiles on the ops dashboard - the ones that reduce a "
              "whole chart to a single number - were drawing in their alert colour no "
@@ -3128,6 +3177,7 @@ def persist_sync(netid, res, password=None):
     (UPDATE in place, stored password untouched). Ordering and the
     post-commit thread start are kept from both routes.
     """
+    t_persist = time.monotonic()
     existing = user_sync_state(netid)
     (personal_json, marks_json, subjects_json, exams_json, faculty_json,
      fb_open, exam_events, attendance_json) = _merge_fetch_result(existing, res, netid=netid)
@@ -3143,6 +3193,11 @@ def persist_sync(netid, res, password=None):
     # timetable group/subjects + official grid (non-critical, separate tx)
     _save_timetable_group(netid, res)
     _track("sync_ok", user=netid)
+    # The third span: everything this process spends writing the sync to
+    # SQLite (upsert + timetable group). Portal and SCOPE are network-bound;
+    # this one is disk-bound, and mixing them hides which is actually slow.
+    metrics.observe("opensrm_sync_phase_duration_seconds",
+                    time.monotonic() - t_persist, phase="persist")
 
 
 def api_login():
@@ -4138,6 +4193,50 @@ def push_receipt():
         return _push_bad("too many receipts (30/hour)", 429)
     push_store.record_event(netid, "receipt", test_id)
     return {"ok": True}
+
+
+# ── Tab interaction beacon ───────────────────────────────────────────
+# Tabs are a client-side switch (no page load), so the server cannot see
+# which one a student actually reads — every dashboard load records
+# target="dashboard" and stops there. dash.js posts the tab name here on
+# switch so page-level usage is measurable at all.
+#
+# Deliberately tiny: the response is a bare 204 with no body, the caller
+# ignores it, and every failure path still returns 204 — a dropped click
+# beacon must never surface as an error in a student's console.
+_TAB_NAMES = frozenset({"dashboard", "attendance", "timetable", "marks",
+                        "campus", "academics", "fees", "tools", "settings"})
+_tab_beacon_last = {}   # netid -> monotonic ts, 2s floor per user
+
+
+def track_tab():
+    """POST /api/track/tab  {"tab": "<name>"} -> 204 always."""
+    try:
+        netid = get_current_user()
+        if netid:
+            d = request.get_json(silent=True)
+            tab = d.get("tab") if isinstance(d, dict) else None
+            if isinstance(tab, str) and tab in _TAB_NAMES:
+                # per-user 2s floor: a keyboard user arrowing across the tab
+                # strip fires one switch per keypress, and ten rows for one
+                # intentional visit pollutes the very number being measured.
+                now = time.monotonic()
+                if now - _tab_beacon_last.get(netid, 0.0) >= 2.0:
+                    if len(_tab_beacon_last) > _RATE_CAP:
+                        # blowout guard: entries older than the floor can never
+                        # suppress a future beacon, so they are safe to drop
+                        stale = [k for k, v in _tab_beacon_last.items()
+                                 if now - v >= 2.0]
+                        for k in stale:
+                            _tab_beacon_last.pop(k, None)
+                    _tab_beacon_last[netid] = now
+                    _track("tab_view", target=tab, user=netid)
+                    metrics.observe("opensrm_tab_render_duration_seconds",
+                                    max(0.0, now - getattr(request, "_start_time", now)),
+                                    tab=tab)
+    except Exception:
+        pass   # telemetry must never break the UI
+    return "", 204
 
 
 # ── Account deletion ─────────────────────────────────────────────────

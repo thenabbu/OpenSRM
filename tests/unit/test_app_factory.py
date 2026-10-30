@@ -118,6 +118,7 @@ EXPECTED = {
     "/healthz", "/internal/metrics", "/api/push/status", "/api/push/subscribe",
     "/api/push/unsubscribe", "/api/push/settings", "/api/push/test", "/api/push/receipt",
     "/api/account/delete", "/logout",
+    "/api/track/tab",
 }
 got = {r.rule for r in a1.url_map.iter_rules()} - {"/avatar", "/avatar/<name>"}  # blobatar's routes
 check("factory: every app route registered", got == EXPECTED,
@@ -154,6 +155,7 @@ EXPECTED_EP = {
     "/api/push/settings": {("push_settings", "push_settings")},
     "/api/push/test": {("push_test", "push_test")},
     "/api/push/receipt": {("push_receipt", "push_receipt")},
+    "/api/track/tab": {("track_tab", "track_tab")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
 }

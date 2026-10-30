@@ -221,7 +221,7 @@ defaults; `CANARY_BASE`/`CANARY_MINT`/`CANARY_CHECK`/`CANARY_DROP` override
 each leg — that is also how its unit test runs offline.)
 
 **`GET /internal/metrics`** — Prometheus text exposition of everything the app
-measures, in six groups; no PII in any label (verified by
+measures, in eight groups; no PII in any label (verified by
 `tests/unit/test_observability_assets.py`, which asserts no netid/user/ip
 label reaches any observability asset):
 
@@ -232,6 +232,9 @@ label reaches any observability asset):
 | SCOPE | `opensrm_scope_calls_total`, `opensrm_scope_call_duration_seconds` — per SOAP operation, three literal outcomes (ok / http_error / transport_error) |
 | Push | `opensrm_push_send_total`, `opensrm_push_send_duration_seconds` (ok / retryable / dead / deadline / error), `opensrm_push_tick_total`, `opensrm_push_tick_last_success_timestamp_seconds` |
 | Database | `opensrm_db_queries_total`, `opensrm_db_query_duration_seconds` (by leading SQL verb), `opensrm_db_size_bytes`, `opensrm_db_wal_bytes`, `opensrm_rows_{users,push_subscriptions,push_sent_log,usage_events}` |
+| Users | `opensrm_events_total` (event, target, uid), `opensrm_active_users_total` (uid) — `uid` is `u` + sha256(netid)[:10], never the netid itself |
+| Tabs | `opensrm_events_total{event="tab_view"}`, `opensrm_tab_render_duration_seconds` — tabs switch client-side, so this comes from a beacon (`POST /api/track/tab`), not a page load |
+| Sync cost | `opensrm_sync_phase_duration_seconds` (phase=portal|scope|persist), `opensrm_sync_phase_ops_total` — one sync split by data source |
 | Process | `opensrm_process_rss_bytes`, `opensrm_process_threads` |
 
 Guarded by the `X-Metrics-Token` header matching `METRICS_SECRET`; **unset =
@@ -350,8 +353,8 @@ ssh -L 9093:127.0.0.1:9093 lab    # Alertmanager (loopback-only)
 
 ### What each panel means
 
-The dashboard (`opensrm-observability` uid, folder OpenSRM) is 38 panels
-organised as six collapsible subsystem **rows**. Collapse the rows you are not
+The dashboard (`opensrm-observability` uid, folder OpenSRM) is 53 panels
+organised as eight collapsible subsystem **rows**. Collapse the rows you are not
 looking at; a row expands only when that subsystem is in question.
 
 **Liveness** — six stat panels, the first things to read when something is
