@@ -2075,6 +2075,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.7.1", "date": "31 Oct", "title": "Ops tiles read the right number",
+     "body": "Two ops-dashboard tiles were showing nonsense: the push-scheduler tile "
+             "reported '56 years' before its first run, and after a deploy some tiles "
+             "showed two stacked values from the old and new container at once. Fixed. "
+             "Nothing in the app itself changed."},
     {"ver": "v2.7.0", "date": "30 Oct", "title": "Timetable, rebuilt around your subject names",
      "body": "The timetable is one clean card per class now - the subject name leads, the "
              "course code and room sit underneath it, and your attendance tag moves to the "

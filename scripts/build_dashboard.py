@@ -84,8 +84,13 @@ def add(title, desc, targets, kind="timeseries", w=12, h=8, unit="short",
     for i, (expr, leg) in enumerate(targets):
         t = {"expr": expr, "legendFormat": leg, "refId": chr(65 + i), "datasource": DS}
         if instant or kind in ("stat", "table"):
+            # instant=True means "evaluate once, now". Setting range=True
+            # alongside it makes Grafana pull the whole window, and a series
+            # left over from a previous container build then renders as a
+            # SECOND value in the tile (observed: Process RSS showing both
+            # 109MiB and 98MiB). A stat tile wants one number: instant only.
             t["instant"] = True
-            t["range"] = not instant
+            t["range"] = False
         ts_targets.append(t)
     opts = {"legend": {"displayMode": "table" if kind != "stat" else "list",
                        "placement": legend, "calcs": list(calcs)},
@@ -112,7 +117,12 @@ add("Scrape up", "1 = Prometheus reached /internal/metrics. 0 means the app is d
     thresholds=[{"color": "red", "value": None}, {"color": "green", "value": 1}])
 add("Push tick age", "Seconds since the every-minute tick last succeeded. >300s means the Hermes "
     "cron job is dead, disabled, or the host is gone.",
-    [("time() - opensrm_push_tick_last_success_timestamp_seconds", "age")],
+    # guarded: the gauge is 0 until the very first tick, and time()-0 renders
+    # as ~56 YEARS of "age" on a fresh deploy (observed live). The `and`
+    # yields no series at all when the tick has never run, so the tile shows
+    # "No data" instead of a nonsense number.
+    [("(time() - opensrm_push_tick_last_success_timestamp_seconds) "
+      "and (opensrm_push_tick_last_success_timestamp_seconds > 0)", "age")],
     kind="stat", w=4, h=4, unit="s",
     thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 120},
                 {"color": "red", "value": 300}])

@@ -199,6 +199,25 @@ def t_dashboard_valid():
     valid_calcs = {"lastNotNull", "last", "first", "firstNotNull", "mean",
                    "min", "max", "sum", "count", "range", "delta", "diff",
                    "allIsZero", "allIsNull", "changeCount", "distinctCount"}
+    # An instant panel that ALSO asks for a range pulls the whole window, and
+    # a series left by a previous container build then renders as a SECOND
+    # value in the tile (observed: "Process RSS 109 MiB and 98.0 MiB" after a
+    # redeploy inside the time window). A stat tile is one number: instant
+    # without range.
+    for p in dash["panels"]:
+        if p["type"] not in ("stat", "gauge"):
+            continue
+        for t in p.get("targets", []):
+            assert not (t.get("instant") and t.get("range")), \
+                f"panel {p['id']} ({p['title']!r}) asks for BOTH instant and range — " \
+                f"a stale series will render as a second value in the tile"
+    # A gauge that is 0 until its first real sample (the push-tick dead-man)
+    # must guard against time()-0, which renders as ~56 YEARS of "age".
+    tick = [p for p in dash["panels"] if p["title"] == "Push tick age"]
+    assert tick, "the push-tick dead-man tile disappeared"
+    expr = tick[0]["targets"][0]["expr"]
+    assert "opensrm_push_tick_last_success_timestamp_seconds > 0" in expr, \
+        f"push-tick age must guard the never-ticked epoch-0 case: {expr!r}"
     for p in dash["panels"]:
         if p["type"] not in ("stat", "gauge"):
             continue

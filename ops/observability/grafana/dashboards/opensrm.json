@@ -97,7 +97,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -163,7 +163,7 @@
       },
       "targets": [
         {
-          "expr": "time() - opensrm_push_tick_last_success_timestamp_seconds",
+          "expr": "(time() - opensrm_push_tick_last_success_timestamp_seconds) and (opensrm_push_tick_last_success_timestamp_seconds > 0)",
           "legendFormat": "age",
           "refId": "A",
           "datasource": {
@@ -171,7 +171,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -241,7 +241,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -311,7 +311,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -365,7 +365,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -419,7 +419,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -778,7 +778,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -1800,7 +1800,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
@@ -1854,7 +1854,7 @@
             "uid": "prometheus"
           },
           "instant": true,
-          "range": true
+          "range": false
         }
       ]
     },
