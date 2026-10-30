@@ -178,12 +178,13 @@ def t_dashboard_valid():
     assert all(isinstance(i, int) for i in ids), f"non-integer panel ids: {ids}"
     # The budget exists to stop a dashboard ballooning into an unreadable
     # wall. It lives at 40 because the dashboard is deliberately organised as
-    # six collapsible subsystem ROWS (liveness / HTTP / portal sync / SCOPE /
-    # push / database) — a row plus its panels per subsystem. Raising it
+    # eight collapsible subsystem ROWS (liveness / HTTP / portal sync /
+    # SCOPE / push / users+usage / sync cost / database) — a row plus its
+    # panels per subsystem. Raising it
     # means a new subsystem was added; padding an existing one is the thing
     # this ceiling is meant to catch.
-    assert 1 <= len(dash["panels"]) <= 40, \
-        f"panel budget is 40 (6 subsystem rows), found {len(dash['panels'])}"
+    assert 1 <= len(dash["panels"]) <= 60, \
+        f"panel budget is 60 (8 subsystem rows), found {len(dash['panels'])}"
     for p in dash["panels"]:
         for t in p.get("targets", []):
             assert re.search(r"opensrm_[a-z0-9_]+|\bup\{", t["expr"]), \

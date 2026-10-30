@@ -1739,8 +1739,8 @@
     {
       "id": 34,
       "type": "row",
-      "title": "Database",
-      "description": "SQLite health: statement latency by verb, file/WAL size, and the tables whose growth means adoption \u2014 or a broken retention path.",
+      "title": "Users and usage",
+      "description": "Who is actually using the app, when they show up, and which tabs they read. Users are shown as a short hash (u + sha256[:10]) \u2014 never the netid.",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1752,6 +1752,736 @@
     },
     {
       "id": 35,
+      "type": "stat",
+      "title": "Active users (5m)",
+      "description": "Distinct users who did anything in the last 5 minutes. The live read on \"is anyone using this right now\".",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 100
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "count(count by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m])))",
+          "legendFormat": "active",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Users today",
+      "description": "Distinct users active since midnight. Compare against the user-row count in the Database row: a gap means accounts exist that nobody logs into.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 100
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "count(count by (uid) (increase(opensrm_active_users_total{uid!=\"anonymous\"}[24h])))",
+          "legendFormat": "today",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "Requests per user per hour",
+      "description": "Load per person. One series per user (hashed), so a single heavy client stands out from the crowd.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 100
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(8, sum by (uid) (rate(opensrm_events_total{uid!=\"anonymous\"}[1h]) * 3600))",
+          "legendFormat": "{{uid}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "Activity by hour of day (IST)",
+      "description": "When students actually open the app. This is the curve that decides when a sync or a push is worth running, and when the box sits idle.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 108
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(opensrm_events_total[1h])) * 3600",
+          "legendFormat": "events/hour",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "timeseries",
+      "title": "Events by type (1h)",
+      "description": "What people do: page views, successful syncs, cached syncs, logins, tab switches, feedback fills. A shift in the mix is a behaviour change, not a bug.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 108
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (event) (increase(opensrm_events_total[1h]))",
+          "legendFormat": "{{event}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Top tabs (24h)",
+      "description": "Which tab people actually read after the dashboard. Tabs switch client-side, so this is the only place that is measurable at all.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 117
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(9, sum by (target) (increase(opensrm_events_total{event=\"tab_view\"}[24h])))",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Tab switch rate",
+      "description": "Tab switches per minute. A sustained high rate on one tab is a sign people are hunting for something the page is not giving them.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 117
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (target) (rate(opensrm_events_total{event=\"tab_view\"}[15m]) * 60)",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Logged-out traffic",
+      "description": "Events with no user attached: prefetches, bots, expired sessions. A jump here with real users flat means something is scanning the site.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 125
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(opensrm_events_total{uid=\"anonymous\"}[1h])) * 3600",
+          "legendFormat": "anonymous/hour",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Sync outcomes per user (1h)",
+      "description": "Who is syncing and how it went. A single user going all-error is their credentials; everyone erroring is the portal.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 125
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(8, sum by (uid) (increase(opensrm_events_total{event=~\"sync_ok|sync_fail|sync_cached\"}[1h])))",
+          "legendFormat": "{{uid}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "row",
+      "title": "Sync cost by data source",
+      "description": "One sync has three costs: the SRM portal (JSP pages over HTTP), the SCOPE SOAP backend, and writing the result to SQLite. This row answers \"which one is slow today\".",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 133
+      },
+      "panels": []
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Time per phase p50",
+      "description": "Median wall time of each phase. Portal should dominate; SCOPE should be small and steady; persist should be milliseconds.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 134
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, phase) (rate(opensrm_sync_phase_duration_seconds_bucket[1h])))",
+          "legendFormat": "{{phase}} p50",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "Time per phase p95",
+      "description": "The tail. A p95 far above the p50 means a minority of syncs are dragging \u2014 usually the portal throttling, not our code.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 134
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, phase) (rate(opensrm_sync_phase_duration_seconds_bucket[1h])))",
+          "legendFormat": "{{phase}} p95",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "Share of sync time by phase",
+      "description": "The same data as a proportion: what fraction of a user's wait is the portal, SCOPE, and disk. This is the number to quote when arguing about where to optimise.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 142
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (phase) (rate(opensrm_sync_phase_duration_seconds_sum[1h])) / clamp_min(sum(rate(opensrm_sync_phase_duration_seconds_sum[1h])), 0.0001)",
+          "legendFormat": "{{phase}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "type": "timeseries",
+      "title": "SCOPE ops per sync",
+      "description": "How many SOAP ops a SCOPE run touched: 0 (everything fresh), 1-3, or 4+. High counts mean the cached SCOPE data keeps going stale.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 142
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (bucket) (increase(opensrm_sync_phase_ops_total{phase=\"scope\"}[24h]))",
+          "legendFormat": "{{bucket}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "type": "row",
+      "title": "Database",
+      "description": "SQLite health: statement latency by verb, file/WAL size, and the tables whose growth means adoption \u2014 or a broken retention path.",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 150
+      },
+      "panels": []
+    },
+    {
+      "id": 50,
       "type": "timeseries",
       "title": "Query rate by verb",
       "description": "Statements per minute split by leading verb. A SELECT rate that climbs without traffic is an N+1 or a polling loop.",
@@ -1759,7 +2489,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 151
       },
       "datasource": {
         "type": "prometheus",
@@ -1805,7 +2535,7 @@
       ]
     },
     {
-      "id": 36,
+      "id": 51,
       "type": "timeseries",
       "title": "Query latency p50 / p95 / p99",
       "description": "Statement time. Reads should sit in single-digit ms; a rising p95 on writes means lock contention.",
@@ -1813,7 +2543,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 100
+        "y": 151
       },
       "datasource": {
         "type": "prometheus",
@@ -1877,7 +2607,7 @@
       ]
     },
     {
-      "id": 37,
+      "id": 52,
       "type": "timeseries",
       "title": "DB and WAL size",
       "description": "The main file vs the WAL. A WAL that only grows means checkpoints are not completing \u2014 reads get slower and the disk fills.",
@@ -1885,7 +2615,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 159
       },
       "datasource": {
         "type": "prometheus",
@@ -1940,7 +2670,7 @@
       ]
     },
     {
-      "id": 38,
+      "id": 53,
       "type": "timeseries",
       "title": "Row counts",
       "description": "users = adoption. push_subscriptions growing without users = dead devices accumulating. push_sent_log and usage_events are retention-managed: growth there means pruning broke.",
@@ -1948,7 +2678,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 159
       },
       "datasource": {
         "type": "prometheus",

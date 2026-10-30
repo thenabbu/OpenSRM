@@ -36,8 +36,8 @@ app/config.py         # AppConfig (frozen dataclass) + from_env(): boot env read
 app/db.py             # sqlite layer: connect() (pragmas, per-app DB path inside an app context),
                       # request-scoped db() + teardown, transaction(), repository (all SQL lives here)
 app/blueprints/       # FlatBlueprint route tables (endpoints stay bare): auth · dashboard · marks ·
-                      # timetable · push · feedback · internal — 23 rules → app/app.py views
-                      # (/avatar + /avatar/<name> register at app level; 26 routes total)
+                      # timetable · push · feedback · internal — 24 rules → app/app.py views
+                      # (/avatar + /avatar/<name> register at app level; 27 routes total)
 app/security.py       # shared route decorators (require_login — guards views across blueprints)
 app/state.py          # RateLimiter · ProgressTracker · PortalHealth — every in-memory limit behind
                       # ONE lock with TTL pruning (old module-level names re-exported by app.py)

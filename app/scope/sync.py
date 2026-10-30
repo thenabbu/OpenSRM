@@ -108,12 +108,14 @@ def scope_cold_sync(netid, password, force=False):
     keeps that op's stored payload+ts, and a transport fault aborts the run
     with what landed preserved.
     """
+    t_scope = time.monotonic()
     with _lock_for(netid):
         ops = ops_for(enabled_features())
         stored = _stored(netid)
         pending = _pending_ops(stored, ops, int(time.time()), force)
         if not pending:
             log.info("scope.sync netid=%s nothing stale (%d op(s) fresh)", netid, len(ops))
+            _record_sync_phase("scope", time.monotonic() - t_scope, 0)
             return {"ok": 0, "skipped": 0, "fresh": len(ops), "ops": len(ops), "aborted": False}
         session = ensure_scope_session(netid, password)
         ok = skipped = 0
@@ -154,5 +156,22 @@ def scope_cold_sync(netid, password, force=False):
         write_scope_data(netid, json.dumps(stored, ensure_ascii=False), stamp)
         log.info("scope.sync netid=%s pending=%d ok=%d skipped=%d aborted=%s stored=%d",
                  netid, len(pending), ok, skipped, aborted, len(stored))
+        _record_sync_phase("scope", time.monotonic() - t_scope, len(pending))
         return {"ok": ok, "skipped": skipped, "fresh": len(ops) - len(pending),
                 "ops": len(ops), "aborted": aborted}
+
+
+def _record_sync_phase(phase, seconds, ops):
+    """One sync span into metrics, split by data source.
+
+    The dashboard's whole point here is proportionality: "the sync takes 40s"
+    is useless, "31s of it is the portal and 2s is SCOPE" is actionable. Phase
+    is a literal ('portal' | 'scope' | 'persist'), so cardinality is three.
+    """
+    try:
+        from .. import metrics
+        metrics.observe("opensrm_sync_phase_duration_seconds", seconds, phase=phase)
+        metrics.inc("opensrm_sync_phase_ops_total", phase=phase,
+                    bucket="0" if ops == 0 else "1-3" if ops <= 3 else "4+")
+    except Exception:
+        pass
