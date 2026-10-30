@@ -127,11 +127,11 @@ panels = {}
 for p in parts[1:]:
     day = p[:p.index(">")]
     panels[day] = p
-check("Monday panel: 3 break dividers", panels.get("Monday", "").count("tt-divider") == 3,
+check("Monday panel: 3 break dividers", panels.get("Monday", "").count("tt-brk") == 3,
       str(panels.get("Monday", "")[:120]))
-check("Tuesday panel: no trailing/orphan break", "tt-divider" not in panels.get("Tuesday", ""),
+check("Tuesday panel: no trailing/orphan break", "tt-brk" not in panels.get("Tuesday", ""),
       str(panels.get("Tuesday", "")))
-check("Wednesday mid-only day: no orphan break", "tt-divider" not in panels.get("Wednesday", ""),
+check("Wednesday mid-only day: no orphan break", "tt-brk" not in panels.get("Wednesday", ""),
       str(panels.get("Wednesday", "")))
 
 # 8) hero: break only when a class follows it that day (pinned clock)
@@ -143,11 +143,11 @@ A.datetime = FakeDT
 
 FakeDT._now = (2026, 9, 28, 11, 15)   # Monday 11:15 — mid-break, P3 at 11:20 follows
 h = A.timetable_html(gk)
-check("hero shows Break only between classes", "tt-hero--break" in h and "Until 11:20" in h, h[:200])
+check("hero shows Break only between classes", "On Break" in h and "Until 11:20" in h, h[:200])
 
 FakeDT._now = (2026, 9, 29, 15, 55)   # Tuesday 15:55 — last class was P2 at 11:10
 h = A.timetable_html(gk)
-check("hero: no Break after last class", "tt-hero--break" not in h and "Done for today" in h, h[:200])
+check("hero: no Break after last class", "On Break" not in h and "Done for today" in h, h[:200])
 
 A.datetime = real_datetime
 print("ok  tt history + break fix" if not fails else f"FAILURES: {fails}")
