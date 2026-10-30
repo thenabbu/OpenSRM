@@ -2075,6 +2075,14 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.6.1", "date": "30 Oct", "title": "Campus data arrives much faster",
+     "body": "The second data source that feeds your fees, results and subject list was "
+             "being asked for one item at a time, waiting for each answer before asking "
+             "the next. Those answers now come back in parallel, so a full refresh finishes "
+             "in about a third of the time it used to. Results and transcripts are also "
+             "cached for a day now instead of half an hour - that data cannot change "
+             "between two refreshes in the same afternoon, so re-downloading it was wasted "
+             "work. Nothing on any page has changed."},
     {"ver": "v2.6.0", "date": "30 Oct", "title": "The app now watches how you use it",
      "body": "OpenSRM now keeps track of which tabs actually get read, how busy the app "
              "is hour by hour, and how long each part of a sync takes - the portal, the "
