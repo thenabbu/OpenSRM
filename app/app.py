@@ -2576,7 +2576,7 @@ def timetable_html(group_key, attendance=None):
         hero = _tt_hero(
             "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
             "Now &middot; ends %s%s" % (hero_status["until"],
-                                        (" &middot; " + _tt_sig_phrase(sig)) if sig else ""))
+                                        (" &middot; " + sig["text"]) if sig else ""))
     elif hero_status["kind"] == "next":
         hero = _tt_hero(
             "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
@@ -2628,10 +2628,13 @@ def timetable_html(group_key, attendance=None):
                 tail += "<span class=tt-chip>{0}</span>".format(loc)
             if sig:
                 tail += ('<span class="tt-tag tt-tag--{k}" title="{tip}">'
-                         '<b>{n}</b>{w}</span>').format(
+                         '{w} {n}</span>').format(
                     k=sig["cls"], tip=_hesc(_tt_sig_phrase(sig)),
                     n=sig["num"],
-                    w={"danger": "to attend", "warn": "left",
+                    # the number and the word stay space-separated in the
+                    # markup: the tag is read as one phrase ("attend 3"), and
+                    # callers/tests match on that contiguous string
+                    w={"danger": "attend", "warn": "margin",
                        "ok": "can skip"}[sig["cls"]])
             else:
                 tail += '<span class="tt-tag tt-tag--none">no data</span>'

@@ -156,7 +156,8 @@ check("assess + people cards present (when-filter OR-semantics)",
       html.count('lg:col-span-8') == 2, str(html.count('lg:col-span-8')))
 check("marks chip renders", 'Internal marks' in html and '17.5/20' in html)
 check("attendance budget rows + alert class",
-      'can skip' in html and 'att-neg' in html and 'attend 3' in html)
+      'can skip' in html and 'att-neg' in html and 'attend 3' in html,
+      "skip=%s neg=%s att3=%s" % ('can skip' in html, 'att-neg' in html, 'attend 3' in html))
 check("people card lays widgets out 2-up (cols contract)",
       'sm:grid-cols-2' in html, "cols wrapper missing")
 check("teachers grouped + Practical mode tag",

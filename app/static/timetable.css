@@ -83,7 +83,9 @@
 .tt-tag{font-size:11px;font-weight:500;padding:2px 8px;border-radius:6px;
         white-space:nowrap;display:inline-flex;gap:4px;align-items:center;
         justify-content:center;min-width:76px}
-.tt-tag b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
+/* the number is the loud half of the tag: mono + semibold, same weight the
+   old rim's figure carried. No extra element — the string stays "attend 3". */
+.tt-tag{font-variant-numeric:tabular-nums}
 .tt-tag--ok,.tt-tag--none{background:var(--color-base-300);
   color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 /* hue lifted toward white for the dark surface: the raw status tokens measure
