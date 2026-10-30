@@ -551,6 +551,49 @@ def t_tools_rows_carry_a_real_tab():
         assert tab in KNOWN, f"{label} -> #{tab}: not a known tab"
 
 
+def t_sync_fetches_concurrently():
+    """Ops overlap instead of running one-at-a-time.
+
+    The whole point of the pool: N slow ops must not cost N x their latency.
+    Each fake op sleeps 0.20s; 4 ops sequentially would be >=0.80s. With the
+    pool they overlap, so wall time stays well under that. Also pins that every
+    op still lands and the pool size is the measured optimum.
+    """
+    _seed_user()
+    os.environ["SCOPE_FEATURES"] = "all"
+    ops = ["getPersonalDetails", "getExamDetails", "getHourwiseAttendance",
+           "getSubCategorySemesterWiseStatus"]
+    orig = SYNC.data_op
+    orig_features = SYNC.ops_for
+
+    def fake(op, sid):
+        time.sleep(0.20)
+        return {"op": op}
+
+    SYNC.data_op = fake
+    SYNC.ops_for = lambda features: list(ops)
+    try:
+        t0 = time.monotonic()
+        res = SYNC.scope_cold_sync(NETID, "pw")
+        elapsed = time.monotonic() - t0
+    finally:
+        SYNC.data_op = orig
+        SYNC.ops_for = orig_features
+        os.environ.pop("SCOPE_FEATURES", None)
+    assert res["ok"] == len(ops), res
+    # sequential would be >= 0.80s; the pool finishes all four in ~one wave
+    assert elapsed < 0.55, f"ops did not overlap: {elapsed:.2f}s for 4x 0.20s"
+    assert SYNC.SCOPE_POOL == 8, "pool size must stay at the measured optimum (8)"
+
+
+def t_sync_no_inter_op_pacing():
+    """PACE_S must stay 0: the sleep cost 6.5s per pass and bought nothing."""
+    assert SYNC.PACE_S == 0.0, (
+        "PACE_S is back — the backend self-paces (~25 req/s measured); "
+        "a 0.5s sleep adds ~6.5s per 14-op pass for no benefit"
+    )
+
+
 TESTS = [
     ("envelope byte-identity vs pcap FLOW 18", t_envelope_byte_identity),
     ("blob AES round-trip (unicode + 1KB)", t_blob_roundtrip),
@@ -576,6 +619,8 @@ TESTS = [
     ("status endpoint 401s when logged out", t_status_endpoint_scoped_and_auth),
     ("ensure_scope_session logs in when sid missing", t_ensure_session_login_when_missing),
     ("tools rows carry a real tab", t_tools_rows_carry_a_real_tab),
+    ("sync fetches ops concurrently (pool overlaps them)", t_sync_fetches_concurrently),
+    ("sync has no inter-op pacing", t_sync_no_inter_op_pacing),
 ]
 
 if __name__ == "__main__":
