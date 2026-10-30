@@ -41,6 +41,41 @@ SCOPE_POOL = 8
 _slots = threading.BoundedSemaphore(SCOPE_POOL)
 
 
+# ── Hot/cold split (same model as the portal pipeline) ───────────────────
+# README 'Hot/cold data' + http_scraper.fetch(cold=...): hot data is refreshed
+# on every sync, cold data is reused until stale. One blanket TTL is wrong for
+# SCOPE because its ops change at wildly different rates — attendance moves
+# daily, a transcript moves a few times a semester — and each cold op still
+# costs 5.6-13s of upstream time to re-fetch.
+#
+# HOT  = changes daily, and is what a student opens the app to see.
+# COLD = settled once published; re-fetching it burns the backend's slots for
+#        data that cannot have moved.
+# Anything not named in a class falls back to SCOPE_TTL_S (never fetched stale).
+HOT_OPS = frozenset({
+    "getPersonalDetails",              # advisor/section/hostel can change mid-term
+    "getCummulativeAttendance",        # moves every teaching day
+    "getSubjectwiseAttendance",        # moves every teaching day
+    "getHourwiseAttendance",           # moves every teaching day
+    "getInternalMarkDetails",          # internal assessment is entered through the term
+    "getFeeDetails",                   # dues change on payment
+    "getFinanceDetails",               # ledger grows on payment
+    "getViewNotificationListJson",     # an inbox
+})
+
+COLD_OPS = frozenset({
+    "getExamDetails",                          # settled after result publication
+    "getProgramSubCategoryWiseSubjects",       # transcript; changes on completion
+    "getSubCategoryWiseStatus",                # credit totals, settle per semester
+    "getSubCategorySemesterWiseStatus",
+    "getStudentExamProvisionalResult",         # season payload, settles at the end
+    "getStudentExamRevaluationResult",
+    "getSubjects",                             # course registration, settles early
+})
+
+SCOPE_TTL_S = 1800          # hot: 30 min, matches the app's sync cadence
+SCOPE_COLD_TTL_S = 24 * 3600  # cold: 24h, same number the portal pipeline uses
+
 # Ops a student actually sees on first paint. Fetched FIRST so the dashboard
 # is complete while the long tail (academics/fees/placement) is still landing.
 # This is ordering only — every enabled op is still fetched, so no feature
@@ -53,10 +88,12 @@ FIRST_PAINT_OPS = (
     "getHourwiseAttendance",       # day/hour grid
 )
 
-# A full pass is ~15 ops x 4-8s upstream = 1-2 minutes, so the backend's
-# slots are the scarce resource: re-fetch an op only when its payload is
-# missing or older than this. 30 min matches the app's own sync cadence.
-SCOPE_TTL_S = 1800
+
+def ttl_for(op):
+    """Per-op freshness window: hot 30min, cold 24h, unknown 30min."""
+    if op in COLD_OPS:
+        return SCOPE_COLD_TTL_S
+    return SCOPE_TTL_S
 
 # ponytail: one in-process lock per netid — ceiling = sync throughput per
 # account inside one process; upgrade path = per-account file locks if this
@@ -97,10 +134,12 @@ def _stored(netid):
 
 
 def _pending_ops(stored, ops, now, force=False):
-    """The ops that actually need a fetch: missing, or older than the TTL.
+    """The ops that actually need a fetch: missing, or older than their class TTL.
 
-    Fresh ops are kept as-is — each op is a 4-8s upstream call, so re-fetching
-    a fresh one is pure waste (and burns the backend's slots).
+    Fresh ops are kept as-is — each op is an upstream call costing 120ms to 13s,
+    so re-fetching a fresh one is pure waste (and burns the backend's slots).
+    Hot/cold split: attendance/marks/profile go stale in 30 min; a transcript or
+    a published result effectively never moves inside a day.
     """
     if force:
         return list(ops)
@@ -108,7 +147,7 @@ def _pending_ops(stored, ops, now, force=False):
     for op in ops:
         e = stored.get(op) if isinstance(stored, dict) else None
         ts = e.get("ts") if isinstance(e, dict) else None
-        if isinstance(ts, (int, float)) and ts and (now - int(ts)) < SCOPE_TTL_S:
+        if isinstance(ts, (int, float)) and ts and (now - int(ts)) < ttl_for(op):
             continue
         out.append(op)
     return out
