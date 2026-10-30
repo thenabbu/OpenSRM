@@ -228,8 +228,9 @@ check("render shows corrected 09:30", "09:30" in html_out)
 check("render never shows raw 08:30", "08:30" not in html_out)
 check("render drops legacy p7 (16:00)", "16:00" not in html_out)
 
-# ── rim tiers + badge contract (Navya 2026-10-12): Soon retired; the left rim
-#    carries the attendance colours — grey comfortable / warn zero-margin / red below 75 ──
+# ── attendance tiers (reference redesign 2026-10-30): the left rim became an
+#    inline tag in the row tail — neutral comfortable / warn zero-margin / red below 75.
+#    Same three tiers, same mapping, different node. ──
 _c = A.db()
 _codes = [r[0] for r in _c.execute(
     "SELECT DISTINCT subject_code FROM timetable_slots WHERE subject_code!='' ORDER BY subject_code")]
@@ -244,18 +245,19 @@ if len(_codes) >= 3:
     html_r = A.timetable_html(GK, attendance=att3)
     _rows = html_r.split('<div class="tt-row')[1:]
 
-    def _rim_for(code):
+    def _tier_for(code):
         for seg in _rows:
-            if "<strong>{0}</strong>".format(code) in seg:
-                return ("danger" if "tt-riskbar--danger" in seg
-                        else "warn" if "tt-riskbar--warn" in seg else "grey")
+            if ">{0}</b>".format(code) in seg:
+                return ("danger" if "tt-tag--danger" in seg
+                        else "warn" if "tt-tag--warn" in seg
+                        else "ok" if "tt-tag--ok" in seg else "none")
         return "absent"
 
-    check("rim tier: grey base (comfortable ≥75)", _rim_for(_codes[0]) == "grey", _rim_for(_codes[0]))
-    check("rim tier: warn yellow (at 75, zero margin)", _rim_for(_codes[1]) == "warn", _rim_for(_codes[1]))
-    check("rim tier: danger red (below 75)", _rim_for(_codes[2]) == "danger", _rim_for(_codes[2]))
+    check("tag tier: comfortable ≥75", _tier_for(_codes[0]) == "ok", _tier_for(_codes[0]))
+    check("tag tier: at 75, zero margin", _tier_for(_codes[1]) == "warn", _tier_for(_codes[1]))
+    check("tag tier: below 75, must attend", _tier_for(_codes[2]) == "danger", _tier_for(_codes[2]))
 else:
-    check("rim tiers (need 3 codes)", False, "skipped")
+    check("attendance tiers (need 3 codes)", False, "skipped")
 
 class _FixedDT(datetime):
     @classmethod
@@ -268,7 +270,10 @@ try:
     html_now = A.timetable_html(GK, attendance={})
 finally:
     A.datetime = _orig_dt
-check("Now badge renders on the live class (faked clock)", "<span class=tt-badge>Now</span>" in html_now)
+# the "Now" badge was retired with the redesign: the live class is marked by the
+# row modifier + the hero saying "Now · ends HH:MM" (no badge, no dot — review R2)
+check("live class marked by row modifier (faked clock)", "tt-row--now" in html_now)
+check("hero says Now on the live class", "Now &middot; ends" in html_now)
 check("Soon badge retired — absent everywhere",
       "Soon" not in html_now and "tt-badge--soon" not in html_out)
 

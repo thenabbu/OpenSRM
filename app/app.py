@@ -2459,18 +2459,68 @@ def _tt_att_sig(course):
         return {"cls": "warn", "text": "no margin", "num": 0}
     return {"cls": "ok", "text": "can skip %d" % skip, "num": skip}
 
+def _tt_sig_phrase(sig):
+    """The words behind an attendance number, one short clause (no sentence)."""
+    if not sig:
+        return ""
+    if sig["cls"] == "danger":
+        return "{n} in a row to reach 75%".format(n=sig["num"])
+    if sig["cls"] == "warn":
+        return "one miss drops below 75%"
+    return "skippable, still 75%"
+
+
+def _tt_countdown(mins):
+    """Human span for the hero: minutes under an hour, else "8h 49m".
+    A bare "in 529 min" is an engineering leak, not a time a student reads."""
+    try:
+        mins = int(mins)
+    except (TypeError, ValueError):
+        return ""
+    if mins < 60:
+        return "in %d min" % mins
+    return "in %dh %02dm" % (mins // 60, mins % 60)
+
+
+def _tt_hero(title, sub, disc="check"):
+    """Hero anatomy of the reference design: a 30px tinted disc holding one
+    stroke icon, a 16px semibold title, a 12px grey subline. The disc is the
+    only place hue appears — the words carry the state (DESIGN §2.6)."""
+    name = "check"
+    if disc == "clock":
+        name = "clock"
+    return ("<div class=\"tt-hero\">"
+            "<span class=\"tt-hero-disc\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\">"
+            "<path d=\"{path}\"></path></svg></span>"
+            "<div class=\"tt-hero-txt\"><strong>{t}</strong>"
+            "<div class=\"tt-hero-sub\">{s}</div></div>"
+            "<span class=\"tt-hero-day\">{d}</span></div>").format(
+        path=("m5 12 5 5 9-10" if name == "check"
+              else "M12 8v4l2.5 1.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"),
+        t=title, s=sub, d=datetime.now().strftime("%a"))
+
+
+def _tt_empty(title, sub):
+    return ("<div class=\"tt-card\"><div class=\"tt-empty\">"
+            "<strong>{t}</strong><div class=\"tt-hero-sub\">{s}</div>"
+            "</div></div>").format(t=title, s=sub)
+
+
 def timetable_html(group_key, attendance=None):
+    """Render the Timetable tab.
+
+    Layout follows the approved reference design: one solid hero card, a
+    rounded pill day selector, then one solid card per class row — a 3-column
+    grid of [mono time pair | code over name | room chip + attendance tag].
+    Breaks are dashed rules BETWEEN rendered classes, never a card.
+
+    Every slot value is user-writable through /api/timetable, so all of it is
+    escaped at the single choke point below (audit 2026-09-27)."""
     if not group_key:
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
-                ""
-                "<div><strong>No timetable found</strong>"
-                "<div class=\"tt-hero-sub\">No timetable exists for your group yet.</div></div></div></div>")
+        return _tt_empty("No timetable found", "No timetable exists for your group yet.")
     gid = group_id(group_key)
     if gid is None:
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
-                ""
-                "<div><strong>No timetable set</strong>"
-                "<div class=\"tt-hero-sub\">Your group has no timetable. Use the editor to build one.</div></div></div></div>")
+        return _tt_empty("No timetable set", "Your group has no timetable yet.")
     day_slots = {}
     # attendance join (spec §4): custom short-circuits BEFORE any name match —
     # a custom subject typed with a portal-matching name must never join.
@@ -2480,29 +2530,27 @@ def timetable_html(group_key, attendance=None):
             if r[3] and r[0]:
                 custom_codes.add(r[0])
     for r in group_slots(gid):
-        if r[0] not in day_slots: day_slots[r[0]] = {}
+        if r[0] not in day_slots:
+            day_slots[r[0]] = {}
         # audit 2026-09-27: slots are written by ANY user of the group via
         # /api/timetable and rendered with {{ timetable | safe }} — escape at
-        # this single choke point (covers hero + panels + loc) or one student's
+        # this single choke point (covers hero + rows + room) or one student's
         # custom subject name becomes stored XSS in classmates' dashboards.
         day_slots[r[0]][r[1]] = {"code": _hesc(str(r[2] or "")),
                                  "name": _hesc(str(r[3] or "")),
                                  "location": _hesc(str(r[4] or ""))}
         # raw (unescaped) pair for the join + sig lookup; rendered values above stay escaped
-        day_slots[r[0]][r[1]]["_att"] = _join_attendance(attendance, custom_codes, str(r[2] or ""), str(r[3] or ""))
-    # If no slots at all, show empty state
-    has_slots = any(day_slots.get(d) for d in DAY_ORDER)
-    if not has_slots:
-        return ("<div class=\"tt-wrap\"><div class=\"tt-hero\">"
-                ""
-                "<div><strong>Timetable empty</strong>"
-                "<div class=\"tt-hero-sub\">Use the editor to map out your schedule.</div></div></div></div>")
-    # Build today's slots for hero
+        day_slots[r[0]][r[1]]["_att"] = _join_attendance(
+            attendance, custom_codes, str(r[2] or ""), str(r[3] or ""))
+    if not any(day_slots.get(d) for d in DAY_ORDER):
+        return _tt_empty("Timetable empty", "No classes are mapped for your section.")
     today = datetime.now().strftime("%A")
+    grid = _tt_grid(group_key)
+
+    # ── Hero: what is happening on the default day, right now ──────────────
     # index of the day's LAST filled class slot: a break at/after it is NOT
     # part of today's schedule (otherwise the hero says "Break until 16:00"
     # after the last class instead of "Done for today")
-    grid = _tt_grid(group_key)
     last_cls = -1
     for i, s in enumerate(grid):
         if s["type"] == "class" and today in day_slots and s["period"] in day_slots[today]:
@@ -2514,92 +2562,94 @@ def timetable_html(group_key, attendance=None):
                 today_slots.append(s)
         elif today in day_slots and s["period"] in day_slots[today]:
             m = day_slots[today][s["period"]]
-            today_slots.append({**s, "code": m["code"], "name": m["name"], "location": m["location"],
-                                **({"_att": m["_att"]} if "_att" in m else {})})
+            today_slots.append(dict(s, code=m["code"], name=m["name"],
+                                    location=m["location"],
+                                    **({"_att": m["_att"]} if "_att" in m else {})))
     hero_status = _now_next_from_slots(today, today_slots)
-    # Hero HTML
     if hero_status is None or hero_status["kind"] == "done":
-        hero = ("<div class=\"tt-hero tt-hero--done\"><strong>Done for today</strong>"
-                "<div class=\"tt-hero-sub\">No more classes</div></div>")
+        hero = _tt_hero("Done for today", "No more classes")
     elif hero_status["kind"] == "break":
-        hero = ("<div class=\"tt-hero tt-hero--break\"><strong>{label}</strong>"
-                "<div class=\"tt-hero-sub\">Until {until}</div></div>").format(**hero_status)
+        hero = _tt_hero("On %s" % hero_status["label"],
+                        "Until %s" % hero_status["until"], disc="clock")
     elif hero_status["kind"] == "current":
-        # today's-slot hero: when the current class carries a skip stat, the stat is
-        # the loud object (22px number) and the hero edge takes the RISK colour, not
-        # the temporal now-tint (spec §1.B) — one edge, one meaning.
-        hero = ("<div class=\"tt-hero tt-hero--now{riskcls}\">"
-                "<div class=\"tt-hero-sub\">Now \u00b7 ends {until}</div>"
-                "<strong>{code} \u2014 {name}</strong>{sig}</div>").format(
-            # review R2: no dot, no badge; hue only on the faint left rim = deviation
-            riskcls=" tt-hero--risk-danger" if (sig_txt := _tt_att_sig(hero_status.get("_att")) if "_att" in hero_status else None) and sig_txt["cls"] == "danger"
-                   else (" tt-hero--risk-warn" if sig_txt and sig_txt["cls"] == "warn" else ""),
-            code=hero_status["code"], name=_title_case(hero_status["name"]), until=hero_status["until"],
-            sig=("<div class=\"tt-hero-sig\"><span class=\"tt-hero-num\">{num}</span>{txt}</div>"
-                 .format(num=sig_txt["num"], txt="classes in a row to hold 75%" if sig_txt["cls"] == "danger"
-                         else "skippable and still hold 75%" if sig_txt["cls"] == "ok"
-                         else "left — one miss drops below 75%") if sig_txt else ""))
+        sig = _tt_att_sig(hero_status.get("_att")) if "_att" in hero_status else None
+        hero = _tt_hero(
+            "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
+            "Now &middot; ends %s%s" % (hero_status["until"],
+                                        (" &middot; " + _tt_sig_phrase(sig)) if sig else ""))
     elif hero_status["kind"] == "next":
-        hero = ("<div class=\"tt-hero tt-hero--next\"><strong>{code} \u2014 {name}</strong>"
-                "<div class=\"tt-hero-sub\">Starts at {at} (in {in_mins}m)</div>"
-                "<div class=\"tt-hero-loc\">{loc}</div></div>").format(
-            **{**hero_status, "name": _title_case(hero_status["name"])})
+        hero = _tt_hero(
+            "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
+            "Starts %s &middot; %s" % (hero_status["at"],
+                                       _tt_countdown(hero_status["in_mins"])),
+            disc="clock")
     else:
-        hero = ("<div class=\"tt-hero\"><strong>No classes today</strong></div>")
-    # Day tabs + panels
+        hero = _tt_hero("No classes today", "Nothing scheduled")
+
+    # ── Day selector: rounded pills, checked one inverts to the primary fill ──
     default_day = today if today in DAY_ORDER else "Monday"
-    radios = "".join("<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(d, " checked" if d == default_day else "") for d in DAY_ORDER)
-    tabs = "".join("<label for=day-{0}{1}>{2}</label>".format(d, " class=tt-today" if d == today else "", d[:3]) for d in DAY_ORDER)
+    radios = "".join(
+        "<input type=radio name=ttday id=day-{0} class=tt-radio{1}>".format(
+            d, " checked" if d == default_day else "") for d in DAY_ORDER)
+    tabs = "".join(
+        "<label for=day-{0}>{1}</label>".format(d, d[:3]) for d in DAY_ORDER)
+
+    # ── One panel per day ─────────────────────────────────────────────────
+    now_mins = datetime.now().hour * 60 + datetime.now().minute
     panels = []
     for d in DAY_ORDER:
         # which class slots this day actually has — a break divider only makes
         # sense BETWEEN two rendered classes (no trailing "Break" after the
         # day's last class, no orphan divider above the first one)
-        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {}) for s in grid]
-        last_cls = max((i for i, p in enumerate(present) if p), default=-1)
+        present = [s["type"] == "class" and s["period"] in day_slots.get(d, {})
+                   for s in grid]
+        day_last = max((i for i, p in enumerate(present) if p), default=-1)
         rows = []
         for i, s in enumerate(grid):
             if s["type"] == "break":
-                if any(present[:i]) and i < last_cls:
-                    rows.append("<div class=tt-divider>{0}</div>".format(s["name"]))
+                if any(present[:i]) and i < day_last:
+                    rows.append("<div class=tt-brk>{0}</div>".format(s["name"]))
                 continue
             sl = day_slots.get(d, {}).get(s["period"])
             if not sl:
                 continue
-            code, name, loc = sl["code"], _title_case(sl["name"]), sl.get("location", "")
-            now_mins = datetime.now().hour * 60 + datetime.now().minute
-            sm = int(s["start"].split(":")[0])*60 + int(s["start"].split(":")[1])
-            em = int(s["end"].split(":")[0])*60 + int(s["end"].split(":")[1])
-            hl = ""
+            code, name = sl["code"], _title_case(sl["name"])
+            loc = sl.get("location", "")
+            sm = int(s["start"][:2]) * 60 + int(s["start"][3:])
+            em = int(s["end"][:2]) * 60 + int(s["end"][3:])
+            live = ""
             if d == today and sm <= now_mins < em:
-                hl = "current"
-            elif d == today and now_mins < sm and (sm - now_mins) <= 120:
-                hl = "upcoming"
-            cls = " tt-row--" + hl if hl else ""
-            # Navya 2026-10-12: Soon retired — only the live class carries "Now"
-            # (the hero repeats it; the badge marks the row itself).
-            badge = "<span class=tt-badge>Now</span>" if hl == "current" else ""
-            loc_html = "<span class=tt-loc>{0}</span>".format(loc) if loc else ""
-            # attendance glance (review R7): the slim risk rim IS the can-be-missed
-            # indicator; the bare number is data. Neutral "no data" for
-            # unmatched/custom (opacity-50, never a numeric 0%)
+                live = " tt-row--now"
             sig = _tt_att_sig(sl.get("_att"))
-            riskbar = ('<span class="tt-riskbar{}"></span>'.format(
-                " tt-riskbar--danger" if sig and sig["cls"] == "danger" else " tt-riskbar--warn" if sig and sig["cls"] == "warn" else ""))
-            sig_html = ('<div class="tt-sub">{loc}<span class="tt-sig{cls}">{text}</span></div>'
-                        ).format(loc=loc_html, cls=" tt-sig--" + sig["cls"] if sig else " tt-sig--none",
-                                 text=sig["text"] if sig else "no data")
-            rows.append('<div class="tt-row{cls}">{risk}'
-                        '<div class="tt-time">{start}<small>{end}</small></div>'
-                        '<div class="tt-info"><strong>{code}</strong><span class="tt-name">{name}</span></div>'
-                        '{badge}{sig}</div>'.format(cls=cls, risk=riskbar, start=s["start"], end=s["end"],
-                                                     code=code, name=name, badge=badge, sig=sig_html))
-        panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(d, "".join(rows)))
-    return ("<div class=tt-wrap>" + hero
-            + "<div class=tt-tabs>" + radios
-            + "<div class=tt-tabbar>" + tabs + "</div>"
-            + "<div class=panels>" + "".join(panels) + "</div>"
-            + "</div></div>")
+            # the room chip is the secondary datum; the attendance tag is the
+            # only element allowed hue, and it only appears on deviation
+            tail = ""
+            if loc:
+                tail += "<span class=tt-chip>{0}</span>".format(loc)
+            if sig:
+                tail += ('<span class="tt-tag tt-tag--{k}" title="{tip}">'
+                         '<b>{n}</b>{w}</span>').format(
+                    k=sig["cls"], tip=_hesc(_tt_sig_phrase(sig)),
+                    n=sig["num"],
+                    w={"danger": "to attend", "warn": "left",
+                       "ok": "can skip"}[sig["cls"]])
+            else:
+                tail += '<span class="tt-tag tt-tag--none">no data</span>'
+            rows.append(
+                "<div class=\"tt-row{live}\">"
+                "<div class=tt-time><b>{start}</b><span>{end}</span></div>"
+                "<div class=tt-info><b>{code}</b><span>{name}</span></div>"
+                "<div class=tt-tail>{tail}</div></div>".format(
+                    live=live, start=s["start"], end=s["end"],
+                    code=code, name=name, tail=tail))
+        if not rows:
+            rows.append("<div class=tt-off>No classes</div>")
+        panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(
+            d, "".join(rows)))
+
+    return ("<div class=tt-wrap>" + radios + hero
+            + "<div class=tt-days>" + tabs + "</div>"
+            + "<div class=panels>" + "".join(panels) + "</div></div>")
 
 
 @require_login
