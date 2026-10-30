@@ -2627,15 +2627,14 @@ def timetable_html(group_key, attendance=None):
             if loc:
                 tail += "<span class=tt-chip>{0}</span>".format(loc)
             if sig:
-                tail += ('<span class="tt-tag tt-tag--{k}" title="{tip}">'
-                         '{w} {n}</span>').format(
-                    k=sig["cls"], tip=_hesc(_tt_sig_phrase(sig)),
-                    n=sig["num"],
-                    # the number and the word stay space-separated in the
-                    # markup: the tag is read as one phrase ("attend 3"), and
-                    # callers/tests match on that contiguous string
-                    w={"danger": "attend", "warn": "margin",
-                       "ok": "can skip"}[sig["cls"]])
+                # read as one phrase, number and word space-separated and
+                # contiguous in the markup: "attend 3" / "can skip 13" take the
+                # word first, the zero-margin case reads as "0 margin".
+                txt = ("%d margin" % sig["num"] if sig["cls"] == "warn"
+                       else {"danger": "attend", "ok": "can skip"}[sig["cls"]]
+                            + " %d" % sig["num"])
+                tail += ('<span class="tt-tag tt-tag--{k}" title="{tip}">{t}</span>'
+                         ).format(k=sig["cls"], tip=_hesc(_tt_sig_phrase(sig)), t=txt)
             else:
                 tail += '<span class="tt-tag tt-tag--none">no data</span>'
             rows.append(
