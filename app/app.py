@@ -2574,14 +2574,17 @@ def timetable_html(group_key, attendance=None):
     elif hero_status["kind"] == "current":
         sig = _tt_att_sig(hero_status.get("_att")) if "_att" in hero_status else None
         hero = _tt_hero(
-            "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
-            "Now &middot; ends %s%s" % (hero_status["until"],
-                                        (" &middot; " + sig["text"]) if sig else ""))
+            _title_case(hero_status["name"]),
+            "%s &middot; now &middot; ends %s%s" % (
+                hero_status["code"], hero_status["until"],
+                (" &middot; " + sig["text"]) if sig else ""))
     elif hero_status["kind"] == "next":
+        # name first, code on the subline — the same hierarchy as the rows
         hero = _tt_hero(
-            "%s &mdash; %s" % (hero_status["code"], _title_case(hero_status["name"])),
-            "Starts %s &middot; %s" % (hero_status["at"],
-                                       _tt_countdown(hero_status["in_mins"])),
+            _title_case(hero_status["name"]),
+            "%s &middot; starts %s &middot; %s" % (
+                hero_status["code"], hero_status["at"],
+                _tt_countdown(hero_status["in_mins"])),
             disc="clock")
     else:
         hero = _tt_hero("No classes today", "Nothing scheduled")
@@ -2640,7 +2643,9 @@ def timetable_html(group_key, attendance=None):
             rows.append(
                 "<div class=\"tt-row{live}\">"
                 "<div class=tt-time><b>{start}</b><span>{end}</span></div>"
-                "<div class=tt-info><b>{code}</b><span>{name}</span></div>"
+                # the subject NAME is what a student scans for; the course code
+                # is the identifier underneath it (Navya 2026-10-30).
+                "<div class=tt-info><b>{name}</b><span>{code}</span></div>"
                 "<div class=tt-tail>{tail}</div></div>".format(
                     live=live, start=s["start"], end=s["end"],
                     code=code, name=name, tail=tail))

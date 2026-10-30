@@ -246,8 +246,10 @@ if len(_codes) >= 3:
     _rows = html_r.split('<div class="tt-row')[1:]
 
     def _tier_for(code):
+        # the NAME leads the row and the code rides the subline, so match the
+        # code anywhere in the segment rather than in the <b>
         for seg in _rows:
-            if ">{0}</b>".format(code) in seg:
+            if code in seg:
                 return ("danger" if "tt-tag--danger" in seg
                         else "warn" if "tt-tag--warn" in seg
                         else "ok" if "tt-tag--ok" in seg else "none")
@@ -273,7 +275,7 @@ finally:
 # the "Now" badge was retired with the redesign: the live class is marked by the
 # row modifier + the hero saying "Now · ends HH:MM" (no badge, no dot — review R2)
 check("live class marked by row modifier (faked clock)", "tt-row--now" in html_now)
-check("hero says Now on the live class", "Now &middot; ends" in html_now)
+check("hero says the live class ends", "now &middot; ends" in html_now)
 check("Soon badge retired — absent everywhere",
       "Soon" not in html_now and "tt-badge--soon" not in html_out)
 
