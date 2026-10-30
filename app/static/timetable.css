@@ -1,56 +1,148 @@
-/* Timetable custom styles — themed with daisyUI tokens */
-.tt-wrap{background:var(--color-base-200);border:1px solid var(--color-base-300);border-radius:8px;padding:16px}
-/* restyled per review R2: no dot, no badge; ONE loud object = the 22px stat;
-   hue ONLY on the faint left rim when the stat is a deviation */
-.tt-hero{padding:12px 14px;border-radius:6px;background:var(--color-base-200);margin-bottom:14px;border:1px solid var(--color-base-300);border-left:3px solid var(--color-base-300)}
-.tt-hero strong{display:block;font-size:13.5px;font-weight:600}
-.tt-hero-sub,.tt-hero-loc{font-size:11.5px;color:var(--color-base-content);opacity:0.5}
-.tt-hero-sub{margin-bottom:3px}
-.tt-hero--risk-warn{border-left-color:oklch(63% 0.115 68)}
-.tt-hero--risk-danger{border-left-color:oklch(58% 0.115 25)}
-.tt-hero--break{border-left-color:oklch(63% 0.115 68)}
-.tt-hero-num{display:inline-block;margin-right:6px;font-size:22px;font-weight:700;line-height:1;vertical-align:-2px;font-variant-numeric:tabular-nums;color:var(--color-base-content)}
-.tt-hero-sig{margin-top:5px;font-size:12.5px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+/* Timetable — layout mirrors the approved reference design: a solid card per
+   class row on a 3-column grid [mono time | code over name | room + tag],
+   rounded pill day selector, dashed break rules between rows, and one solid
+   hero card. Geometry (radii, paddings, type sizes, gap) is ported from the
+   design's computed values; colours come from the theme tokens so the page
+   follows light/dark with the rest of the app (DESIGN §2). */
+.tt-wrap{display:grid;gap:14px}
+
+/* ── hero: [30px disc][16px title / 12px subline] ───────────────────────── */
+.tt-hero{display:flex;align-items:center;gap:14px;padding:18px 20px;
+         background:var(--color-base-100);border:1px solid var(--color-base-300);
+         border-radius:14px}
+.tt-hero-disc{width:30px;height:30px;border-radius:50%;flex:none;
+              display:grid;place-items:center;
+              background:color-mix(in oklab, var(--color-base-content) 12%, transparent);
+              color:var(--color-base-content)}
+.tt-hero-disc svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;
+                  stroke-linecap:round;stroke-linejoin:round}
+.tt-hero-txt{min-width:0;flex:1 1 auto}
+/* the reference hero is a short "Done for today"; a long class name left most
+   of the card dead. A quiet day stamp on the right balances the card at any
+   width without adding an element that needs attention. */
+.tt-hero-day{flex:0 0 auto;font-size:12px;font-weight:500;letter-spacing:.06em;
+             text-transform:uppercase;
+             color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+.tt-hero strong{display:block;font-size:16px;font-weight:600;line-height:1.5}
+.tt-hero-sub{font-size:12px;line-height:1.5;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+.tt-hero-sig{margin-top:3px;font-size:12px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+
+/* ── day selector: pills, the checked one inverts to a solid fill ────────── */
 .tt-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
-.tt-tabbar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
-.tt-tabbar label{padding:6px 14px;border-radius:999px;background:var(--color-base-300);color:var(--color-base-content);opacity:0.7;font-size:12.5px;cursor:pointer;position:relative}
-.tt-tabbar label.tt-today::after{content:"";position:absolute;top:5px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--color-accent)}
-#day-Monday:checked~.tt-tabbar label[for=day-Monday],#day-Tuesday:checked~.tt-tabbar label[for=day-Tuesday],#day-Wednesday:checked~.tt-tabbar label[for=day-Wednesday],#day-Thursday:checked~.tt-tabbar label[for=day-Thursday],#day-Friday:checked~.tt-tabbar label[for=day-Friday]{background:var(--color-accent);color:var(--color-accent-content)}
-.day-panel{display:none;flex-direction:column;gap:6px}
-#day-Monday:checked~.panels #panel-Monday,#day-Tuesday:checked~.panels #panel-Tuesday,#day-Wednesday:checked~.panels #panel-Wednesday,#day-Thursday:checked~.panels #panel-Thursday,#day-Friday:checked~.panels #panel-Friday{display:flex}
-.tt-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;border:1px solid transparent}
-.tt-row:nth-child(odd){background:color-mix(in oklab, var(--color-base-content) 3%, transparent)}
-.tt-row--current{border-color:var(--color-success);background:color-mix(in oklab, var(--color-success) 8%, transparent)}
-.tt-row--upcoming{border-color:var(--color-success);background:color-mix(in oklab, var(--color-success) 5%, transparent)}
-.tt-time{font-family:monospace;font-size:12px;color:var(--color-base-content);opacity:0.5;flex:0 0 60px}
-.tt-time small{display:block;color:var(--color-base-content);opacity:0.5}
-.tt-info{flex:1;min-width:0;display:flex;flex-direction:column}
-.tt-info strong{font-size:13px;font-family:monospace}
-.tt-name{font-size:11.5px;color:var(--color-base-content);opacity:0.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tt-loc{font-size:11px;color:var(--color-base-content);opacity:0.5}
-/* --- attendance glance signal (spec §1.B) --------------------------------
-   Text signal (can skip N / attend N) + slim risk edge strip. Colour only
-   reinforces the text: healthy rows are grayscale, hue only on deviation. */
-.tt-row{position:relative;flex-wrap:wrap}
-.tt-sub{flex:0 0 100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding-left:72px;margin-top:2px}
-@media (min-width:640px){
-  .tt-row{flex-wrap:nowrap}
-  .tt-sub{flex:0 0 auto;padding-left:0;margin-top:0;margin-left:auto}
+.tt-days{display:flex;flex-wrap:wrap;gap:8px}
+.tt-days label{padding:7px 18px;border-radius:999px;font-size:14px;font-weight:500;
+               cursor:pointer;background:var(--color-base-300);
+               color:color-mix(in oklab, var(--color-base-content) 60%, transparent);
+               transition:background .15s, color .15s}
+.tt-days label:hover{color:var(--color-base-content)}
+.tt-days label:focus-within{outline:2px solid var(--color-accent);outline-offset:2px}
+#day-Monday:checked~.tt-days label[for=day-Monday],
+#day-Tuesday:checked~.tt-days label[for=day-Tuesday],
+#day-Wednesday:checked~.tt-days label[for=day-Wednesday],
+#day-Thursday:checked~.tt-days label[for=day-Thursday],
+#day-Friday:checked~.tt-days label[for=day-Friday]{
+  background:var(--color-base-content);color:var(--color-base-100)}
+
+/* ── panels: one card per class row, 8px between them ───────────────────── */
+.panels{display:block}
+.day-panel{display:none;flex-direction:column;gap:8px}
+#day-Monday:checked~.panels #panel-Monday,
+#day-Tuesday:checked~.panels #panel-Tuesday,
+#day-Wednesday:checked~.panels #panel-Wednesday,
+#day-Thursday:checked~.panels #panel-Thursday,
+#day-Friday:checked~.panels #panel-Friday{display:flex}
+
+.tt-row{display:grid;grid-template-columns:72px minmax(0,1fr);
+        gap:16px;align-items:center;padding:14px 18px;
+        background:var(--color-base-200);border-radius:10px;
+        border:1px solid transparent}
+.tt-row--now{border-color:color-mix(in oklab, var(--color-success) 45%, transparent);
+             background:color-mix(in oklab, var(--color-success) 7%, var(--color-base-200))}
+/* the time pair: bold start, grey end directly under it, both mono */
+.tt-time{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+         font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.tt-time b{font-weight:700}
+.tt-time span{display:block;font-size:12px;font-weight:400;
+              color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+/* the subject NAME leads (what a student scans for), the course CODE is the
+   identifier beneath it in quiet mono — the reverse of the reference's order,
+   by Navya's call: the name is the more important of the two. */
+.tt-info{min-width:0;display:flex;flex-direction:column}
+.tt-info b{font-size:14px;font-weight:600;line-height:1.45;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the subline: code on the left, room chip + attendance tag pushed to the far
+   right — one line, so the wasted middle is spent instead of stacked (Navya
+   2026-10-30: "shift the margin pill towards extreme right of the same row as
+   the subject code"). */
+.tt-sub{display:flex;align-items:center;gap:8px;min-width:0;line-height:1.45;
+        margin-top:2px;flex-wrap:wrap;row-gap:2px}
+.tt-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+         white-space:nowrap;
+         color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+.tt-tail{margin-left:auto}
+/* right tail: room chip then the attendance tag, wrapping on narrow screens */
+.tt-tail{display:flex;align-items:center;justify-content:flex-end;
+         gap:8px;flex-wrap:wrap;flex:0 1 auto;min-width:0}
+.tt-tail .tt-tag{flex:0 0 auto}
+.tt-chip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+         padding:2px 9px;border-radius:999px;white-space:nowrap;
+         max-width:100%;
+         background:var(--color-base-300);border:1px solid var(--color-base-300);
+         color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+/* attendance tag — the ONE element allowed hue, and only on deviation:
+   comfortable stays a neutral grey fill (DESIGN §2.6, never color alone) */
+.tt-tag{font-size:11px;font-weight:500;padding:2px 8px;border-radius:6px;
+        white-space:nowrap;display:inline-flex;gap:4px;align-items:center;
+        justify-content:center;min-width:76px}
+/* the number is the loud half of the tag: mono + semibold, same weight the
+   old rim's figure carried. No extra element — the string stays "attend 3". */
+.tt-tag{font-variant-numeric:tabular-nums}
+.tt-tag--ok,.tt-tag--none{background:var(--color-base-300);
+  color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+/* hue lifted toward white for the dark surface: the raw status tokens measure
+   3.8:1 and 3.0:1 here and fail AA for 11px text (measured, not eyeballed).
+   At 78%/72% lightness the pairs are 7.2:1 and 5.9:1. The word always rides
+   beside the number, so colour never carries the meaning alone. */
+.tt-tag--warn{background:oklch(78% 0.115 68 / .18);color:oklch(78% 0.115 68)}
+.tt-tag--danger{background:oklch(72% 0.135 25 / .18);color:oklch(72% 0.135 25)}
+
+/* ── break divider: dashed rule either side of the label, never a card ───��� */
+.tt-brk{display:flex;align-items:center;gap:12px;padding:4px 0;font-size:12px;
+        color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+.tt-brk::before,.tt-brk::after{content:"";flex:1;
+  border-top:1px dashed color-mix(in oklab, var(--color-base-content) 30%, transparent)}
+
+.tt-off,.tt-empty{font-size:14px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
+.tt-empty{padding:4px 2px}
+.tt-card{background:var(--color-base-100);border:1px solid var(--color-base-300);
+         border-radius:14px;padding:18px 20px}
+
+/* ── phone: time and info share the top row, the tail drops below ────────── */
+/* phone: the row becomes a two-line block — time column left, name + code in
+   the middle, and the room/tag pair drops to a quiet third line under the
+   name instead of stealing width from it. Padding tightens one step. */
+@media (max-width:640px){
+  .tt-row{grid-template-columns:56px minmax(0,1fr);gap:3px 12px;padding:12px 14px}
+  .tt-time{font-size:13px}
+  .tt-info b{white-space:normal;line-height:1.4}
+  .tt-sub{gap:6px}
+  /* a long room wraps onto its own line rather than being cut off — a
+     truncated "Computer Lab-3 (Block C…" tells a student nothing */
+  .tt-tail{flex:1 1 100%;justify-content:flex-end}
+  .tt-chip{font-size:11px;padding:1px 7px}
+  .tt-tag{font-size:10.5px;min-width:0;padding:1px 7px}
+  /* five pills share the width evenly on a phone — no scroll, no wrap, and
+     the row reads as one segmented control */
+  .tt-days{flex-wrap:nowrap;gap:6px}
+  .tt-days label{flex:1 1 0;text-align:center;padding:7px 0;font-size:13px}
+  /* a little more air between the last card and the fixed dock */
+  .tt-wrap{padding-bottom:8px}
+  .tt-hero{padding:14px 16px;gap:12px}
+  .tt-hero strong{font-size:15px}
+  .tt-brk{font-size:11px}
 }
-/* the now-state keeps its tint but yields the row edge to the risk strip, so
-   one edge, one meaning */
-.tt-row--current{border-color:var(--color-base-300);background:var(--color-base-200)}
-.tt-row--upcoming{border-color:var(--color-base-300);background:var(--color-base-200)}
-.tt-riskbar{position:absolute;left:0;top:0;bottom:0;width:2px;border-radius:2px;
-            /* neutral baseline must be visible; a ladder-step alpha, still no hue */
-            background:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
-.tt-riskbar--warn{background:oklch(63% 0.115 68)}
-.tt-riskbar--danger{background:oklch(58% 0.115 25)}
-.tt-sig{margin-left:auto;flex:0 0 auto;width:104px;display:flex;align-items:center;gap:6px;white-space:nowrap;
-        font-family:monospace;font-size:11px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
-.tt-sig--none{opacity:.5}
-.tt-badge{font-size:10.5px;padding:2px 9px;border-radius:999px;background:var(--color-success);color:var(--color-accent-content);font-weight:600}
-.tt-divider{font-size:11px;color:var(--color-base-content);opacity:0.5;text-align:center;padding:4px 0}
+
+/* ── editor (archived behind TIMETABLE_EDITOR; styling kept intact) ─────── */
 .tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tt-palette-wrap{overflow-x:auto;padding:8px 0;margin-bottom:16px}

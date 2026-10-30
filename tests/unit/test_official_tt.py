@@ -228,8 +228,9 @@ check("render shows corrected 09:30", "09:30" in html_out)
 check("render never shows raw 08:30", "08:30" not in html_out)
 check("render drops legacy p7 (16:00)", "16:00" not in html_out)
 
-# ── rim tiers + badge contract (Navya 2026-10-12): Soon retired; the left rim
-#    carries the attendance colours — grey comfortable / warn zero-margin / red below 75 ──
+# ── attendance tiers (reference redesign 2026-10-30): the left rim became an
+#    inline tag in the row tail — neutral comfortable / warn zero-margin / red below 75.
+#    Same three tiers, same mapping, different node. ──
 _c = A.db()
 _codes = [r[0] for r in _c.execute(
     "SELECT DISTINCT subject_code FROM timetable_slots WHERE subject_code!='' ORDER BY subject_code")]
@@ -244,18 +245,21 @@ if len(_codes) >= 3:
     html_r = A.timetable_html(GK, attendance=att3)
     _rows = html_r.split('<div class="tt-row')[1:]
 
-    def _rim_for(code):
+    def _tier_for(code):
+        # the NAME leads the row and the code rides the subline, so match the
+        # code anywhere in the segment rather than in the <b>
         for seg in _rows:
-            if "<strong>{0}</strong>".format(code) in seg:
-                return ("danger" if "tt-riskbar--danger" in seg
-                        else "warn" if "tt-riskbar--warn" in seg else "grey")
+            if code in seg:
+                return ("danger" if "tt-tag--danger" in seg
+                        else "warn" if "tt-tag--warn" in seg
+                        else "ok" if "tt-tag--ok" in seg else "none")
         return "absent"
 
-    check("rim tier: grey base (comfortable ≥75)", _rim_for(_codes[0]) == "grey", _rim_for(_codes[0]))
-    check("rim tier: warn yellow (at 75, zero margin)", _rim_for(_codes[1]) == "warn", _rim_for(_codes[1]))
-    check("rim tier: danger red (below 75)", _rim_for(_codes[2]) == "danger", _rim_for(_codes[2]))
+    check("tag tier: comfortable ≥75", _tier_for(_codes[0]) == "ok", _tier_for(_codes[0]))
+    check("tag tier: at 75, zero margin", _tier_for(_codes[1]) == "warn", _tier_for(_codes[1]))
+    check("tag tier: below 75, must attend", _tier_for(_codes[2]) == "danger", _tier_for(_codes[2]))
 else:
-    check("rim tiers (need 3 codes)", False, "skipped")
+    check("attendance tiers (need 3 codes)", False, "skipped")
 
 class _FixedDT(datetime):
     @classmethod
@@ -268,9 +272,28 @@ try:
     html_now = A.timetable_html(GK, attendance={})
 finally:
     A.datetime = _orig_dt
-check("Now badge renders on the live class (faked clock)", "<span class=tt-badge>Now</span>" in html_now)
+# the "Now" badge was retired with the redesign: the live class is marked by the
+# row modifier + the hero saying "Now · ends HH:MM" (no badge, no dot — review R2)
+check("live class marked by row modifier (faked clock)", "tt-row--now" in html_now)
+check("hero says the live class ends", "now &middot; ends" in html_now)
 check("Soon badge retired — absent everywhere",
       "Soon" not in html_now and "tt-badge--soon" not in html_out)
+
+# ── room chip renders (the stock seed carries NO locations, so this branch was
+#    never exercised): a room shows as a chip, a long one stays whole, and a
+#    slot with no room renders no chip rather than an empty pill ──
+c = A.db()
+_gid = c.execute("SELECT id FROM timetable_groups WHERE group_key=?", (GK,)).fetchone()[0]
+_LONG = "Computer Lab-3 (Block C, 2nd Floor)"
+c.execute("UPDATE timetable_slots SET location=? WHERE group_id=? AND day='Monday' AND period=1",
+          (_LONG, _gid))
+c.execute("UPDATE timetable_slots SET location='' WHERE group_id=? AND day='Monday' AND period=2",
+          (_gid,))
+c.commit(); c.close()
+_html_room = A.timetable_html(GK)
+check("room with text renders a chip", 'class=tt-chip' in _html_room)
+check("long room name is emitted whole (no truncation in markup)", _LONG in _html_room, _LONG)
+check("a slot with no room renders no empty chip", 'class=tt-chip></span>' not in _html_room)
 
 # location carry (same rule as the editor path): unchanged code keeps the
 # room, swapped subject drops it (review #3)

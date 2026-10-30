@@ -93,10 +93,12 @@ try:
         check("legacy 16:00 gone", "16:00" not in body)
         check("lunch divider present", "Lunch" in body)
         check("Soon badge retired", "Soon" not in body and pg.locator(".tt-badge--soon").count() == 0)
-        check("rim: grey base (comfortable ≥75)",
-              pg.locator(".tt-riskbar:not(.tt-riskbar--danger):not(.tt-riskbar--warn)").count() > 0)
-        check("rim: faded yellow (zero margin)", pg.locator(".tt-riskbar--warn").count() > 0)
-        check("rim: faded red (below 75)", pg.locator(".tt-riskbar--danger").count() > 0)
+        # the attendance signal moved from a left rim strip to an inline tag in
+        # the row tail with the reference redesign; the three tiers must still
+        # render simultaneously (neutral / zero-margin / must-attend).
+        check("tag: neutral base (comfortable ≥75)", pg.locator(".tt-tag--ok").count() > 0)
+        check("tag: zero margin", pg.locator(".tt-tag--warn").count() > 0)
+        check("tag: must attend (below 75)", pg.locator(".tt-tag--danger").count() > 0)
 
         # archive contract (default TIMETABLE_EDITOR=archived): no edit entry
         check("edit button archived (absent)", pg.locator("#tt-edit-btn").count() == 0)
