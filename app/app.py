@@ -2645,8 +2645,12 @@ def timetable_html(group_key, attendance=None):
                 "<div class=tt-time><b>{start}</b><span>{end}</span></div>"
                 # the subject NAME is what a student scans for; the course code
                 # is the identifier underneath it (Navya 2026-10-30).
-                "<div class=tt-info><b>{name}</b><span>{code}</span></div>"
-                "<div class=tt-tail>{tail}</div></div>".format(
+                # code and the room/tag pair share ONE line under the name
+                # (the tag pushed to the far right) so a phone row is two
+                # lines, not three.
+                "<div class=tt-info><b>{name}</b>"
+                "<span class=tt-sub><span class=tt-code>{code}</span>"
+                "<span class=tt-tail>{tail}</span></span></div></div>".format(
                     live=live, start=s["start"], end=s["end"],
                     code=code, name=name, tail=tail))
         if not rows:
