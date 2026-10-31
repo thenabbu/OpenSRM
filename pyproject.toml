@@ -1,6 +1,6 @@
 [project]
 name = "opensrm"
-version = "2.7.1"
+version = "2.8.0"
 description = "Self-hosted attendance dashboard for the SRM Student Portal"
 readme = "README.md"
 license = "MIT"

@@ -18,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 # test_audit_findings forbids test-DB files in the repo root / tests dir; mkdtemp (not a
 # `with` block) so the DB dir outlives this module-level test body
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="osrm-att-view-")
-from app.app import (_absences_view, _attendance_budgets, _attendance_index, _title_case,
-                     _bunk_counts, _bunk_line, _budget_rows, _course_view, _exam_stop,
-                     _join_attendance, _tt_att_sig, _weekdays)
+from app.app import (_absences_view, _attendance_budgets, _attendance_index, _month_view,
+                     _title_case, _bunk_counts, _bunk_line, _budget_rows, _course_view,
+                     _exam_stop, _join_attendance, _tt_att_sig, _weekdays)
 
 fails = []
 def check(name, ok, detail=""):
@@ -31,15 +31,16 @@ def check(name, ok, detail=""):
 TODAY = date(2026, 10, 5)                     # frozen clock [F2]
 PERIOD = {"from": "20/Jul/2026", "to": "25/Sep/2026"}
 EXAMS = [{"code": "21CSC201J", "name": "Data Structures", "date": "24-12-2026", "session": "AN"}]
-# spec §6.1 frozen table: name, A, C, w, pct, t75, (+skip/−attend), M90, M_end
+# spec §6.1 frozen table: name, A, C, w, pct(1dp, truncated), t75, (+skip/−attend), M90, M_end
+_T75 = 38
 TABLE = [
-    ("DBMS",           31,  50, 4, 62, 38, ("skip", 0),  ("attend", 26), 0,  5),
-    ("Networks",       34,  50, 3, 68, 38, ("skip", 0),  ("attend", 14), 0,  5),
-    ("Electronics",    37,  50, 3, 74, 38, ("skip", 0),  ("attend", 2),  0,  8),
-    ("Discrete Maths", 38,  50, 3, 76, 38, ("skip", 0),  None,           1,  9),
-    ("OOP",            41,  50, 3, 82, 38, ("skip", 4),  None,           4,  12),
-    ("DBMS Lab",       44,  50, 3, 88, 38, ("skip", 8),  None,           7,  15),
-    ("Data Structures", 91, 100, 6, 91, 75, ("skip", 21), None,           18, 33),
+    ("DBMS",           31,  50, 4, "62.0", _T75, ("skip", 0),  ("attend", 26), 0,  5),
+    ("Networks",       34,  50, 3, "68.0", _T75, ("skip", 0),  ("attend", 14), 0,  5),
+    ("Electronics",    37,  50, 3, "74.0", _T75, ("skip", 0),  ("attend", 2),  0,  8),
+    ("Discrete Maths", 38,  50, 3, "76.0", _T75, ("skip", 0),  None,           1,  9),
+    ("OOP",            41,  50, 3, "82.0", _T75, ("skip", 4),  None,           4,  12),
+    ("DBMS Lab",       44,  50, 3, "88.0", _T75, ("skip", 8),  None,           7,  15),
+    ("Data Structures", 91, 100, 6, "91.0", 75,   ("skip", 21), None,           18, 33),
 ]
 
 # 1) _bunk_line semantics preserved through the _bunk_counts refactor [F10]
@@ -58,7 +59,7 @@ for (name, A, C, w, pct, t75, _sk, _at, m90, m_end) in TABLE:
     cv = _course_view({"attended": A, "max_hours": C, "absent": C - A,
                        "code": name[:4].replace(" ", ""), "description": name})
     b = _attendance_budgets(A, C, w, PERIOD, EXAMS, TODAY)
-    check(f"{name}: pct {pct}% (0dp)", cv["pct_disp"] == pct, str(cv["pct_disp"]))
+    check(f"{name}: pct {pct}% (1dp truncated)", cv["pct_disp"] == pct, str(cv["pct_disp"]))
     check(f"{name}: t75 {t75}", cv["t75"] == t75, str(cv["t75"]))
     now_ok = (cv["skip_now"] is None and cv["attend_now"] == _at[1]) if _at is not None \
         else (cv["skip_now"] == _sk[1] and cv["attend_now"] is None)
@@ -92,6 +93,25 @@ z = _attendance_budgets(31, 50, 0, PERIOD, EXAMS, TODAY)
 check("w=0 → both budgets None (hidden)", z["m90"] is None and z["m_end"] is None)
 c0 = _course_view({"attended": 0, "max_hours": 0, "absent": 0, "code": "Z", "description": "Zero"})
 check("C=0 → pct --, no fill", c0["pct_disp"] is None and c0["fill"] is None)
+# 1dp TRUNCATION, not rounding: SRM detains below 75, so a figure that ROUNDS to
+# 75 must still read as what it is. 1223/1631 = 74.9847% used to print "75".
+for (A, C, want) in [(1223, 1631, "74.9"), (7499, 10000, "74.9"), (2249, 3000, "74.9"),
+                     (2, 3, "66.6"), (73, 100, "73.0"), (3, 4, "75.0"),
+                     (1, 1, "100.0"), (0, 50, "0.0")]:
+    got = _course_view({"attended": A, "max_hours": C, "absent": C - A,
+                        "code": "T", "description": "T"})["pct_disp"]
+    check(f"truncate {A}/{C} → {want}", got == want, str(got))
+check("truncated 74.9 stays below the 75 line",
+      _course_view({"attended": 1223, "max_hours": 1631, "absent": 408, "code": "T",
+                    "description": "T"})["tint"] == "red")
+# the MI line reads the same number: 74.9847% must say "attend 1", never "can miss 0"
+check("74.9% → needs one more, not a skip",
+      _course_view({"attended": 1223, "max_hours": 1631, "absent": 408, "code": "T",
+                    "description": "T"})["bunk_line"] == "Attend the next 1 class in a row to reach 75%")
+# monthly absences card: same truncation, same reason
+am = _month_view({"month": "Oct / 2026", "present": 1223, "absent": 408,
+                  "od_present": 0, "od_absent": 0, "ml": 0})
+check("month pct_disp truncates too", am["pct_disp"] == "74.9", str(am["pct_disp"]))
 check("C=0 → no pinned numbers", c0["skip_now"] is None and c0["attend_now"] is None)
 pa = _attendance_budgets(31, 50, 4, None, EXAMS, TODAY)
 check("period absent → days_left_90 dropped", pa["days_left_90"] is None)

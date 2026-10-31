@@ -208,8 +208,12 @@
    `attended / total` cluster there (fixed-px nudges couldn't pay for width). */
 .nudL .pn-now{transform:translateX(calc(-50% - 6px))} .nudL .pn-75{transform:translateX(calc(-50% + 6px))}
 .nudR .pn-now{transform:translateX(calc(-50% + 6px))} .nudR .pn-75{transform:translateX(calc(-50% - 6px))}
-.nud2L .pn-now{transform:translateX(calc(-50% - 14px))} .nud2L .pn-75{transform:translateX(calc(-50% + 14px))}
-.nud2R .pn-now{transform:translateX(calc(-50% + 14px))} .nud2R .pn-75{transform:translateX(calc(-50% - 14px))}
+/* nud2 = <3% from the tick: both labels move 20px apart (SHARED pairs, never one
+   side alone). Two ~29px labels origin-aligned 2.7% apart on a 343px row leave only
+   ~4px of real space, so a 14px pair still showed a 1px overlap (measured 282~283
+   at 393). 20px clears it at both 393 and 320. */
+.nud2L .pn-now{transform:translateX(calc(-50% - 20px))} .nud2L .pn-75{transform:translateX(calc(-50% + 20px))}
+.nud2R .pn-now{transform:translateX(calc(-50% + 20px))} .nud2R .pn-75{transform:translateX(calc(-50% - 20px))}
 /* percentage scale under the bar: threshold marks only (0% start, 75% tick) */
 .pcts{position:relative;height:13px;margin-top:5px;font-size:11.5px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .pct{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
