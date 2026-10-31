@@ -43,10 +43,15 @@ app/state.py          # RateLimiter · ProgressTracker · PortalHealth — every
                       # ONE lock with TTL pruning (old module-level names re-exported by app.py)
 app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams, personal,
                       # feedback (+ shared helpers)
+app/scope/            # SECOND data source — SRM's SCOPE app backend over SOAP:
+                      #   client.py (stdlib-only: double-AES envelope, typed faults)
+                      #   ops.py    (43-operation catalogue + FEATURES: slug → ops, SCOPE_FEATURES)
+                      #   sync.py   (session, hot 30m / cold 24h TTLs, 8-connection pool,
+                      #              preserve-if-empty; writes users.scope_json)
 app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker,
-                      # LAYOUT+WIDGETS registries
+                      # academics/fees/campus (SCOPE-backed), LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (archived Playwright fallback)
-app/migrations.py     # versioned schema (17 migrations → v18); runs inside create_app()
+app/migrations.py     # versioned schema (18 migrations → v18); runs inside create_app()
 app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI build via
                       # scripts/build-css.sh; safelist for render-time classes), theme tokens in
                       # partials/theme.html

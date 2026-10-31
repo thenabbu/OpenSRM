@@ -91,9 +91,15 @@ that catch people out first:
   seven `app/blueprints/` tables (auth, dashboard, marks, timetable, push,
   feedback, internal), shared decorators in `app/security.py`.
 - **Pure code lives outside the monolith** — portal parsers in
-  `app/portal/parsers/`, dashboard view models in `app/views/`;
+  `app/portal/parsers/`, dashboard view models in `app/views/`, the SCOPE
+  source in `app/scope/` (client / ops catalogue / sync);
   `app.app` re-exports every moved name so imports and the Dockerfile CMD
   (`app.app:app`) keep working.
+- **Two data sources** — the portal scraper (`http_scraper.py` +
+  `portal/parsers/`) and the SCOPE SOAP client (`app/scope/`) are independent:
+  separate sessions, separate rate limits, separate freshness windows. SCOPE
+  writes one `users.scope_json` blob and a feature surface renders only when
+  its `SCOPE_FEATURES` slug is on **and** that blob holds a non-empty answer.
 - **SQLite** — no ORM, raw SQL through the `app/db.py` repository layer.
   All connections funnel through `app.db.connect()` (10 s busy timeout);
   request handlers share one request-scoped connection closed by the

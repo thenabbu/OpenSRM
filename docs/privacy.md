@@ -15,7 +15,8 @@ Two rules shape everything here:
 
 | Table | What it holds |
 |---|---|
-| `users` | Your account: your NetID, your portal password (encrypted at rest — the server needs it to log in for you), and cached copies of everything the dashboard shows: attendance, marks, timetable references, personal details, exam schedule, subject→teacher map. |
+| `users` | Your account: your NetID, your portal password (encrypted at rest — the server needs it to log in for you), and cached copies of everything the dashboard shows from the **Student Portal**: attendance, marks, timetable references, personal details, exam schedule, subject→teacher map. |
+| `users` (SCOPE columns) | The same row also carries the **SCOPE** copy: `scope_sid` (the SCOPE session token, a bearer value that cannot be hashed because it is sent on every call), `scope_studentid`, and `scope_json` — a blob of answers keyed by SCOPE operation name (results/grades, credit status, subjects, fees, finance, hour-wise attendance, notifications, hostel/transport, library, placement), each with the timestamp it was fetched. |
 | `cookies` | Your login sessions *here* (this app, not the portal). Since v1.22.1 each token is stored only as a SHA-256 digest, so a copied database cannot be replayed as a live session. |
 | `portal_sessions` | The server's cached SRM portal session (its cookies, encrypted at rest) so syncing doesn't log in again every time. |
 | `push_subscriptions`, `push_sent_log`, `push_events` | Notification setup: one row per registered device, the log of reminders sent, and delivery receipts. |

@@ -94,29 +94,38 @@ def alabel(x, y, w, text, color=SOFT):
     add(f'<text x="{x+w//2}" y="{y+9}" fill="{color}" font-size="8" font-family="{F_MONO}" text-anchor="middle" letter-spacing="0.06em">{text}</text>')
 
 # ---- arrows (before nodes) ----
-# top strip: Dashboard(40,48,192x48) Edge(256,48,160x48) Proxy(504,48,176x48) Portal(724,48,176x48)
-grid(40,48,192,256,160,504,176,724)
-path("M 232,72 H 256", color=LINK, bidir=True, link=True)                       # Dashboard <-> Edge (external HTTPS)
-path("M 340,96 V 144 H 548 Q 556,144 556,152", bidir=True)                      # Edge -> routes (HTTP boundary, in-app)
-path("M 552,200 V 256")                                                          # routes -> throttle
-path("M 652,280 H 676")                                                          # throttle -> pipeline
-# pipeline top -> portal (default direct path, bidir external HTTPS)
-path("M 824,256 V 96", color=LINK, bidir=True, link=True)
-# pipeline top -> proxy (optional detour, dashed, config-gated)
-path("M 752,256 V 120 Q 752,112 744,112 H 680 Q 672,112 672,104 V 96", color=LINK, dash="5,4", link=True)
-path("M 680,72 H 724", color=LINK, dash="5,4", link=True)                       # proxy -> portal
-# pipeline -> parsers -> data access -> store
-path("M 744,304 V 332 Q 744,340 736,340 H 608 Q 600,340 600,348 V 360")
-path("M 520,408 V 464")                                                          # parsers -> data access
-path("M 652,488 H 660 V 396 Q 660,388 668,388 H 676", bidir=True)               # data access <-> store
+# top strip: Dashboard(24,48,176x48) Edge(224,48,144x48) Proxy(472,48,152x48)
+#            Portal(712,48,176x48) Scope(712,356,176x48)
+# middle:    routes(456,152,196x48) throttle(456,240,196x48) pipeline(676,240,224x48)
+# left:      parsers(456,352,196x48) data-access(456,456,196x48)
+# right:     store(676,352,224x48)
+grid(24,48,176,224,144,472,152,712,176,356)
+path("M 200,72 H 224", color=LINK, bidir=True, link=True)                       # Dashboard <-> Edge (external HTTPS)
+path("M 296,96 V 144 H 548 Q 556,144 556,152", bidir=True)                      # Edge -> routes (HTTP boundary, in-app)
+path("M 552,200 V 240")                                                          # routes -> throttle
+path("M 652,264 H 676")                                                          # throttle -> portal pipeline
+path("M 424,176 H 424,264 H 456", bidir=True)                                    # routes <-> SCOPE client (in-container)
+# portal pipeline top -> portal (default direct path, bidir external HTTPS)
+path("M 824,240 V 96", color=LINK, bidir=True, link=True)
+# portal pipeline top -> proxy (optional detour, dashed, config-gated)
+path("M 752,240 V 112 Q 752,104 744,104 H 680 Q 672,104 672,96 V 96", color=LINK, dash="5,4", link=True)
+path("M 680,72 H 712", color=LINK, dash="5,4", link=True)                       # proxy -> portal
+# SCOPE client -> SCOPE backend (direct, no proxy leg exists)
+path("M 800,264 V 356", color=LINK, bidir=True, link=True)
+# portal pipeline -> parsers -> data access -> store
+path("M 744,288 V 300 Q 744,308 736,308 H 600 Q 592,308 592,316 V 328 Q 592,336 584,336 H 652")
+path("M 554,400 V 456")                                                          # parsers -> data access
+path("M 652,480 H 676", bidir=True)                                              # data access <-> store
+# SCOPE client writes its own ops through the same data access layer
+path("M 900,264 V 300 Q 900,308 892,308 H 868 Q 860,308 860,316 V 448 Q 860,456 852,456 H 652")
 # routes <-> data access via the left channel (reads/writes stored app data)
 path("M 456,176 H 432 Q 424,176 424,184 V 480 Q 424,488 432,488 H 456", bidir=True)
 
 # ---- arrow labels ----
-alabel(760, 180, 56, "WHEN SET")          # beside proxy leg (x752), clear of portal leg x824
-alabel(760, 208, 56, "HTTPS")             # beside direct portal leg
-alabel(668, 420, 80, "READ + WRITE")      # beside data-access<->store channel
-alabel(528, 424, 52, "PERSIST")           # beside parsers->data access
+alabel(756, 180, 56, "WHEN SET")          # beside proxy leg
+alabel(756, 208, 56, "HTTPS")             # beside direct portal leg
+alabel(700, 300, 32, "PERSIST")           # beside pipeline -> parsers
+alabel(596, 424, 80, "READ + WRITE")      # beside data-access <-> store
 
 # ---- nodes ----
 def node(x, y, w, h, name, subs, fill, stroke, sw=1, dash=None):
@@ -134,16 +143,17 @@ def node(x, y, w, h, name, subs, fill, stroke, sw=1, dash=None):
         add(f'<text x="{x+w//2}" y="{by}" fill="{MUTED}" font-size="9" font-family="{F_MONO}" text-anchor="middle">{s}</text>')
         by += 13
 
-node(40, 48, 192, 48, "Dashboard", ["Jinja2 · daisyUI · vanilla JS"], IN_F, IN_S)
-node(256, 48, 160, 48, "Cloudflare edge", ["srm.200871.xyz · HTTPS"], EXT_F, EXT_S)
-node(504, 48, 176, 48, "Egress proxy", ["optional · CF worker"], EXT_F, EXT_S, sw=1, dash="4,3")
-node(724, 48, 176, 48, "SRM student portal", ["sp.srmist.edu.in"], EXT_F, EXT_S)
+node(24, 48, 176, 48, "Dashboard", ["Jinja2 · daisyUI · JS"], IN_F, IN_S)
+node(224, 48, 144, 48, "Cloudflare edge", ["HTTPS · tunnel"], EXT_F, EXT_S)
+node(472, 48, 152, 48, "Egress proxy", ["optional · CF worker"], EXT_F, EXT_S, sw=1, dash="4,3")
+node(712, 48, 176, 48, "SRM student portal", ["sp.srmist.edu.in"], EXT_F, EXT_S)
+node(712, 356, 176, 48, "SCOPE backend", ["SRM app · SOAP"], EXT_F, EXT_S)
 node(456, 152, 196, 48, "Flask routes + views", ["session guards · progress", "Jinja renders HTML"], NODE_BG, RULE)
-node(456, 256, 196, 48, "Rate limits + budget", ["per-netid · per-IP · budget"], NODE_BG, RULE)
-node(676, 256, 224, 48, "Portal pipeline", ["captcha preflight while you type", "reuses cached portal session"], ACC_T, ACCENT, sw=1.4)
-node(456, 360, 196, 48, "Pure parsers", ["portal HTML → JSON"], NODE_BG, RULE)
-node(676, 360, 224, 48, "SQLite store", ["srm.db · persistent volume", "login sessions · portal cache"], ACC_T, ACCENT, sw=1.4)
-node(456, 464, 196, 48, "Data access", ["one repository for all SQL"], NODE_BG, RULE)
+node(456, 240, 196, 48, "Rate limits + budget", ["per-netid · per-IP · budget"], NODE_BG, RULE)
+node(676, 240, 224, 48, "Portal pipeline", ["captcha preflight while you type", "reuses cached portal session"], ACC_T, ACCENT, sw=1.4)
+node(456, 352, 196, 48, "Pure parsers", ["HTML + SCOPE JSON → view data"], NODE_BG, RULE)
+node(676, 352, 224, 48, "SQLite store", ["srm.db · persistent volume", "portal + SCOPE blobs"], ACC_T, ACCENT, sw=1.4)
+node(456, 456, 196, 48, "Data access", ["one repository for all SQL"], NODE_BG, RULE)
 
 # ---- legend: two rows in the bottom strip ----
 add(f'<line x1="40" y1="540" x2="920" y2="540" stroke="{RULE_A}" stroke-width="0.8"/>')
@@ -219,11 +229,11 @@ open(out, "w").write(f'''<!doctype html>
 <body>
 <div class="wrap">
   <div class="eyebrow">OpenSRM · internals</div>
-  <h1>How a sync flows — portal to pixel</h1>
+  <h1>Two sources, one dashboard — portal and SCOPE</h1>
   <div class="diagram-container">
     <svg viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="architecture-title architecture-desc" xmlns="http://www.w3.org/2000/svg">
       <title id="architecture-title">OpenSRM data flow architecture</title>
-      <desc id="architecture-desc">The browser reaches Flask through the Cloudflare edge over HTTPS; routes guarded by sessions and rate limits drive the portal pipeline, which talks to the SRM portal directly by default or through the optional egress proxy; parsed data is persisted through a single data-access repository into SQLite on a persistent volume, and routes render responses with Jinja.</desc>
+      <desc id="architecture-desc">The browser reaches Flask through the Cloudflare edge over HTTPS; routes guarded by sessions and rate limits drive two data sources: the portal pipeline, which scrapes the SRM student portal directly by default or through the optional egress proxy, and the zero-dependency SCOPE client, which calls the SOAP backend of SRM's own mobile app. Both feed the parsers, everything is persisted through a single data-access repository into SQLite on a persistent volume, and routes render responses with Jinja.</desc>
 {chr(10).join(svg)}
     </svg>
   </div>
