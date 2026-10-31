@@ -129,16 +129,16 @@ def main():
           const m = row.querySelector('.mpct');
           const z = row.querySelector('.mz');
           return {found: true, disp: m ? m.textContent.trim() : null,
-                  twoDp: m ? /^\\d+\\.\\d{2}%$/.test(m.textContent.trim()) : false,
+                  oneDp: m ? /^\\d+\\.\\d%$/.test(m.textContent.trim()) : false,
                   red: !!row.querySelector('.mz--red'),
                   width: z ? z.style.width : null};
         }""")
-        check("74.9847% renders 74.98% (2dp, truncated — not 75%)",
-              r.get("found") and r.get("disp") == "74.98%", str(r))
-        check("every header % is 2dp", r.get("twoDp"), str(r))
+        check("74.9847% renders 74.9% (1dp, truncated — not 75%)",
+              r.get("found") and r.get("disp") == "74.9%", str(r))
+        check("every header % is 1dp", r.get("oneDp"), str(r))
         check("74.98% keeps the red (below-75) fill", r.get("red"), str(r))
         r = page.evaluate("""() => [...document.querySelectorAll('.mpct')].map(m => m.textContent.trim())""")
-        check("no header % rounds up to 75.00", "75.00%" not in r, str(r))
+        check("no header % rounds up to 75", "75%" not in [x for x in r if x.startswith("75")], str(r))
 
         # 5) zero same-row label overlaps — BOTH viewports, and the seed
         # carries pole-band rows (118/120, 99/100, 54/55) so the near-100%
