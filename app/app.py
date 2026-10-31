@@ -1423,16 +1423,21 @@ def _join_attendance(index, custom_codes, code, name):
 def _course_view(c):
     attended = _safe_int(c.get("attended"))
     max_hours = _safe_int(c.get("max_hours"))
-    pct = min(100.0, round((attended / max_hours) * 100, 1)) if max_hours > 0 else 0.0
+    # ONE number feeds display, tint and the sort key: 2dp TRUNCATED (never rounded —
+    # SRM detains below 75, so 74.9847% must not become 75.0 and turn the tint grey).
+    # Integer space: %d drops the fraction exactly, float floor/slicing both shave a
+    # hundredth off 7498.999… .
+    pct = ((attended * 10000 // max_hours) / 100) if max_hours > 0 else 0.0
     skip, attend = _bunk_counts(attended, max_hours)
     # status/absent outputs dropped: grep showed no template/route consumer —
     # the monthly bar's band lives on the MONTH dict now (_month_view)
     return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
             "max_hours": max_hours, "attended": attended,
             "pct": pct, "bunk_line": _bunk_line(attended, max_hours),
-            # meter-row fields (spec §1.1): display 0dp, fill EXACT A/C [F12],
+            # meter-row fields (spec §1.1): display 2dp truncated, fill EXACT A/C [F12],
             # pct_disp None = `--` (C = 0 holds nothing → no fill, no pinned numbers)
-            "pct_disp": int(pct + 0.5) if max_hours > 0 else None,
+            "pct_disp": ("%d.%02d" % divmod(attended * 10000 // max_hours, 100))
+                        if max_hours > 0 else None,
             "fill": (100.0 * attended / max_hours) if max_hours > 0 else None,
             "t75": math.ceil(ATTENDANCE_TARGET * max_hours),
             "skip_now": skip, "attend_now": attend,
@@ -1450,7 +1455,10 @@ def _month_view(m):
     absent = _safe_int(m.get("absent"))
     total = present + absent
     out = dict(m)
-    out["pct"] = round((present / total) * 100, 1) if total > 0 else None
+    out["pct"] = ((present * 10000 // total) / 100) if total > 0 else None   # 2dp truncated
+    # display: same truncated figure as the subject meters — a rounded one can turn a
+    # sub-75% month into "75.00%" and read as safe.
+    out["pct_disp"] = ("%d.%02d" % divmod(present * 10000 // total, 100)) if total > 0 else None
     # bar class derived in Python from the ONE threshold source — the old
     # template ternary re-typed >=75/>=65 as a second copy of _status_for_pct
     out["bar"] = _BAND_BAR[_status_for_pct(out["pct"])] if out["pct"] is not None else None
@@ -2075,6 +2083,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.8.0", "date": "31 Oct", "title": "Attendance reads to two decimals",
+     "body": "Attendance used to round to a whole percent, so 74.98% showed as 75% - the "
+             "exact figure SRM detains you for being under. Every percentage (subjects, "
+             "month-by-month, and the can-skip line) now truncates to two decimals and "
+             "never rounds up: 74.98% stays 74.98%, with the red bar to match."},
     {"ver": "v2.7.1", "date": "31 Oct", "title": "Ops tiles read the right number",
      "body": "Two ops-dashboard tiles were showing nonsense: the push-scheduler tile "
              "reported '56 years' before its first run, and after a deploy some tiles "

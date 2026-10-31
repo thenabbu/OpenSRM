@@ -273,6 +273,9 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
         {% set fill = c.fill %}
         {% set gap = (75 - fill)|abs %}
         {% set dpol = 100 - fill %}
+        {# nud2 = near-pole gap (<3%): push the pair APART by 14px, never 6px — a 6px
+           pair leaves the labels 6.5px overlapped on a ~300px row (measured
+           1223~1224 at both 393 and 320). Both sides move in the same class. #}
         {% set nudge = 'nud2R' if gap < 3 and fill > 75 else 'nud2L' if gap < 3 else 'nudR' if gap < 9 and fill > 75 else 'nudL' if gap < 9 else '' %}
         {# pole band (dpol < 9): the attended label would print on top of the
            right-anchored total — a fixed-px nudge can't pay for label width.
@@ -386,7 +389,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
           {% if m.pct is not none %}
           <progress class="progress flex-1 progress-{{ m.bar }}"
                     value="{{ m.pct }}" max="100" aria-label="{{ m.month }} attendance"></progress>
-          <span class="font-mono text-sm font-bold w-12 text-right">{{ m.pct }}%</span>
+          <span class="font-mono text-sm font-bold w-14 text-right">{{ m.pct_disp }}%</span>
           {% endif %}
         </div>
         {% if m.abs_rows %}

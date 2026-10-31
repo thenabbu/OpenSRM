@@ -46,6 +46,11 @@ def main():
         {"code": "21ECE302T", "description": "ELECTROMAGNETIC THEORY", "max_hours": "100", "attended": "99", "absent": "1"},
         {"code": "21MAT301T", "description": "ENGINEERING MATHEMATICS III", "max_hours": "55", "attended": "54", "absent": "1"},
         {"code": "CL", "description": "CLASS IN CHARGE", "max_hours": "4", "attended": "2", "absent": "2"},
+        # 74.9847% — ROUNDS to 75 at 0dp, so pre-truncation code told a detainable
+        # student "75%" with a grey (comfortable) tint. The exact case this covers;
+        # t75 = 1224 keeps it out of the pole band, so the near-pole label scan
+        # still exercises the nudges it was written for.
+        {"code": "21MAT302T", "description": "PROBABILITY AND QUEUEING THEORY", "max_hours": "1631", "attended": "1223", "absent": "408"},
     ],
         "period": {"from": "20/Jul/2026", "to": "07/Oct/2026"},
         "monthly": [
@@ -114,6 +119,26 @@ def main():
         }""")
         check("row order: mtop, pnums, meter, pcts[, pconn]",
               r["kids"][:4] == ["mtop", "pnums", "meter", "pcts"], str(r["kids"]))
+
+        # 4b) the header % is 2dp TRUNCATED and agrees with fill/tint — the
+        # 74.9847% row must read 74.98 (never "75") and carry the red fill.
+        r = page.evaluate("""() => {
+          const rows = [...document.querySelectorAll('.mrow')];
+          const row = rows.find(x => x.querySelector('.mname')?.textContent.includes('Probability'));
+          if (!row) return {found: false};
+          const m = row.querySelector('.mpct');
+          const z = row.querySelector('.mz');
+          return {found: true, disp: m ? m.textContent.trim() : null,
+                  twoDp: m ? /^\\d+\\.\\d{2}%$/.test(m.textContent.trim()) : false,
+                  red: !!row.querySelector('.mz--red'),
+                  width: z ? z.style.width : null};
+        }""")
+        check("74.9847% renders 74.98% (2dp, truncated — not 75%)",
+              r.get("found") and r.get("disp") == "74.98%", str(r))
+        check("every header % is 2dp", r.get("twoDp"), str(r))
+        check("74.98% keeps the red (below-75) fill", r.get("red"), str(r))
+        r = page.evaluate("""() => [...document.querySelectorAll('.mpct')].map(m => m.textContent.trim())""")
+        check("no header % rounds up to 75.00", "75.00%" not in r, str(r))
 
         # 5) zero same-row label overlaps — BOTH viewports, and the seed
         # carries pole-band rows (118/120, 99/100, 54/55) so the near-100%
@@ -218,7 +243,7 @@ def main():
         cl_names = [n for n in r["names"] if "CLASS IN CHARGE" in n.upper()]
         cl_codes = [c for c in r["codes"] if c == "CL"]
         check("CL / CLASS IN CHARGE listed in meters + table",
-              len(cl_names) == 1 and cl_codes == ["CL"] and r["meters"] == 11 and r["rows"] == 11, str(r))
+              len(cl_names) == 1 and cl_codes == ["CL"] and r["meters"] == 12 and r["rows"] == 12, str(r))
 
         ctx.close()
         b.close()
