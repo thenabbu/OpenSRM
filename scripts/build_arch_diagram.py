@@ -123,7 +123,6 @@ NODES = {
                      ["captcha preflight", "session reuse"]),
     "scopec":   cell("C", "4", "core", "SCOPE client", ["stdlib · 8-way pool"]),
     "parsers":  cell("B", "5", "backend", "Parsers", ["HTML + SCOPE JSON", "→ view data"]),
-    "estore":   cell("C", "5", "core", "egress worker", ["optional · CF"]),
     "access":   cell("B", "6", "backend", "Data access", ["one repository"]),
     "store":    cell("C", "6", "core", "SQLite store", ["srm.db · volume"]),
 }
@@ -348,6 +347,11 @@ def build():
             ox, oy, ow, oh = q["mask"]
             if mx < ox + ow and mx + mw > ox and my < oy + oh and my + mh > oy:
                 errors.append(f"{p['id']}: mask overlaps {q['id']}'s label")
+
+    joined = {p["a"] for p in pending} | {p["b"] for p in pending}
+    for nid in NODES:
+        if nid not in joined:
+            errors.append(f"{nid}: orphan node — no connector touches it")
 
     ids = list(NODES)
     for i in range(len(ids)):
