@@ -6,6 +6,10 @@ from datetime import date, datetime, timedelta
 
 ATTENDANCE_TARGET = 0.75
 ATTENDANCE_WARN = 0.65
+# Decimals shown for every attendance percentage. 1 is deliberate: SRM detains below
+# 75, and one decimal is the least that keeps 74.98 distinguishable from 75 — rounded
+# to 0dp (or shown as 2dp, which reads as noise at a glance) it loses that job.
+ATTENDANCE_DECIMALS = 1
 WORKING_DAYS = 90  # 90-working-day skip-budget horizon (spec §3); no academic calendar exists (see _attendance_budgets)
 
 def _safe_int(v):

@@ -150,6 +150,7 @@ from .views.academics import (
     academics_view,  # noqa: F401 — re-exported from app.app
 )
 from .views.attendance import (
+    ATTENDANCE_DECIMALS,
     ATTENDANCE_TARGET,
     ATTENDANCE_WARN,  # noqa: F401 — re-exported from app.app
     WORKING_DAYS,  # noqa: F401 — re-exported from app.app
@@ -1420,24 +1421,37 @@ def _join_attendance(index, custom_codes, code, name):
         return None  # a custom subject typed with a portal-matching name must never join
     return index["by_code"].get(code) or index["by_name"].get(_norm_subject(name))
 
+def _pct_trunc(part, whole, dec=ATTENDANCE_DECIMALS):
+    """Attendance % as an EXACT truncated value, never rounded, in integer space.
+
+    SRM detains below 75, so 74.9847% must read 74.9 — `round()`/`%.1f` would print
+    75.0 and the row would also flip to the comfortable tint. Integer math because
+    float is lossy here: 7499/10000*100 == 7498.999…, so math.floor(x*100) and
+    string-slicing both shave a digit. Returns (float, "dd.d" string) or (None, None)
+    when `whole` is 0 (nothing held -> the template renders `--`).
+    """
+    if whole <= 0:
+        return (None, None)
+    scale = 10 ** dec
+    e = part * 100 * scale // whole          # the % scaled to `dec` places, truncated
+    return (e / scale, "%d.%0*d" % (e // scale, dec, e % scale))
+
 def _course_view(c):
     attended = _safe_int(c.get("attended"))
     max_hours = _safe_int(c.get("max_hours"))
-    # ONE number feeds display, tint and the sort key: 1dp TRUNCATED (never rounded —
-    # SRM detains below 75, so 74.9847% must not become 75.0 and turn the tint grey).
-    # Integer space: %d drops the fraction exactly, float floor/slicing both shave a
-    # hundredth off 7498.999… .
-    pct = ((attended * 1000 // max_hours) / 10) if max_hours > 0 else 0.0
+    # ONE number feeds display, tint and the sort key — see _pct_trunc.
+    pct, pct_disp = _pct_trunc(attended, max_hours)
+    if pct is None:
+        pct = 0.0
     skip, attend = _bunk_counts(attended, max_hours)
     # status/absent outputs dropped: grep showed no template/route consumer —
     # the monthly bar's band lives on the MONTH dict now (_month_view)
     return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
             "max_hours": max_hours, "attended": attended,
             "pct": pct, "bunk_line": _bunk_line(attended, max_hours),
-            # meter-row fields (spec §1.1): display 1dp truncated, fill EXACT A/C [F12],
+            # meter-row fields (spec §1.1): display per ATTENDANCE_DECIMALS, fill EXACT A/C [F12],
             # pct_disp None = `--` (C = 0 holds nothing → no fill, no pinned numbers)
-            "pct_disp": ("%d.%d" % divmod(attended * 1000 // max_hours, 10))
-                        if max_hours > 0 else None,
+            "pct_disp": pct_disp,
             "fill": (100.0 * attended / max_hours) if max_hours > 0 else None,
             "t75": math.ceil(ATTENDANCE_TARGET * max_hours),
             "skip_now": skip, "attend_now": attend,
@@ -1455,10 +1469,9 @@ def _month_view(m):
     absent = _safe_int(m.get("absent"))
     total = present + absent
     out = dict(m)
-    out["pct"] = ((present * 1000 // total) / 10) if total > 0 else None   # 1dp truncated
-    # display: same truncated figure as the subject meters — a rounded one can turn a
-    # sub-75% month into "75.00%" and read as safe.
-    out["pct_disp"] = ("%d.%d" % divmod(present * 1000 // total, 10)) if total > 0 else None
+    # same truncated figure as the subject meters — a rounded one can turn a sub-75%
+    # month into "75.0%" and read as safe.
+    out["pct"], out["pct_disp"] = _pct_trunc(present, total)
     # bar class derived in Python from the ONE threshold source — the old
     # template ternary re-typed >=75/>=65 as a second copy of _status_for_pct
     out["bar"] = _BAND_BAR[_status_for_pct(out["pct"])] if out["pct"] is not None else None
