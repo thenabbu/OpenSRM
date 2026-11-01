@@ -41,16 +41,19 @@ chk('H4a', "SW: no inline register in login.html", miss('app/templates/login.htm
 chk('H4b', "SW: register lives in login.js", has('app/static/login.js', r'serviceWorker\.register'))
 chk('H4c', "SW: Service-Worker-Allowed header set", has('app/app.py', r'Service-Worker-Allowed'))
 chk('H5',  "cooldown: per-sync fail-counted context reset per request (init + reset)",
-    len(re.findall(r'fail_counted = False', rd('app/app.py'))) >= 2)
+    len(re.findall(r'fail_counted = False',
+                   rd('app/app.py') + rd('app/scraper.py') + rd('app/portal_control.py'))) >= 2)
 
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",
-    has('app/errors.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
+    has('app/errors.py', r'"bad_credentials": 401')
+    and has('app/scraper.py', r'invalid credentials'))
 _pm = region('app/portal/parsers/marks.py', 'def parse_marks', '\ndef ')
 chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks)",
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))
 chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix)",
-    has('app/app.py', r'zombie double-drive') and has('app/app.py', r'future\.cancel\(\)') and has('app/app.py', r'old_browser, _browser = _browser, None'))
+    has('app/scraper.py', r'zombie double-drive') and has('app/scraper.py', r'future\.cancel\(\)')
+    and has('app/scraper.py', r'old_browser, _browser = _browser, None'))
 chk('M9',  "rate checkers atomic under threads (lock-guarded)",
     len(re.findall(r'with (self\.lock|_rate_lock)', rd('app/state.py') + rd('app/app.py'))) >= 2)
 _login_region = region('app/app.py', 'def api_login(', '\ndef api_refresh')
@@ -110,7 +113,7 @@ chk('D31', "SECURITY: reporting channel has an address (advisories URL)",
 # ---------- LOW/INFO ----------
 chk('L32', "bare 'except:' gone from app/", not grep_repo(r'except:\s*$', 'app'))
 chk('L33', "captcha retry refills password after 5s re-render sleep",
-    bool(re.search(r"sleep\(5\)[\s\S]{0,300}?page\.fill\('input\[name=\"password\"\]'", rd('app/app.py'))))
+    bool(re.search(r"sleep\(5\)[\s\S]{0,300}?page\.fill\('input\[name=\"password\"\]'", rd('app/scraper.py'))))
 chk('L34', "raw exception text not returned to API clients",
     (not re.search(r'tr\(e\)', _login_region)) or bool(re.search(r'internal error|generic', _login_region, re.I)))
 chk('L35', "progress endpoint: POST, netid not in query",

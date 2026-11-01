@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app")
 
 # app.py may not exceed this. Lower it as the split progresses; never raise it.
-APP_PY_BUDGET = 4415
+APP_PY_BUDGET = 3567
 
 # Modules that must never import app.app: they are below the facade in the
 # dependency order, and importing it recreates the cycle.
@@ -86,22 +86,67 @@ for f in sorted(os.listdir(APP)):
         if soft:
             deferred_edges[f[:-3]] = soft
 
+# 2b. trailing re-export imports: a module imported AFTER every top-level
+# definition in the importing file. That is the facade pattern in reverse (the
+# facade imports the extracted module at the bottom, so its names exist), and it
+# cannot deadlock because nothing above it runs a module-level import of us.
+def trailing_import_targets(path):
+    src = open(path).read()
+    tree = ast.parse(src, path)
+    defs = [n for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    if not defs:
+        return set()
+    last = max(n.end_lineno for n in defs)
+    pkg = os.path.dirname(path)
+    out = set()
+    for n in tree.body:
+        if n.lineno > last and isinstance(n, (ast.Import, ast.ImportFrom)):
+            out |= _resolve(n, pkg)
+    # Only imports that appear SOLELY at the tail are excused. If the module also
+    # imports the facade earlier, that early import is the one that can deadlock,
+    # so it must stay in the graph (subtracting the union would hide it).
+    early = set()
+    for n in tree.body:
+        if n.lineno <= last and isinstance(n, (ast.Import, ast.ImportFrom)):
+            early |= _resolve(n, pkg)
+    return out - early
+
+
+trailing = {}
+for f in sorted(os.listdir(APP)):
+    if f.endswith(".py"):
+        t = trailing_import_targets(os.path.join(APP, f))
+        if t:
+            trailing[f[:-3]] = t
+            # Excuse a tail import of the FACADE (leaf -> app at the bottom of a
+            # leaf, safe: nothing above it imports us). Do NOT excuse the
+            # facade's own tail import of a leaf — that edge is what closes a
+            # real cycle, and removing it made this gate report "no cycles" on
+            # an injected app -> scraper -> app.
+            keep = {m for m in t if m != "app"}
+            graph[f[:-3]] = graph[f[:-3]] - (t - keep)
+
 # 1. cycles
 def find_cycles(g):
-    seen, stack, cyc = set(), [], []
+    """Find back-edges. `done` marks fully-explored nodes; a node is only
+    skipped when it is DONE, never merely seen — otherwise a node visited on an
+    earlier branch hides every cycle that routes back through it (this gate
+    reported 'no cycles' for an injected app->scraper->app edge)."""
+    done, stack, cyc = set(), [], []
 
     def walk(n):
         if n in stack:
             cyc.append(stack[stack.index(n):] + [n])
             return
-        if n in seen:
+        if n in done:
             return
-        seen.add(n)
         stack.append(n)
         for m in g.get(n, ()):
             if m in g:
                 walk(m)
         stack.pop()
+        done.add(n)
 
     for n in g:
         walk(n)
@@ -123,6 +168,8 @@ if n > APP_PY_BUDGET:
                     f"(raise the split, not the budget)")
 
 print(f"architecture: {len(graph)} modules, app.py {n}/{APP_PY_BUDGET} lines")
+for m in sorted(trailing):
+    print(f"  trailing re-export import: {m} -> {','.join(sorted(trailing[m]))}")
 for m in sorted(deferred_edges):
     print(f"  deferred (call-time) back-edge: {m} -> {','.join(sorted(deferred_edges[m]))}")
 if failures:

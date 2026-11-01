@@ -54,6 +54,8 @@ jobs:
       # import and the suite seeds its own state.
       - name: test_audit_findings (static checks)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_audit_findings.py
+      - name: check_architecture (app-module import DAG + app.py ratchet)
+        run: PYTHONPATH=. .venv/bin/python scripts/check_architecture.py
       - name: test_app_factory (create_app isolation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_app_factory.py
       - name: test_exams (end-sem parser)

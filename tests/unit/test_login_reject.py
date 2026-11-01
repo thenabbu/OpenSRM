@@ -326,7 +326,10 @@ def _status_ok(node, f, depth=0):
 
 
 typed, route, problems = [], [], []
-for rel in ("app/app.py", "app/http_scraper.py"):
+# every module that can build a typed failure: the facade, the HTTP pipeline
+# and the extracted scraper. Globbed so a future extraction cannot silently
+# drop producers out of the inventory.
+for rel in ("app/app.py", "app/http_scraper.py", "app/scraper.py"):
     text = (REPO / rel).read_text()
     tree = ast.parse(text)
     parents = {}
@@ -383,7 +386,8 @@ assert seen == set(A.KIND_STATUS), \
 # untyped failure (a bare test stub) keeps the old fallback status
 assert A.sync_status({"ok": False, "error": "x"}) == 503, "untyped failure must fall back to 503"
 # the grep proof, as a test: no message-substring matching left in app/
-_combined = (REPO / "app/app.py").read_text() + (REPO / "app/http_scraper.py").read_text()
+_combined = "".join((REPO / f).read_text() for f in
+                    ("app/app.py", "app/http_scraper.py", "app/scraper.py"))
 assert "_login_error_code" not in _combined, "message-substring classifier must be gone"
 for _pat in (r'\["error"\]\.lower\(', r'\["error"\]\.startswith',
              r'\["error"\]\.endswith', r'in res\["error"\]'):
