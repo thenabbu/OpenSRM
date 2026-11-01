@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app")
 
 # app.py may not exceed this. Lower it as the split progresses; never raise it.
-APP_PY_BUDGET = 3567
+APP_PY_BUDGET = 3303
 
 # Modules that must never import app.app: they are below the facade in the
 # dependency order, and importing it recreates the cycle.

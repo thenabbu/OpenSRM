@@ -93,7 +93,8 @@ chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.gith
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))
-_nt_region = region('app/app.py', 'NOTICES = [', 'def _day_slots')
+# NOTICES moved to app/static_data.py (cycle A); read it where it lives now.
+_nt_region = region('app/static_data.py', 'NOTICES = [', '\nTOOLS = [')
 _nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
 chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",
     _nt_head is not None and _nt_head.group(1) == _pyv,
