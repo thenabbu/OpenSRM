@@ -76,7 +76,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     try:
-        from app.app import db, fernet_keys, get_fernet
+        from app.app import db, fernet_keys, get_fernet, reset_fernet
         keys, from_env = fernet_keys()
         fernet = get_fernet()
         primary = Fernet(keys[0])

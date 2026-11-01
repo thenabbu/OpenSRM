@@ -29,6 +29,7 @@ import math
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -37,7 +38,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 # timetable_html is now defined locally (SQLite-backed)
-from flask import Flask, current_app, g, has_app_context, has_request_context, make_response, redirect, render_template, request
+from flask import Flask, g, make_response, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from . import metrics, push_calc, push_send, push_store
@@ -207,26 +208,6 @@ DATA_DIR = _default_config.data_dir
 DB_PATH = _default_config.db_path
 
 
-def _load_secret(secret_path):
-    """One app's session-signing secret: created on first boot, read-only
-    after (moved out of import time into create_app)."""
-    if not os.path.exists(secret_path):
-        with open(secret_path, "w") as f:
-            f.write(secrets.token_hex(32))
-        os.chmod(secret_path, 0o600)
-    return open(secret_path).read().strip()
-
-
-def _active_data_dir():
-    """The data dir that owns the CURRENT work: the serving app's config
-    when a Flask app context is active (per-app fernet keys, the legacy
-    timetable import during create_app), else the module default."""
-    if has_app_context():
-        d = current_app.config.get("DATA_DIR")
-        if d:
-            return d
-    return DATA_DIR
-
 from blobatar.flask import init_app as _init_blobatar
 
 setup_logging()
@@ -237,62 +218,49 @@ log_portal = logging.getLogger("opensrm.portal")
 log_db = logging.getLogger("opensrm.db")
 log_metrics = logging.getLogger("opensrm.metrics")
 
-SESSION_MAX_AGE = 60 * 60 * 24 * 30          # 30 days
-
 # ── Crypto: passwords at rest ──────────────────────────────────────
-_fernet = None
+# Moved to app/crypto.py (leaf module: it imports nothing from app.py), so
+# extracted modules can encrypt/decrypt without importing this facade.
+from .crypto import (  # noqa: E402,F401 — re-exported
+    _active_data_dir,
+    _load_secret,
+    decrypt_pw,
+    encrypt_pw,
+    fernet_keys,
+    get_fernet,
+    reset_fernet,
+)
 
-def fernet_keys():
-    """Key bytes get_fernet() is built from, shared with
-    scripts/rotate_fernet_key.py so the tool and the app can never
-    disagree about which keys are live.
 
-    Returns (keys, from_env): FERNET_KEYS env (comma-separated, FIRST key
-    is the primary/encrypting key) wins when set — rotation keeps keys off
-    the data volume; otherwise the single persisted DATA_DIR/fernet.key
-    (generated on first use), exactly as before."""
-    from cryptography.fernet import Fernet
-    parts = [k.strip().encode() for k in os.environ.get("FERNET_KEYS", "").split(",") if k.strip()]
-    if parts:
-        return parts, True
-    key_path = os.path.join(_active_data_dir(), "fernet.key")
-    if os.path.exists(key_path):
-        return [open(key_path, "rb").read()], False
-    key = Fernet.generate_key()
-    with open(key_path, "wb") as f:
-        f.write(key)
-    os.chmod(key_path, 0o600)
-    return [key], False
+class _FacadeModule(sys.modules[__name__].__class__):
+    """Make the facade's mutable globals proxies for their real homes.
 
-def get_fernet():
-    """Lazy-init the data-at-rest cipher so restarts don't lose data.
+    A `from .crypto import _fernet` is a one-time copy: `app._fernet = None`
+    would rebind only THIS module's name while crypto.get_fernet() kept its own
+    cached cipher — the test suite's reset idiom silently stopped working
+    (caught by test_fernet_rotation: 25/39). Proxying the attribute keeps
+    `app._fernet = None` meaningful no matter which side sets it.
+    """
 
-    FERNET_KEYS set -> MultiFernet: the FIRST key encrypts, every key
-    decrypts (old ciphertext stays readable during/after rotation).
-    Otherwise -> single Fernet from DATA_DIR/fernet.key, default unchanged."""
-    global _fernet
-    if _fernet is None:
-        from cryptography.fernet import Fernet, MultiFernet
-        keys, from_env = fernet_keys()
-        if from_env:
-            try:
-                _fernet = MultiFernet([Fernet(k) for k in keys])
-            except ValueError as e:
-                # config error, not corrupt data: name the env var, never echo a key
-                raise RuntimeError("FERNET_KEYS contains an invalid key (%s)" % e) from None
-        else:
-            _fernet = Fernet(keys[0])
-    return _fernet
+    _PROXY = {"_fernet": "app.crypto"}
 
-def encrypt_pw(pw):
-    return get_fernet().encrypt(pw.encode()).decode()
+    def __getattr__(cls, name):
+        target = cls._PROXY.get(name)
+        if target:
+            import sys as _s
+            return getattr(_s.modules[target], name)
+        raise AttributeError(f"module {cls.__name__!r} has no attribute {name!r}")
 
-def decrypt_pw(blob):
-    try:
-        return get_fernet().decrypt(blob.encode()).decode()
-    except Exception as e:
-        log.warning("stored password unreadable — user must re-login: %r", e)
-        return ""
+    def __setattr__(cls, name, value):
+        target = cls._PROXY.get(name)
+        if target:
+            import sys as _s
+            setattr(_s.modules[target], name, value)
+            return
+        super().__setattr__(name, value)
+
+
+sys.modules[__name__].__class__ = _FacadeModule
 
 def _import_legacy_timetable():
     """One-time import: timetable.json -> SQLite for existing users.
@@ -371,62 +339,22 @@ def get_solver():
 def solve_captcha_b64(b64):
     return get_solver().classification(base64.b64decode(b64))
 
-def get_current_user():
-    token = request.cookies.get("srm_session")
-    if not token: return None
-    # v1.20.3 (migration 17): rows store sha256(token) — the browser keeps
-    # the raw token, the DB never does, so a leaked srm.db cannot be replayed
-    # as a live session. Every read/prune/delete path hashes to match.
-    digest = hashlib.sha256(token.encode()).hexdigest()
-    row = get_cookie(digest)
-    if row and time.time() - row["created"] > SESSION_MAX_AGE:
-        # audit 2026-09-27: enforce expiry at READ time. Previously pruning
-        # happened only inside make_session_token() (i.e. when that same user
-        # logged in again), so a leaked srm_session cookie stayed valid
-        # server-side indefinitely — the 30-day client cookie was the only cap.
-        delete_cookie(digest)
-        row = None
-    return row["netid"] if row else None
-
-def make_session_token(netid):
-    token = secrets.token_hex(32)
-    now = int(time.time())
-    # incident 2026-10-10: this previously ran `DELETE FROM cookies WHERE
-    # netid=?` — one session per account, globally. Every login on any device
-    # silently evicted every other device's session: over Sep 22 - Oct 10 the
-    # main account logged in 58 times from 13 IPs, and 41 of those 58 re-logins
-    # were its OWN earlier login killing the current session (33 from a
-    # different IP = cross-device). Sessions are now concurrent per account,
-    # each still bounded by SESSION_MAX_AGE at read time.
-    # v1.20.3: store sha256(token); the caller/browser keeps the raw token
-    # (contract: make_session_token still returns it), so the value at rest
-    # is useless to anyone holding the DB but not the cookie.
-    create_session(hashlib.sha256(token.encode()).hexdigest(), netid, now,
-                   now - SESSION_MAX_AGE)
-    return token
+# Session identity lives in app/auth.py (get_current_user has 18 consumers —
+# it belongs under this facade, not inside it). Re-exported for callers.
+from .auth import (  # noqa: E402,F401 — re-exported
+    CF_EDGE_SECRET,
+    SESSION_MAX_AGE,
+    _behind_cf,
+    _cookie_secure,
+    get_current_user,
+    make_session_token,
+)
 
 # The shared `require_login` decorator lives in app/security.py (it guards
 # views across route groups, so it belongs to neither app.py nor one
 # blueprint).
 
-# audit: Only trust CF headers when request came through Cloudflare (cf-ray present)
-# audit run-1 (#18): bare cf-ray presence is client-assertable — anyone
-# reaching the origin directly could choose their rate-limit identity and
-# forge the cookie Secure / HSTS decisions. Trust is now an edge-injected
-# shared secret the client can never see (cloudflared
-# originRequest.httpHeaders, or a Worker): X-Edge-Secret must match
-# CF_EDGE_SECRET. Unset -> False: peer-only identity (request.remote_addr),
-# which is the fail-closed position the audit prescribed. OPS DEP step: set
-# CF_EDGE_SECRET in the lab .env AND inject the same value at the tunnel
-# together, or per-IP limits collapse onto the tunnel's peer address.
-CF_EDGE_SECRET = os.environ.get("CF_EDGE_SECRET", "").strip()
-
-
-def _behind_cf():
-    return bool(CF_EDGE_SECRET) and request.headers.get("X-Edge-Secret") == CF_EDGE_SECRET
-
-def _cookie_secure():
-    return _behind_cf() and request.headers.get("X-Forwarded-Proto") == "https"
+# _behind_cf / _cookie_secure / CF_EDGE_SECRET: now in app/auth.py (imported above).
 
 CAPTCHA_JS = """async () => {
     const img = document.querySelector('img[alt="Captcha"]');
@@ -708,17 +636,9 @@ def _portal_fail_once():
     ctx.fail_counted = True
     _portal_fail()
 
-def _client_ip():
-    # Only trust CF-Connecting-IP when request came through Cloudflare.
-    # Direct access spoofing the header would bypass rate limiting otherwise.
-    # audit run-1: background/test callers (no active request) must not crash —
-    # no request means no asserted identity.
-    if not has_request_context():
-        return "?"
-    if _behind_cf():
-        return request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
-    return request.remote_addr or "?"
-
+# Request identity lives in app/reqctx.py (rate limiters and the portal
+# budget need it without the facade). Re-exported for callers.
+from .reqctx import _client_ip  # noqa: E402,F401 — re-exported
 
 # ── Persistent browser + event-loop singletons (speed warm-up, Sep 2026) ──
 # Launch Chromium ONCE and reuse it across requests via a dedicated worker
@@ -3116,36 +3036,11 @@ def asset(name):
     return "/static/%s?v=%s" % (name, hit[1])
 
 # ── Typed sync results ─────────────────────────────────────────────────
-# A failed sync carries a `kind`; its HTTP status comes from this table —
-# the replacement for the old status classifier, which substring-matched
-# the message text (wrong password vs captcha failure was told apart by
-# wording). 401 auth · 429 rate/cooldown · 503 busy/portal/internal.
-# Every status and user-visible string is byte-identical to the old
-# mapping; tests/test_login_reject.py runs the old classifier against the
-# new table over every {'ok': False} producer in app.py + http_scraper.py.
-KIND_STATUS = {
-    "bad_credentials": 401,
-    "rate_limited": 429,
-    "portal_cooldown": 429,
-    "busy": 503,
-    "portal_down": 503,
-    "markup_changed": 503,
-    "internal": 503,
-}
+# A failed sync carries a `kind`; its HTTP status comes from KIND_STATUS.
+# Both live in app/errors.py (pure data — no imports), so pipeline modules
+# can build a failure without importing this facade. Re-exported here.
+from .errors import KIND_STATUS, sync_error, sync_status  # noqa: E402,F401 — re-exported
 
-def sync_error(kind, user_message, retry_after=None):
-    """One failed sync result (the SyncError result type): typed kind, the
-    byte-identical user-visible message, optional retry seconds — filled in
-    only where the window is already computed (the portal cooldown),
-    None otherwise. Routes rebuild the response as {ok, error}, so kind and
-    retry_after never reach the client."""
-    return {"ok": False, "error": user_message, "kind": kind, "retry_after": retry_after}
-
-def sync_status(res):
-    """HTTP status for a failed sync — from its kind, never from message
-    text. A failure without a kind (a bare test stub) keeps the old
-    fallback: 503."""
-    return KIND_STATUS.get(res.get("kind"), 503)
 
 def login():
     if get_current_user(): return redirect("/")

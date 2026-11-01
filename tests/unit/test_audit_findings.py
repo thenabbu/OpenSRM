@@ -45,7 +45,7 @@ chk('H5',  "cooldown: per-sync fail-counted context reset per request (init + re
 
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",
-    has('app/app.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
+    has('app/errors.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
 _pm = region('app/portal/parsers/marks.py', 'def parse_marks', '\ndef ')
 chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks)",
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))
@@ -58,7 +58,7 @@ chk('M10', "login: creds validated before IP budget burn",
     'password' in _login_region and
     0 < _login_region.find('password') < _login_region.find('Too many login attempts'))
 chk('M11', "session expiry enforced at read (created check)",
-    bool(re.search(r'created', region('app/app.py', 'def get_current_user', 'def api_login'))))
+    bool(re.search(r'created', region('app/auth.py', 'def get_current_user', 'def make_session_token'))))
 chk('M12', "date cells recognized before score pairs (_DATE_CELL_RE)",
     has('app/portal/parsers/marks.py', r'_DATE_CELL_RE') and len(re.findall(r'_DATE_CELL_RE', rd('app/portal/parsers/marks.py'))) >= 3)
 chk('M13', "attendance: numeric-column guard vs shifted portal columns",
