@@ -2096,6 +2096,11 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.8.1", "date": "2 Nov", "title": "Dependency maintenance",
+     "body": "A round of dependency updates: the browser test driver, the CI "
+             "actions that build and publish the image, the artefact uploader and "
+             "the secret scanner are all on their current releases. Nothing you "
+             "see or do in the app has changed."},
     {"ver": "v2.8.0", "date": "31 Oct", "title": "Attendance reads to a decimal",
      "body": "Attendance used to round to a whole percent, so 74.98% showed as 75% - the "
              "exact figure SRM detains you for being under. Every percentage (subjects, "
