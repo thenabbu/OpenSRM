@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377 AS builder
+FROM python:3.15-slim@sha256:94d3426f1def7db4a106a232ac121bfd975393e5dfd40a619b955fae45fe7913 AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /usr/local/bin/uv
 WORKDIR /app
@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/root/.cache/ms-playwright,sharing=locked \
     fi
 
 # -- Stage 2: Runtime -- (same verified digest as builder)
-FROM python:3.11-slim@sha256:b7a9e5f6a93d6d4a31f129bbd4bdee69efccb6ded0fb230d78aafaf37af98377
+FROM python:3.15-slim@sha256:94d3426f1def7db4a106a232ac121bfd975393e5dfd40a619b955fae45fe7913
 
 # Re-declared for the runtime stage: gates the Chromium shared-library stack
 # and the chromium symlink below (0 = the shipped default).
