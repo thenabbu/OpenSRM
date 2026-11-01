@@ -1559,6 +1559,38 @@ _CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # the push tick is secret-header auth, same exemption for the same reason.
 _CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
 
+def _origin_matches_host(origin, host):
+    """Is `Origin` the same site as the Host we were addressed as?
+
+    Compare HOSTNAMES, not netlocs. `Origin` never carries a port for the
+    default scheme (https -> 443 implied), while `request.host` is whatever the
+    proxy forwarded and DOES carry one (`srm.200871.xyz:443`). A netloc-to-
+    netloc `!=` therefore refuses a legitimate same-origin POST — that is the
+    "cross-site request refused (Origin)" the tunnel started producing once the
+    edge began forwarding Host with the port.
+
+    Port is compared only when the origin actually states one and it is not the
+    scheme default, so `:8443` against a bare host still fails closed.
+    """
+    o = urlparse(origin)
+    if not o.hostname:
+        return False
+    try:
+        host_name = urlparse("//" + host).hostname
+    except ValueError:
+        return False
+    if (o.hostname or "").lower() != (host_name or "").lower():
+        return False
+    default = {"http": 80, "https": 443}.get((o.scheme or "").lower())
+    if o.port and default and o.port != default:
+        try:
+            if o.port != (urlparse("//" + host).port or default):
+                return False
+        except ValueError:
+            return False
+    return True
+
+
 def _cross_site_guard():
     if request.method not in _CROSS_SITE_METHODS:
         return None
@@ -1573,9 +1605,12 @@ def _cross_site_guard():
     if sfs is not None and sfs.lower() not in ("same-origin", "none"):
         return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
     origin = request.headers.get("Origin")
-    if origin is not None and urlparse(origin).netloc.lower() != request.host.lower():
+    if origin is not None and not _origin_matches_host(origin, request.host):
         return {"error": "cross-site request refused (Origin)"}, 403
     return None
+
+
+# ── Security headers ───────────────────────────────────────────────
 
 
 # ── Security headers ───────────────────────────────────────────────
@@ -2096,6 +2131,13 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.9.1", "date": "2 Nov", "title": "Sync works again behind the tunnel",
+     "body": "The button that refreshes your data stopped working for a few hours. "
+             "The check that blocks forged requests from other websites was also "
+             "rejecting your own clicking, because the tunnel now tells the app its "
+             "address with a port number attached and the check compared the two "
+             "addresses as text. It compares the hosts now, so your own requests pass "
+             "and a request from another site is still refused."},
     {"ver": "v2.9.0", "date": "2 Nov", "title": "Newer Python underneath",
      "body": "The app now runs on Python 3.14 instead of 3.11. Nothing you see "
              "or do has changed - this is the runtime the server itself is built "
