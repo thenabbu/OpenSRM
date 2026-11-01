@@ -26,6 +26,7 @@ request context, so every connection they take is fresh and closed here.
 """
 import contextvars
 import itertools
+import json
 import logging
 import os
 import sqlite3
@@ -608,3 +609,23 @@ def slots_for_groups(gids):
     q = ",".join("?" * len(gids))
     return _read(f"SELECT group_id, day, period, subject_code, subject_name, location "
                  f"FROM timetable_slots WHERE group_id IN ({q})", list(gids))
+
+
+def jload(raw, default):
+    """json.loads over a stored row: degrade to `default` + log the corruption.
+
+    index()/api_marks decoded unguarded — one corrupt row 500'd the whole
+    dashboard on every load (audit B1-B4). The shape check is the second half:
+    valid-JSON-wrong-type used to reach renderers as a 500 (B10).
+    """
+    if not raw:
+        return default
+    try:
+        v = json.loads(raw)
+    except (ValueError, TypeError) as e:
+        log.warning("corrupt stored json — returning default: %r", e)
+        return default
+    if not isinstance(v, type(default)):
+        log.warning("stored json wrong shape — returning default")
+        return default
+    return v

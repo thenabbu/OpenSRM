@@ -36,7 +36,7 @@ chk('H2b', "dump_headers.py reads token from env", has('egress/poc/dump_headers.
 chk('H2c', "referer_probe.py reads token from env", has('egress/poc/referer_probe.py', r'os\.environ\['))
 chk('H2d', ".dockerignore excludes egress/", has('.dockerignore', r'^egress/?$', re.M))
 chk('H3a', "XSS: timetable values escaped at render (_hesc on code/name/location)",
-    has('app/app.py', r'_hesc\(str\(r\[2\]'))
+    has('app/views/timetable.py', r'_hesc\(str\(r\[2\]'))
 chk('H4a', "SW: no inline register in login.html", miss('app/templates/login.html', r'navigator\.serviceWorker'))
 chk('H4b', "SW: register lives in login.js", has('app/static/login.js', r'serviceWorker\.register'))
 chk('H4c', "SW: Service-Worker-Allowed header set", has('app/app.py', r'Service-Worker-Allowed'))

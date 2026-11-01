@@ -130,6 +130,16 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_client.py
       - name: test_scope_academics (Academics tab, CGPA math + feature gate)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_academics.py
+      # These four suites existed and passed but were never wired into CI
+      # (found by an independent docs/gate review). Each needs PYTHONPATH=.
+      - name: test_hourwise_join (hourwise rows joined to the timetable)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_hourwise_join.py
+      - name: test_scope_campus (SCOPE campus tab + alive-empty fixtures)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_campus.py
+      - name: test_scope_fees (SCOPE fees ledger + dues math)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_fees.py
+      - name: test_scope_profile (SCOPE profile enrichment + Settings merge)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_profile.py
 
   docker:
     runs-on: ubuntu-latest

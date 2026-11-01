@@ -67,7 +67,7 @@ app/migrations.py     # versioned schema (18 migrations → v18); runs inside cr
 app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI build via
                       # scripts/build-css.sh; safelist for render-time classes), theme tokens in
                       # partials/theme.html
-tests/                # unit/ (36 no-server suites) · e2e/ (20 Playwright DUTs) · _seed/_canary
+tests/                # unit/ (42 no-server suites) · e2e/ (22 Playwright DUTs) · _seed/_canary
                       # helpers + fixtures/ · README.md = the manifest
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 ops/observability/    # OPTIONAL metrics stack next to the app (never in the image): Prometheus
@@ -140,6 +140,10 @@ the portal caps 10/hour per IP).
 .venv/bin/python tests/unit/test_canary_sync.py  # [unit] 13/13 canary_sync.sh against a self-booting server with the fetch stubbed; cache-window answer fails it
 .venv/bin/python tests/unit/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
 .venv/bin/python tests/unit/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials, all-empty card drop, budgets, ticker)
+.venv/bin/python tests/unit/test_hourwise_join.py  # [unit] 13/13 hourwise rows joined to the timetable grid — offline
+.venv/bin/python tests/unit/test_scope_campus.py  # [unit] 14/14 SCOPE campus tab: alive-empty fixtures render as empty, never an error; unknown-key renderer keeps every value; per-slug feature gates — offline, no network
+.venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 SCOPE fees ledger: receipt head, dues math, narration splitting never raises, newest-first, feature gate — offline
+.venv/bin/python tests/unit/test_scope_profile.py  # [unit] 7/7 SCOPE profile enrichment: getPersonalDetails shapes, Settings field merge (portal wins, scope fills gaps), feature gate — offline
 .venv/bin/python tests/unit/test_css_safelist.py  # [unit] 10/10 render-time dynamic class tokens exist in the committed app.css; no CDN origin
 .venv/bin/python tests/unit/test_perf_budget.py  # [unit] 15/15 perf guardrails: zero off-origin hosts, CSP, app.css gzip budget, cache matrix, SW rules
 .venv/bin/python tests/unit/test_attendance_view.py  # [unit] 83/83 attendance view model (frozen table, budgets, join, degrade cases)
@@ -149,16 +153,13 @@ the portal caps 10/hour per IP).
 .venv/bin/python tests/unit/test_push_send.py  # [unit] 16/16 mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline
 .venv/bin/python tests/unit/test_push_tick.py  # [unit] 27/27 secret auth, dry-run, allowlist, overlap, dead-man metrics, no PII labels
 .venv/bin/python tests/unit/test_push_api.py   # [unit] 42/42 401 style, validation, DB rate caps, test/receipt flows, notification prefs
-.venv/bin/python tests/unit/test_scope_client.py  # [unit] 17/17 SCOPE foundation: envelope byte-identity vs the captured pcap FLOW 18 wire fixture, blob AES round-trip + FIPS-256 ECB KAT, login UPPERCASE cred transform + no-sid rejection, data_op {studentid:sid, **FINGERPRINT} wire order, SCOPE_FEATURES toggles, ops_for dedup + every FEATURES op in the 43-op catalog, migration m018 fresh + idempotent, cold sync with mocked client, ScopeAuthError = one relogin then that op retried
 .venv/bin/python tests/unit/test_login_guide_static.py    # [unit] 9/9  Login Flow UX Guide (source level, no server)
 .venv/bin/python tests/unit/test_supply_chain.py  # [unit] 26/26 compose OPENSRM_TAG pin, build.yml tags/labels, scans report-only, SHA-pinned actions
 .venv/bin/python tests/unit/test_healthz.py  # [unit] 6/6 /healthz: <=32B, SELECT 1 only, 503 on DB failure, probe demoted to DEBUG
 .venv/bin/python tests/unit/test_db_concurrency.py  # [unit] 14/14 10s busy timeout survives lock holds, journal-mode delete/wal/flip-back via child boots
 .venv/bin/python tests/unit/test_db_layer.py  # [unit] 24/24 request-scoped connection closed by teardown, SAVEPOINT isolation, upsert/preserve contracts
-.venv/bin/python tests/unit/test_scope_client.py  # [unit] 17/17 (SCOPE foundation: envelope byte-identity vs the captured pcap FLOW 18 wire fixture, blob AES round-trip unicode+1KB + FIPS-256 ECB KAT, login UPPERCASE cred transform + no-sid rejection, data_op {studentid:sid, **FINGERPRINT} in app wire order, SCOPE_FEATURES toggles default/all/unknown-slug-ignored/off, ops_for dedup + every FEATURES op in the 43-op catalog, migration m018 fresh-run + idempotent re-runs + column defaults, cold sync with mocked client: {data,ts} store + fetched_at, preserve-if-empty on a failing op + transport fault breaks keeping what landed, alive-empty {Status,Data:""} stored as-is, ScopeAuthError = exactly one relogin then THAT op retried on the new sid, ensure_scope_session logs in when sid missing — offline, no creds, no network)
 .venv/bin/python tests/unit/test_scope_academics.py  # [unit] 11/11 (Academics tab: CGPA hand-computed 5-subject case + ROUND_HALF_UP at the x.xx5 edge (Decimal beats banker's round()) + F counts as 0 + grade "-" skipped + unreleased rows skipped + 0-credit rows can't weight, SGPA bucketed by monthyear newest-first, exam-details fixtures -> semester buckets, program-subjects 11 completed / 52 pending split + attempts>1 note, credits view 8 categories + overall 43/163 + latest-EARNED semester (never the future 0/N row) + success fill ONLY at 100%, {Status,Data} envelope empty -> hidden / synthetic -> present (shape-driven), courses op = credit-total cross-check only (16 shared codes, per-semester sums equal), feature gate: disabled/no-data/all-empty -> academics_view None AND no tab rule in the rendered page, seeded scope_json renders all four cards — offline, fabricated netid, temp DB)
 
-.venv/bin/python tests/unit/test_scope_client.py  # [unit] 17/17 (SCOPE foundation: envelope byte-identity vs the captured pcap FLOW 18 wire fixture, blob AES round-trip unicode+1KB + FIPS-256 ECB KAT, login UPPERCASE cred transform + no-sid rejection, data_op {studentid:sid, **FINGERPRINT} in app wire order, SCOPE_FEATURES toggles default/all/unknown-slug-ignored/off, ops_for dedup + every FEATURES op in the 43-op catalog, migration m018 fresh-run + idempotent re-runs + column defaults, cold sync with mocked client: {data,ts} store + fetched_at, preserve-if-empty on a failing op + transport fault breaks keeping what landed, alive-empty {Status,Data:""} stored as-is, ScopeAuthError = exactly one relogin then THAT op retried on the new sid, ensure_scope_session logs in when sid missing — offline, no creds, no network)
 .venv/bin/python tests/unit/test_scope_profile.py  # [unit] 7/7 (SCOPE profile enrichment: getPersonalDetails parser — bare dict + per-op {data,ts} + {Status,Data} wrapper, feature-off -> {}; Settings field merge — portal values win / scope fills gaps in the existing groups, empty facultyadvisor+academicadvisor rows ABSENT; feature gate off -> Settings template inputs identical to today, and the profile widget renders only the generated blobatar + name + email + register number (no photo, no course line) — offline, no server, no network)
 
 # ── e2e (Playwright DUTs) ──────────────────────────────────────────────────
