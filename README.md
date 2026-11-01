@@ -283,7 +283,7 @@ documentation and every call is encrypted:
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Flask 3.1, Python 3.11, gunicorn (gthread, single worker) |
+| Backend | Flask 3.1, Python 3.14, gunicorn (gthread, single worker) |
 | Portal access | Pure HTTP (urllib) pipeline; an archived Playwright fallback stays off unless `PLAYWRIGHT_FALLBACK=enabled` |
 | SCOPE access | Stdlib-only SOAP client (`urllib` + embedded AES-CBC), bounded 8-connection pool per sync |
 | Captcha | ddddocr (self-contained OCR, no external service) |

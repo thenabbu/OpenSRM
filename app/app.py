@@ -2096,6 +2096,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.9.0", "date": "2 Nov", "title": "Newer Python underneath",
+     "body": "The app now runs on Python 3.14 instead of 3.11. Nothing you see "
+             "or do has changed - this is the runtime the server itself is built "
+             "on, taken while every dependency still had ready-made builds for "
+             "it. Waiting any longer would have meant compiling the OCR engine "
+             "from source on every release."},
     {"ver": "v2.8.1", "date": "2 Nov", "title": "Dependency maintenance",
      "body": "A round of dependency updates: the browser test driver, the CI "
              "actions that build and publish the image, the artefact uploader and "
