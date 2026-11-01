@@ -58,6 +58,8 @@ app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI bu
 tests/                # unit/ (36 no-server suites) · e2e/ (20 Playwright DUTs) · _seed/_canary
                       # helpers + fixtures/ · README.md = the manifest
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
+edge/maintenance/     # CF Worker: branded "under maintenance" page at the edge, survives a
+                      # total lab outage (route in front of the tunnel). ./deploy.sh reproduces it
 ops/observability/    # OPTIONAL metrics stack next to the app (never in the image): Prometheus
                       # (scrapes GET /internal/metrics with X-Metrics-Token from a 600-mode secret
                       # file) + Grafana (read-only provisioned dashboard) + Alertmanager

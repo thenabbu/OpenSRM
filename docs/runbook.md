@@ -17,6 +17,7 @@ from `main` at 4ef16cb (v1.25.0).
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
 | Observability stack (optional) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
 | Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
+| Edge outage page | Worker `srm-maintenance` on route `srm.200871.xyz/*`, in front of the tunnel — serves the branded maintenance page when the origin is unreachable (incl. the whole host being off). Source + reproduce script: `edge/maintenance/` (`./deploy.sh`) | `curl -sI https://srm.200871.xyz/ \| grep -i x-opensrm` (`-edge: pass` up, `-maintenance: 1` down) |
 
 Note the two env files: the lab also keeps a master secret registry at
 `/docker/.env`, but **compose never reads it for this project** — a `${VAR}`
