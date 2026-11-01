@@ -28,9 +28,21 @@ login badge). Keep `VERSION` == `pyproject.toml` == `uv.lock`
 ## Layout
 
 ```
-app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm) + views,
-                      # session/auth, portal budget, sync orchestration — re-exports every name
-                      # that moved out; registers the route blueprints
+app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm) + dashboard
+                      # views + route handlers. A FACADE: every name extracted below is
+                      # re-exported here, so `from app.app import X` keeps working. The facade's
+                      # mutable globals (_fernet, CF_EDGE_SECRET, _scrape_lock) are proxied to
+                      # their real module by _FacadeModule, so a runtime rebind from either
+                      # side lands in ONE place — see scripts/check_architecture.py
+app/crypto.py         # LEAF: fernet keys, encrypt/decrypt passwords, data-dir resolution
+app/auth.py           # LEAF: get_current_user, make_session_token, CF edge-trust flags
+app/errors.py         # LEAF: sync_error() + KIND_STATUS (pure data, ZERO imports)
+app/reqctx.py         # LEAF: _client_ip (the rate-limiting identity)
+app/captcha.py        # LEAF: LOGIN_URL, CAPTCHA_JS, the ddddocr solver singleton
+app/portal_control.py # portal concurrency plane: scrape semaphore, login-before-refresh queue,
+                      # per-IP/netid token budget, encrypted portal-cookie cache, _SyncContext
+app/scraper.py        # the portal scraper: persistent browser/loop singletons, captcha login
+                      # loop, _fetch_rich_optimized, fetch_attendance (the sync entry point)
 app/config.py         # AppConfig (frozen dataclass) + from_env(): boot env read ONCE
                       # (DATA_DIR, OCR_PREWARM); request-time knobs stay env-per-call by design
 app/db.py             # sqlite layer: connect() (pragmas, per-app DB path inside an app context),
@@ -67,7 +79,8 @@ ops/observability/    # OPTIONAL metrics stack next to the app (never in the ima
 docs/                 # runbook.md (operator runbook) · audit/ records · push.md · SCANS.md ·
                       # perf/ · screenshots/ + pr/ (PR evidence) · privacy.md · logos
 scripts/              # generate_push_keys.py · rotate_fernet_key.py · restore_drill.sh ·
-                      # url_map_dump.py (canonical route dump) · pr_preflight.sh · post_deploy.sh ·
+                      # url_map_dump.py (canonical route dump) · check_architecture.py (the import-DAG gate) ·
+                      # pr_preflight.sh · post_deploy.sh ·
                       # ci_docker_smoke.sh + ci_e2e_http.sh · canary_sync.sh + canary_cookie.py ·
                       # perf_baseline.py
 VERSION pyproject.toml uv.lock   # release = bump all three together
@@ -105,6 +118,7 @@ the portal caps 10/hour per IP).
 # ── unit (no server / no browser) ──────────────────────────────────────────
 .venv/bin/python tests/unit/test_audit_findings.py  # [unit] 73/73 static gates: findings, doc claims, pins, version trio
 .venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 (SCOPE fees: receipt head = one clean line, nothing past THRU/Accounted/bank-channel tail; ##-split parser on the real fixture row incl. amount-with-.00 + "13-Aug-2025" date + junk/short rows, dues logic (paid==total+trailing 0 -> 0; synthetic 100/150 -> 50; trailing=50 -> 50; view sum + warning/error level), narration first-clause split never raises on unicode/tab/CR/LF garbage, ledger sorted newest voucherdate first, feature gate off -> no tab (view None + SCOPE_FEATURES env + template {% if fees %} guard) — offline, no server/DB)
+.venv/bin/python scripts/check_architecture.py  # [unit] app-module DAG: no module-level import cycle, leaf modules never import app.app, app.py within its line ratchet (reports call-time back-edges and tail re-exports as allowed)
 .venv/bin/python tests/unit/test_app_factory.py  # [unit] 24/24 create_app factory: boot-env isolation between two apps, route surface + bare endpoint names, gunicorn app.app:app contract, OCR prewarm opt-out
 .venv/bin/python tests/unit/test_exams.py  # [unit] 69/69 official ETT parser + header drift + scribe fallback merge + transition/push events
 .venv/bin/python tests/unit/test_exams_view.py  # [unit] dashboard exam card view model (stamps, labels)

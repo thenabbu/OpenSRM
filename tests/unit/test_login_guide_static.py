@@ -3,7 +3,10 @@ Complements test_login_guide_check (DOM) and test_login_guide_server (live HTTP)
 import re, sys, os
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-app = open(os.path.join(REPO, "app/app.py")).read()
+# the login loop (and its one fixed credential message) lives in app/scraper.py
+# since the phase-2 extraction; read both so the check follows the code.
+app = "".join(open(os.path.join(REPO, f)).read()
+              for f in ("app/app.py", "app/scraper.py"))
 js = open(os.path.join(REPO, "app/static/login.js")).read()
 rows = []
 
