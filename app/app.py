@@ -219,7 +219,6 @@ from .crypto import (  # noqa: E402,F401 — re-exported
     reset_fernet,
 )
 
-
 _MISSING = object()  # sentinel: distinguishes 'absent' from 'bound to None'
 
 
