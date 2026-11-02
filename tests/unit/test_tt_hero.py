@@ -8,7 +8,24 @@ import tempfile
 
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="tth-"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+import app.app as A  # noqa: E402
 from app.app import _now_next_from_slots  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+
+
+class _Midday(_dt):
+    """Pin the clock. This suite is about the attendance join surviving the
+    dict hop, not about what time it is when CI runs: the slots below span
+    00:00-23:59 and `end` is EXCLUSIVE, so the last minute of every day
+    (now_mins == 1439) fell outside the slot and CI at 23:59:45 saw `done`
+    instead of `current` — a one-minute-per-day red."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return _dt(2026, 11, 2, 12, 0, 0)
+
+
+A.datetime = _Midday
 
 fails = []
 
