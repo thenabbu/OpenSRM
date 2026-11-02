@@ -1591,6 +1591,28 @@ def _origin_matches_host(origin, host):
     return True
 
 
+def _origin_matches_public(origin):
+    """Is `Origin` one of the hostnames this deployment is served under?
+
+    Needed because the Cloudflare tunnel dials the origin by IP: the app sees
+    `request.host == 172.31.0.1:8083` (verified in a probe container — Host was
+    the internal address, X-Forwarded-Host absent, edge secret unset), so
+    comparing Origin against request.host can NEVER succeed for a real browser.
+    The ingress address is not the site.
+
+    PUBLIC_HOSTNAMES (comma-separated env) is the deliberate allowlist that
+    restores the check's intent: a same-site POST carries OUR hostname, a
+    cross-site one carries somebody else's. Unset -> empty set -> this method
+    never allows anything, so the guard stays exactly as strict as before until
+    an operator names the deployment's public host.
+    """
+    allowed = {h.strip().lower() for h in
+               (os.environ.get("PUBLIC_HOSTNAMES") or "").split(",") if h.strip()}
+    if not allowed:
+        return False
+    return (urlparse(origin).hostname or "").lower() in allowed
+
+
 def _cross_site_guard():
     if request.method not in _CROSS_SITE_METHODS:
         return None
@@ -1605,7 +1627,9 @@ def _cross_site_guard():
     if sfs is not None and sfs.lower() not in ("same-origin", "none"):
         return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
     origin = request.headers.get("Origin")
-    if origin is not None and not _origin_matches_host(origin, request.host):
+    if origin is not None and not (
+            _origin_matches_host(origin, request.host)
+            or _origin_matches_public(origin)):
         return {"error": "cross-site request refused (Origin)"}, 403
     return None
 
@@ -2131,6 +2155,12 @@ def _tt_editor_enabled():
 # Release notices, newest first (append at release time). The New badge rides
 # the head entry only — release notes verbatim from the real CHANGELOG.
 NOTICES = [
+    {"ver": "v2.9.2", "date": "2 Nov", "title": "Sync button, actually fixed",
+     "body": "The 2.9.1 fix compared your browser's address against the "
+             "address the tunnel uses internally, which is a private IP - so it "
+             "still refused you. The app now accepts the site's own public "
+             "hostname, which the server is told explicitly, and still refuses a "
+             "request that comes from any other site."},
     {"ver": "v2.9.1", "date": "2 Nov", "title": "Sync works again behind the tunnel",
      "body": "The button that refreshes your data stopped working for a few hours. "
              "The check that blocks forged requests from other websites was also "
