@@ -220,6 +220,9 @@ from .crypto import (  # noqa: E402,F401 — re-exported
 )
 
 
+_MISSING = object()  # sentinel: distinguishes 'absent' from 'bound to None'
+
+
 class _FacadeModule(sys.modules[__name__].__class__):
     """Make the facade's mutable globals proxies for their real homes.
 
@@ -279,14 +282,70 @@ class _FacadeModule(sys.modules[__name__].__class__):
             cls._fanout(name, value)
 
     def _fanout(cls, name, value):
+        """Copy a facade rebind into every loaded app module that holds it.
+
+        Only re-exported names are copied, and never module objects. `A.db = fake`
+        used to reach app.db and overwrite its db() function — a semantic change
+        from HEAD that no test exercises today but that would bite a future one.
+        Restricting to the re-export set is what makes that safe, because a type
+        test cannot: app.db.db is a function, exactly like A._run_tick.
+
+        Known ceiling: a module imported AFTER the rebind does not receive it
+        (ponytail: late-import hole — the modules that need rebinds are all
+        imported by app.py before the facade exists, so nothing hits it today).
+        """
         import sys as _s
+        import types as _t
+        if isinstance(value, _t.ModuleType):
+            return
         for modname, mod in list(_s.modules.items()):
             if mod is None or not modname.startswith("app") or modname == __name__:
                 continue
             d = getattr(mod, "__dict__", None)
-            if d is not None and name in d:
-                d[name] = value
+            if d is None or d.get(name, _MISSING) is _MISSING:
+                continue
+            # Never fan into app/db.py: `from .db import db` re-exports the db()
+            # FUNCTION, so a type test cannot distinguish it from A._run_tick.
+            # On main `A.db = X` left app.db.db alone (verified against
+            # origin/main); keeping that exact behaviour is the whole point.
+            if modname == "app.db" and name == "db":
+                continue
+            if isinstance(d[name], _t.ModuleType):
+                continue
+            # Only names the facade actually RE-EXPORTS are fanned out.
+            # A name that merely happens to also exist in another module is
+            # left alone — that is what makes `A.db = fake` safe: app.db has a
+            # db() FUNCTION (not a module), so a type test cannot tell it from
+            # A._run_tick, but it is not in _PROXY or any re-export block.
+            if name not in cls._FANNED and name not in cls._PROXY:
+                # _FANNED = re-exported names; _PROXY = mutable globals. A name
+                # that is neither is not facade state, so leave every module
+                # alone (`A.something = x` must not reach into a submodule).
+                return
+            d[name] = value
 
+
+def _build_fanned_names():
+    """Names the facade re-exports from app submodules — the ONLY ones whose
+    rebind is fanned out. Derived by parsing this file, so adding an extraction
+    cannot silently shrink the set.
+
+    `from . import db` / `from . import metrics` are EXCLUDED: they bind a
+    module, and `A.db = fake` must never reach app.db's own db() function.
+    Only `from .X import name` (an explicit name pulled out of a submodule)
+    counts.
+    """
+    import ast as _a
+    names = set()
+    for node in _a.walk(_a.parse(open(__file__).read())):
+        if isinstance(node, _a.ImportFrom) and node.level and node.module:
+            for al in node.names:
+                if al.name != "*":
+                    names.add(al.asname or al.name)
+    return frozenset(names)
+
+
+_FacadeModule._FANNED = _build_fanned_names()
 
 sys.modules[__name__].__class__ = _FacadeModule
 
@@ -685,6 +744,7 @@ from .static_data import (  # noqa: E402,F401 — re-exported
 from .usage_metrics import (  # noqa: E402,F401
     _prune_usage_events,
     _track,
+    _usage_prune_last,  # noqa: F401 — mutable global, tests rebind via A
     _usage_prune_lock,
     _usage_retention_days,
     _user_label,
