@@ -68,6 +68,12 @@ services:
       # ERROR-level (5xx/unhandled — not WARNING) opensrm log lines to an
       # ntfy topic, rate-limited 1/min (app/logging_setup.py NtfyHandler).
       - NTFY_ALERT_URL=${NTFY_ALERT_URL:-}
+      # Hostname(s) this deployment is served under, comma-separated
+      # (e.g. srm.200871.xyz). The Cloudflare tunnel dials the origin by IP, so
+      # request.host is the internal address and the cross-site Origin check
+      # can never match a real browser without this allowlist. Unset = the
+      # guard stays exactly as strict as before.
+      - PUBLIC_HOSTNAMES=${PUBLIC_HOSTNAMES:-}
       # audit run-1 #18: edge provenance secret — set in /docker/opensrm/.env
       # AND inject the same value as X-Edge-Secret from the tunnel config
       # (cloudflared originRequest.httpHeaders), together or not at all.

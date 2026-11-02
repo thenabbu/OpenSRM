@@ -78,7 +78,47 @@ with A.app.test_request_context("/healthz", method="GET",
                                 headers={"Origin": "https://evil.com"}):
     check("safe methods are never guarded", A._cross_site_guard() is None, True)
 
-total = 17
+
+# ── the tunnel case: request.host is the ORIGIN IP, not the public name ──────
+# Verified in a probe container against the real tunnel: the app receives
+# host='172.31.0.1:8083', X-Forwarded-Host absent, edge secret unset — so no
+# host-comparison alone can ever match a browser's Origin in prod.
+print("\ncross-site guard: public-hostname allowlist (the tunnel case)")
+
+import importlib  # noqa: E402
+
+os.environ.pop("PUBLIC_HOSTNAMES", None)
+importlib.reload(A)
+check("allowlist unset -> public match never fires (stays strict)",
+      A._origin_matches_public("https://srm.200871.xyz"), False)
+
+os.environ["PUBLIC_HOSTNAMES"] = "srm.200871.xyz, alt.example.com"
+importlib.reload(A)
+check("allowlist: our public host matches",
+      A._origin_matches_public("https://srm.200871.xyz"), True)
+check("allowlist: second listed host matches",
+      A._origin_matches_public("https://alt.example.com"), True)
+check("allowlist: foreign host refused",
+      A._origin_matches_public("https://evil.com"), False)
+check("allowlist: suffix trick refused",
+      A._origin_matches_public("https://srm.200871.xyz.evil.com"), False)
+
+# end to end through the guard, with the host the tunnel actually delivers
+with A.app.test_request_context("/api/refresh", method="POST",
+                                headers={"Origin": "https://srm.200871.xyz",
+                                         "Host": "172.31.0.1:8083"}):
+    check("guard allows the REAL tunnel shape", A._cross_site_guard() is None, True)
+
+with A.app.test_request_context("/api/refresh", method="POST",
+                                headers={"Origin": "https://evil.com",
+                                         "Host": "172.31.0.1:8083"}):
+    check("guard still refuses a foreign origin via the tunnel shape",
+          A._cross_site_guard() is not None, True)
+
+os.environ.pop("PUBLIC_HOSTNAMES", None)
+importlib.reload(A)
+
+total = 25
 print(f"\n{total - len(fails)}/{total} passed")
 if fails:
     print("FAILED:", fails)
