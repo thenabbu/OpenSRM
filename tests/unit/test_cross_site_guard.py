@@ -118,7 +118,48 @@ with A.app.test_request_context("/api/refresh", method="POST",
 os.environ.pop("PUBLIC_HOSTNAMES", None)
 importlib.reload(A)
 
-total = 25
+
+# ── the Worker's X-Forwarded-Host: honoured ONLY with the edge secret ────────
+# The maintenance Worker retargets the request at the origin hostname, so the
+# app must read the public host from X-Forwarded-Host. That header is
+# client-assertable, so it is trusted only when _behind_cf() proves our edge
+# set the secret. These three cases are the whole security argument.
+print("\ncross-site guard: X-Forwarded-Host trust boundary")
+
+_SECRET = "unit-test-edge-secret"
+os.environ["CF_EDGE_SECRET"] = _SECRET
+# CF_EDGE_SECRET is read at import into app/auth.py (app.py deliberately keeps no
+# copy — a copy would shadow the facade proxy), so auth must be reloaded too.
+import app.auth as _auth  # noqa: E402
+importlib.reload(_auth)
+importlib.reload(A)
+
+
+def _guard(origin, host, xfh=None, secret=None):
+    h = {"Origin": origin, "Host": host}
+    if xfh:
+        h["X-Forwarded-Host"] = xfh
+    if secret:
+        h["X-Edge-Secret"] = secret
+    with A.app.test_request_context("/api/refresh", method="POST", headers=h):
+        return A._cross_site_guard()
+
+
+check("XFH honoured from our edge (real tunnel shape)",
+      _guard("https://srm.200871.xyz", "172.31.0.1:8083", "srm.200871.xyz", _SECRET) is None, True)
+check("spoofed XFH with NO secret is refused",
+      _guard("https://evil.com", "172.31.0.1:8083", "srm.200871.xyz") is not None, True)
+check("spoofed XFH with WRONG secret is refused",
+      _guard("https://evil.com", "172.31.0.1:8083", "srm.200871.xyz", "wrong") is not None, True)
+check("our edge but foreign Origin is still refused",
+      _guard("https://evil.com", "172.31.0.1:8083", "srm.200871.xyz", _SECRET) is not None, True)
+
+os.environ.pop("CF_EDGE_SECRET", None)
+importlib.reload(_auth)
+importlib.reload(A)
+
+
+total = 29
 print(f"\n{total - len(fails)}/{total} passed")
 if fails:
     print("FAILED:", fails)

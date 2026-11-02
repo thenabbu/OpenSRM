@@ -32,6 +32,12 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.9.3", "date": "2 Nov", "title": "The edge tells the app its real name",
+     "body": "The maintenance page sits in front of the site and was dialling "
+             "the server under an internal name, so the app no longer knew which "
+             "site it was serving and refused your own requests. It now passes the "
+             "real address along, and the internal name is no longer reachable "
+             "from outside."},
     {"ver": "v2.9.2", "date": "2 Nov", "title": "Sync button, actually fixed",
      "body": "The 2.9.1 fix compared your browser's address against the "
              "address the tunnel uses internally, which is a private IP - so it "
