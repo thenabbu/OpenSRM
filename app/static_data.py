@@ -32,6 +32,12 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.9.4", "date": "2 Nov", "title": "The internal address is private again",
+     "body": "There is a second, internal name for the site that the edge uses to "
+             "reach the server. For a few minutes today a change made the site "
+             "unreachable through it, which is why it briefly returned errors - "
+             "that is fixed, and the internal name now only answers to the edge "
+             "instead of to anyone who knows it."},
     {"ver": "v2.9.3", "date": "2 Nov", "title": "The edge tells the app its real name",
      "body": "The maintenance page sits in front of the site and was dialling "
              "the server under an internal name, so the app no longer knew which "
