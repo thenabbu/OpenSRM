@@ -32,6 +32,30 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.9.2", "date": "2 Nov", "title": "Sync button, actually fixed",
+     "body": "The 2.9.1 fix compared your browser's address against the "
+             "address the tunnel uses internally, which is a private IP - so it "
+             "still refused you. The app now accepts the site's own public "
+             "hostname, which the server is told explicitly, and still refuses a "
+             "request that comes from any other site."},
+    {"ver": "v2.9.1", "date": "2 Nov", "title": "Sync works again behind the tunnel",
+     "body": "The button that refreshes your data stopped working for a few hours. "
+             "The check that blocks forged requests from other websites was also "
+             "rejecting your own clicking, because the tunnel now tells the app its "
+             "address with a port number attached and the check compared the two "
+             "addresses as text. It compares the hosts now, so your own requests pass "
+             "and a request from another site is still refused."},
+    {"ver": "v2.9.0", "date": "2 Nov", "title": "Newer Python underneath",
+     "body": "The app now runs on Python 3.14 instead of 3.11. Nothing you see "
+             "or do has changed - this is the runtime the server itself is built "
+             "on, taken while every dependency still had ready-made builds for "
+             "it. Waiting any longer would have meant compiling the OCR engine "
+             "from source on every release."},
+    {"ver": "v2.8.1", "date": "2 Nov", "title": "Dependency maintenance",
+     "body": "A round of dependency updates: the browser test driver, the CI "
+             "actions that build and publish the image, the artefact uploader and "
+             "the secret scanner are all on their current releases. Nothing you "
+             "see or do in the app has changed."},
     {"ver": "v2.8.0", "date": "31 Oct", "title": "Attendance reads to a decimal",
      "body": "Attendance used to round to a whole percent, so 74.98% showed as 75% - the "
              "exact figure SRM detains you for being under. Every percentage (subjects, "

@@ -56,7 +56,7 @@ chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix
     and has('app/scraper.py', r'old_browser, _browser = _browser, None'))
 chk('M9',  "rate checkers atomic under threads (lock-guarded)",
     len(re.findall(r'with (self\.lock|_rate_lock)', rd('app/state.py') + rd('app/app.py'))) >= 2)
-_login_region = region('app/app.py', 'def api_login(', '\ndef api_refresh')
+_login_region = region('app/routes_sync.py', 'def api_login(', '\ndef api_refresh')
 chk('M10', "login: creds validated before IP budget burn",
     'password' in _login_region and
     0 < _login_region.find('password') < _login_region.find('Too many login attempts'))
@@ -67,7 +67,8 @@ chk('M12', "date cells recognized before score pairs (_DATE_CELL_RE)",
 chk('M13', "attendance: numeric-column guard vs shifted portal columns",
     has('app/portal/parsers/attendance.py', r'numeric columns must look numeric') and has('app/portal/parsers/attendance.py', r'fullmatch\(r"-\?'))
 chk('M14', "aggregate portal budget wired into preflight+login",
-    len(re.findall(r'_check_portal_budget', rd('app/app.py'))) >= 3)
+    len(re.findall(r'_check_portal_budget',
+                   rd('app/app.py') + rd('app/routes_sync.py'))) >= 3)
 
 # ---------- MEDIUM: frontend/SW ----------
 chk('M15', "SW: logout clears caches (caches.delete)",
