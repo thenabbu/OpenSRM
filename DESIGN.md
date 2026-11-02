@@ -556,7 +556,7 @@ Anatomy — copied from the end-sem card (§4.12): `bg-base-300/40 border border
 
 ### 4.17 Dashboard card/widget engine (v1.16.0)
 
-The Dashboard tab is generated, not hand-written. Three constants drive it: **`LAYOUT`** (card registry) and **`WIDGETS`** (id → partial + `min_w`) live in `app/views/layout.py`, **`NOTICES`** (release notices, newest first) in `app/app.py` — all three are re-exported by `app.app`. Widget partials live in `app/templates/partials/widgets/*.html`.
+The Dashboard tab is generated, not hand-written. Three constants drive it: **`LAYOUT`** (card registry) and **`WIDGETS`** (id → partial + `min_w`) live in `app/views/layout.py`, **`NOTICES`** (release notices, newest first) in `app/static_data.py` — all three are re-exported by `app.app`. Widget partials live in `app/templates/partials/widgets/*.html`.
 
 Engine invariants — each is a check in `tests/unit/test_layout.py`:
 

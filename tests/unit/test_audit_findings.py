@@ -36,35 +36,39 @@ chk('H2b', "dump_headers.py reads token from env", has('egress/poc/dump_headers.
 chk('H2c', "referer_probe.py reads token from env", has('egress/poc/referer_probe.py', r'os\.environ\['))
 chk('H2d', ".dockerignore excludes egress/", has('.dockerignore', r'^egress/?$', re.M))
 chk('H3a', "XSS: timetable values escaped at render (_hesc on code/name/location)",
-    has('app/app.py', r'_hesc\(str\(r\[2\]'))
+    has('app/views/timetable.py', r'_hesc\(str\(r\[2\]'))
 chk('H4a', "SW: no inline register in login.html", miss('app/templates/login.html', r'navigator\.serviceWorker'))
 chk('H4b', "SW: register lives in login.js", has('app/static/login.js', r'serviceWorker\.register'))
 chk('H4c', "SW: Service-Worker-Allowed header set", has('app/app.py', r'Service-Worker-Allowed'))
 chk('H5',  "cooldown: per-sync fail-counted context reset per request (init + reset)",
-    len(re.findall(r'fail_counted = False', rd('app/app.py'))) >= 2)
+    len(re.findall(r'fail_counted = False',
+                   rd('app/app.py') + rd('app/scraper.py') + rd('app/portal_control.py'))) >= 2)
 
 # ---------- MEDIUM: backend ----------
 chk('M6',  "wrong password -> 401 classification (invalid credentials)",
-    has('app/app.py', r'"bad_credentials": 401') and has('app/app.py', r'invalid credentials'))
+    has('app/errors.py', r'"bad_credentials": 401')
+    and has('app/scraper.py', r'invalid credentials'))
 _pm = region('app/portal/parsers/marks.py', 'def parse_marks', '\ndef ')
 chk('M7',  "parse_marks: always 2-tuple (no bare 'return out' inside parse_marks)",
     (re.search(r'^\s*return out\s*$', _pm, re.M) is None) and ('return out, {}' in _pm))
 chk('M8',  "playwright timeout: coroutine cancelled + browser closed (zombie fix)",
-    has('app/app.py', r'zombie double-drive') and has('app/app.py', r'future\.cancel\(\)') and has('app/app.py', r'old_browser, _browser = _browser, None'))
+    has('app/scraper.py', r'zombie double-drive') and has('app/scraper.py', r'future\.cancel\(\)')
+    and has('app/scraper.py', r'old_browser, _browser = _browser, None'))
 chk('M9',  "rate checkers atomic under threads (lock-guarded)",
     len(re.findall(r'with (self\.lock|_rate_lock)', rd('app/state.py') + rd('app/app.py'))) >= 2)
-_login_region = region('app/app.py', 'def api_login(', '\ndef api_refresh')
+_login_region = region('app/routes_sync.py', 'def api_login(', '\ndef api_refresh')
 chk('M10', "login: creds validated before IP budget burn",
     'password' in _login_region and
     0 < _login_region.find('password') < _login_region.find('Too many login attempts'))
 chk('M11', "session expiry enforced at read (created check)",
-    bool(re.search(r'created', region('app/app.py', 'def get_current_user', 'def api_login'))))
+    bool(re.search(r'created', region('app/auth.py', 'def get_current_user', 'def make_session_token'))))
 chk('M12', "date cells recognized before score pairs (_DATE_CELL_RE)",
     has('app/portal/parsers/marks.py', r'_DATE_CELL_RE') and len(re.findall(r'_DATE_CELL_RE', rd('app/portal/parsers/marks.py'))) >= 3)
 chk('M13', "attendance: numeric-column guard vs shifted portal columns",
     has('app/portal/parsers/attendance.py', r'numeric columns must look numeric') and has('app/portal/parsers/attendance.py', r'fullmatch\(r"-\?'))
 chk('M14', "aggregate portal budget wired into preflight+login",
-    len(re.findall(r'_check_portal_budget', rd('app/app.py'))) >= 3)
+    len(re.findall(r'_check_portal_budget',
+                   rd('app/app.py') + rd('app/routes_sync.py'))) >= 3)
 
 # ---------- MEDIUM: frontend/SW ----------
 chk('M15', "SW: logout clears caches (caches.delete)",
@@ -90,7 +94,8 @@ chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.gith
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))
-_nt_region = region('app/app.py', 'NOTICES = [', 'def _day_slots')
+# NOTICES moved to app/static_data.py (cycle A); read it where it lives now.
+_nt_region = region('app/static_data.py', 'NOTICES = [', '\nTOOLS = [')
 _nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
 chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",
     _nt_head is not None and _nt_head.group(1) == _pyv,
@@ -110,7 +115,7 @@ chk('D31', "SECURITY: reporting channel has an address (advisories URL)",
 # ---------- LOW/INFO ----------
 chk('L32', "bare 'except:' gone from app/", not grep_repo(r'except:\s*$', 'app'))
 chk('L33', "captcha retry refills password after 5s re-render sleep",
-    bool(re.search(r"sleep\(5\)[\s\S]{0,300}?page\.fill\('input\[name=\"password\"\]'", rd('app/app.py'))))
+    bool(re.search(r"sleep\(5\)[\s\S]{0,300}?page\.fill\('input\[name=\"password\"\]'", rd('app/scraper.py'))))
 chk('L34', "raw exception text not returned to API clients",
     (not re.search(r'tr\(e\)', _login_region)) or bool(re.search(r'internal error|generic', _login_region, re.I)))
 chk('L35', "progress endpoint: POST, netid not in query",

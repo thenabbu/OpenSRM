@@ -256,7 +256,7 @@ no captcha and does not spend the portal's budget or cooldown.
 
 ```
 app/
-  app.py              Flask app: portal pipeline, dashboard route, view-model assembly
+  app.py              Flask app factory, routes, and the facade re-exports
   http_scraper.py     portal HTML fetch (captcha, session reuse, rate limits)
   portal/parsers/     pure functions: portal HTML → JSON (attendance, marks, exams, …)
   scope/client.py     zero-dependency SOAP client: envelope, double-AES, typed faults

@@ -4,6 +4,10 @@
 import math
 from datetime import date, datetime, timedelta
 
+from flask import g
+
+from ..db import weekly_slot_counts
+
 ATTENDANCE_TARGET = 0.75
 ATTENDANCE_WARN = 0.65
 # Decimals shown for every attendance percentage. 1 is deliberate: SRM detains below
@@ -198,3 +202,128 @@ def hourwise_view(rows, slots, custom=frozenset(), portal_months=None):
                     "od": sum(1 for x in days for c in x["cells"] if c["state"] == "OD"),
                     "days": days})
     return {"hours": hours, "months": out}
+
+# ── moved from app/app.py (facade pump, cycle B) ─────────────────────
+# Attendance row shaping: budget sentences, the subject join, exact truncated
+# percentages and the per-course/per-month view dicts. Same family as the
+# helpers above, so they live together instead of in the facade.
+
+
+def _bunk_counts(attended, total, threshold=ATTENDANCE_TARGET):
+    """(skip_now, attend_now) — the numbers behind _bunk_line's prose (spec §3).
+    Exactly one side is non-None when total > 0; (None, None) when nothing was held.
+    The ±1e-9 epsilon and max(1, …) are the original _bunk_line's semantics [F10] —
+    _bunk_line renders these; the meter connector + timetable glance need the NUMBER."""
+    if total <= 0:
+        return (None, None)
+    room = attended / threshold - total
+    if room >= -1e-9:
+        return (max(0, math.floor(room + 1e-9)), None)
+    return (None, max(1, math.ceil((threshold * total - attended) / (1 - threshold) - 1e-9)))
+
+def _bunk_line(attended, max_hours, threshold=ATTENDANCE_TARGET):
+    if max_hours <= 0: return None
+    pct_target = threshold * 100
+    skip, attend = _bunk_counts(attended, max_hours, threshold)
+    if skip is not None:
+        if skip == 0:
+            return "One more miss drops you below %.0f%%" % pct_target
+        return "Can miss %d more class%s and stay above %.0f%%" % (skip, "" if skip == 1 else "es", pct_target)
+    return "Attend the next %d class%s in a row to reach %.0f%%" % (attend, "" if attend == 1 else "es", pct_target)
+
+
+def _weekly_slots(group_key):
+    """w = weekly slot count per subject_code, scoped to THIS user's group [F4].
+    Precedent: _day_slots / timetable_html / /api/timetable all scope by group_id."""
+    return weekly_slot_counts(group_key)
+
+
+def _norm_subject(s):
+    """Join key: upper / strip / squash whitespace (spec §4.3)."""
+    return " ".join(str(s or "").upper().split())
+
+
+def _attendance_index(courses):
+    """spec §4 join index built in index(): code-exact map + normalized-name fallback map."""
+    by_code = {c["code"]: c for c in courses if c.get("code")}
+    by_name = {}
+    for c in courses:
+        key = _norm_subject(c.get("description"))
+        if key:
+            by_name.setdefault(key, c)
+    return {"by_code": by_code, "by_name": by_name}
+
+def _join_attendance(index, custom_codes, code, name):
+    """spec §4 order is load-bearing: custom (is_custom=1) → code-exact → normalized name
+    → None. None means neutral "no data" — an unmatched slot must NEVER render as 0% [F9]."""
+    if not index:
+        return None
+    if code in custom_codes:
+        return None  # a custom subject typed with a portal-matching name must never join
+    return index["by_code"].get(code) or index["by_name"].get(_norm_subject(name))
+
+def _pct_trunc(part, whole, dec=ATTENDANCE_DECIMALS):
+    """Attendance % as an EXACT truncated value, never rounded, in integer space.
+
+    SRM detains below 75, so 74.9847% must read 74.9 — `round()`/`%.1f` would print
+    75.0 and the row would also flip to the comfortable tint. Integer math because
+    float is lossy here: 7499/10000*100 == 7498.999…, so math.floor(x*100) and
+    string-slicing both shave a digit. Returns (float, "dd.d" string) or (None, None)
+    when `whole` is 0 (nothing held -> the template renders `--`).
+    """
+    if whole <= 0:
+        return (None, None)
+    scale = 10 ** dec
+    e = part * 100 * scale // whole          # the % scaled to `dec` places, truncated
+    return (e / scale, "%d.%0*d" % (e // scale, dec, e % scale))
+
+def _course_view(c):
+    attended = _safe_int(c.get("attended"))
+    max_hours = _safe_int(c.get("max_hours"))
+    # ONE number feeds display, tint and the sort key — see _pct_trunc.
+    pct, pct_disp = _pct_trunc(attended, max_hours)
+    if pct is None:
+        pct = 0.0
+    skip, attend = _bunk_counts(attended, max_hours)
+    # status/absent outputs dropped: grep showed no template/route consumer —
+    # the monthly bar's band lives on the MONTH dict now (_month_view)
+    return {"code": c.get("code", ""), "description": _title_case(c.get("description", "")),
+            "max_hours": max_hours, "attended": attended,
+            "pct": pct, "bunk_line": _bunk_line(attended, max_hours),
+            # meter-row fields (spec §1.1): display per ATTENDANCE_DECIMALS, fill EXACT A/C [F12],
+            # pct_disp None = `--` (C = 0 holds nothing → no fill, no pinned numbers)
+            "pct_disp": pct_disp,
+            "fill": (100.0 * attended / max_hours) if max_hours > 0 else None,
+            "t75": math.ceil(ATTENDANCE_TARGET * max_hours),
+            "skip_now": skip, "attend_now": attend,
+            # fill tint: red = pct < 75 · orange(warn) = pct ≥ 75 AND skip-now == 0 · gray = comfortable
+            "tint": "red" if pct < ATTENDANCE_TARGET * 100 else ("warn" if skip == 0 else "gray"),
+            # table view: the SAME signed _bunk_counts pair the dashboard widget shows
+            # (+skip / 0 / -attend) — one sign language, one threshold source. None =
+            # no classes held -> template renders `--`, never a fake 0.
+            "margin": (skip if skip is not None else -attend) if max_hours > 0 else None}
+
+_BAND_BAR = {"ok": "success", "warn": "warning", "danger": "error"}
+
+def _month_view(m):
+    present = _safe_int(m.get("present"))
+    absent = _safe_int(m.get("absent"))
+    total = present + absent
+    out = dict(m)
+    # same truncated figure as the subject meters — a rounded one can turn a sub-75%
+    # month into "75.0%" and read as safe.
+    out["pct"], out["pct_disp"] = _pct_trunc(present, total)
+    # bar class derived in Python from the ONE threshold source — the old
+    # template ternary re-typed >=75/>=65 as a second copy of _status_for_pct
+    out["bar"] = _BAND_BAR[_status_for_pct(out["pct"])] if out["pct"] is not None else None
+    return out
+
+
+# ── Request logging ─────────────────────────────────────────────────
+def _bare(code, reason):
+    """Deliberately bare response body (nothing for a prober to read — used
+    by the internal endpoints' auth); the reason still lands on the status
+    line via _log_request's g._log_reason fallback, so every >=400 line in
+    opensrm.log carries an error= (the logging-gap rule)."""
+    g._log_reason = reason
+    return "", code

@@ -3,7 +3,14 @@ Complements test_login_guide_check (DOM) and test_login_guide_server (live HTTP)
 import re, sys, os
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-app = open(os.path.join(REPO, "app/app.py")).read()
+# The login flow is spread over several modules now: the facade, the scraper's
+# captcha loop, and the sync routes where api_login/api_login_preflight live.
+# Read the modules that can emit USER-FACING text. Deliberately NOT a blanket
+# glob of app/**: migrations.py and db.py are full of SQL DDL ("CREATE TABLE IF
+# NOT EXISTS"), which the §5 enumeration check would read as account-existence
+# wording -- a false positive, not a leak.
+_LOGIN_MODULES = ("app/app.py", "app/scraper.py", "app/routes_sync.py")
+app = "".join(open(os.path.join(REPO, f)).read() for f in _LOGIN_MODULES)
 js = open(os.path.join(REPO, "app/static/login.js")).read()
 rows = []
 
