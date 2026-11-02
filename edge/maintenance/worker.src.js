@@ -34,11 +34,29 @@ function maintenance() {
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+    // The PUBLIC host the browser asked for, captured before we retarget the
+    // request at ORIGIN. Without it the app only ever sees the internal address
+    // as `request.host`, so a same-origin POST's Origin can never match and the
+    // cross-site guard refuses it ("cross-site request refused (Origin)").
+    const publicHost = url.host;
     url.hostname = ORIGIN;
+
+    // Rebuild the headers rather than mutating the incoming Request: fetch()
+    // ignores a body/headers mismatch on a reused Request.
+    const headers = new Headers(request.headers);
+    headers.set('X-Forwarded-Host', publicHost);
+    // Set proto explicitly — cloudflared forwards it, but pinning it here means
+    // _cookie_secure() works even if the tunnel is ever bypassed.
+    if (!headers.has('X-Forwarded-Proto')) headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
     let upstream;
     try {
-      upstream = await fetch(new Request(url.toString(), request), {
+      upstream = await fetch(new Request(url.toString(), {
+        method: request.method,
+        headers,
+        body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+        redirect: 'manual',
+      }), {
         // dial/DNS failure or a hung lab fails fast to the page instead of
         // making the visitor stare at a spinner
         signal: AbortSignal.timeout(10000),

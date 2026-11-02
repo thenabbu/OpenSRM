@@ -615,6 +615,25 @@ def _origin_matches_host(origin, host):
     return True
 
 
+def _public_host():
+    """The host the BROWSER addressed, which is not `request.host`.
+
+    Behind the maintenance Worker + Cloudflare tunnel, `request.host` is the
+    origin address the edge dialled (`172.31.0.1:8083`, or `srm-origin.…` when
+    the Worker rewrites it), never the public name in the URL bar.
+
+    `X-Forwarded-Host` carries the public name, but it is client-assertable
+    unless we know our own edge set it — so it is honoured ONLY when
+    _behind_cf() proves the edge-injected secret matched. Without that proof we
+    fall back to request.host, i.e. fail closed.
+    """
+    if _behind_cf():
+        fwd = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip()
+        if fwd:
+            return fwd
+    return request.host
+
+
 def _origin_matches_public(origin):
     """Is `Origin` one of the hostnames this deployment is served under?
 
@@ -637,6 +656,36 @@ def _origin_matches_public(origin):
     return (urlparse(origin).hostname or "").lower() in allowed
 
 
+def _origin_host_guard():
+    """Refuse requests addressed to the private origin hostname.
+
+    `srm-origin.200871.xyz` exists only so the maintenance Worker can reach the
+    tunnel (a zone route cannot fetch its own hostname). It is a public CNAME,
+    so anyone who learns the name reaches the app directly — skipping the
+    Worker, and therefore skipping the maintenance page during an outage.
+
+    The legitimate caller is our own Worker, which is the only thing that can
+    attach the edge secret. Everything else gets the same 404 a wrong Host
+    deserves: no hint that this name is special.
+
+    Inert until ORIGIN_HOSTNAMES is set, and inert entirely when CF_EDGE_SECRET
+    is unset (nothing could prove the edge), so this cannot lock out a
+    deployment that never configured it.
+    """
+    names = {h.strip().lower() for h in
+             (os.environ.get("ORIGIN_HOSTNAMES") or "").split(",") if h.strip()}
+    # Read the secret from app/auth.py, not from this module: CF_EDGE_SECRET is
+    # deliberately NOT imported here (see the import block above), so a bare
+    # name would be a NameError and a local copy would shadow the proxy.
+    from . import auth as _auth
+    if not names or not _auth.CF_EDGE_SECRET:
+        return None
+    host = (request.host or "").split(":")[0].lower()
+    if host in names and not _behind_cf():
+        return {"error": "not found"}, 404
+    return None
+
+
 def _cross_site_guard():
     if request.method not in _CROSS_SITE_METHODS:
         return None
@@ -652,13 +701,10 @@ def _cross_site_guard():
         return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
     origin = request.headers.get("Origin")
     if origin is not None and not (
-            _origin_matches_host(origin, request.host)
+            _origin_matches_host(origin, _public_host())
             or _origin_matches_public(origin)):
         return {"error": "cross-site request refused (Origin)"}, 403
     return None
-
-
-# ── Security headers ───────────────────────────────────────────────
 
 
 # ── Security headers ───────────────────────────────────────────────
@@ -1265,6 +1311,7 @@ def create_app(config=None):
     _init_blobatar(a)  # GET /avatar/<name> + `blobatar` Jinja filter
     # hooks in the order the decorators used to register them
     a.before_request(_log_request_start)
+    a.before_request(_origin_host_guard)
     a.before_request(_cross_site_guard)
     a.errorhandler(Exception)(_unhandled_error)
     a.after_request(_log_request)

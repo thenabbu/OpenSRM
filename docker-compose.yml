@@ -74,6 +74,10 @@ services:
       # can never match a real browser without this allowlist. Unset = the
       # guard stays exactly as strict as before.
       - PUBLIC_HOSTNAMES=${PUBLIC_HOSTNAMES:-}
+      # Hostname(s) the Worker dials to reach the tunnel (e.g.
+      # srm-origin.200871.xyz). Requests to these are refused unless they carry
+      # the edge secret, so the public CNAME cannot be used to bypass the edge.
+      - ORIGIN_HOSTNAMES=${ORIGIN_HOSTNAMES:-}
       # audit run-1 #18: edge provenance secret — set in /docker/opensrm/.env
       # AND inject the same value as X-Edge-Secret from the tunnel config
       # (cloudflared originRequest.httpHeaders), together or not at all.
