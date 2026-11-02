@@ -91,30 +91,35 @@ def _origin_matches_public(origin):
 
 
 def _origin_host_guard():
-    """Refuse requests addressed to the private origin hostname.
+    """Refuse a DIRECT hit on the private origin hostname.
 
-    `srm-origin.200871.xyz` exists only so the maintenance Worker can reach the
-    tunnel (a zone route cannot fetch its own hostname). It is a public CNAME,
-    so anyone who learns the name reaches the app directly — skipping the
-    Worker, and therefore skipping the maintenance page during an outage.
+    `srm-origin.200871.xyz` exists so the maintenance Worker can reach the
+    tunnel (a zone route cannot fetch its own hostname). It is a public CNAME
+    with no route in front of it, so anyone who learns the name reaches the app
+    directly — skipping the Worker, and therefore skipping the maintenance page
+    during an outage.
 
-    The legitimate caller is our own Worker, which is the only thing that can
-    attach the edge secret. Everything else gets the same 404 a wrong Host
-    deserves: no hint that this name is special.
+    Host alone cannot make this call: the Worker rewrites EVERY public request
+    to this hostname, so both a legitimate visitor and a bypasser arrive as
+    `srm-origin`. (That is exactly what took the site down when this guard first
+    shipped keyed on host — it 404'd the real site.) (docs: #135)
 
-    Inert until ORIGIN_HOSTNAMES is set, and inert entirely when CF_EDGE_SECRET
-    is unset (nothing could prove the edge), so this cannot lock out a
-    deployment that never configured it.
+    The discriminator is X-Forwarded-Host, which only our Worker sets: the
+    Worker always attaches it, a direct request never has it. Together with the
+    tunnel's own X-Edge-Secret that is a positive signal the request came
+    through the edge.
+
+    Inert until ORIGIN_HOSTNAMES is set, and inert when CF_EDGE_SECRET is unset,
+    so a deployment that never configures this cannot be locked out.
     """
     names = {h.strip().lower() for h in
              (os.environ.get("ORIGIN_HOSTNAMES") or "").split(",") if h.strip()}
-    # Read the secret from app/auth.py, not from this module: CF_EDGE_SECRET is
-    # deliberately NOT imported here (see the import block above), so a bare
-    # name would be a NameError and a local copy would shadow the proxy.
     from . import auth as _auth
     if not names or not _auth.CF_EDGE_SECRET:
         return None
     host = (request.host or "").split(":")[0].lower()
-    if host in names and not _behind_cf():
-        return {"error": "not found"}, 404
-    return None
+    if host not in names:
+        return None
+    if _behind_cf() and (request.headers.get("X-Forwarded-Host") or "").strip():
+        return None  # came through our Worker
+    return {"error": "not found"}, 404

@@ -159,7 +159,45 @@ importlib.reload(_auth)
 importlib.reload(A)
 
 
-total = 29
+
+# ── the origin-hostname bypass: host alone is NOT a discriminator ───────────
+# Regression pin. The first cut keyed on Host only, but the Worker rewrites
+# EVERY public request to the origin hostname — so it 404'd the live site.
+# The discriminator must be X-Forwarded-Host, which only our Worker sets.
+print("\norigin-host guard: public vs direct")
+
+os.environ["CF_EDGE_SECRET"] = _SECRET
+os.environ["ORIGIN_HOSTNAMES"] = "srm-origin.200871.xyz"
+importlib.reload(_auth)
+importlib.reload(A)
+
+
+def _origin_guard(host, xfh=None, secret=None):
+    h = {"Host": host}
+    if xfh:
+        h["X-Forwarded-Host"] = xfh
+    if secret:
+        h["X-Edge-Secret"] = secret
+    with A.app.test_request_context("/login", headers=h):
+        return A._origin_host_guard()
+
+
+check("public visitor via the Worker is NOT blocked (this took prod down once)",
+      _origin_guard("srm-origin.200871.xyz", "srm.200871.xyz", _SECRET) is None, True)
+check("direct hit on the origin host IS blocked",
+      _origin_guard("srm-origin.200871.xyz") is not None, True)
+check("direct hit + spoofed edge secret only is still blocked",
+      _origin_guard("srm-origin.200871.xyz", None, _SECRET) is not None, True)
+check("public hostname is never blocked",
+      _origin_guard("srm.200871.xyz") is None, True)
+
+os.environ.pop("ORIGIN_HOSTNAMES", None)
+os.environ.pop("CF_EDGE_SECRET", None)
+importlib.reload(_auth)
+importlib.reload(A)
+
+
+total = 33
 print(f"\n{total - len(fails)}/{total} passed")
 if fails:
     print("FAILED:", fails)
