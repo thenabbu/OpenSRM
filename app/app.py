@@ -1009,6 +1009,7 @@ from .observability import (  # noqa: E402,F401 — re-exported
     _push_tick_last_ok_ts,
     healthz,
     internal_metrics,
+    track_session_activity,
 )
 
 # ── Web push: user endpoints (JSON, session auth, 401 style) ──────────
@@ -1087,7 +1088,7 @@ def track_tab():
             d = request.get_json(silent=True)
             tab = d.get("tab") if isinstance(d, dict) else None
             if isinstance(tab, str) and tab in _TAB_NAMES:
-                _track_session_activity(netid)
+                track_session_activity(netid)
                 # per-user 2s floor: a keyboard user arrowing across the tab
                 # strip fires one switch per keypress, and ten rows for one
                 # intentional visit pollutes the very number being measured.
@@ -1119,71 +1120,6 @@ def track_tab():
     except Exception:
         pass   # telemetry must never break the UI
     return "", 204
-
-
-# ── Visit span: how long one sitting actually lasts ───────────────────────
-# usage_events already stores one row per page view / tab view, so per-VIEW
-# duration is derivable later; what it cannot say is "how long was someone
-# here". A visit is a run of activity with no gap longer than _SESSION_GAP_S.
-# Tracking it in memory is enough: the span is only recorded when a visit
-# ENDS (a gap is observed), so nothing is lost on restart except the visit in
-# flight, which would have been truncated by the restart anyway.
-_SESSION_GAP_S = 1800          # 30 min idle ends a visit
-_visit_start = {}              # netid -> monotonic ts of the first activity
-_visit_last = {}               # netid -> monotonic ts of the latest activity
-
-
-def _track_session_activity(netid, now=None):
-    """Fold one activity tick into the caller's current visit.
-
-    Says nothing to Prometheus until the visit closes; closing emits the span
-    into opensrm_user_session_span_seconds. Cheap: two dict reads/writes.
-    """
-    try:
-        now = time.monotonic() if now is None else now
-        last = _visit_last.get(netid)
-        if last is None or now - last > _SESSION_GAP_S:
-            # a previous visit ended exactly here — record its span first
-            if last is not None:
-                start = _visit_start.get(netid, last)
-                _emit_session_span(last - start)
-            _visit_start[netid] = now
-        # bound the maps like every other per-user limiter in this module
-        if len(_visit_last) > _RATE_CAP:
-            _visit_start.clear()
-            _visit_last.clear()
-            _visit_start[netid] = now
-        _visit_last[netid] = now
-    except Exception:
-        pass
-
-
-def _emit_session_span(seconds):
-    try:
-        metrics.observe("opensrm_user_session_span_seconds", max(0.0, seconds))
-    except Exception:
-        pass
-
-
-def sweep_idle_visits(now=None):
-    """Close visits that have gone quiet but never produced a new tick.
-
-    Without this, the LAST visit of every sitting is never recorded — someone
-    opens the app, reads for 4 minutes, and leaves, and nothing fires because
-    a gap is only noticed on the NEXT visit. Called from the metrics render
-    path (once per scrape), which is cheap and needs no scheduler.
-    """
-    try:
-        now = time.monotonic() if now is None else now
-        for netid in list(_visit_last.keys()):
-            last = _visit_last[netid]
-            if now - last > _SESSION_GAP_S:
-                start = _visit_start.get(netid, last)
-                _emit_session_span(last - start)
-                _visit_start.pop(netid, None)
-                _visit_last.pop(netid, None)
-    except Exception:
-        pass
 
 
 # ── Account deletion ─────────────────────────────────────────────────

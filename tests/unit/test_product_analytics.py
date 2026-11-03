@@ -190,14 +190,14 @@ def t_visit_span_closes_on_gap():
     """Two ticks inside the gap are ONE visit; a tick past it closes the first
     visit and opens the second."""
     M.reset()
-    A._visit_start.clear()
-    A._visit_last.clear()
-    A._track_session_activity("zz1", now=1000.0)
-    A._track_session_activity("zz1", now=1100.0)     # same visit
+    OBS._visit_start.clear()
+    OBS._visit_last.clear()
+    OBS.track_session_activity("zz1", now=1000.0)
+    OBS.track_session_activity("zz1", now=1100.0)     # same visit
     assert M.hist_count("opensrm_user_session_span_seconds") == 0, "closed too early"
     # the gap is measured from the LAST tick (1100), not the visit start —
     # 10s past the threshold counted from 1000 is still inside the visit
-    A._track_session_activity("zz1", now=1100.0 + A._SESSION_GAP_S + 10)
+    OBS.track_session_activity("zz1", now=1100.0 + OBS.SESSION_GAP_S + 10)
     n = M.hist_count("opensrm_user_session_span_seconds")
     assert n == 1, f"expected 1 closed visit after the gap, got {n}"
 
@@ -206,15 +206,15 @@ def t_visit_sweep_closes_idle_visits():
     """A student who just stops has no next tick — the sweep must still record
     their visit, or every last visit of a sitting is lost."""
     M.reset()
-    A._visit_start.clear()
-    A._visit_last.clear()
-    A._track_session_activity("zz2", now=5000.0)
-    A._track_session_activity("zz2", now=5300.0)
+    OBS._visit_start.clear()
+    OBS._visit_last.clear()
+    OBS.track_session_activity("zz2", now=5000.0)
+    OBS.track_session_activity("zz2", now=5300.0)
     assert M.hist_count("opensrm_user_session_span_seconds") == 0
-    A.sweep_idle_visits(now=5300.0 + A._SESSION_GAP_S + 1)
+    OBS.sweep_idle_visits(now=5300.0 + OBS.SESSION_GAP_S + 1)
     assert M.hist_count("opensrm_user_session_span_seconds") == 1, "sweep did not close the visit"
     # a second sweep is a no-op: the visit is gone
-    A.sweep_idle_visits(now=5300.0 + 3 * A._SESSION_GAP_S)
+    OBS.sweep_idle_visits(now=5300.0 + 3 * OBS.SESSION_GAP_S)
     assert M.hist_count("opensrm_user_session_span_seconds") == 1, "sweep double-counted"
 
 

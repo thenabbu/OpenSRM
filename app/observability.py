@@ -72,7 +72,6 @@ def internal_metrics():
     # student simply stopped (no later tick to notice the gap). One scrape per
     # 30s is exactly the right cadence for a 30-minute idle threshold.
     try:
-        from .app import sweep_idle_visits
         sweep_idle_visits()
     except Exception:
         pass
@@ -335,6 +334,81 @@ metrics.gauge("opensrm_users_returning_24h", lambda: _db_stat(_returning_users_2
 metrics.gauge("opensrm_last_sync_age_seconds", lambda: _db_stat(_last_sync_age_seconds))
 metrics.gauge("opensrm_last_usage_event_age_seconds", lambda: _db_stat(_last_usage_event_age))
 
+
+
+# ── Visit span: how long one sitting actually lasts ───────────────────────
+# Lives here, not in app.py, because app.py is line-ratcheted (see
+# scripts/check_architecture.py) and this is self-contained telemetry.
+# usage_events already stores one row per page view / tab view, so per-VIEW
+# duration is derivable later; what it cannot say is "how long was someone
+# here". A visit is a run of activity with no gap longer than SESSION_GAP_S.
+# Tracking it in memory is enough: the span is only recorded when a visit
+# ENDS (a gap is observed), so nothing is lost on restart except the visit in
+# flight, which the restart would have truncated anyway.
+SESSION_GAP_S = 1800          # 30 min idle ends a visit
+VISIT_MAP_CAP = 4096          # bound on the per-netid maps, same idea as VISIT_MAP_CAP
+_visit_start = {}             # netid -> monotonic ts of the first activity
+_visit_last = {}              # netid -> monotonic ts of the latest activity
+
+# usage_events already stores one row per page view / tab view, so per-VIEW
+# duration is derivable later; what it cannot say is "how long was someone
+# here". A visit is a run of activity with no gap longer than SESSION_GAP_S.
+# Tracking it in memory is enough: the span is only recorded when a visit
+# ENDS (a gap is observed), so nothing is lost on restart except the visit in
+# flight, which would have been truncated by the restart anyway.
+
+
+def track_session_activity(netid, now=None):
+    """Fold one activity tick into the caller's current visit.
+
+    Says nothing to Prometheus until the visit closes; closing emits the span
+    into opensrm_user_session_span_seconds. Cheap: two dict reads/writes.
+    """
+    try:
+        now = time.monotonic() if now is None else now
+        last = _visit_last.get(netid)
+        if last is None or now - last > SESSION_GAP_S:
+            # a previous visit ended exactly here — record its span first
+            if last is not None:
+                start = _visit_start.get(netid, last)
+                _emit_session_span(last - start)
+            _visit_start[netid] = now
+        # bound the maps like every other per-user limiter in this module
+        if len(_visit_last) > VISIT_MAP_CAP:
+            _visit_start.clear()
+            _visit_last.clear()
+            _visit_start[netid] = now
+        _visit_last[netid] = now
+    except Exception:
+        pass
+
+
+def _emit_session_span(seconds):
+    try:
+        metrics.observe("opensrm_user_session_span_seconds", max(0.0, seconds))
+    except Exception:
+        pass
+
+
+def sweep_idle_visits(now=None):
+    """Close visits that have gone quiet but never produced a new tick.
+
+    Without this, the LAST visit of every sitting is never recorded — someone
+    opens the app, reads for 4 minutes, and leaves, and nothing fires because
+    a gap is only noticed on the NEXT visit. Called from the metrics render
+    path (once per scrape), which is cheap and needs no scheduler.
+    """
+    try:
+        now = time.monotonic() if now is None else now
+        for netid in list(_visit_last.keys()):
+            last = _visit_last[netid]
+            if now - last > SESSION_GAP_S:
+                start = _visit_start.get(netid, last)
+                _emit_session_span(last - start)
+                _visit_start.pop(netid, None)
+                _visit_last.pop(netid, None)
+    except Exception:
+        pass
 
 # ── Per-user storage histogram ────────────────────────────────────────────
 # Registered like a gauge but rendered as a proper Prometheus histogram: the
