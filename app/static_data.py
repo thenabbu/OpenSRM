@@ -32,6 +32,11 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.9.5", "date": "3 Nov", "title": "Your data refreshes itself",
+     "body": "Opening the dashboard used to show whatever was last fetched, which "
+             "could be hours old, and only the sync button brought in anything "
+             "newer. Now a visit with stale data quietly refreshes it in the "
+             "background, so the numbers you see on arrival are current."},
     {"ver": "v2.9.4", "date": "2 Nov", "title": "The internal address is private again",
      "body": "There is a second, internal name for the site that the edge uses to "
              "reach the server. For a few minutes today a change made the site "
