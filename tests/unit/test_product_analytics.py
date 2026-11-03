@@ -31,7 +31,16 @@ from app import db as DB              # noqa: E402
 FAILS = []
 TOTAL = [0]
 
-NOW = int(time.time())
+def _now():
+    """Clock read at SEED time, never at import.
+
+    Events are anchored to this and the queries compare against
+    strftime('now') at call time, so a value frozen at import drifts
+    relative to the query as the suite runs — a user seeded '0 days
+    ago' slowly becomes 'a few minutes ago' and then crosses a bucket
+    boundary. That produced an intermittent active_24h failure.
+    """
+    return int(time.time())
 
 
 def check(name, fn):
@@ -72,7 +81,7 @@ def _seed():
             ]
             for user, first_d, last_d in rows:
                 for d in ((first_d, last_d) if first_d != last_d else (last_d,)):
-                    ts = NOW - d * 86400
+                    ts = _now() - d * 86400
                     c.execute("INSERT INTO usage_events (ts, day, user, event, target, detail) "
                               "VALUES (?, date(?, 'unixepoch'), ?, 'page_view', 'dashboard', '')",
                               (ts, ts, user))
@@ -80,11 +89,11 @@ def _seed():
             c.execute("INSERT INTO users (netid, password, attendance_json, marks_json, "
                       "subjects_json, scope_json, personal_details_json, exam_schedule_json, "
                       "faculty_map_json, photo_b64, last_fetch) "
-                      "VALUES ('olduser','x','[]','[]','[]','{}','{}','{}','{}',NULL,?)", (NOW - 60,))
+                      "VALUES ('olduser','x','[]','[]','[]','{}','{}','{}','{}',NULL,?)", (_now() - 60,))
             c.execute("INSERT INTO users (netid, password, last_fetch) "
                       "VALUES ('never','x',0)")
             c.execute("INSERT INTO users (netid, password, last_fetch) "
-                      "VALUES ('midnight','x',?)", (NOW - 90000,))
+                      "VALUES ('midnight','x',?)", (_now() - 90000,))
             c.commit()
         finally:
             c.close()
@@ -97,9 +106,12 @@ _seed()
 def t_active_and_new_counts():
     """Active = distinct users in the window; new = first activity inside it.
 
-    Pins the exact arithmetic the panels read: two users active in 24h
-    (olduser, newbie), one of them new, one returning.
+    Pins the exact arithmetic the panels read. Re-seeds first: the events must
+    be anchored to the same instant the query compares against, or a slow run
+    drifts a seeded user across a 24h boundary (this check failed exactly that
+    way once, on a busy machine, while passing on an idle one).
     """
+    _seed()
     with A.app.app_context():
         c = DB.connect()
         try:
@@ -131,6 +143,7 @@ def t_synced_and_total():
 def t_freshness_ages():
     """Freshness is seconds-since, and a zero/absent source must not render
     as the entire Unix epoch (the '56 years' trap)."""
+    _seed()
     with A.app.app_context():
         c = DB.connect()
         try:
@@ -159,6 +172,7 @@ def t_empty_db_ages_are_zero():
 
 # ── provider histogram ───────────────────────────────────────────────────
 def t_user_db_bytes_buckets():
+    _seed()
     counts = OBS._user_db_bytes_buckets()
     assert counts is not None, "provider returned None on a readable DB"
     assert len(counts) == len(OBS._DB_SIZE_BUCKETS)
