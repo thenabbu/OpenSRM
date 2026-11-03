@@ -51,15 +51,21 @@ def _cookies(netid):
 
 
 def _free_port():
-    for port in range(18177, 18189):
-        s = socket.socket()
-        try:
-            s.bind(("127.0.0.1", port))
-            s.close()
-            return port
-        except OSError:
-            s.close()
-    sys.exit("FAIL: no free port in 18177-18188")
+    """A port the OS says is free RIGHT NOW.
+
+    The old version probed 18177-18188, closed the socket, and handed the
+    number to gunicorn later — a TOCTOU window another step (a parallel DUT
+    boot, or the runner's own listeners in that range) can win. That is how
+    this suite went red on CI twice while passing 13/13 locally.
+
+    Binding to port 0 makes the kernel pick an unused ephemeral port, so there
+    is nothing to race against: nobody else can be holding it at the instant
+    it is chosen, and the ephemeral range is not what the DUT harness uses.
+    Everything then checks that the server actually LISTENED there.
+    """
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 # ── seed: two users with stored (empty) data + encrypted password, one none ──
@@ -75,11 +81,34 @@ GUN = os.path.join(os.path.dirname(sys.executable), "gunicorn")
 if not os.path.exists(GUN):
     sys.exit(f"FAIL: no gunicorn next to {sys.executable} (pass VENV)")
 log_path = os.path.join(TMP, "gunicorn.log")
-srv = subprocess.Popen(
-    [GUN, "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{port}", "tests._canary_stub_app:app"],
-    cwd=REPO, env=dict(os.environ, DATA_DIR=TMP),
-    stdout=open(log_path, "w"), stderr=subprocess.STDOUT, start_new_session=True)
 
+
+def _spawn():
+    """Start gunicorn, retrying if the port was taken between probe and bind.
+
+    Choosing a free port and binding later is inherently racy (TOCTOU): the
+    probe closes its socket, and anything in that gap — a parallel DUT boot,
+    another CI step — can take the port, leaving gunicorn dead on arrival.
+    Retrying the whole spawn is the smallest correct answer: the failure mode
+    is detectable (the process exits immediately) and the fix is one more try
+    with a new port. Three attempts is far beyond what a real collision needs.
+    """
+    for attempt in range(3):
+        p = _free_port()
+        proc = subprocess.Popen(
+            [GUN, "-w", "1", "--threads", "4", "-b", f"127.0.0.1:{p}",
+             "tests._canary_stub_app:app"],
+            cwd=REPO, env=dict(os.environ, DATA_DIR=TMP),
+            stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
+            start_new_session=True)
+        time.sleep(1.5)          # bind happens in the first moments
+        if proc.poll() is None:
+            return proc, p
+        print(f"gunicorn died on port {p} (attempt {attempt + 1}) — retrying")
+    sys.exit("FAIL: gunicorn could not bind a port in 3 attempts")
+
+
+srv, port = _spawn()
 base = f"http://127.0.0.1:{port}"
 up = False
 deadline = time.monotonic() + 30
@@ -133,7 +162,8 @@ try:
     #    run from cache — the canary must FAIL loudly (no portal contact)
     #    instead of reporting sync=1 ───────────────────────────────────
     p = run_canary("zz9999")
-    check("cached-answer run exits non-zero", p.returncode != 0, p.returncode)
+    check("cached-answer run exits non-zero", p.returncode != 0,
+          f"rc={p.returncode} stdout={p.stdout} stderr={p.stderr}")
     check("cached-answer run states no portal contact",
           "SYNC_MIN_INTERVAL_S cache" in p.stderr,
           f"stdout={p.stdout} stderr={p.stderr}")
@@ -141,14 +171,16 @@ try:
 
     # ── no stored creds arm ─────────────────────────────────────────────
     p = run_canary("zz9996")
-    check("no-user run exits non-zero", p.returncode != 0, p.returncode)
+    check("no-user run exits non-zero", p.returncode != 0,
+          f"rc={p.returncode} stdout={p.stdout} stderr={p.stderr}")
     check("no-user run states the reason", "no stored creds" in p.stderr,
           f"stdout={p.stdout} stderr={p.stderr}")
     check("cookie deleted after failure", _cookies("zz9996") == 0, _cookies("zz9996"))
 
     # ── empty-parse arm (sync ok, data empty -> canary must still fail) ──
     p = run_canary("zz9997")
-    check("empty-parse run exits non-zero", p.returncode != 0, p.returncode)
+    check("empty-parse run exits non-zero", p.returncode != 0,
+          f"rc={p.returncode} stdout={p.stdout} stderr={p.stderr}")
     check("empty-parse run states the reason", "attendance empty" in p.stderr,
           f"stdout={p.stdout} stderr={p.stderr}")
     check("cookie deleted after empty-parse failure", _cookies("zz9997") == 0, _cookies("zz9997"))
