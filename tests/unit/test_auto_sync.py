@@ -129,12 +129,17 @@ check("the names the kick body imports resolve", _import_error, None)
 # `_run` swallows every exception into a warning log; capture it so a broken
 # import fails the suite instead of passing silently the way prod did.
 _warnings = []
+_infos = []
 auto.log.warning = lambda *a, **k: _warnings.append(a[0] % a[1:])
+auto.log.info = lambda *a, **k: _infos.append(a[0] % a[1:])
 
 
 def _refresh_core(netid, pw, source):
     _ran.append((netid, pw, source))
-    return [{"ok": True}]
+    # The SUCCESS shape _refresh_core actually returns: a bare payload, not a
+    # tuple. A stub that returns a tuple would hide the KeyError(0) this suite
+    # is here to catch.
+    return {"ok": True}
 
 
 # Any name app.py re-exports from the stubbed module has to exist on it, or the
@@ -167,6 +172,8 @@ auto.auto_sync_kick_if_stale("ng2776")
 check("kick body logged no failure", _warnings, [])
 check("kick body ran the refresh (one call)", len(_ran), 1)
 check("kick body passed the decrypted password", _ran[0][1] if _ran else None, "ciphertext")
+check("a successful refresh logs ok=True", any("ok=True" in w for w in _infos), True)
+check("a successful refresh logs no failure", _warnings, [])
 
 # The decrypt itself: a real ciphertext round-trips, and the module the body
 # imports it from is the leaf crypto module (importing it from db is what broke
@@ -174,7 +181,7 @@ check("kick body passed the decrypted password", _ran[0][1] if _ran else None, "
 from app.crypto import encrypt_pw as _enc  # noqa: E402
 check("decrypt_pw round-trips a real ciphertext", _dp(_enc("hunter2")), "hunter2")
 
-print(f"\n{18 - len(fails)}/18 passed")
+print(f"\n{20 - len(fails)}/20 passed")
 if fails:
     print("FAILED:", fails)
     sys.exit(1)
