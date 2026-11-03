@@ -1,52 +1,104 @@
 #!/bin/bash
-# gates.sh — the ONE local pre-push bar. If this exits 0, a push is safe.
+# gates.sh — the ONE local pre-push bar.
 #
-# AGENTS.md points here instead of listing every suite; the suite list itself is
-# derived from tests.yml (see --list), so adding a CI suite never leaves this
-# script behind again.
+# VERDICT RULE (do not weaken): the last line is
+#   GATES GREEN                              -> exit 0, a push is safe
+#   GATES GREEN (PARTIAL: <what>) - not a push bar -> exit 3
+#   GATES RED - fix the failures above …     -> exit 1
+# Anything skipped downgrades the verdict. A run that skipped the browser suites
+# has not proven the push is safe, and must not say that it has.
 #
 # Usage:
-#   bash scripts/gates.sh              # full bar: lint + static gates + unit + e2e
-#   bash scripts/gates.sh --fast       # lint + static gates only (~15 s)
-#   bash scripts/gates.sh --list       # print the suites it would run, exit
+#   bash scripts/gates.sh              # full bar: lint + static + unit + e2e
+#   bash scripts/gates.sh --fast       # lint + static only (~20 s)
+#   bash scripts/gates.sh --list       # the run set AND the CI_ONLY table
 #   bash scripts/gates.sh test_sw ...  # lint + static + only the named suites
 #
 # Env:
-#   VENV   interpreter to use (default .venv). Worktrees have no venv:
+#   VENV   interpreter (default .venv). A worktree has none:
 #          VENV=/opt/data/opensrm-repo/.venv
-#   SKIP_E2E=1  skip the browser suites (they need playwright + a browser)
+#   PLAYWRIGHT_BROWSERS_PATH  required for the e2e set; absent -> PARTIAL
+#   SKIP_E2E=1               skip browsers deliberately -> PARTIAL
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 V=${VENV:-.venv}
 FAIL=0
+SKIPPED=""
+
 # uv/uvx are not on the default PATH in the hermes container; find them anyway.
 for d in /opt/data/home/.local/bin "$HOME/.local/bin" /usr/local/bin; do
   [ -x "$d/uv" ] && PATH="$d:$PATH"
 done
 export PATH
+
+# Suites that exist but are NOT in CI, with the reason. Any suite listed here is
+# excluded from the parity check and from D9 in check_docs.py.
+# Format: name|reason
+read -r -d '' CI_ONLY <<'CIEOF'
+DOCKER_BUILDKIT=1 docker build -t opensrm:ci .|needs a docker daemon and a multi-minute build; CI does this on every PR
+bash scripts/ci_docker_smoke.sh|needs the image built above; CI job "docker"
+uv sync --frozen --extra browser|CI runner setup, not a gate; locally the venv already exists
+.venv/bin/playwright install --only-shell chromium|CI runner setup; locally set PLAYWRIGHT_BROWSERS_PATH instead
+scope_ui_smoke (inside the CI docker job)|needs the built image
+CIEOF
+LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP
+test_fees_dut|FAILS on current main: paid-row vertical rule renders 4px, the layout law says 1px (app CSS, not fixed here)
+test_scope_profile_dut|FAILS on current main: Settings accordion row is not visible when the DUT clicks it (app template, not fixed here)"
+
+
+# The verdict. Called from every exit path so no path can print GREEN after a skip.
+finish() {
+  rm -f /tmp/gate-$$.log /tmp/u-$$.log /tmp/ruff-$$.log /tmp/lock-$$.log \
+        /tmp/css-$$.log /tmp/e2e-$$.log /tmp/e-$$.log 2>/dev/null
+  if [ $FAIL -ne 0 ]; then
+    printf '\n== GATES RED - fix the failures above; this is not a push bar\n'; exit 1
+  fi
+  if [ -n "$SKIPPED" ]; then
+    printf '\n== GATES GREEN (PARTIAL: %s) - not a push bar\n' "$SKIPPED"; exit 3
+  fi
+  printf '\n== GATES GREEN - push is safe\n'; exit 0
+}
+
 step() { printf '\n== %s\n' "$*"; }
 ok()   { printf '   PASS  %s\n' "$*"; }
 bad()  { printf '   FAIL  %s\n' "$*"; FAIL=1; }
-run_step() {                       # name, then the command
-  local name=$1; shift
-  if "$@" >/tmp/gate-$$.log 2>&1; then ok "$name"; else
-    bad "$name"; sed -n '1,40p' /tmp/gate-$$.log | sed 's/^/         /'
-  fi
-}
+skip() { printf '   SKIP  %s\n' "$*"; SKIPPED="${SKIPPED}${SKIPPED:+, }$1"; }
 
-# The e2e suites CI runs, read out of tests.yml — never a second hand-kept list.
+# The suites CI runs through one shared gunicorn, read out of tests.yml.
 e2e_suites() {
-  sed -n '/bash scripts\/ci_e2e_http.sh/,/:eof\|^$/p' .github/workflows/tests.yml \
-    | grep -oE 'test_[a-z_0-9]+' | sort -u
+  sed -n '/scripts\/ci_e2e_http.sh/,/^$/p' .github/workflows/tests.yml \
+    | grep -oE '\btest_[a-z_0-9]+' | grep -v ci_e2e | sort -u
+}
+unit_suites() {
+  sed -n '/^  unit:/,/^  docker:/p' .github/workflows/tests.yml \
+    | grep -oE 'tests/unit/test_[a-z_0-9]+\.py' | sort -u
 }
 
 if [ "${1:-}" = "--list" ]; then
-  echo "unit suites (from tests.yml):"
-  grep -oE 'tests/unit/test_[a-z_0-9]+\.py' .github/workflows/tests.yml | sort -u | sed 's/^/  /'
-  echo
-  echo "e2e suites (from tests.yml):"
+  echo "== run set (derived from .github/workflows/tests.yml)"
+  echo "-- lint"
+  echo "  uvx ruff check app/"
+  echo "  uv lock --check"
+  echo "  bash scripts/build-css.sh  + git diff --exit-code app/static/app.css"
+  echo "-- static gates"
+  echo "  scripts/check_architecture.py"
+  echo "  scripts/check_docs.py"
+  echo "  bash scripts/ci_promtool.sh"
+  echo "  python3 scripts/build_dashboard.py --check"
+  echo "-- unit suites"
+  unit_suites | sed 's/^/  /'
+  echo "-- e2e suites (via scripts/ci_e2e_http.sh)"
   e2e_suites | sed 's/^/  /'
+  echo "  tests/e2e/test_dash_fit.py        (self-booting)"
+  echo "  tests/e2e/test_dut_official_tt.py (self-booting)"
+  echo "  bash tests/e2e/run_push_duts.sh   (boots 18185-18187 itself)"
+  echo
+  echo "== CI_ONLY (CI runs it, gates.sh cannot — with the reason)"
+  printf '%s\n' "$CI_ONLY" | sed 's/^/  /'
+  echo
+  echo "== LOCAL_ONLY (exists on disk, deliberately not in CI)"
+  printf '%s\n' "$LOCAL_ONLY" | sed 's/^/  /'
   exit 0
 fi
 
@@ -54,61 +106,68 @@ if [ "${1:-}" = "--fast" ]; then FAST=1; shift; else FAST=""; fi
 
 # --- 1. Lint (mirrors lint.yml) -------------------------------------------
 step "lint (== CI Lint job)"
-if command -v uvx >/dev/null && uvx --quiet ruff check app/ >/tmp/ruff-$$.log 2>&1; then
-  ok "ruff check app/"
-else
-  bad "ruff check app/"; sed -n '1,40p' /tmp/ruff-$$.log 2>/dev/null | sed 's/^/         /'
+if uvx --quiet ruff check app/ >/tmp/ruff-$$.log 2>&1; then ok "ruff check app/"; else
+  bad "ruff check app/"; sed -n '1,40p' /tmp/ruff-$$.log | sed 's/^/         /'
 fi
 if uv lock --check >/tmp/lock-$$.log 2>&1; then ok "uv lock --check"; else
   bad "uv lock --check (run: uv lock)"; sed -n '1,10p' /tmp/lock-$$.log | sed 's/^/         /'
 fi
-# app.css is committed; a stale build can never ship.
 if bash scripts/build-css.sh >/tmp/css-$$.log 2>&1 && git diff --quiet app/static/app.css; then
   ok "committed app.css is current"
 else
-  bad "app.css stale (run scripts/build-css.sh and commit app/static/app.css)"
+  bad "app.css stale (run scripts/build-css.sh, commit app/static/app.css)"
   sed -n '1,20p' /tmp/css-$$.log | sed 's/^/         /'
 fi
 
-# --- 2. Static gates (cheap, no server) -----------------------------------
+# --- 2. Static gates -------------------------------------------------------
 step "static gates"
-run_step "architecture DAG (check_architecture.py)" \
-  env PYTHONPATH=. "$V/bin/python" scripts/check_architecture.py
-run_step "doc consistency (check_docs.py)" \
-  env PYTHONPATH=. "$V/bin/python" scripts/check_docs.py
-
-[ -n "$FAST" ] && { printf '\n== fast mode: stopping before unit suites\n'; exit $FAIL; }
-
-# --- 3. Unit suites (every one CI runs) -----------------------------------
-step "unit suites (== CI Tests/unit job)"
-if [ $# -gt 0 ]; then SUITES="$*"; else
-  SUITES=$(grep -oE 'tests/unit/test_[a-z_0-9]+\.py' .github/workflows/tests.yml | sort -u)
+run_step() { local n=$1; shift; if "$@" >/tmp/gate-$$.log 2>&1; then ok "$n"; else
+  bad "$n"; sed -n '1,40p' /tmp/gate-$$.log | sed 's/^/         /'; fi; }
+run_step "architecture DAG (check_architecture.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_architecture.py
+run_step "doc consistency (check_docs.py)"          env PYTHONPATH=. "$V/bin/python" scripts/check_docs.py
+if command -v docker >/dev/null 2>&1; then
+  run_step "promtool (observability config + rules)" bash scripts/ci_promtool.sh
+else
+  skip "promtool (no docker)"
 fi
+run_step "dashboard JSON is current (build_dashboard.py --check)" python3 scripts/build_dashboard.py --check
+
+[ -n "$FAST" ] && { finish; }
+
+# --- 3. Unit suites (every one CI runs) ------------------------------------
+step "unit suites (== CI Tests/unit job)"
+if [ $# -gt 0 ]; then SUITES="$*"; else SUITES=$(unit_suites); fi
 for f in $SUITES; do
-  case "$f" in
-    *test_scope_client*|*test_scope_academics*|*test_scope_campus*|\
-    *test_scope_fees*|*test_scope_profile*|*test_hourwise_join*)
-      env PYTHONPATH=. DATA_DIR="$(mktemp -d)" "$V/bin/python" "$f" >/tmp/u-$$.log 2>&1 ;;
-    *) env DATA_DIR="$(mktemp -d)" "$V/bin/python" "$f" >/tmp/u-$$.log 2>&1 ;;
-  esac
-  rc=$?
-  if [ $rc -eq 0 ]; then ok "$(basename "$f")"; else
+  # PYTHONPATH=. for EVERY suite: a harmless superset. Deriving it per-suite
+  # from tests.yml is the alternative, but then a new suite that needs it and
+  # forgets to declare it fails locally and passes in CI — the worst split.
+  env PYTHONPATH=. DATA_DIR="$(mktemp -d)" "$V/bin/python" "$f" >/tmp/u-$$.log 2>&1
+  if [ $? -eq 0 ]; then ok "$(basename "$f")"; else
     bad "$(basename "$f")"; tail -12 /tmp/u-$$.log | sed 's/^/         /'
   fi
 done
 
-# --- 4. Browser DUTs ------------------------------------------------------
-if [ -z "${SKIP_E2E:-}" ] && [ $# -eq 0 ]; then
+# --- 4. Browser DUTs -------------------------------------------------------
+if [ -n "${SKIP_E2E:-}" ]; then
+  skip "e2e (SKIP_E2E=1)"
+elif [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
+  skip "e2e (PLAYWRIGHT_BROWSERS_PATH unset)"
+elif [ $# -gt 0 ]; then
+  skip "e2e (named-suite run)"
+else
   step "e2e browser suites (== CI Tests/e2e job)"
-  if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
-    echo "   SKIP  PLAYWRIGHT_BROWSERS_PATH unset — export it to run browser suites"
+  DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" bash scripts/ci_e2e_http.sh $(e2e_suites) \
+    >/tmp/e2e-$$.log 2>&1 && ok "ci_e2e_http.sh ($(e2e_suites | wc -l) suites)" || {
+    bad "ci_e2e_http.sh"; tail -25 /tmp/e2e-$$.log | sed 's/^/         /'; }
+  for s in test_dash_fit test_dut_official_tt; do
+    env DATA_DIR="$(mktemp -d)" "$V/bin/python" "tests/e2e/$s.py" >/tmp/e-$$.log 2>&1 \
+      && ok "$s" || { bad "$s"; tail -12 /tmp/e-$$.log | sed 's/^/         /'; }
+  done
+  if command -v docker >/dev/null 2>&1; then
+    run_step "push DUTs (run_push_duts.sh)" env VENV="$V" bash tests/e2e/run_push_duts.sh
   else
-    DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" bash scripts/ci_e2e_http.sh $(e2e_suites) \
-      >/tmp/e2e-$$.log 2>&1 && ok "ci_e2e_http.sh ($(e2e_suites | wc -l) suites)" || {
-      bad "ci_e2e_http.sh"; tail -25 /tmp/e2e-$$.log | sed 's/^/         /'; }
+    skip "push DUTs (no docker)"
   fi
 fi
 
-printf '\n== %s\n' "$([ $FAIL -eq 0 ] && echo 'GATES GREEN — push is safe' || echo 'GATES RED — fix the failures above')"
-rm -f /tmp/gate-$$.log /tmp/u-$$.log /tmp/ruff-$$.log /tmp/lock-$$.log /tmp/css-$$.log /tmp/e2e-$$.log
-exit $FAIL
+finish

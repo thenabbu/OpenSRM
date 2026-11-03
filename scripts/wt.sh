@@ -14,6 +14,53 @@ SCRATCH=${SCRATCH:-/opt/data/cache/scratch}
 SLUG=${2:-}
 path_for() { echo "$SCRATCH/$1/wt"; }
 
+# ---------------------------------------------------------------------------
+# Per-worktree git config. EVERY setting here is written into THIS worktree's
+# config.worktree file via extensions.worktreeConfig, so it cannot leak to the
+# canonical checkout or to another agent's worktree -- the whole reason not to
+# use `git config --global` or the shared repo config.
+harden_worktree() {
+  local wt=$1
+  local gitdir hk
+  gitdir=$(git -C "$wt" rev-parse --absolute-git-dir)
+  hk="$gitdir/hooks"
+
+  # MEASURED: a hook dropped in the per-worktree ADMIN dir is never executed --
+  # `git rev-parse --git-path hooks` resolves to the SHARED .git/hooks for every
+  # worktree. The only per-worktree hook mechanism is core.hooksPath, and for
+  # that to stay per-worktree it must live in config.worktree, which requires
+  # extensions.worktreeConfig=true in the SHARED config. So:
+  #   * the opt-in flag is shared (harmless: it enables per-worktree config,
+  #     it does not set anything);
+  #   * core.hooksPath is written with `config --worktree`, which lands in
+  #     .git/worktrees/<name>/config.worktree and is invisible to every other
+  #     worktree and to the canonical checkout.
+  git -C "$wt" config extensions.worktreeConfig true
+  mkdir -p "$hk"
+  git -C "$wt" config --worktree core.hooksPath "$hk"
+
+  cat > "$hk/pre-commit" <<'HOOK'
+#!/usr/bin/env bash
+# Installed by scripts/wt.sh; reached only through this worktree's core.hooksPath.
+top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ "$top" = "/opt/data/opensrm-repo" ]; then
+  echo "REFUSED: committing in the canonical checkout ($top)." >&2
+  echo "         Create a worktree: bash scripts/wt.sh new <slug>" >&2
+  exit 1
+fi
+if git diff --cached --name-only | grep -qE '(^|/)\.env$|credentials|_rsa$'; then
+  echo "REFUSED: a secret-looking path is staged. Unstage it before committing." >&2
+  exit 1
+fi
+HOOK
+  chmod +x "$hk/pre-commit"
+
+  # Commit email: per-worktree too, same config file.
+  git -C "$wt" config --worktree user.email "128571614+thenabbu@users.noreply.github.com"
+  printf '%s' "$hk" > "$wt/.hookdir"
+}
+
+
 case "${1:-list}" in
   new|resume)
     [ -z "$SLUG" ] && { echo "usage: $0 new|resume <slug>" >&2; exit 2; }
@@ -28,6 +75,7 @@ case "${1:-list}" in
       git -C "$REPO" worktree add -b "feat/$SLUG" "$wt" origin/main >/dev/null 2>&1
     fi
     [ -d "$wt" ] || { echo "failed to create $wt" >&2; exit 1; }
+    harden_worktree "$wt"
     echo "$wt"
     ;;
   rm)
