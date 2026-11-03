@@ -32,6 +32,14 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.10.0", "date": "3 Nov", "title": "We can finally see how the app is used",
+     "body": "Until now the monitoring only answered whether the server was healthy - "
+             "never who was using Vela, how long they stayed, or where the time went. "
+             "There is now a usage dashboard behind the scenes that shows new versus "
+             "returning students, how long a visit lasts, which tabs and buttons get used, "
+             "how long a login or refresh actually takes, and how much of that wait is the "
+             "college portal versus the app itself. Nothing new is collected about "
+             "individual students - it counts activity, and accounts stay pseudonymous."},
     {"ver": "v2.9.5", "date": "3 Nov", "title": "Your data refreshes itself",
      "body": "Opening the dashboard used to show whatever was last fetched, which "
              "could be hours old, and only the sync button brought in anything "
