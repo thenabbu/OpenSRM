@@ -65,7 +65,8 @@ def auto_sync_kick_if_stale(netid):
 
         def _run():
             try:
-                from .db import decrypt_pw, user_password
+                from .crypto import decrypt_pw
+                from .db import user_password
                 from .routes_sync import _refresh_core
 
                 cred = user_password(netid)
