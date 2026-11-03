@@ -104,6 +104,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
       - name: test_attendance_view (attendance view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_attendance_view.py
+      - name: test_att_firstpaint (no stale Absences card during a scope sync)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_att_firstpaint.py
       - name: test_feedback (harvester + opt-in plan)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_feedback.py
       - name: test_push_calc (due window + blocks)

@@ -555,7 +555,14 @@ document.addEventListener('click', function(e) {
   if (!body) return;
   var state = body.getAttribute('data-scope-sync') || '';
   if (state !== 'stale' && state !== 'running') return;
-  var tries = 0, MAX_TRIES = 45, delay = 4000, done = false;
+  // Budget: a full 14-op run measured 27-31s, but a slow upstream day plus the
+  // 8s backoff after the 10th try can push a cold first sync past 4 minutes --
+  // the old cap (45 tries) then stopped polling SILENTLY while the server was
+  // still syncing, leaving the page on the pre-sync render forever. Widen to
+  // ~20 min and re-check the body state each tick: the marker JS can't update
+  // (it is server-rendered), but a morph from softRefresh re-renders it, so a
+  // stale/pending attribute with a completed sync means "done" is behind us.
+  var tries = 0, MAX_TRIES = 150, delay = 4000, done = false;
   function poll() {
     if (done || tries++ > MAX_TRIES) return;
     fetch('/api/scope/status', { headers: { 'Accept': 'application/json' } })
