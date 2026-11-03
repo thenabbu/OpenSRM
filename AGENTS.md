@@ -1,323 +1,143 @@
-# AGENTS.md — quickstart for a working agent (OpenSRM)
+# AGENTS.md — repo facts (OpenSRM)
 
-Flask monolith that scrapes the SRM student portal (pure-HTTP pipeline;
-Playwright fallback archived behind `PLAYWRIGHT_FALLBACK`, off by default
-and Chromium is omitted from the shipped image unless built
-`WITH_PLAYWRIGHT=1`) and renders attendance/marks/timetable dashboards.
+Flask monolith that scrapes the SRM student portal over pure HTTP and renders
+attendance / marks / timetable dashboards. Jinja templates + a **pre-compiled**
+Tailwind 4 + daisyUI 5 stylesheet (no runtime CDN). Design rules live in
+`DESIGN.md`; the workflow skill lives outside this repo.
 
-**Release rule:** version lives in the `VERSION` file (read by `app.py` →
-login badge). Keep `VERSION` == `pyproject.toml` == `uv.lock`
-(`tests/unit/test_audit_findings.py` M23 checks this).
+**The one gate that matters:**
+
+```bash
+bash scripts/gates.sh          # lint + static gates + unit + e2e, nothing else needed
+bash scripts/gates.sh --fast   # lint + static gates only (~15 s)
+bash scripts/gates.sh --list   # what it would run, derived from tests.yml
+```
+
+If it exits 0 a push is safe. It reads the suite list out of
+`.github/workflows/tests.yml`, so a suite added to CI is picked up
+automatically — **never hand-maintain a second list of suites in this file.**
 
 ## Where things run
 
-- **Local dev**: repo at `/opt/data/opensrm-repo` (hermes host), venv
-  `.venv` (uv; NEVER npm at runtime — CSS is compiled ahead of time with a
-  pinned Tailwind CLI and committed as `app/static/app.css`
-  (`scripts/build-css.sh`), no runtime CDN; pnpm only for isolated one-off
-  JS tooling, never in the runtime image).
-- **Prod**: lab host, container `opensrm` (compose project at
-  `/docker/opensrm` — the live file lags the repo copy until synced;
-  `docs/runbook.md` Deploy sequences the sync), port `127.0.0.1:8083` +
-  `172.31.0.1:8083` (cloudflared gateway), served at
-  https://srm.200871.xyz via CF tunnel
-  `c2308be7-6527-4da3-a96c-49c4b4c918c0`.
-- **Do NOT touch** `flights.200871.xyz` (DNS/ingress) — another agent owns
-  that subdomain.
+- **Local dev**: repo at `/opt/data/opensrm-repo` on the hermes host, venv
+  `.venv` (managed by `uv`). Never npm at runtime — the CSS is compiled ahead
+  of time by `scripts/build-css.sh` into the committed `app/static/app.css`.
+- **Prod**: lab host, container `opensrm`, compose project `/docker/opensrm`,
+  behind a Cloudflare tunnel at `https://srm.200871.xyz`. Operator detail:
+  `docs/runbook.md`.
+- **Do NOT touch** `flights.200871.xyz` (DNS/ingress) — another agent owns it.
 
 ## Layout
 
 ```
-app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm) + dashboard
-                      # views + route handlers. A FACADE: every name extracted below is
-                      # re-exported here, so `from app.app import X` keeps working. The facade's
-                      # mutable globals (_fernet, CF_EDGE_SECRET, _scrape_lock) are proxied to
-                      # their real module by _FacadeModule, so a runtime rebind from either
-                      # side lands in ONE place — see scripts/check_architecture.py
-app/crypto.py         # LEAF: fernet keys, encrypt/decrypt passwords, data-dir resolution
-app/auth.py           # LEAF: get_current_user, make_session_token, CF edge-trust flags
-app/errors.py         # LEAF: sync_error() + KIND_STATUS (pure data, ZERO imports)
-app/reqctx.py         # LEAF: _client_ip (the rate-limiting identity)
-app/captcha.py        # LEAF: LOGIN_URL, CAPTCHA_JS, the ddddocr solver singleton
-app/portal_control.py # portal concurrency plane: scrape semaphore, login-before-refresh queue,
-                      # per-IP/netid token budget, encrypted portal-cookie cache, _SyncContext
-app/scraper.py        # the portal scraper: persistent browser/loop singletons, captcha login
-                      # loop, _fetch_rich_optimized, fetch_attendance (the sync entry point)
+app/app.py            # create_app() factory (data dir, secret, migrations, OCR prewarm)
+                      # + views, session/auth, portal budget, sync orchestration;
+                      # re-exports every name that moved out
 app/config.py         # AppConfig (frozen dataclass) + from_env(): boot env read ONCE
-                      # (DATA_DIR, OCR_PREWARM); request-time knobs stay env-per-call by design
-app/db.py             # sqlite layer: connect() (pragmas, per-app DB path inside an app context),
-                      # request-scoped db() + teardown, transaction(), repository (all SQL lives here)
-app/blueprints/       # FlatBlueprint route tables (endpoints stay bare): auth · dashboard · marks ·
-                      # timetable · push · feedback · internal — 24 rules → app/app.py views
-                      # (/avatar + /avatar/<name> register at app level; 27 routes total)
-app/security.py       # shared route decorators (require_login — guards views across blueprints)
-app/state.py          # RateLimiter · ProgressTracker · PortalHealth — every in-memory limit behind
-                      # ONE lock with TTL pruning (old module-level names re-exported by app.py)
-app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams, personal,
-                      # feedback (+ shared helpers)
+app/db.py             # sqlite layer: connect(), request-scoped db(), transaction(),
+                      # repository — ALL SQL lives here
+app/blueprints/       # FlatBlueprint route tables (GO: all routes live here, not in app.py):
+                      # auth · dashboard · marks · timetable · push · feedback · internal
+                      # Route inventory: scripts/url_map_dump.py | wc -l
+app/security.py       # shared route decorators (require_login)
+app/state.py          # RateLimiter · ProgressTracker · PortalHealth — every in-memory
+                      # limit behind ONE lock with TTL pruning
+app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, exams,
+                      # personal, feedback
 app/scope/            # SECOND data source — SRM's SCOPE app backend over SOAP:
-                      #   client.py (stdlib-only: double-AES envelope, typed faults)
-                      #   ops.py    (43-operation catalogue + FEATURES: slug → ops, SCOPE_FEATURES)
-                      #   sync.py   (session, hot 30m / cold 24h TTLs, 8-connection pool,
+                      #   client.py (stdlib-only AES envelope, typed faults)
+                      #   ops.py    (43-operation catalogue + FEATURES: slug → ops)
+                      #   sync.py   (session, hot/cold TTLs, connection pool,
                       #              preserve-if-empty; writes users.scope_json)
-app/views/            # dashboard view models: attendance budgets, marks IE derivation, ticker,
-                      # academics/fees/campus (SCOPE-backed), LAYOUT+WIDGETS registries
+app/views/            # dashboard view models: attendance budgets, marks derivation,
+                      # ticker, academics/fees/campus, LAYOUT+WIDGETS registries
 app/http_scraper.py   # pure-HTTP portal pipeline (archived Playwright fallback)
-app/migrations.py     # versioned schema (18 migrations → v18); runs inside create_app()
-app/templates|static/ # daisyUI v5, pre-compiled app.css (pinned Tailwind CLI build via
-                      # scripts/build-css.sh; safelist for render-time classes), theme tokens in
-                      # partials/theme.html
-tests/                # unit/ (42 no-server suites) · e2e/ (22 Playwright DUTs) · _seed/_canary
-                      # helpers + fixtures/ · README.md = the manifest
+app/migrations.py     # versioned schema; runs inside create_app()
+                      # Count them: grep -c '@migration(version=' app/migrations.py
+app/templates|static/ # daisyUI v5, pre-compiled app.css, theme tokens in partials/theme.html
+tests/unit/           # no-server suites
+tests/e2e/            # Playwright DUTs
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
-edge/maintenance/     # CF Worker: branded "under maintenance" page at the edge, survives a
-                      # total lab outage (route in front of the tunnel). ./deploy.sh reproduces it
-ops/observability/    # OPTIONAL metrics stack next to the app (never in the image): Prometheus
-                      # (scrapes GET /internal/metrics with X-Metrics-Token from a 600-mode secret
-                      # file) + Grafana (read-only provisioned dashboard) + Alertmanager
-                      # (webhook -> ntfy); bring-up/panels/alerts: docs/runbook.md
-docs/                 # runbook.md (operator runbook) · audit/ records · push.md · SCANS.md ·
-                      # perf/ · screenshots/ + pr/ (PR evidence) · privacy.md · logos
-scripts/              # generate_push_keys.py · rotate_fernet_key.py · restore_drill.sh ·
-                      # url_map_dump.py (canonical route dump) · check_architecture.py (the import-DAG gate) ·
-                      # pr_preflight.sh · post_deploy.sh ·
-                      # ci_docker_smoke.sh + ci_e2e_http.sh · canary_sync.sh + canary_cookie.py ·
-                      # perf_baseline.py
-VERSION pyproject.toml uv.lock   # release = bump all three together
-.github/workflows/    # tests.yml (unit+docker+e2e, PR gate) + build.yml (image :latest+:VERSION+
-                      # :sha, gated on tests) + lint.yml + scans.yml (report-only); SHA-pinned
-                      # actions; `uv lock --check`
+edge/maintenance/     # CF Worker: branded maintenance page, survives a total lab outage
+ops/observability/    # OPTIONAL metrics stack beside the app (never in the image)
+docs/                 # runbook.md · audit/ · push.md · SCANS.md · perf/ · screenshots/
+scripts/              # build-css.sh · gates.sh · check_docs.py · check_architecture.py ·
+                      # pr_preflight.sh · post_deploy.sh · url_map_dump.py · perf_baseline.py
+.github/workflows/    # tests.yml (unit+docker+e2e, PR gate) · build.yml · lint.yml ·
+                      # scans.yml (report-only); SHA-pinned actions; `uv lock --check`
 ```
 
-## Dev loop (do this every time)
+Suites: run `bash scripts/gates.sh --list`. Counts are deliberately absent —
+they went stale three times. If you need a number, derive it.
+
+## Dev loop
 
 ```bash
 cd /opt/data/opensrm-repo
-uvx --quiet ruff check app/          # == CI lint
-uv lock --check                      # == CI lock check (after pyproject edits run `uv lock` first)
-# scripts/build-css.sh                # after template edits that add new utility classes
-#                                     # (app.css is committed; CI fails if stale)
-
-# pick a FREE port first — 8084/8085 get squatted by other local services:
-python3 -c "import socket;s=socket.socket();s.bind(('127.0.0.1',18099));print('free');s.close()"
-DATA_DIR=/tmp/osrm-dev LOG_LEVEL=DEBUG .venv/bin/gunicorn -w 1 --threads 4 -b 127.0.0.1:<PORT> app.app:app
+uvx --quiet ruff check app/     # scope ruff to the files you edited; never `ruff --fix`
+# scripts/build-css.sh          # after template edits that add utility classes;
+#                               # app.css is committed and CI fails if stale
+bash scripts/gates.sh           # the bar
 ```
 
-Migrations run inside `create_app()` — the module-level `app = create_app()`
-still boots at import, so a fresh `DATA_DIR` = fresh DB, boots clean.
+Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
+8084/8085 get squatted. Migrations run inside `create_app()`.
 
-## Test matrix (all green before push)
+## CI / merge / release
 
-Trailing `# [runner]` = the CI job that runs the suite (`.github/workflows/tests.yml`
-runs every `[unit]` and `[e2e]` row on each PR and each push to `main`; a red
-suite blocks the merge and the `:latest` publish). `[none]` = local only,
-never CI (`test_login_guide_server` performs 7 real portal logins per run;
-the portal caps 10/hour per IP).
-
-```bash
-# ── unit (no server / no browser) ──────────────────────────────────────────
-.venv/bin/python tests/unit/test_audit_findings.py  # [unit] 73/73 static gates: findings, doc claims, pins, version trio
-.venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 (SCOPE fees: receipt head = one clean line, nothing past THRU/Accounted/bank-channel tail; ##-split parser on the real fixture row incl. amount-with-.00 + "13-Aug-2025" date + junk/short rows, dues logic (paid==total+trailing 0 -> 0; synthetic 100/150 -> 50; trailing=50 -> 50; view sum + warning/error level), narration first-clause split never raises on unicode/tab/CR/LF garbage, ledger sorted newest voucherdate first, feature gate off -> no tab (view None + SCOPE_FEATURES env + template {% if fees %} guard) — offline, no server/DB)
-.venv/bin/python scripts/check_architecture.py  # [unit] app-module DAG: no module-level import cycle, leaf modules never import app.app, app.py within its line ratchet (reports call-time back-edges and tail re-exports as allowed)
-.venv/bin/python tests/unit/test_app_factory.py  # [unit] 24/24 create_app factory: boot-env isolation between two apps, route surface + bare endpoint names, gunicorn app.app:app contract, OCR prewarm opt-out
-.venv/bin/python tests/unit/test_exams.py  # [unit] 69/69 official ETT parser + header drift + scribe fallback merge + transition/push events
-.venv/bin/python tests/unit/test_exams_view.py  # [unit] dashboard exam card view model (stamps, labels)
-.venv/bin/python tests/unit/test_tt_history.py  # [unit] 18/18 timetable edit log + break dividers + location preservation
-.venv/bin/python tests/unit/test_tt_hero.py  # [unit] 3/3 NOW-hero keeps the attendance join across the dict hop
-.venv/bin/python tests/unit/test_relogin_save.py  # [unit] 9/9 mid-scrape relogin persists the fresh session + resets portal fail state
-.venv/bin/python tests/unit/test_fernet_rotation.py  # [unit] 39/39 MultiFernet first-key-encrypts, rotate script dry-run/apply/idempotent, no key material in output
-.venv/bin/python tests/unit/test_official_tt.py  # [unit] 53/53 portal formId-10 parser + preserve/drift states, offset contract official==SLOTS, editor archive gate, rim tiers, Now badge
-.venv/bin/python tests/unit/test_sessions.py  # [unit] 16/16 multi-device sessions, expiry-at-read, logout auth lines, prefetch no-op, sha256 digests, cross-site 403 guard
-.venv/bin/python tests/unit/test_scope_client.py  # [unit] 17/17 (SCOPE foundation: envelope byte-identity vs the captured pcap FLOW 18 wire fixture, blob AES round-trip unicode+1KB + FIPS-256 ECB KAT, login UPPERCASE cred transform + no-sid rejection, data_op {studentid:sid, **FINGERPRINT} in app wire order, SCOPE_FEATURES toggles default/all/unknown-slug-ignored/off, ops_for dedup + every FEATURES op in the 43-op catalog, migration m018 fresh-run + idempotent re-runs + column defaults, cold sync with mocked client: {data,ts} store + fetched_at, preserve-if-empty on a failing op + transport fault breaks keeping what landed, alive-empty {Status,Data:""} stored as-is, ScopeAuthError = exactly one relogin then THAT op retried on the new sid, ensure_scope_session logs in when sid missing — offline, no creds, no network)
-.venv/bin/python tests/unit/test_scope_campus.py  # [unit] 13/13 (SCOPE campus tab: the 8 captured alive-empty {Status,Message,Data} fixtures parse to [] never an error and never leak a "No data found" line into the HTML; defensive placement/notification renderer keeps every unknown key value (in a <details> row) with no KeyError, keyword detection title/company/status/date/time/id on lower-cased keys, notification documented names (notificationId/notificationtitle/…) + unknown-key fallback, hostel+transport humanised kv rows, cards in contract order, notifications newest-first; feature gates: each slug off -> only its card(s) gone, all slugs off OR an alive-empty scope -> NO tab-campus panel / navbar button / dock entry in the rendered page) — no server, no network
-.venv/bin/python tests/unit/test_account_delete.py  # [unit] 15/15 account deletion residue (schema-driven), rate limit, auth line, control account survives
-.venv/bin/python tests/unit/test_login_reject.py  # [unit] rejection classifier + quota order + preflight admission + typed kind→status differential
-.venv/bin/python tests/unit/test_state_classes.py  # [unit] 11/11 RateLimiter/ProgressTracker/PortalHealth: TTL pruning, exact caps under threads, cooldown escalation
-.venv/bin/python tests/unit/test_fault_handling.py  # [unit] 12/12 corrupt-row degradation, marks/subjects/attendance preserve-if-empty, errorhandler
-.venv/bin/python tests/unit/test_logging_telemetry.py  # [unit] 10/10 ntfy ERROR/5xx tripwire, kv cause, rotation, control-char scrub
-.venv/bin/python tests/unit/test_metrics.py  # [unit] 10/10 metric series + secret-header auth + usage retention + error= on every >=400 line
-.venv/bin/python tests/unit/test_observability_assets.py  # [unit] 10/10 ops stack guard rails: metric series exist, no PII labels, images pinned, secrets untracked
-.venv/bin/python tests/unit/test_sync_cache.py  # [unit] 6/6 refresh cache window: cached answer with zero portal calls, single-flight join shares one result
-.venv/bin/python tests/unit/test_sync_queue.py  # [unit] 9/9 bounded queue wait, login-ahead-of-refresh, portal-budget buckets, fallback archived by default
-.venv/bin/python tests/unit/test_canary_sync.py  # [unit] 13/13 canary_sync.sh against a self-booting server with the fetch stubbed; cache-window answer fails it
-.venv/bin/python tests/unit/test_marks_view.py  # [unit] marks view model (fmt, IE derivation/conversion, class key)
-.venv/bin/python tests/unit/test_layout.py  # [unit] 25/25 card/widget engine (LAYOUT spans, WIDGETS partials, all-empty card drop, budgets, ticker)
-.venv/bin/python tests/unit/test_hourwise_join.py  # [unit] 13/13 hourwise rows joined to the timetable grid — offline
-.venv/bin/python tests/unit/test_scope_campus.py  # [unit] 14/14 SCOPE campus tab: alive-empty fixtures render as empty, never an error; unknown-key renderer keeps every value; per-slug feature gates — offline, no network
-.venv/bin/python tests/unit/test_scope_fees.py  # [unit] 8/8 SCOPE fees ledger: receipt head, dues math, narration splitting never raises, newest-first, feature gate — offline
-.venv/bin/python tests/unit/test_scope_profile.py  # [unit] 7/7 SCOPE profile enrichment: getPersonalDetails shapes, Settings field merge (portal wins, scope fills gaps), feature gate — offline
-.venv/bin/python tests/unit/test_css_safelist.py  # [unit] 10/10 render-time dynamic class tokens exist in the committed app.css; no CDN origin
-.venv/bin/python tests/unit/test_perf_budget.py  # [unit] 15/15 perf guardrails: zero off-origin hosts, CSP, app.css gzip budget, cache matrix, SW rules
-.venv/bin/python tests/unit/test_attendance_view.py  # [unit] 83/83 attendance view model (frozen table, budgets, join, degrade cases)
-.venv/bin/python tests/unit/test_feedback.py  # [unit] 71/71 feedback harvester, plan preview==payload, fb_open merge contract, closed-window 409, render gates
-.venv/bin/python tests/unit/test_push_calc.py  # [unit] 33/33 due-window edges, blocks/rooms, tz-from-UTC, idempotency, TTL
-.venv/bin/python tests/unit/test_push_store.py # [unit] 28/28 claims/at-most-once, orphan recovery, AST portable-SQL gate
-.venv/bin/python tests/unit/test_push_send.py  # [unit] 16/16 mocked pywebpush: ok / 410-dead-cleanup / 5xx-retry, deadline
-.venv/bin/python tests/unit/test_push_tick.py  # [unit] 27/27 secret auth, dry-run, allowlist, overlap, dead-man metrics, no PII labels
-.venv/bin/python tests/unit/test_push_api.py   # [unit] 42/42 401 style, validation, DB rate caps, test/receipt flows, notification prefs
-.venv/bin/python tests/unit/test_login_guide_static.py    # [unit] 9/9  Login Flow UX Guide (source level, no server)
-.venv/bin/python tests/unit/test_supply_chain.py  # [unit] 26/26 compose OPENSRM_TAG pin, build.yml tags/labels, scans report-only, SHA-pinned actions
-.venv/bin/python tests/unit/test_healthz.py  # [unit] 6/6 /healthz: <=32B, SELECT 1 only, 503 on DB failure, probe demoted to DEBUG
-.venv/bin/python tests/unit/test_db_concurrency.py  # [unit] 14/14 10s busy timeout survives lock holds, journal-mode delete/wal/flip-back via child boots
-.venv/bin/python tests/unit/test_db_layer.py  # [unit] 24/24 request-scoped connection closed by teardown, SAVEPOINT isolation, upsert/preserve contracts
-.venv/bin/python tests/unit/test_scope_academics.py  # [unit] 11/11 (Academics tab: CGPA hand-computed 5-subject case + ROUND_HALF_UP at the x.xx5 edge (Decimal beats banker's round()) + F counts as 0 + grade "-" skipped + unreleased rows skipped + 0-credit rows can't weight, SGPA bucketed by monthyear newest-first, exam-details fixtures -> semester buckets, program-subjects 11 completed / 52 pending split + attempts>1 note, credits view 8 categories + overall 43/163 + latest-EARNED semester (never the future 0/N row) + success fill ONLY at 100%, {Status,Data} envelope empty -> hidden / synthetic -> present (shape-driven), courses op = credit-total cross-check only (16 shared codes, per-semester sums equal), feature gate: disabled/no-data/all-empty -> academics_view None AND no tab rule in the rendered page, seeded scope_json renders all four cards — offline, fabricated netid, temp DB)
-
-.venv/bin/python tests/unit/test_scope_profile.py  # [unit] 7/7 (SCOPE profile enrichment: getPersonalDetails parser — bare dict + per-op {data,ts} + {Status,Data} wrapper, feature-off -> {}; Settings field merge — portal values win / scope fills gaps in the existing groups, empty facultyadvisor+academicadvisor rows ABSENT; feature gate off -> Settings template inputs identical to today, and the profile widget renders only the generated blobatar + name + email + register number (no photo, no course line) — offline, no server, no network)
-
-# ── e2e (Playwright DUTs) ──────────────────────────────────────────────────
-# One gunicorn behind the ci_e2e_http.sh list; self-booting DUTs own theirs.
-# Needs PLAYWRIGHT_BROWSERS_PATH + DUT_BASE — see tests/README.md for the
-# exact per-suite commands and ports.
-bash scripts/ci_e2e_http.sh test_sw test_xss test_navbar test_marks_dut \
-  test_personal test_softrefresh_dut test_touchfeel_dut test_lowtier_dut \
-  test_pull_dut test_perf_budget_e2e test_delete_dut test_att_dut \
-  test_feedback_dut test_feedback_contrast test_login_guide_check
-.venv/bin/python tests/e2e/test_dash_fit.py        # [e2e] dashboard fit: no desktop page scrollbar, uniform grid, fb_open render toggle
-.venv/bin/python tests/e2e/test_dut_official_tt.py # [e2e] official-timetable archive contract + rim tiers + Now badge + no overflow
-.venv/bin/python tests/e2e/test_fees_dut.py       # [e2e] SCOPE fees tab: date|rule|name|amount paid rows, no row dividers + group gapping, ONE collapsed
-                                                     #       Receipts(N) with per-receipt accordions, no all-clear state, no type badges,
-                                                     #       WCAG contrast + geometry at 393x851 and 1280x900 (dues + all-paid arms)
-VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh  # [e2e] test_push_sw + test_push_ui (staggered boots)
-.venv/bin/python tests/e2e/test_login_guide_server.py    # [none] 7 live portal probes — NEVER loop it; green = 0 FAIL
-```
-
-Counts above are the suites' own verdict lines as last verified; if a suite
-reports a different total, trust the run and update the row.
-
-Tests read `DUT_BASE` to point at a different port; `tests/_seed.py` seeds
-the user + payload — and every HTTP suite calls `require_own_server(BASE)`
-first, so a suite pointed at another agent's server (or a dead one, or a
-mismatched `DATA_DIR`) exits 1 with `FAIL[guard]: …` before any
-browser/login work instead of returning a phantom verdict.
-
-## Architecture diagram (docs/architecture.png)
-
-The README's diagram is a pre-rendered image — GitHub's mermaid engine
-cramps blocks (measured: 758px iframe vs 1063px layout) and mermaid v11
-ignores nested `direction`, so images are the only way to control the
-render. Full guideline: `docs/diagrams.md` (design rules, skin tokens,
-arrow semantics, verification checklist — read it before touching a diagram).
-
-```bash
-python3 scripts/build_arch_diagram.py      # regen docs/architecture.html (asserts grid/text/label rules)
-# PNG: python3 <diagram-design skill>/scripts/export_png.py docs/architecture.html docs/architecture.png 2
-#     python3 <diagram-design skill>/scripts/self_check.py docs/architecture.html
-```
-
-Rules that are easy to get wrong: every coord on the 4px grid; no formIds /
-percentages / schema versions / `app/...` paths in boxes (prose and
-Configuration own those); arrow kinds must all appear in the legend; HTTP
-boundaries are bidirectional; config gates (e.g. `SRM_EGRESS_URL`) are named
-in the legend, never drawn as connections. Ship html + png + generator
-together; `test_audit_findings` must stay 73/73.
-
-## Git and release
-
-- **Branches: `main` only** (merged feature branches get deleted local+remote
-  — do the same).
-- Atomic commits; message = finding + evidence + fix + how it was verified.
-- **Commit email MUST be `128571614+thenabbu@users.noreply.github.com`**
-  (GH uid 128571614 — never the Discord uid, or commits don't link).
-- Push → CI green before deploy: **Lint** (`uvx ruff check app/` +
-  `uv lock --check`) · **Tests** (`unit` + `docker` + `e2e`) · **Build &
-  Push** (image → GHCR as `:latest` + `:<VERSION>` + `:<short-sha>`,
-  `needs: [lint, tests]` on `main` so a red suite never pushes `:latest`) ·
-  **Scans** (report-only) · the CodeQL checks the default code-scanning
-  setup runs. A `unit`/`e2e` red on a PR is a real failure, not a flake.
-- Release: bump `VERSION` + `pyproject.toml` → `uv lock` → commit → tag
-  `vX.Y.Z` → push tag → deploy → smoke.
-
-## Prod deploy and smoke
-
-```bash
-ssh lab 'cd /docker/opensrm && docker compose pull && docker compose up -d'
-# Rollback to a released image (CI publishes :<VERSION> next to :latest):
-#   add OPENSRM_TAG=<VERSION> to /docker/opensrm/.env (the PROJECT env file —
-#   compose does NOT read the master /docker/.env for interpolation), then
-#   docker compose pull && docker compose up -d opensrm; unset to ride :latest again.
-# smoke: https://srm.200871.xyz/login → 200; HSTS header present (cf-ray path);
-# GET /healthz → 200 {"status":"ok"} — the endpoint the compose healthcheck polls
-# (no session needed); at LOG_LEVEL=INFO its request lines are DEBUG, so absence
-# from `docker logs opensrm` means the LOG LEVEL, not that the probe stopped
-# (docker inspect opensrm --format '{{.State.Health.Status}}' says 'healthy').
-# /static/sw.js → service-worker-allowed: / + current cache name (see gotchas);
-# POST /api/login/progress {"netid":"ab1234"} → 200, GET → 405.
-# ({"netid":"x"} → 400 by design: NETID_RE is ^[a-z0-9]{2,20}$.)
-# AUTHENTICATED RENDER: mint a cookie for an existing user (make_session_token —
-# returns the raw token for the cookie; since v1.20.3 the cookies row stores its
-# sha256 digest) and assert / → 200 with real row data — /login only proves the
-# shell boots, not that stored-data paths render.
-```
-
-Then `bash scripts/post_deploy.sh` from the checkout — the whole verification
-chain (prod-image SHA == origin/main, changed-static purge, edge MISS +
-byte-identity, authenticated render, cookie cleanup) in one exit code.
-`bash scripts/pr_preflight.sh` is its pre-merge twin (freshness, merge-tree
-conflicts, duplicate migrations, version trio/race, sw-cache docs).
-
-Before touching live DB/SQL: snapshot first (recipe in skill
-`homelab-backup-management`); before compose edits: copy
-`docker-compose.yml.bak-<date>` next to it. Full operator runbook:
-`docs/runbook.md`.
+- **Branches: `main` only.** Merge feature branches, then delete them local and remote.
+- Merge commits, never squash. Atomic commits: finding + evidence + fix + how verified.
+- **Commit email MUST be `128571614+thenabbu@users.noreply.github.com`** or the commit
+  does not link to the account.
+- CI jobs: **Lint** (`ruff` + `uv lock --check` + app.css freshness) · **Tests**
+  (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>` +
+  `:<short-sha>`, `needs: [lint, tests]` on `main`) · **Scans** (report-only).
+  A red `unit`/`e2e` on a PR is a real failure, not a flake.
+- Release = `VERSION` + `pyproject.toml` + `uv.lock` + a `NOTICES` entry **in one commit**,
+  then tag `vX.Y.Z`. `test_audit_findings` reds if the trio and the notice disagree.
+- Deploy is manual and separate from merge approval. `scripts/post_deploy.sh` runs the
+  whole verification chain (prod SHA == main, static purge, authenticated render).
+  `scripts/pr_preflight.sh` is its pre-merge twin.
 
 ## Safety rules (non-negotiable)
 
-- **No secrets in the tree, ever.** The egress gate reads env
-  `SRM_PROXY_TOKEN`. **PROXY_TOKEN rotated 2026-09-28** — current value at
-  `lab:~/.srm_egress_proxy_token` (600); secrets-API PUT is live
-  immediately (verify with DOUBLE quotes — `"$T1"`, single quotes send the
-  literal string).
-- **No portal credentials hardcoded.** Tests mint session cookies, never
-  log in.
-- **Trust CF headers only with `cf-ray`**; HSTS is cf-ray-gated on purpose
-  (plain-HTTP dev).
-- **Rate limits** (all state in `app/state.py`, one lock per structure with
-  TTL pruning on access; memory bound in SECURITY.md):
-  - 3 syncs / 10 min / netid — counted only when the sync actually runs; a
-    queue-timeout/busy/cooldown/budget rejection is free, and so are a
-    refresh served from the last completed sync within
-    `SYNC_MIN_INTERVAL_S` (default 300 s, `0` disables) and a joiner
-    sharing an in-flight sync's result.
-  - 10 / hour / IP login attempts.
-  - Aggregate portal budget 30 / 10 min: full login + preflight share 20
-    (preflight's own cap 10), refresh floor 10, one IP ≤ 6 unauth tokens.
-  - Syncs wait in queue up to `SYNC_QUEUE_WAIT_S` (default 45 s,
-    `0` = refuse immediately), logins ahead of refreshes, position shown as
-    "Waiting for N ahead…" — a waiter past the wait gets the busy 503.
-    `SYNC_MAX_CONCURRENCY` (default 1) sizes the slot pool; the archived
-    Playwright fallback stays serialized at any setting.
-  - Preflight: 30 s per netid, refused when queue depth > 0.
-  - Portal cooldown arms at 3 consecutive fails (5 min, doubling, capped
-    1800 s = 30 min).
+- **No secrets in the tree, ever.** All secrets come from env. The egress gate reads
+  `SRM_PROXY_TOKEN`.
+- **No portal credentials hardcoded.** Tests mint session cookies; they never log in.
+  `test_login_guide_server.py` performs real logins — local only, never in a loop (the
+  portal caps attempts per IP).
+- **Trust CF headers only when `cf-ray` is present.** HSTS is cf-ray-gated on purpose so
+  plain-HTTP dev still works.
+- **Never write PII into the repo** — it is public. Seeds use fabricated identifiers, and
+  `docs/screenshots/` is in scope (the netid renders in the navbar).
+- **Rate limits** all live in `app/state.py`, one lock per structure, TTL pruning on
+  access. Sync quotas, login attempts, the aggregate portal budget, the queue wait and the
+  portal cooldown are all there; read the constants in code, not from this file.
+- Before touching a live DB: snapshot first (`sqlite3 ".backup"`, WAL-safe).
 
-## Gotchas (bitten at least once)
+## Code gotchas
 
-- `ss` doesn't exist on this host — check ports with a python socket bind,
-  not `ss -tln`.
-- Flask test client: pass cookies via `set_cookie`; a `Cookie` header in
-  `headers=` is dropped.
-- Timetable `DAY_ORDER` = full weekday names (`Monday`, not `Mon`).
-- SW cache name (read from `sw.js` — current value v37; test_sw.py derives
-  it) must bump when `app/static/` changes — `test_sw.py` asserts it, and
-  README's architecture section must match (test_audit_findings L37/D58).
-- Editing pyproject without `uv lock` fails CI (`uv lock --check`).
-- Login-page version badge comes from the `VERSION` file, not pyproject
-  directly.
-- SQLite: every connection funnels through `app.db.connect()` (10s busy
-  timeout, `SQLITE_JOURNAL_MODE` env, default `delete`) — never
-  `sqlite3.connect` directly. Request handlers share ONE request-scoped
-  connection (closed by the `teardown_appcontext` hook, even when a handler
-  raises); scripts and background threads own + close their own. Forensic
-  `docker cp` of the DB must copy `srm.db` **plus `-wal` and `-shm`** when
-  WAL is on — or use `sqlite3 ".backup"` (the daily snapshot pipeline
-  already does; it is WAL-safe). Raw `cp` under WAL silently misses recent
-  commits.
-- Two `CF_FULL_TOKEN=` lines exist in lab `/docker/.env` — the real one is
-  the LAST (line 20).
-- The portal login page markup itself contains `captcha` (x17) and
-  `invalid` (Bootstrap `.invalid-feedback`) — never classify a rejection on
-  those tokens or EVERY failure reads as "invalid captcha" (this hid a
-  wrong password behind 3 captcha retries and burned the portal's own
-  3-attempts-per-NetID lockout). Classify on the portal's
-  `<h6 class="alert-heading">Alert</h6>` text;
-  `tests/unit/test_login_reject.py` holds the verbatim strings.
+- **Routes live in `app/blueprints/`, not `app/app.py`.** `grep '@app.route' app/app.py`
+  returns nothing — the blueprints register via `bp.add_url_rule`.
+- `ss` does not exist on this host — check a port with a python socket bind.
+- Flask test client: pass cookies via `set_cookie`; a `Cookie` header in `headers=` is dropped.
+- Timetable `DAY_ORDER` uses full weekday names (`Monday`, not `Mon`).
+- **SW cache name**: read it out of `app/static/sw.js` and bump it whenever
+  `app/static/` changes; `test_sw.py` derives it. Never quote the value in a doc.
+- Editing `pyproject.toml` without `uv lock` fails CI.
+- The login-page version badge reads the `VERSION` file, not `pyproject.toml`.
+- **SQLite**: every connection funnels through `app.db.connect()` (busy timeout, journal
+  mode). Never call `sqlite3.connect` directly. Handlers share one request-scoped
+  connection closed by `teardown_appcontext`; scripts and threads own and close their own.
+  Forensics on a WAL database must copy `-wal` and `-shm` too, or use `.backup`.
+- The portal login page markup itself contains `captcha` and `invalid` — classify a
+  rejection on the alert-heading text, never on those tokens.
+- **`hidden` attribute OR the class, never both** on one node (one visibility mechanism).
+- Editing CSS/JS by script: `grep -c "/\*"` must equal `grep -c "\*/"` afterwards.
+
+## Architecture diagram
+
+`docs/architecture.png` is pre-rendered (GitHub's mermaid engine cramps blocks). Regenerate
+with `python3 scripts/build_arch_diagram.py`, which asserts the grid/label rules and fails
+on an off-edge port, a crossing segment, or a label collision. Read `docs/diagrams.md`
+before touching it. Ship html + png + generator together.
