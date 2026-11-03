@@ -380,6 +380,14 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
     {% endif %}
 
     {% if monthly %}
+    {# A scope sync that has not landed yet must not paint the OLD card: the
+       server only knows hourwise once getHourwiseAttendance is stored, so a
+       first login (or a 30-min-stale blob) rendered "Absences" for the whole
+       sync wait and then swapped it under the user. While the body marker says
+       stale/running, hold the shell and let the client poll fill it in; a
+       deployment with SCOPE off renders 'off' and this block is today's card
+       unchanged. #}
+    <div data-scope-pending class="{% if scope_sync_state in ('stale', 'running') %}hidden{% endif %}">
     <div class="att-h">Absences</div>
     <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5 att-abs-card">
       {% for m in monthly %}
@@ -407,6 +415,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
         {% endif %}
       </div>
       {% endfor %}
+    </div>
     </div>
     {% endif %}
   </div>

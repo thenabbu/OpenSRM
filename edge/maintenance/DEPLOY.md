@@ -31,6 +31,45 @@ Routes cannot be the target of a same-zone `fetch()` call, so the Worker cannot
 fetch the hostname it is attached to. `srm-origin.200871.xyz` points at the same
 tunnel and carries no route, giving the Worker a clean path to the origin.
 
+### `srm-origin` is internal-only: a WAF rule enforces it
+
+Because that hostname carries **no Worker route**, a direct internet hit on it
+skips the Worker entirely (no maintenance page, no `X-Forwarded-Host`) and
+reaches the app with `Host: srm-origin.200871.xyz`. It must not be usable as a
+public back door.
+
+Enforced at the edge by a custom WAF rule (ruleset phase
+`http_request_firewall_custom`):
+
+```
+(http.host eq "srm-origin.200871.xyz") and not any(http.request.headers["cf-worker"][*] ne "")
+  -> block
+```
+
+Cloudflare adds `CF-Worker: 200871.xyz` to a Worker's own subrequest, so the
+Worker still reaches the tunnel during an outage; a browser has no such header
+and gets 403. Verified live: `srm-origin/` -> 403, `srm/healthz` -> 200 and the
+Worker path still returns `x-opensrm-edge: pass`.
+
+Do **not** try to enforce this in app code: after the Worker rewrite *every*
+public request also arrives with `Host: srm-origin`, so the app cannot tell a
+visitor from a bypasser — a guard keyed on Host 404s the whole site (that
+happened twice in 2.9.3/2.9.4).
+
+Recreate the rule (zone WAF edit scope) if the zone is ever rebuilt:
+
+```bash
+curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/rulesets" \
+  -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" -d '{
+  "name": "block direct srm-origin access", "kind": "zone",
+  "phase": "http_request_firewall_custom",
+  "rules": [{"action":"block","enabled":true,
+    "description":"srm-origin is internal-only; allow only Worker subrequests",
+    "expression":"(http.host eq \"srm-origin.200871.xyz\") and not any(http.request.headers[\"cf-worker\"][*] ne \"\")"}]}'
+```
+
+Dashboard equivalent: Security → WAF → Custom rules → Create rule.
+
 ## Files
 
 | File | Role |

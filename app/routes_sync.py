@@ -520,11 +520,21 @@ def _cached_sync_answer(netid, window):
     return {"ok": True, "cached": True, "age_s": int(age)}
 
 
-@require_login
-def api_refresh():
-    # Wall time from the moment the request arrives to the moment this account
-    # gets an answer. Recorded as ONE histogram with a `kind` label because the
-    # three ways this route finishes are three different user experiences and
+def _refresh_core(netid, password, source="request"):
+    """One refresh for an ALREADY-AUTHENTICATED account.
+
+    Split out of api_refresh so the background auto-sync can run the exact
+    same single-flight + cache-window + persist path without a request
+    context (and without duplicating logic that is easy to drift).
+    Caller owns credential loading; this owns the portal work.
+
+    `source` labels the wait histogram: "request" is a student pressing
+    refresh, "auto" is the background stale-refresh. They are different
+    experiences — nobody watches an auto-refresh, so folding its seconds into
+    the user-facing number would overstate what people actually feel.
+    """
+    # Wall time for this account's answer. Recorded as ONE histogram with a
+    # `kind` label because the ways this finishes are different experiences and
     # averaging them hides all of them:
     #   cache  — answered from the last sync, ~1ms, the portal never touched
     #   joined — waited on a sync already running for this same account
@@ -536,21 +546,11 @@ def api_refresh():
     def _wait(kind):
         try:
             metrics.observe("opensrm_refresh_duration_seconds",
-                            time.monotonic() - t_refresh, kind=kind)
+                            time.monotonic() - t_refresh,
+                            kind=kind if source == "request" else f"auto_{kind}")
         except Exception:
             pass
 
-    netid = get_current_user()
-    if not netid:
-        return {"ok": False, "error": "not logged in"}, 401
-    row = user_password(netid)
-    if not row:
-        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
-        return {"ok": False, "error": "no stored creds"}, 401
-    password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
-    if not password:
-        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
-        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
     # single flight: join the sync already running for this account, or
     # become its runner (only the runner ever reaches fetch_attendance, so
     # joiners cost nothing against the per-netid limit)
@@ -618,6 +618,23 @@ def api_refresh():
         with _flights_lock:
             _sync_flights.pop(netid, None)
         flight["done"].set()
+
+
+@require_login
+def api_refresh():
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    row = user_password(netid)
+    if not row:
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
+        return {"ok": False, "error": "no stored creds"}, 401
+    password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
+    if not password:
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
+        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
+    return _refresh_core(netid, password)
+
 
 
 def api_scope_status():
