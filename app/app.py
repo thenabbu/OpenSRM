@@ -1052,17 +1052,42 @@ from .routes_push import (  # noqa: E402,F401 — re-exported
 # beacon must never surface as an error in a student's console.
 _TAB_NAMES = frozenset({"dashboard", "attendance", "timetable", "marks",
                         "campus", "academics", "fees", "tools", "settings"})
+
+# The fixed vocabulary for "what inside a tab did they touch". A CLOSED set is
+# the whole point: `item` arrives from the browser, and an open vocabulary
+# would let any client mint unlimited label values into Prometheus — the exact
+# cardinality explosion the label rules exist to prevent. Anything not listed
+# here is dropped by the 204-always contract. Add an entry when a new
+# interactive element ships; never derive these from the DOM at runtime.
+_ITEM_NAMES = frozenset({
+    "attendance-graph",      # attendance chart / table toggle
+    "attendance-table",
+    "attendance-sort",       # per-subject sort
+    "timetable-day",         # week/day view switch
+    "timetable-subject",     # a subject row opened
+    "marks-component",       # a component's detail expanded
+    "marks-semester",        # semester selector
+    "fees-breakdown",
+    "academics-transcript",
+    "academics-credits",
+    "tools-feedback",        # feedback fill flow
+    "tools-push",            # reminder settings
+    "profile-card",
+    "sync-button",           # the manual refresh control
+    "settings-device",
+})
 _tab_beacon_last = {}   # netid -> monotonic ts, 2s floor per user
 
 
 def track_tab():
-    """POST /api/track/tab  {"tab": "<name>"} -> 204 always."""
+    """POST /api/track/tab  {"tab": "<name>", "item": "<key>"} -> 204 always."""
     try:
         netid = get_current_user()
         if netid:
             d = request.get_json(silent=True)
             tab = d.get("tab") if isinstance(d, dict) else None
             if isinstance(tab, str) and tab in _TAB_NAMES:
+                _track_session_activity(netid)
                 # per-user 2s floor: a keyboard user arrowing across the tab
                 # strip fires one switch per keypress, and ten rows for one
                 # intentional visit pollutes the very number being measured.
@@ -1080,9 +1105,85 @@ def track_tab():
                     metrics.observe("opensrm_tab_render_duration_seconds",
                                     max(0.0, now - getattr(request, "_start_time", now)),
                                     tab=tab)
+                # Item-level interaction: what INSIDE the tab people touch.
+                # Same beacon, one extra optional key — the tab floor above
+                # deliberately does NOT apply, because two different cards in
+                # the same tab within 2s is two real interactions. `item` is
+                # validated against a fixed vocabulary (see _ITEM_NAMES) so a
+                # client cannot mint label values, and the 204 contract means
+                # a junk value is dropped silently rather than erroring.
+                item = d.get("item") if isinstance(d, dict) else None
+                if isinstance(item, str) and item in _ITEM_NAMES:
+                    _track("item_view", target=item, user=netid, detail=tab)
+                    metrics.inc("opensrm_item_views_total", item=item, tab=tab)
     except Exception:
         pass   # telemetry must never break the UI
     return "", 204
+
+
+# ── Visit span: how long one sitting actually lasts ───────────────────────
+# usage_events already stores one row per page view / tab view, so per-VIEW
+# duration is derivable later; what it cannot say is "how long was someone
+# here". A visit is a run of activity with no gap longer than _SESSION_GAP_S.
+# Tracking it in memory is enough: the span is only recorded when a visit
+# ENDS (a gap is observed), so nothing is lost on restart except the visit in
+# flight, which would have been truncated by the restart anyway.
+_SESSION_GAP_S = 1800          # 30 min idle ends a visit
+_visit_start = {}              # netid -> monotonic ts of the first activity
+_visit_last = {}               # netid -> monotonic ts of the latest activity
+
+
+def _track_session_activity(netid, now=None):
+    """Fold one activity tick into the caller's current visit.
+
+    Says nothing to Prometheus until the visit closes; closing emits the span
+    into opensrm_user_session_span_seconds. Cheap: two dict reads/writes.
+    """
+    try:
+        now = time.monotonic() if now is None else now
+        last = _visit_last.get(netid)
+        if last is None or now - last > _SESSION_GAP_S:
+            # a previous visit ended exactly here — record its span first
+            if last is not None:
+                start = _visit_start.get(netid, last)
+                _emit_session_span(last - start)
+            _visit_start[netid] = now
+        # bound the maps like every other per-user limiter in this module
+        if len(_visit_last) > _RATE_CAP:
+            _visit_start.clear()
+            _visit_last.clear()
+            _visit_start[netid] = now
+        _visit_last[netid] = now
+    except Exception:
+        pass
+
+
+def _emit_session_span(seconds):
+    try:
+        metrics.observe("opensrm_user_session_span_seconds", max(0.0, seconds))
+    except Exception:
+        pass
+
+
+def sweep_idle_visits(now=None):
+    """Close visits that have gone quiet but never produced a new tick.
+
+    Without this, the LAST visit of every sitting is never recorded — someone
+    opens the app, reads for 4 minutes, and leaves, and nothing fires because
+    a gap is only noticed on the NEXT visit. Called from the metrics render
+    path (once per scrape), which is cheap and needs no scheduler.
+    """
+    try:
+        now = time.monotonic() if now is None else now
+        for netid in list(_visit_last.keys()):
+            last = _visit_last[netid]
+            if now - last > _SESSION_GAP_S:
+                start = _visit_start.get(netid, last)
+                _emit_session_span(last - start)
+                _visit_start.pop(netid, None)
+                _visit_last.pop(netid, None)
+    except Exception:
+        pass
 
 
 # ── Account deletion ─────────────────────────────────────────────────

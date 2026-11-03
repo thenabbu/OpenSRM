@@ -117,7 +117,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
     </div>
   </div>
   <div class="navbar-end gap-2">
-    <button class="btn btn-ghost btn-sm btn-square" data-refresh aria-label="Refresh">
+    <button class="btn btn-ghost btn-sm btn-square" data-refresh data-track-item="sync-button" aria-label="Refresh">
       <svg class="w-4 h-4 refresh-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
@@ -138,7 +138,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
        The glyph is 20px inside it: 14px read as an afterthought next to the
        wordmark (vision review), and the desktop bar's 16px glyph at 40px target
        is the same ~2:1 glyph:target ratio. #}
-    <button class="btn btn-ghost btn-square min-h-11 w-11 h-11" data-refresh aria-label="Refresh">
+    <button class="btn btn-ghost btn-square min-h-11 w-11 h-11" data-refresh data-track-item="sync-button" aria-label="Refresh">
       <svg class="w-5 h-5 refresh-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.364 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
@@ -728,7 +728,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
             {% if r.meta %}<p class="font-mono text-xs text-base-content/50 break-words">{{ r.meta }}</p>{% endif %}
             {% if r.extras %}
             <details>
-              <summary class="text-xs text-base-content/60 cursor-pointer select-none hover:text-base-content/70">Details</summary>
+              <summary class="text-xs text-base-content/60 cursor-pointer select-none hover:text-base-content/70" data-track-item="marks-component">Details</summary>
               <dl class="mt-1 flex flex-col gap-1">
                 {% for k, v in r.extras %}
                 <div class="flex items-baseline justify-between gap-3">
@@ -766,7 +766,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
         {% if academics.cgpa.sems %}
         <div class="mt-4 pt-3 border-t border-base-300 flex flex-col">
           {% for s in academics.cgpa.sems %}
-          <details class="acad-sem{% if s.provisional or s.revaluation %} acad-sem-x{% endif %}">
+          <details class="acad-sem{% if s.provisional or s.revaluation %} acad-sem-x{% endif %}" data-track-item="academics-transcript">
             <summary class="flex items-center justify-between gap-2 min-h-11 py-2 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
               {# Summary keeps the semester on the left and the released month-year on
                  the right only; SGPA lives in the expanded body with the credits and

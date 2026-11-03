@@ -10,6 +10,7 @@ feature — and a future metrics change should not touch push code.
 import hmac
 import logging
 import os
+import time
 
 from flask import request
 
@@ -67,6 +68,14 @@ def internal_metrics():
     if not secret or not tok_ok:
         log_with_kv(log_metrics, logging.WARNING, "metrics auth failed", ip=_client_ip())
         return _bare(401, "metrics auth failed — secret missing or wrong")
+    # Close visits that have gone idle so their span is counted even when the
+    # student simply stopped (no later tick to notice the gap). One scrape per
+    # 30s is exactly the right cadence for a 30-minute idle threshold.
+    try:
+        from .app import sweep_idle_visits
+        sweep_idle_visits()
+    except Exception:
+        pass
     return metrics.render(), 200, {"Content-Type": "text/plain; version=0.0.4"}
 
 
@@ -169,3 +178,167 @@ metrics.gauge("opensrm_rows_users", lambda: _db_stat(_count("users")))
 metrics.gauge("opensrm_rows_push_subscriptions", lambda: _db_stat(_count("push_subscriptions")))
 metrics.gauge("opensrm_rows_push_sent_log", lambda: _db_stat(_count("push_sent_log")))
 metrics.gauge("opensrm_rows_usage_events", lambda: _db_stat(_count("usage_events")))
+
+
+# ── Product analytics, derived from data SQLite already holds ─────────────
+# Every gauge below reads a table the app has been writing since early
+# migrations (users, cookies, usage_events). Each one is a RENDER-TIME query
+# against a private short-lived connection (_db_stat), so a scrape costs one
+# small SELECT and NEVER adds a write on a student's request path.
+#
+# Why gauges instead of counters: a counter accumulates from process start,
+# so a restart silently resets "how many users exist" to zero and the panel
+# lies for the rest of the day. These are properties of the DATABASE, not of
+# this process, so they are read fresh on every scrape.
+#
+# All of them are plain numbers with NO per-user label, so none of them can
+# leak a netid into a LAN-served dashboard (see the `uid` rule in
+# app/metrics.py). Per-user breakdowns that Grafana cannot hold here without
+# exploding cardinality are served as a distribution instead — see
+# opensrm_user_db_bytes_bucket below.
+
+
+def _distinct_users(c):
+    return c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def _active_users_24h(c):
+    """Distinct people who did ANYTHING in the last 24h.
+
+    The live counter opensrm_active_users_total{uid} answers "who is on right
+    now" but resets on every deploy and double-counts an event per user, so it
+    cannot answer "how many people used the app today". This reads usage_events
+    directly: one row per event, one user column, a 24h floor on ts.
+    """
+    return c.execute("SELECT COUNT(DISTINCT user) FROM usage_events "
+                     "WHERE ts >= strftime('%s','now') - 86400 "
+                     "AND user != ''").fetchone()[0]
+
+
+def _active_users_7d(c):
+    return c.execute("SELECT COUNT(DISTINCT user) FROM usage_events "
+                     "WHERE ts >= strftime('%s','now') - 7*86400 "
+                     "AND user != ''").fetchone()[0]
+
+
+def _new_users_24h(c):
+    """First-time users: accounts whose EARLIEST usage event is within 24h.
+
+    This is "first time login" in the sense the dashboard needs — the moment
+    they first did anything. A user row created but never used does not count,
+    and an existing account that finally opened the app DOES, which is what
+    "new users came" means when reading a growth curve.
+    """
+    return c.execute(
+        "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
+        "WHERE user != '' GROUP BY user HAVING first_ts >= strftime('%s','now') - 86400)"
+    ).fetchone()[0]
+
+
+def _new_users_7d(c):
+    return c.execute(
+        "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
+        "WHERE user != '' GROUP BY user HAVING first_ts >= strftime('%s','now') - 7*86400)"
+    ).fetchone()[0]
+
+
+def _returning_users_24h(c):
+    """Active in the last 24h, but NOT first-timers: the loyalty number."""
+    return c.execute(
+        "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
+        "WHERE user != '' GROUP BY user HAVING MAX(ts) >= strftime('%s','now') - 86400 "
+        "AND first_ts < strftime('%s','now') - 86400)"
+    ).fetchone()[0]
+
+
+def _sessions_open(c):
+    """Live login sessions in the cookies table (read-time expiry, so a row
+    older than SESSION_MAX_AGE is already dead even if it is still present)."""
+    return c.execute("SELECT COUNT(*) FROM cookies WHERE created > strftime('%s','now') - 2592000").fetchone()[0]
+
+
+def _users_with_data(c):
+    """Accounts that have actually synced at least once (last_fetch set)."""
+    return c.execute("SELECT COUNT(*) FROM users WHERE last_fetch > 0").fetchone()[0]
+
+
+def _last_sync_age_seconds(c):
+    """Seconds since ANY user last completed a sync. The stale-data alarm:
+    if this climbs past a day the whole product is frozen even though the
+    process looks healthy."""
+    row = c.execute("SELECT MAX(last_fetch) FROM users").fetchone()
+    ts = int(row[0] or 0) if row else 0
+    if ts <= 0:
+        return 0.0
+    return float(max(0, time.time() - ts))
+
+
+def _last_usage_event_age(c):
+    """Seconds since the newest usage_events row. Proves telemetry is alive:
+    a meter that stops moving is the difference between 'quiet' and 'broken'."""
+    row = c.execute("SELECT MAX(ts) FROM usage_events").fetchone()
+    ts = int(row[0] or 0) if row else 0
+    if ts <= 0:
+        return 0.0
+    return float(max(0, time.time() - ts))
+
+
+# Per-user storage is bucketed, never labelled per user: a per-account size in
+# a public, LAN-served dashboard is the same PII leak as a netid label. The
+# buckets answer "how big is a typical user" and "is anyone an outlier".
+# Range 16KB..4MB — a synced student sits around 100-600KB (attendance + marks
+# + subjects + timetable + SCOPE blobs together).
+_DB_SIZE_BUCKETS = (16384, 32768, 65536, 131072, 262144, 524288,
+                    1048576, 2097152, 4194304)
+
+
+def _user_row_bytes_sql():
+    """Bytes a single user occupies: the sum of the JSON blobs on their row.
+    Every column is COALESCEd because a never-synced account has NULLs, and
+    NULL + anything is NULL, which would silently drop that user from every
+    bucket instead of counting them at the bottom."""
+    return ("SELECT COALESCE(length(attendance_json),0) + "
+            "COALESCE(length(marks_json),0) + "
+            "COALESCE(length(subjects_json),0) + "
+            "COALESCE(length(scope_json),0) + "
+            "COALESCE(length(personal_details_json),0) + "
+            "COALESCE(length(exam_schedule_json),0) + "
+            "COALESCE(length(faculty_map_json),0) + "
+            "COALESCE(length(photo_b64),0) FROM users")
+
+
+def _user_db_bytes_buckets():
+    """Cumulative count of users at-or-below each size bucket, or None.
+
+    One full scan of `users` (one row per student) per scrape is cheaper than
+    any index would be at this size, and it never touches the request path.
+    """
+    try:
+        c = dbmod.connect()
+        try:
+            rows = [int(r[0] or 0) for r in c.execute(_user_row_bytes_sql())]
+        finally:
+            c.close()
+        return [sum(1 for v in rows if v <= le) for le in _DB_SIZE_BUCKETS]
+    except Exception:
+        return None
+
+
+metrics.gauge("opensrm_users_total", lambda: _db_stat(_distinct_users))
+metrics.gauge("opensrm_users_synced_total", lambda: _db_stat(_users_with_data))
+metrics.gauge("opensrm_auth_sessions_active", lambda: _db_stat(_sessions_open))
+metrics.gauge("opensrm_users_active_24h", lambda: _db_stat(_active_users_24h))
+metrics.gauge("opensrm_users_active_7d", lambda: _db_stat(_active_users_7d))
+metrics.gauge("opensrm_users_new_24h", lambda: _db_stat(_new_users_24h))
+metrics.gauge("opensrm_users_new_7d", lambda: _db_stat(_new_users_7d))
+metrics.gauge("opensrm_users_returning_24h", lambda: _db_stat(_returning_users_24h))
+metrics.gauge("opensrm_last_sync_age_seconds", lambda: _db_stat(_last_sync_age_seconds))
+metrics.gauge("opensrm_last_usage_event_age_seconds", lambda: _db_stat(_last_usage_event_age))
+
+
+# ── Per-user storage histogram ────────────────────────────────────────────
+# Registered like a gauge but rendered as a proper Prometheus histogram: the
+# bucket boundaries are fixed at import, the cumulative counts are recomputed
+# per scrape from the live row sizes.
+metrics.histogram_provider("opensrm_user_db_bytes",
+                           _user_db_bytes_buckets, _DB_SIZE_BUCKETS)

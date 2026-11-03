@@ -424,6 +424,13 @@ def api_login():
     log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
+    # The wait a FIRST-TIME user actually feels. Kept out of the shared sync
+    # phase span on purpose: a login fetches every cold op through Playwright
+    # plus the full SCOPE set, so its distribution looks nothing like a warm
+    # refresh. Mixing them averages a 3s refresh with a 40s cold login and
+    # makes both numbers useless.
+    metrics.observe("opensrm_login_duration_seconds", login_ms / 1000.0)
+
     # Hot/cold + audit B6: empty/absent fetch keys preserve stored cold data
     # (single shared contract — see _merge_fetch_result); the one copy of
     # the upsert now lives in persist_sync, password passed so the row is
@@ -515,6 +522,24 @@ def _cached_sync_answer(netid, window):
 
 @require_login
 def api_refresh():
+    # Wall time from the moment the request arrives to the moment this account
+    # gets an answer. Recorded as ONE histogram with a `kind` label because the
+    # three ways this route finishes are three different user experiences and
+    # averaging them hides all of them:
+    #   cache  — answered from the last sync, ~1ms, the portal never touched
+    #   joined — waited on a sync already running for this same account
+    #   synced — did the full portal + SCOPE round trip
+    # Only `synced` is "how long does a real sync take"; `cache` is the number
+    # that proves the caching is doing its job.
+    t_refresh = time.monotonic()
+
+    def _wait(kind):
+        try:
+            metrics.observe("opensrm_refresh_duration_seconds",
+                            time.monotonic() - t_refresh, kind=kind)
+        except Exception:
+            pass
+
     netid = get_current_user()
     if not netid:
         return {"ok": False, "error": "not logged in"}, 401
@@ -547,10 +572,12 @@ def api_refresh():
             # failures rebuilt {ok, error} with the same typed status — kind
             # and retry_after stay server-side (routes never expose them)
             jr = flight["res"]
+            _wait("joined")
             if jr.get("ok"):
                 return jr
             return {"ok": False, "error": jr["error"]}, sync_status(jr)
         # runner outlived the join wait — today's busy answer, also free
+        _wait("joined_timeout")
         err = sync_error("busy", "Sync in progress. Try again in about a minute.", retry_after=60)
         return {"ok": False, "error": err["error"]}, sync_status(err)
     try:
@@ -562,6 +589,7 @@ def api_refresh():
         cached = _cached_sync_answer(netid, _sync_min_interval_s())
         if cached is not None:
             flight["res"] = cached
+            _wait("cache")
             return cached
         res = fetch_attendance(netid, password, authorized=True)  # owner session: draws the reserved auth floor
         if not res["ok"]:
@@ -571,6 +599,7 @@ def api_refresh():
             log_with_kv(log_auth, logging.WARNING, "refresh failed", netid=netid,
                         error=res["error"][:80])
             _track("sync_fail", detail=res["error"][:60], user=netid)
+            _wait("synced_failed")
             # audit F4: match /api/login's status-code discipline
             flight["res"] = res   # typed result — joiners rebuild {ok, error} + typed status
             return {"ok": False, "error": res["error"]}, sync_status(res)
@@ -581,6 +610,7 @@ def api_refresh():
         # inside the refresh response
         _scope_sync_trigger(netid, password)
         flight["res"] = {"ok": True}
+        _wait("synced")
         return {"ok": True}
     finally:
         # publish the result before the flight leaves the map: a joiner
