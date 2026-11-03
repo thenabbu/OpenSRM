@@ -2767,7 +2767,7 @@
     {
       "id": 55,
       "type": "stat",
-      "title": "How many new people arrived?",
+      "title": "How many new people?",
       "description": "First-time users: accounts whose very first activity was in the last 24h and in the last 7 days. This is the growth number \u2014 a steady zero while total stays flat means nobody new is arriving.",
       "gridPos": {
         "h": 4,
@@ -2951,7 +2951,7 @@
     {
       "id": 58,
       "type": "stat",
-      "title": "How many people are active?",
+      "title": "How many are active?",
       "description": "Distinct people in three windows. The sources differ on purpose: 'right now' is live in-process activity, while the 24h and 7d numbers are read from the event table. Right after a deploy the live count can briefly read lower than 'active in 24h' \u2014 that is a restart artefact, not a contradiction.",
       "gridPos": {
         "h": 4,
@@ -3122,7 +3122,7 @@
       },
       "targets": [
         {
-          "expr": "label_replace(label_replace(label_replace(label_replace(increase(opensrm_events_total{event=~\"page_view|tab_view|item_view|login_ok|login_fail|sync_ok|sync_fail|sync_cached|feedback_fill_ok|feedback_fill_fail\"}[1h]), \"event\", \"opened the app\", \"event\", \"page_view\"), \"event\", \"switched tab\", \"event\", \"tab_view\"), \"event\", \"clicked something\", \"event\", \"item_view\"), \"event\", \"synced fresh data\", \"event\", \"sync_ok\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(increase(opensrm_events_total{event=~\"page_view|tab_view|item_view|login_ok|login_fail|sync_ok|sync_fail|sync_cached|feedback_fill_ok|feedback_fill_fail\"}[1h]), \"event\", \"opened the app\", \"event\", \"page_view\"), \"event\", \"switched tab\", \"event\", \"tab_view\"), \"event\", \"clicked something\", \"event\", \"item_view\"), \"event\", \"logged in\", \"event\", \"login_ok\"), \"event\", \"login failed\", \"event\", \"login_fail\"), \"event\", \"synced fresh data\", \"event\", \"sync_ok\"), \"event\", \"sync failed\", \"event\", \"sync_fail\"), \"event\", \"refreshed from cache\", \"event\", \"sync_cached\"), \"event\", \"submitted feedback\", \"event\", \"feedback_fill_ok\"), \"event\", \"feedback failed\", \"event\", \"feedback_fill_fail\")",
           "legendFormat": "{{event}}",
           "refId": "A",
           "datasource": {

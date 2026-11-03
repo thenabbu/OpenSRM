@@ -365,12 +365,30 @@ add("Row counts",
 # is what actually decides what to build next. Titles are written as the
 # question being asked, and descriptions say what a number MEANS rather than
 # naming the metric — a dashboard nobody can read is a dashboard nobody opens.
+# Display names for the usage event ids. One label_replace per id, generated
+# here so a new event id is one line rather than a hand-nested expression.
+_PLAIN_EVENT_NAMES = {
+    "page_view": "opened the app",
+    "tab_view": "switched tab",
+    "item_view": "clicked something",
+    "login_ok": "logged in",
+    "login_fail": "login failed",
+    "sync_ok": "synced fresh data",
+    "sync_fail": "sync failed",
+    "sync_cached": "refreshed from cache",
+    "feedback_fill_ok": "submitted feedback",
+    "feedback_fill_fail": "feedback failed",
+}
+_PLAIN_EVENTS = "increase(opensrm_events_total{event=~\"" + "|".join(_PLAIN_EVENT_NAMES) + "\"}[1h])"
+for _id, _label in _PLAIN_EVENT_NAMES.items():
+    _PLAIN_EVENTS = (f'label_replace({_PLAIN_EVENTS}, "event", "{_label}", "event", "{_id}")')
+
 row("Who uses it",
     "New vs returning vs total people, how long a visit lasts, and what they touch. "
     "Read this row left-to-right: how many came, did they stay, what did they do. "
     "Per-person labels are a short hash (u + sha256[:10]) — never a netid.")
 
-add("How many new people arrived?", "First-time users: accounts whose very first activity was in the last 24h "
+add("How many new people?", "First-time users: accounts whose very first activity was in the last 24h "
     "and in the last 7 days. This is the growth number — a steady zero while total stays flat "
     "means nobody new is arriving.",
     [("opensrm_users_new_24h", "in the last 24h"), ("opensrm_users_new_7d", "in the last 7 days")],
@@ -385,7 +403,7 @@ add("How many accounts exist?", "Every account in the database, and how many hav
     "— the most expensive kind of dropout.",
     [("opensrm_users_total", "accounts"), ("opensrm_users_synced_total", "synced at least once")],
     kind="stat", w=6, h=4, stat_calc="lastNotNull")
-add("How many people are active?", "Distinct people in three windows. The sources differ on purpose: "
+add("How many are active?", "Distinct people in three windows. The sources differ on purpose: "
     "'right now' is live in-process activity, while the 24h and 7d numbers are read from the event "
     "table. Right after a deploy the live count can briefly read lower than 'active in 24h' — that is "
     "a restart artefact, not a contradiction.",
@@ -400,8 +418,10 @@ add("When are people using it?", "How many distinct people were active each hour
     w=12, h=8)
 add("What are people doing?", "Every event the app records, split by type, named in plain words "
     "rather than by the internal event id.",
-    [('label_replace(label_replace(label_replace(label_replace(increase(opensrm_events_total{event=~"page_view|tab_view|item_view|login_ok|login_fail|sync_ok|sync_fail|sync_cached|feedback_fill_ok|feedback_fill_fail"}[1h]), "event", "opened the app", "event", "page_view"), "event", "switched tab", "event", "tab_view"), "event", "clicked something", "event", "item_view")'
-      ', "event", "synced fresh data", "event", "sync_ok")', "{{event}}")],
+    # Every event name is renamed for display with a chain of label_replace —
+    # a raw id like sync_cached means nothing to the person reading this, and
+    # an unrenamed name is how the first pass shipped half-plain legends.
+    [(_PLAIN_EVENTS, "{{event}}")],
     w=12, h=8)
 
 add("How long does a visit last?", "From someone's first click to their last, with a 30-minute idle gap "
