@@ -132,6 +132,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_cross_site_guard.py
       - name: test_auto_sync (dashboard refreshes stale portal data)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_auto_sync.py
+      - name: test_product_analytics (visit beacon + analytics recording)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_product_analytics.py
       - name: test_scope_client (SCOPE wire, toggles, m018, cold sync, Tools gate)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_client.py
       - name: test_scope_academics (Academics tab, CGPA math + feature gate)
