@@ -252,6 +252,42 @@ function switchTab(name, btn, byKeyboard) {
   // move focus (Safari never focuses buttons on tap; keep all platforms alike)
   if (byKeyboard && btn && btn.offsetParent) btn.focus();
 }
+
+// ── Item-level interaction beacon ─────────────────────────────────────────
+// "Which tab" is already measured; "what inside the tab" is not, and adding a
+// listener per widget would rot the moment markup changes. One delegated
+// click handler instead: any element carrying data-track-item reports itself,
+// and the server holds the closed vocabulary of valid names (an unknown value
+// is dropped there, so a stale attribute can never mint a new label).
+// Fire-and-forget with keepalive, wrapped — telemetry must never break a click.
+(function () {
+  var ITEM_TAB = {  // which tab a given item belongs to, for the beacon body
+    'attendance-graph': 'attendance', 'attendance-table': 'attendance',
+    'attendance-sort': 'attendance',
+    'timetable-day': 'timetable', 'timetable-subject': 'timetable',
+    'marks-component': 'marks', 'marks-semester': 'marks',
+    'fees-breakdown': 'fees',
+    'academics-transcript': 'academics', 'academics-credits': 'academics',
+    'tools-feedback': 'tools', 'tools-push': 'tools',
+    'profile-card': 'dashboard', 'sync-button': 'dashboard',
+    'settings-device': 'settings'
+  };
+  document.addEventListener('click', function (ev) {
+    try {
+      var el = ev.target && ev.target.closest ? ev.target.closest('[data-track-item]') : null;
+      if (!el || !self.fetch) return;
+      var item = el.getAttribute('data-track-item');
+      if (!item) return;
+      self.fetch('/api/track/tab', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tab: ITEM_TAB[item] || 'dashboard', item: item}),
+        keepalive: true,
+        credentials: 'same-origin'
+      }).catch(function () {});
+    } catch (e) {}
+  }, {passive: true});
+})();
 var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
 tabButtons.forEach(function(b) {
   b.addEventListener('click', function() { switchTab(b.dataset.tab, b); });

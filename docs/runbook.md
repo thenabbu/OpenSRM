@@ -222,7 +222,7 @@ defaults; `CANARY_BASE`/`CANARY_MINT`/`CANARY_CHECK`/`CANARY_DROP` override
 each leg — that is also how its unit test runs offline.)
 
 **`GET /internal/metrics`** — Prometheus text exposition of everything the app
-measures, in eight groups; no PII in any label (verified by
+measures, in eleven groups; no PII in any label (verified by
 `tests/unit/test_observability_assets.py`, which asserts no netid/user/ip
 label reaches any observability asset):
 
@@ -236,6 +236,11 @@ label reaches any observability asset):
 | Users | `opensrm_events_total` (event, target, uid), `opensrm_active_users_total` (uid) — `uid` is `u` + sha256(netid)[:10], never the netid itself |
 | Tabs | `opensrm_events_total{event="tab_view"}`, `opensrm_tab_render_duration_seconds` — tabs switch client-side, so this comes from a beacon (`POST /api/track/tab`), not a page load |
 | Sync cost | `opensrm_sync_phase_duration_seconds` (phase=portal|scope|persist), `opensrm_sync_phase_ops_total` — one sync split by data source |
+| Wait time | `opensrm_login_duration_seconds` (a cold first login), `opensrm_refresh_duration_seconds{kind}` (cache / joined / joined_timeout / synced / synced_failed) — a first login and a cache-hit refresh are different experiences, so they are never averaged together |
+| SCOPE per op | `opensrm_scope_op_duration_seconds{op}`, `opensrm_scope_op_total{op,outcome}` — which SOAP operation owns the seconds, and how each one ended |
+| Product | `opensrm_users_total`, `_users_synced_total`, `_users_active_{24h,7d}`, `_users_new_{24h,7d}`, `_users_returning_24h`, `_auth_sessions_active` — read from `usage_events`/`users`/`cookies` at scrape time, so they survive a redeploy (a counter would reset to 0 and lie for the rest of the day) |
+| Visits & items | `opensrm_user_session_span_seconds` (a visit is activity with no 30-min gap; closed by the next tick or by the scrape sweep), `opensrm_item_views_total{item,tab}` — from the same `POST /api/track/tab` beacon, against a closed vocabulary (`_ITEM_NAMES`) so a stale attribute cannot mint label values |
+| Storage & freshness | `opensrm_user_db_bytes` (a HISTOGRAM of per-account storage, never a per-user label — a per-account size in a public dashboard is the same leak as a netid), `opensrm_last_sync_age_seconds`, `opensrm_last_usage_event_age_seconds` |
 | Process | `opensrm_process_rss_bytes`, `opensrm_process_threads` |
 
 Guarded by the `X-Metrics-Token` header matching `METRICS_SECRET`; **unset =

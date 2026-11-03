@@ -177,18 +177,68 @@ def t_dashboard_valid():
     assert len(ids) == len(set(ids)), f"duplicate panel ids: {ids}"
     assert all(isinstance(i, int) for i in ids), f"non-integer panel ids: {ids}"
     # The budget exists to stop a dashboard ballooning into an unreadable
-    # wall. It lives at 40 because the dashboard is deliberately organised as
-    # eight collapsible subsystem ROWS (liveness / HTTP / portal sync /
-    # SCOPE / push / users+usage / sync cost / database) — a row plus its
-    # panels per subsystem. Raising it
-    # means a new subsystem was added; padding an existing one is the thing
-    # this ceiling is meant to catch.
-    assert 1 <= len(dash["panels"]) <= 60, \
-        f"panel budget is 60 (8 subsystem rows), found {len(dash['panels'])}"
+    # wall. It is derived from the ROW count rather than a magic total, so
+    # adding a real subsystem row (which legitimately brings ~8-12 panels) is
+    # a normal change, while padding an existing row past ~10 panels still
+    # fails here — padding is the thing this ceiling is meant to catch.
+    rows = [p for p in dash["panels"] if p.get("type") == "row"]
+    budget = 60 + max(0, len(rows) - 8) * 12
+    assert 1 <= len(dash["panels"]) <= budget, \
+        f"panel budget is {budget} ({len(rows)} rows), found {len(dash['panels'])}"
     for p in dash["panels"]:
         for t in p.get("targets", []):
             assert re.search(r"opensrm_[a-z0-9_]+|\bup\{", t["expr"]), \
                 f"panel {p['id']} expr references no opensrm_/up series: {t['expr']!r}"
+    # Every LABEL a panel filters on must exist in the app's source. A panel
+    # filtering `status=~"5.."` when the app publishes `status_class` is not an
+    # error to Prometheus or Grafana — it simply matches nothing, and the panel
+    # renders empty forever behind a green gate. That is how one panel here sat
+    # dead: the series was right, the label name was invented. `le` is
+    # reserved by Prometheus for histogram buckets and is not in the source.
+    src = ""
+    for root, _dirs, files in os.walk(os.path.join(REPO, "app")):
+        for f in sorted(files):
+            if f.endswith(".py"):
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    src += fh.read()
+    used = set()
+    for p in dash["panels"]:
+        for t in p.get("targets", []):
+            for name in re.findall(r'\{([^}]*)\}', t["expr"]):
+                for lm in re.finditer(r"([a-z_][a-z0-9_]*)\s*(?:=~|=)\s*\"", name):
+                    used.add((lm.group(1), p["title"]))
+    # Every LABEL a panel filters on must be a label the app actually emits.
+    # A panel filtering `status=~"5.."` when the app publishes `status_class`
+    # is not an error to Prometheus or Grafana — it matches nothing and the
+    # panel renders empty forever behind a green gate. That is exactly how one
+    # panel here sat dead: right series, invented label name.
+    #
+    # The label set is read from the metrics CALL SITES, because a bare-name
+    # search over app/ is worthless here: "status" appears in app/ as an
+    # unrelated dict key and as an unrelated assignment, so both a name-only
+    # check and a naive `status=` grep stayed green with the bug re-injected.
+    # Labels Prometheus attaches itself (job/instance) and histogram `le` are
+    # not in the source at all, so they are excluded explicitly.
+    EXTERNAL = {"le", "job", "instance"}
+    emitted = set()
+    for call in re.finditer(r"metrics\.(?:inc|observe|get|hist_count)\(", src):
+        # take the argument text up to the matching close paren
+        depth, i = 1, call.end()
+        while i < len(src) and depth:
+            if src[i] == "(":
+                depth += 1
+            elif src[i] == ")":
+                depth -= 1
+            i += 1
+        args = src[call.end():i - 1]
+        emitted.update(re.findall(r"([a-z_][a-z0-9_]*)\s*=(?!=)", args))
+    # Sanity: the gate must be able to SEE a real label, or it is vacuous.
+    assert "route" in emitted, f"label extractor found nothing useful: {sorted(emitted)}"
+    missing = sorted({(lab, title) for lab, title in used
+                      if lab not in EXTERNAL and lab not in emitted})
+    assert not missing, (
+        "panel filter labels that no metrics call site ever emits (the panel can "
+        f"never match anything): {missing}")
     # Stat/gauge panels reduce the series to ONE number. Grafana takes that
     # reducer as a NAME ("lastNotNull", "mean", "max") — an integer there is
     # not an error to Grafana, it just silently fails to reduce and the stat

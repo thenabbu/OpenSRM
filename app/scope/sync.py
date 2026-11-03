@@ -195,6 +195,7 @@ def _fetch_pending(pending, sid):
             except queue.Empty:
                 return
             with _slots:
+                t_op = time.monotonic()
                 try:
                     data = data_op(op, sid)
                 except ScopeAuthError as e:
@@ -206,6 +207,20 @@ def _fetch_pending(pending, sid):
                     kind, val = "err", e
                 else:
                     kind, val = "ok", data
+                finally:
+                    # Per-op cost, measured where the socket actually is. The
+                    # phase span says "SCOPE took 27s" for a whole run; this
+                    # says WHICH op owns those seconds, which is the only form
+                    # actionable against a slow upstream. `op` is an op name
+                    # from the fixed ops registry (never user input), so the
+                    # label vocabulary is closed by construction.
+                    try:
+                        from .. import metrics
+                        metrics.observe("opensrm_scope_op_duration_seconds",
+                                        time.monotonic() - t_op, op=op)
+                        metrics.inc("opensrm_scope_op_total", op=op, outcome=kind)
+                    except Exception:
+                        pass
             with guard:
                 out[op] = (kind, val)
 

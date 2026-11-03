@@ -14,6 +14,7 @@ _lock = threading.Lock()
 _counters = {}   # (name, ((label, value), ...)) -> int
 _hists = {}      # (name, labels) -> {"buckets": [...], "sum": float, "count": int}
 _gauges = {}     # name -> callable() -> float
+_provided_hists = {}   # name -> (callable() -> [cumulative counts] | None, buckets)
 
 # duration buckets (seconds): syncs run ~2s warm .. 150s (pipeline deadline)
 DURATION_BUCKETS = (1, 2, 5, 10, 20, 30, 60, 90, 120, 150)
@@ -44,6 +45,24 @@ _BUCKET_SETS = {
     # time from page request to first byte, per tab
     "opensrm_tab_render_duration_seconds": (0.005, 0.01, 0.025, 0.05, 0.1,
                                             0.25, 0.5, 1, 2.5, 5),
+    # per-op SCOPE SOAP cost. Same scale as the whole-run set but finer at the
+    # top: five ops legitimately take 5.6-13s each while the rest are sub-800ms,
+    # and one bucket layout has to distinguish those two populations.
+    "opensrm_scope_op_duration_seconds": (0.05, 0.1, 0.25, 0.5, 0.8, 1, 2, 3,
+                                          5, 8, 10, 15, 30),
+    # How long a student WAITS, split by what they were doing. Two distinct
+    # experiences live behind one "sync" word: a fresh login (days of data,
+    # every op cold) and a refresh by someone already signed in (usually a
+    # warm path or an outright cache hit). Mixing them averages a 3s refresh
+    # with a 40s cold login and hides both.
+    "opensrm_login_duration_seconds": (0.5, 1, 2, 3, 5, 8, 12, 20, 30, 45, 60, 90, 150),
+    "opensrm_refresh_duration_seconds": (0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5,
+                                         8, 12, 20, 30, 45, 60, 90, 150),
+    # Total span of one visit: first request of a session to the last one
+    # before the gap exceeds SESSION_GAP_S. Open-ended at the top because a
+    # tab left open all afternoon is real, not an error.
+    "opensrm_user_session_span_seconds": (60, 120, 300, 600, 900, 1800, 3600,
+                                          7200, 14400, 28800),
 }
 
 
@@ -94,8 +113,30 @@ def gauge(name, fn):
         _gauges[name] = fn
 
 
+def histogram_provider(name, fn, buckets):
+    """Register a render-time HISTOGRAM provider.
+
+    Same contract as gauge(): fn runs once per scrape, must be cheap and must
+    never raise. It returns a list of CUMULATIVE counts, one per bucket in
+    `buckets`, or None when the source could not be read (rendered as nothing
+    rather than as a lie about zero users).
+
+    This exists for distributions computed on demand from a table — per-user
+    storage today — where recording observations per-request would put a write
+    on a student's path for a number only a scrape ever reads.
+    """
+    with _lock:
+        _provided_hists[name] = (fn, tuple(buckets))
+
+
 def reset():
-    """Drop every series (tests only)."""
+    """Drop every RECORDED series (tests only).
+
+    Gauges and provider histograms are left registered on purpose: they are
+    callbacks into the DB/process, not accumulated data, and unregistering
+    them would silently blank every process panel for the rest of the
+    process's life after a single test called reset().
+    """
     with _lock:
         _counters.clear()
         _hists.clear()
@@ -121,6 +162,7 @@ def render():
         for (name, labels), h in _hists.items():
             hist_groups.setdefault(name, []).append((labels, h))
         gauges = list(_gauges.items())
+        provided = list(_provided_hists.items())
 
     def _typed(name, kind):
         if name not in seen_types:
@@ -146,4 +188,19 @@ def render():
         except Exception:
             v = 0.0
         lines.append(f"{name} {v}")
+    for name, (fn, buckets) in provided:
+        # provider histograms are evaluated OUTSIDE the lock (already copied),
+        # and a None answer renders nothing at all — an unreadable source must
+        # not publish "0 users below 16KB", which reads as real data.
+        try:
+            counts = fn()
+        except Exception:
+            counts = None
+        if not counts or len(counts) != len(buckets):
+            continue
+        _typed(name, "histogram")
+        for le, n in zip(buckets, counts):
+            lines.append(f"{name}_bucket{_labels((), le)} {n}")
+        lines.append(f"{name}_bucket{_labels((), '+Inf')} {counts[-1]}")
+        lines.append(f"{name}_count {counts[-1]}")
     return "\n".join(lines) + ("\n" if lines else "")

@@ -73,7 +73,7 @@ def auto_sync_kick_if_stale(netid):
                 if not pw:
                     log.info("auto.sync skipped netid=%s reason=no_creds", netid)
                     return
-                res = _refresh_core(netid, pw)
+                res = _refresh_core(netid, pw, source="auto")
                 log.info("auto.sync netid=%s ok=%s cached=%s",
                          netid, bool(res[0].get("ok")), bool(res[0].get("cached")))
             except Exception as e:  # a background job must never kill the worker

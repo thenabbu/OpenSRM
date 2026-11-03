@@ -1009,6 +1009,7 @@ from .observability import (  # noqa: E402,F401 — re-exported
     _push_tick_last_ok_ts,
     healthz,
     internal_metrics,
+    track_session_activity,
 )
 
 # ── Web push: user endpoints (JSON, session auth, 401 style) ──────────
@@ -1052,17 +1053,42 @@ from .routes_push import (  # noqa: E402,F401 — re-exported
 # beacon must never surface as an error in a student's console.
 _TAB_NAMES = frozenset({"dashboard", "attendance", "timetable", "marks",
                         "campus", "academics", "fees", "tools", "settings"})
+
+# The fixed vocabulary for "what inside a tab did they touch". A CLOSED set is
+# the whole point: `item` arrives from the browser, and an open vocabulary
+# would let any client mint unlimited label values into Prometheus — the exact
+# cardinality explosion the label rules exist to prevent. Anything not listed
+# here is dropped by the 204-always contract. Add an entry when a new
+# interactive element ships; never derive these from the DOM at runtime.
+_ITEM_NAMES = frozenset({
+    "attendance-graph",      # attendance chart / table toggle
+    "attendance-table",
+    "attendance-sort",       # per-subject sort
+    "timetable-day",         # week/day view switch
+    "timetable-subject",     # a subject row opened
+    "marks-component",       # a component's detail expanded
+    "marks-semester",        # semester selector
+    "fees-breakdown",
+    "academics-transcript",
+    "academics-credits",
+    "tools-feedback",        # feedback fill flow
+    "tools-push",            # reminder settings
+    "profile-card",
+    "sync-button",           # the manual refresh control
+    "settings-device",
+})
 _tab_beacon_last = {}   # netid -> monotonic ts, 2s floor per user
 
 
 def track_tab():
-    """POST /api/track/tab  {"tab": "<name>"} -> 204 always."""
+    """POST /api/track/tab  {"tab": "<name>", "item": "<key>"} -> 204 always."""
     try:
         netid = get_current_user()
         if netid:
             d = request.get_json(silent=True)
             tab = d.get("tab") if isinstance(d, dict) else None
             if isinstance(tab, str) and tab in _TAB_NAMES:
+                track_session_activity(netid)
                 # per-user 2s floor: a keyboard user arrowing across the tab
                 # strip fires one switch per keypress, and ten rows for one
                 # intentional visit pollutes the very number being measured.
@@ -1080,6 +1106,17 @@ def track_tab():
                     metrics.observe("opensrm_tab_render_duration_seconds",
                                     max(0.0, now - getattr(request, "_start_time", now)),
                                     tab=tab)
+                # Item-level interaction: what INSIDE the tab people touch.
+                # Same beacon, one extra optional key — the tab floor above
+                # deliberately does NOT apply, because two different cards in
+                # the same tab within 2s is two real interactions. `item` is
+                # validated against a fixed vocabulary (see _ITEM_NAMES) so a
+                # client cannot mint label values, and the 204 contract means
+                # a junk value is dropped silently rather than erroring.
+                item = d.get("item") if isinstance(d, dict) else None
+                if isinstance(item, str) and item in _ITEM_NAMES:
+                    _track("item_view", target=item, user=netid, detail=tab)
+                    metrics.inc("opensrm_item_views_total", item=item, tab=tab)
     except Exception:
         pass   # telemetry must never break the UI
     return "", 204

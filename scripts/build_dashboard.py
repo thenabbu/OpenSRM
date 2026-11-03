@@ -357,6 +357,188 @@ add("Row counts",
      ("opensrm_rows_push_sent_log", "sent_log"),
      ("opensrm_rows_usage_events", "usage_events")], w=12, h=9)
 
+# ══════════════════════════════════════════════════════════════════
+# 8. WHO USES IT — the product questions, in plain words
+# ══════════════════════════════════════════════════════════════════
+# This row exists because every panel above answers "is the server healthy".
+# None of them answered "is anyone using this and what do they do here", which
+# is what actually decides what to build next. Titles are written as the
+# question being asked, and descriptions say what a number MEANS rather than
+# naming the metric — a dashboard nobody can read is a dashboard nobody opens.
+# Display names for the usage event ids. One label_replace per id, generated
+# here so a new event id is one line rather than a hand-nested expression.
+_PLAIN_EVENT_NAMES = {
+    "page_view": "opened the app",
+    "tab_view": "switched tab",
+    "item_view": "clicked something",
+    "login_ok": "logged in",
+    "login_fail": "login failed",
+    "sync_ok": "synced fresh data",
+    "sync_fail": "sync failed",
+    "sync_cached": "refreshed from cache",
+    "feedback_fill_ok": "submitted feedback",
+    "feedback_fill_fail": "feedback failed",
+}
+_PLAIN_EVENTS = "increase(opensrm_events_total{event=~\"" + "|".join(_PLAIN_EVENT_NAMES) + "\"}[1h])"
+for _id, _label in _PLAIN_EVENT_NAMES.items():
+    _PLAIN_EVENTS = (f'label_replace({_PLAIN_EVENTS}, "event", "{_label}", "event", "{_id}")')
+
+row("Who uses it",
+    "New vs returning vs total people, how long a visit lasts, and what they touch. "
+    "Read this row left-to-right: how many came, did they stay, what did they do. "
+    "Per-person labels are a short hash (u + sha256[:10]) — never a netid.")
+
+add("How many new people?", "First-time users: accounts whose very first activity was in the last 24h "
+    "and in the last 7 days. This is the growth number — a steady zero while total stays flat "
+    "means nobody new is arriving.",
+    [("opensrm_users_new_24h", "in the last 24h"), ("opensrm_users_new_7d", "in the last 7 days")],
+    kind="stat", w=6, h=4, stat_calc="lastNotNull", unit="short")
+add("How many came back?", "People who used the app in the last 24h and are NOT first-timers. New + "
+    "returning = everyone active in that window, so if the two do not add up to the active "
+    "number, something is misclassified.",
+    [("opensrm_users_returning_24h", "returned in the last 24h")],
+    kind="stat", w=6, h=4, stat_calc="lastNotNull")
+add("How many accounts exist?", "Every account in the database, and how many have actually synced at "
+    "least once. The gap between them is people who signed up and never finished a first sync "
+    "— the most expensive kind of dropout.",
+    [("opensrm_users_total", "accounts"), ("opensrm_users_synced_total", "synced at least once")],
+    kind="stat", w=6, h=4, stat_calc="lastNotNull")
+add("How many are active?", "Distinct people in three windows. The sources differ on purpose: "
+    "'right now' is live in-process activity, while the 24h and 7d numbers are read from the event "
+    "table. Right after a deploy the live count can briefly read lower than 'active in 24h' — that is "
+    "a restart artefact, not a contradiction.",
+    [("count(count by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m])))", "active right now (5 min)"),
+     ("opensrm_users_active_24h", "active in the last 24h"),
+     ("opensrm_users_active_7d", "active in the last 7 days")],
+    kind="stat", w=6, h=4, stat_calc="lastNotNull")
+
+add("When are people using it?", "How many distinct people were active each hour. The shape of this "
+    "curve decides when to run a sync, a push, or a deploy without annoying anyone.",
+    [("count(count by (uid) (rate(opensrm_active_users_total[1h])))", "people active")],
+    w=12, h=8)
+add("What are people doing?", "Every event the app records, split by type, named in plain words "
+    "rather than by the internal event id.",
+    # Every event name is renamed for display with a chain of label_replace —
+    # a raw id like sync_cached means nothing to the person reading this, and
+    # an unrenamed name is how the first pass shipped half-plain legends.
+    [(_PLAIN_EVENTS, "{{event}}")],
+    w=12, h=8)
+
+add("How long does a visit last?", "From someone's first click to their last, with a 30-minute idle gap "
+    "ending a visit. The median is a typical sitting; the 90th percentile is the long-visit tail "
+    "— people keeping the app open, which is good provided the page is not slow.",
+    [("histogram_quantile(0.50, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))", "typical visit (median)"),
+     ("histogram_quantile(0.90, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))", "long visit (90th percentile)"),
+     ("histogram_quantile(0.99, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))", "very long (99th)")],
+    w=12, h=8, unit="s")
+add("Which tabs do people open?", "Tab switches per hour, one line per tab — the legend names each "
+    "tab. Tabs are a client-side switch, so this is the only evidence a tab is used at all; a tab "
+    "that never appears here is dead weight in the navbar.",
+    [("topk(9, sum by (target) (increase(opensrm_events_total{event=\"tab_view\"}[1h])))", "{{target}}")],
+    w=12, h=8)
+add("What do people click inside a tab?", "Clicks on the real controls: expanding a marks component, "
+    "opening a semester, hitting refresh. A control that never fires is either undiscoverable or "
+    "unwanted — both are answers, and both are worth knowing before building more like it.",
+    [("topk(12, sum by (item) (increase(opensrm_item_views_total[24h])))", "{{item}}")],
+    w=12, h=9)
+add("Is anyone using it far more than others?", "Events per person per hour, top 8. One person far "
+    "above the rest is usually a stuck client reloading, not enthusiasm.",
+    [("topk(8, sum by (uid) (rate(opensrm_events_total{uid!=\"anonymous\"}[1h]) * 3600))", "{{uid}}")],
+    w=12, h=8)
+
+# ── Waiting: what a person actually feels ────────────────────────────────
+row("How long people wait",
+    "Two completely different waiting experiences live behind the word 'sync'. A first login fetches "
+    "everything cold and is slow by nature; a refresh by someone already signed in should be near-instant "
+    "(it is usually answered from the last sync). This row keeps them apart on purpose.")
+
+add("How long does a first login take?", "How long a fresh login takes, end to end, including the browser-driven portal fetch. "
+    "This is the first impression — if p95 here is above about 30s, people are giving up before they see "
+    "their data.",
+    [("histogram_quantile(0.50, sum by (le) (rate(opensrm_login_duration_seconds_bucket[6h])))", "p50"),
+     ("histogram_quantile(0.95, sum by (le) (rate(opensrm_login_duration_seconds_bucket[6h])))", "p95")],
+    w=12, h=8, unit="s")
+add("How long does a refresh take?", "cache = answered from the last sync (should be "
+    "milliseconds). joined = waited on a sync already running for the same account. synced = a real "
+    "round trip. If 'cache' is not the fastest line, caching is not working.",
+    [("histogram_quantile(0.50, sum by (le, kind) (rate(opensrm_refresh_duration_seconds_bucket[6h])))",
+      "{{kind}} p50")],
+    w=12, h=8, unit="s")
+add("How often is a refresh answered instantly?", "The share of refresh requests that cost the portal "
+    "nothing. Higher is better for both speed and the portal's rate limit — a drop here means the cache "
+    "window is being missed by real traffic patterns.",
+    [("sum by (kind) (increase(opensrm_refresh_duration_seconds_count[1h]))", "{{kind}}")],
+    w=12, h=8)
+
+# ── The two data sources, separately ─────────────────────────────────────
+row("Where the sync time goes",
+    "The portal (JSP pages over HTTP) and SCOPE (SOAP) are separate upstreams with separate failure modes. "
+    "Keeping them apart is what makes 'the sync is slow' answerable — it is nearly always ONE of them.")
+
+add("Which part of a sync is slow?", "Median seconds each part of a sync costs. Portal should dominate; persist "
+    "(writing to SQLite) should be milliseconds. A persist line climbing means the disk is the problem, "
+    "not the network.",
+    [("histogram_quantile(0.50, sum by (le, phase) (rate(opensrm_sync_phase_duration_seconds_bucket[6h])))",
+      "{{phase}} p50")],
+    w=12, h=8, unit="s")
+add("Where does the wait come from?", "The same thing as a proportion: what fraction of a person's wait is the "
+    "portal, SCOPE, and disk. Quote this number, not the total, when arguing about where to optimise.",
+    [("sum by (phase) (rate(opensrm_sync_phase_duration_seconds_sum[6h])) "
+      "/ clamp_min(sum(rate(opensrm_sync_phase_duration_seconds_sum[6h])), 0.0001)", "{{phase}}")],
+    w=12, h=8, unit="percentunit")
+add("Which SCOPE operation is slowest?", "Every SOAP operation by median cost. Five ops dominate a run "
+    "(personal details, subjects, hourwise attendance, credit status, exam details) while the rest are "
+    "sub-second — a new name appearing high on this list is upstream drift worth reacting to.",
+    [("topk(10, histogram_quantile(0.50, sum by (le, op) "
+      "(rate(opensrm_scope_op_duration_seconds_bucket[6h]))))", "{{op}} p50")],
+    w=12, h=9, unit="s")
+add("Do SCOPE operations succeed?", "ok vs error per operation. Errors clustered on ONE op is that endpoint "
+    "misbehaving; errors across all of them is the session or the network.",
+    [("sum by (op, outcome) (increase(opensrm_scope_op_total[6h]))", "{{op}} {{outcome}}")],
+    w=12, h=9)
+
+# ── Storage and freshness ────────────────────────────────────────────────
+row("Storage and freshness",
+    "How much room the data takes, how big one person's footprint is, and how stale the freshest data in "
+    "the system is. A frozen timestamp here explains every 'nothing is updating' report before you read a log.")
+
+add("How big is one person's data?", "The distribution of per-account storage (attendance, marks, subjects, "
+    "SCOPE blobs and photo together). A synced student sits around 50-80KB today; an account far to the "
+    "right is one whose SCOPE blob is bloated, and the 4MB bucket should stay empty.",
+    [("opensrm_user_db_bytes_bucket", "{{le}}")],
+    w=12, h=8, unit="bytes")
+add("How stale is the data?", "Seconds since the freshest data in the whole system. If sync age climbs "
+    "past a day while the app looks healthy, nobody is syncing — that is the difference between a quiet "
+    "product and a broken one.",
+    [("opensrm_last_sync_age_seconds", "since last sync"),
+     ("opensrm_last_usage_event_age_seconds", "since last recorded event")],
+    w=12, h=8, unit="s")
+add("How big is the database?", "Main file, WAL, and the account count together. Usage events are "
+    "retention-managed (365d): growth there faster than adoption means pruning stopped.",
+    [("opensrm_db_size_bytes", "db file"), ("opensrm_db_wal_bytes", "wal"),
+     ("opensrm_rows_usage_events", "usage_events rows")],
+    w=12, h=8)
+
+# ── Errors, per person ───────────────────────────────────────────────────
+row("Errors people hit",
+    "Who is failing and on what. Broken down by the route rule (never the raw path — a path carries a "
+    "netid) and by event type, so one person's broken login can be told apart from everyone's.")
+
+add("Who is hitting errors?", "Error events per person per hour. One name going up alone is that "
+    "account's credentials; every name going up together is the portal or the network.",
+    [("topk(8, sum by (uid) (rate(opensrm_events_total{event=~\"login_fail|sync_fail|feedback_fill_fail\"}[1h]) * 3600))",
+      "{{uid}}")],
+    w=12, h=8)
+add("Which pages fail?", "HTTP 5xx per route rule. The route name is the rule pattern (/api/login), never the "
+    "URL, so this cannot leak who hit it.",
+    [('topk(8, sum by (route) (rate(opensrm_http_requests_total{status_class="5xx"}[1h]) * 3600))', "{{route}}")],
+    w=12, h=8)
+add("Which pages are slow?", "p95 latency per route. Sync routes legitimately run seconds; a static page in "
+    "this list is a real problem.",
+    [("topk(8, histogram_quantile(0.95, sum by (le, route) (rate(opensrm_http_request_duration_seconds_bucket[1h]))))",
+      "{{route}}")],
+    w=12, h=8, unit="s")
+
 dashboard = {
     "uid": "opensrm-observability",
     "title": "OpenSRM",
