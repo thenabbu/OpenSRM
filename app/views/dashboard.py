@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta
 from flask import redirect, render_template
 
 from ..auth import get_current_user
+from ..auto_sync import auto_sync_kick_if_stale
 from ..db import component_tags, day_slots, group_id, group_subjects, user_dashboard, user_scope_data
 from ..db import jload as _jload
 from ..portal.parsers.common import _class_key, _group_key
@@ -199,6 +200,11 @@ def index():
     # an authenticated visit that finds the SCOPE blob missing/stale starts
     # the background sync — the surfaces fill in on the next reload
     _scope_sync_kick_if_stale(netid)
+    # portal data has no background refresher of its own: without this a
+    # dashboard opened the next morning shows yesterday's numbers until
+    # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
+    # the knob is 0.
+    auto_sync_kick_if_stale(netid)
     return render_template(
         "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,

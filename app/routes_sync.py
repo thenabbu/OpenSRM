@@ -513,19 +513,14 @@ def _cached_sync_answer(netid, window):
     return {"ok": True, "cached": True, "age_s": int(age)}
 
 
-@require_login
-def api_refresh():
-    netid = get_current_user()
-    if not netid:
-        return {"ok": False, "error": "not logged in"}, 401
-    row = user_password(netid)
-    if not row:
-        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
-        return {"ok": False, "error": "no stored creds"}, 401
-    password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
-    if not password:
-        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
-        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
+def _refresh_core(netid, password):
+    """One refresh for an ALREADY-AUTHENTICATED account.
+
+    Split out of api_refresh so the background auto-sync can run the exact
+    same single-flight + cache-window + persist path without a request
+    context (and without duplicating logic that is easy to drift).
+    Caller owns credential loading; this owns the portal work.
+    """
     # single flight: join the sync already running for this account, or
     # become its runner (only the runner ever reaches fetch_attendance, so
     # joiners cost nothing against the per-netid limit)
@@ -589,6 +584,21 @@ def api_refresh():
             _sync_flights.pop(netid, None)
         flight["done"].set()
 
+
+@require_login
+def api_refresh():
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    row = user_password(netid)
+    if not row:
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="no_stored_creds")
+        return {"ok": False, "error": "no stored creds"}, 401
+    password = decrypt_pw(row["password"])  # audit: was plaintext, now Fernet
+    if not password:
+        log_with_kv(log_auth, logging.WARNING, "refresh blocked", netid=netid, reason="unreadable_creds")
+        return {"ok": False, "error": "stored credentials unreadable — log in again"}, 401
+    return _refresh_core(netid, password)
 
 def api_scope_status():
     """Minimal SCOPE sync status for the dashboard's one-shot reload.
