@@ -32,6 +32,11 @@ TIMETABLE_SOURCE = "official"
 
 
 NOTICES = [
+    {"ver": "v2.10.1", "date": "4 Nov", "title": "The background refresh actually runs now",
+     "body": "The quiet refresh that runs when you arrive with stale data has been failing "
+             "silently since it shipped: it stopped before it ever reached the college portal, "
+             "and the only trace was a line in the server log nobody reads. It now completes, "
+             "so the numbers on the dashboard should already be current when you open it."},
     {"ver": "v2.10.0", "date": "3 Nov", "title": "We can finally see how the app is used",
      "body": "Until now the monitoring only answered whether the server was healthy - "
              "never who was using Vela, how long they stayed, or where the time went. "

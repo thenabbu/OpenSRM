@@ -75,8 +75,14 @@ def auto_sync_kick_if_stale(netid):
                     log.info("auto.sync skipped netid=%s reason=no_creds", netid)
                     return
                 res = _refresh_core(netid, pw, source="auto")
+                # _refresh_core is inconsistent: failures return a
+                # ({payload}, status) tuple, the success path returns the bare
+                # payload. Indexing blindly raised KeyError(0) on EVERY
+                # successful refresh, so a working sync reported as failed
+                # ("background failed ... error=0") and never logged its ok line.
+                payload = res[0] if isinstance(res, tuple) else res
                 log.info("auto.sync netid=%s ok=%s cached=%s",
-                         netid, bool(res[0].get("ok")), bool(res[0].get("cached")))
+                         netid, bool(payload.get("ok")), bool(payload.get("cached")))
             except Exception as e:  # a background job must never kill the worker
                 log.warning("auto.sync background failed netid=%s error=%s",
                             netid, str(e)[:120])
