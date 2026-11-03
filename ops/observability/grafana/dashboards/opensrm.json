@@ -2767,8 +2767,8 @@
     {
       "id": 55,
       "type": "stat",
-      "title": "New people today",
-      "description": "First-time users: accounts whose very first activity was in the last 24h. This is the growth number \u2014 a steady 0 with total flat means nobody new is arriving.",
+      "title": "How many new people arrived?",
+      "description": "First-time users: accounts whose very first activity was in the last 24h and in the last 7 days. This is the growth number \u2014 a steady zero while total stays flat means nobody new is arriving.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -2807,7 +2807,7 @@
       "targets": [
         {
           "expr": "opensrm_users_new_24h",
-          "legendFormat": "new (24h)",
+          "legendFormat": "in the last 24h",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -2818,7 +2818,7 @@
         },
         {
           "expr": "opensrm_users_new_7d",
-          "legendFormat": "new (7d)",
+          "legendFormat": "in the last 7 days",
           "refId": "B",
           "datasource": {
             "type": "prometheus",
@@ -2832,8 +2832,8 @@
     {
       "id": 56,
       "type": "stat",
-      "title": "Came back today",
-      "description": "Used the app in the last 24h, but are NOT first-timers. New + returning = everyone active today, so if the two do not add up to the active number something is misclassified.",
+      "title": "How many came back?",
+      "description": "People who used the app in the last 24h and are NOT first-timers. New + returning = everyone active in that window, so if the two do not add up to the active number, something is misclassified.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -2872,7 +2872,7 @@
       "targets": [
         {
           "expr": "opensrm_users_returning_24h",
-          "legendFormat": "returning (24h)",
+          "legendFormat": "returned in the last 24h",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -2886,8 +2886,8 @@
     {
       "id": 57,
       "type": "stat",
-      "title": "Total accounts",
-      "description": "Every account in the database. Compare with 'Synced at least once': the gap is people who signed up and never finished a first sync \u2014 the most expensive kind of dropout.",
+      "title": "How many accounts exist?",
+      "description": "Every account in the database, and how many have actually synced at least once. The gap between them is people who signed up and never finished a first sync \u2014 the most expensive kind of dropout.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -2951,8 +2951,8 @@
     {
       "id": 58,
       "type": "stat",
-      "title": "Active now / today / this week",
-      "description": "Distinct people, three windows. The 24h and 7d numbers are read from the event table so they survive a redeploy; 'active now' is the live 5-minute view.",
+      "title": "How many people are active?",
+      "description": "Distinct people in three windows. The sources differ on purpose: 'right now' is live in-process activity, while the 24h and 7d numbers are read from the event table. Right after a deploy the live count can briefly read lower than 'active in 24h' \u2014 that is a restart artefact, not a contradiction.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -2991,7 +2991,7 @@
       "targets": [
         {
           "expr": "count(count by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m])))",
-          "legendFormat": "now (5m)",
+          "legendFormat": "active right now (5 min)",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -3002,7 +3002,7 @@
         },
         {
           "expr": "opensrm_users_active_24h",
-          "legendFormat": "today",
+          "legendFormat": "active in the last 24h",
           "refId": "B",
           "datasource": {
             "type": "prometheus",
@@ -3013,7 +3013,7 @@
         },
         {
           "expr": "opensrm_users_active_7d",
-          "legendFormat": "this week",
+          "legendFormat": "active in the last 7 days",
           "refId": "C",
           "datasource": {
             "type": "prometheus",
@@ -3027,7 +3027,7 @@
     {
       "id": 59,
       "type": "timeseries",
-      "title": "People active, hour by hour (IST)",
+      "title": "When are people using it?",
       "description": "How many distinct people were active each hour. The shape of this curve decides when to run a sync, a push, or a deploy without annoying anyone.",
       "gridPos": {
         "h": 8,
@@ -3081,8 +3081,8 @@
     {
       "id": 60,
       "type": "timeseries",
-      "title": "What people did, by activity type",
-      "description": "Every event the app records, split by type. sync_ok is someone getting fresh data; sync_cached is them getting it free from the last sync; tab_view and item_view are reading; login_ok is a new session.",
+      "title": "What are people doing?",
+      "description": "Every event the app records, split by type, named in plain words rather than by the internal event id.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -3122,7 +3122,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (event) (increase(opensrm_events_total[1h]))",
+          "expr": "label_replace(label_replace(label_replace(label_replace(increase(opensrm_events_total{event=~\"page_view|tab_view|item_view|login_ok|login_fail|sync_ok|sync_fail|sync_cached|feedback_fill_ok|feedback_fill_fail\"}[1h]), \"event\", \"opened the app\", \"event\", \"page_view\"), \"event\", \"switched tab\", \"event\", \"tab_view\"), \"event\", \"clicked something\", \"event\", \"item_view\"), \"event\", \"synced fresh data\", \"event\", \"sync_ok\")",
           "legendFormat": "{{event}}",
           "refId": "A",
           "datasource": {
@@ -3135,8 +3135,8 @@
     {
       "id": 61,
       "type": "timeseries",
-      "title": "How long one visit lasts",
-      "description": "From someone's first click to their last, with a 30-minute idle gap ending a visit. p50 is the typical sitting; compare p95 \u2014 a long tail means people keep the app open, which is good, provided the page is not slow.",
+      "title": "How long does a visit last?",
+      "description": "From someone's first click to their last, with a 30-minute idle gap ending a visit. The median is a typical sitting; the 90th percentile is the long-visit tail \u2014 people keeping the app open, which is good provided the page is not slow.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -3177,7 +3177,7 @@
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))",
-          "legendFormat": "p50",
+          "legendFormat": "typical visit (median)",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -3186,7 +3186,7 @@
         },
         {
           "expr": "histogram_quantile(0.90, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))",
-          "legendFormat": "p90",
+          "legendFormat": "long visit (90th percentile)",
           "refId": "B",
           "datasource": {
             "type": "prometheus",
@@ -3195,7 +3195,7 @@
         },
         {
           "expr": "histogram_quantile(0.99, sum by (le) (rate(opensrm_user_session_span_seconds_bucket[6h])))",
-          "legendFormat": "p99",
+          "legendFormat": "very long (99th)",
           "refId": "C",
           "datasource": {
             "type": "prometheus",
@@ -3207,8 +3207,8 @@
     {
       "id": 62,
       "type": "timeseries",
-      "title": "Which tabs people actually read",
-      "description": "Tab switches per hour. Tabs are a client-side switch, so this is the only evidence that a tab is used at all \u2014 a tab that never appears here is dead weight in the navbar.",
+      "title": "Which tabs do people open?",
+      "description": "Tab switches per hour, one line per tab \u2014 the legend names each tab. Tabs are a client-side switch, so this is the only evidence a tab is used at all; a tab that never appears here is dead weight in the navbar.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -3261,7 +3261,7 @@
     {
       "id": 63,
       "type": "timeseries",
-      "title": "What inside a tab people touch",
+      "title": "What do people click inside a tab?",
       "description": "Clicks on the real controls: expanding a marks component, opening a semester, hitting refresh. A control that never fires is either undiscoverable or unwanted \u2014 both are answers, and both are worth knowing before building more like it.",
       "gridPos": {
         "h": 9,
@@ -3315,7 +3315,7 @@
     {
       "id": 64,
       "type": "timeseries",
-      "title": "Reading vs syncing, per person",
+      "title": "Is anyone using it far more than others?",
       "description": "Events per person per hour, top 8. One person far above the rest is usually a stuck client reloading, not enthusiasm.",
       "gridPos": {
         "h": 8,
@@ -3383,7 +3383,7 @@
     {
       "id": 66,
       "type": "timeseries",
-      "title": "First login wait",
+      "title": "How long does a first login take?",
       "description": "How long a fresh login takes, end to end, including the browser-driven portal fetch. This is the first impression \u2014 if p95 here is above about 30s, people are giving up before they see their data.",
       "gridPos": {
         "h": 8,
@@ -3446,7 +3446,7 @@
     {
       "id": 67,
       "type": "timeseries",
-      "title": "Refresh wait, split by how it was answered",
+      "title": "How long does a refresh take?",
       "description": "cache = answered from the last sync (should be milliseconds). joined = waited on a sync already running for the same account. synced = a real round trip. If 'cache' is not the fastest line, caching is not working.",
       "gridPos": {
         "h": 8,
@@ -3500,7 +3500,7 @@
     {
       "id": 68,
       "type": "timeseries",
-      "title": "Refreshes answered from cache vs real syncs",
+      "title": "How often is a refresh answered instantly?",
       "description": "The share of refresh requests that cost the portal nothing. Higher is better for both speed and the portal's rate limit \u2014 a drop here means the cache window is being missed by real traffic patterns.",
       "gridPos": {
         "h": 8,
@@ -3568,7 +3568,7 @@
     {
       "id": 70,
       "type": "timeseries",
-      "title": "Portal vs SCOPE vs disk",
+      "title": "Which part of a sync is slow?",
       "description": "Median seconds each part of a sync costs. Portal should dominate; persist (writing to SQLite) should be milliseconds. A persist line climbing means the disk is the problem, not the network.",
       "gridPos": {
         "h": 8,
@@ -3622,7 +3622,7 @@
     {
       "id": 71,
       "type": "timeseries",
-      "title": "Share of the wait, by source",
+      "title": "Where does the wait come from?",
       "description": "The same thing as a proportion: what fraction of a person's wait is the portal, SCOPE, and disk. Quote this number, not the total, when arguing about where to optimise.",
       "gridPos": {
         "h": 8,
@@ -3676,7 +3676,7 @@
     {
       "id": 72,
       "type": "timeseries",
-      "title": "SCOPE: which operation is slow",
+      "title": "Which SCOPE operation is slowest?",
       "description": "Every SOAP operation by median cost. Five ops dominate a run (personal details, subjects, hourwise attendance, credit status, exam details) while the rest are sub-second \u2014 a new name appearing high on this list is upstream drift worth reacting to.",
       "gridPos": {
         "h": 9,
@@ -3730,7 +3730,7 @@
     {
       "id": 73,
       "type": "timeseries",
-      "title": "SCOPE: operation outcomes",
+      "title": "Do SCOPE operations succeed?",
       "description": "ok vs error per operation. Errors clustered on ONE op is that endpoint misbehaving; errors across all of them is the session or the network.",
       "gridPos": {
         "h": 9,
@@ -3798,7 +3798,7 @@
     {
       "id": 75,
       "type": "timeseries",
-      "title": "How much space one person takes",
+      "title": "How big is one person's data?",
       "description": "The distribution of per-account storage (attendance, marks, subjects, SCOPE blobs and photo together). A synced student sits around 50-80KB today; an account far to the right is one whose SCOPE blob is bloated, and the 4MB bucket should stay empty.",
       "gridPos": {
         "h": 8,
@@ -3852,7 +3852,7 @@
     {
       "id": 76,
       "type": "timeseries",
-      "title": "Time since anything changed",
+      "title": "How stale is the data?",
       "description": "Seconds since the freshest data in the whole system. If sync age climbs past a day while the app looks healthy, nobody is syncing \u2014 that is the difference between a quiet product and a broken one.",
       "gridPos": {
         "h": 8,
@@ -3915,7 +3915,7 @@
     {
       "id": 77,
       "type": "timeseries",
-      "title": "Database size and rows",
+      "title": "How big is the database?",
       "description": "Main file, WAL, and the account count together. Usage events are retention-managed (365d): growth there faster than adoption means pruning stopped.",
       "gridPos": {
         "h": 8,
@@ -4001,7 +4001,7 @@
     {
       "id": 79,
       "type": "timeseries",
-      "title": "Failed logins and syncs per person",
+      "title": "Who is hitting errors?",
       "description": "Error events per person per hour. One name going up alone is that account's credentials; every name going up together is the portal or the network.",
       "gridPos": {
         "h": 8,
@@ -4055,7 +4055,7 @@
     {
       "id": 80,
       "type": "timeseries",
-      "title": "Errors by route",
+      "title": "Which pages fail?",
       "description": "HTTP 5xx per route rule. The route name is the rule pattern (/api/login), never the URL, so this cannot leak who hit it.",
       "gridPos": {
         "h": 8,
@@ -4109,7 +4109,7 @@
     {
       "id": 81,
       "type": "timeseries",
-      "title": "Slow requests by route",
+      "title": "Which pages are slow?",
       "description": "p95 latency per route. Sync routes legitimately run seconds; a static page in this list is a real problem.",
       "gridPos": {
         "h": 8,
