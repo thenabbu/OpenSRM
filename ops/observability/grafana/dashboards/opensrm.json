@@ -4096,7 +4096,7 @@
       },
       "targets": [
         {
-          "expr": "topk(8, sum by (route) (rate(opensrm_http_requests_total{status=~\"5..\"}[1h]) * 3600))",
+          "expr": "topk(8, sum by (route) (rate(opensrm_http_requests_total{status_class=\"5xx\"}[1h]) * 3600))",
           "legendFormat": "{{route}}",
           "refId": "A",
           "datasource": {

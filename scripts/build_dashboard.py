@@ -505,7 +505,7 @@ add("Failed logins and syncs per person", "Error events per person per hour. One
     w=12, h=8)
 add("Errors by route", "HTTP 5xx per route rule. The route name is the rule pattern (/api/login), never the "
     "URL, so this cannot leak who hit it.",
-    [("topk(8, sum by (route) (rate(opensrm_http_requests_total{status=~\"5..\"}[1h]) * 3600))", "{{route}}")],
+    [('topk(8, sum by (route) (rate(opensrm_http_requests_total{status_class="5xx"}[1h]) * 3600))', "{{route}}")],
     w=12, h=8)
 add("Slow requests by route", "p95 latency per route. Sync routes legitimately run seconds; a static page in "
     "this list is a real problem.",
