@@ -163,8 +163,8 @@ check("people card lays widgets out 2-up (cols contract)",
 check("teachers grouped + Practical mode tag",
       'From the mid-sem feedback form' in html and 'Practical' in html
       and 'Dr. Beta Gamma' in html)
-check("notices: New badge exactly once", html.count('>New<') == 1,
-      str(html.count('>New<')))
+check("notices widget gone from the dashboard", 'Notices' not in html,
+      "a release-notes feed reappeared on the dashboard")
 check("stylesheet block present (wlabel/wbox/att-neg)",
       all(k in html for k in ('.wlabel{', '.wbox{', '.att-neg{')))
 check("institute email, no Gmail", "zz9999@srmist.edu.in" in html)
@@ -188,7 +188,7 @@ c.commit(); c.close()
 h3 = GET().get_data(as_text=True)
 check("all-empty cards hidden (no orphan shells)",
       'lg:col-span-4' in h3 and 'lg:col-span-8' not in h3)
-check("day card still renders its widgets", 'Notices' in h3 and 'This week' in h3)
+check("day card still renders its widgets", 'This week' in h3 and 'Today' in h3, h3[:400])
 
 fails = [n for n, ok in results if not ok]
 print(f"\n{len(results)-len(fails)}/{len(results)} PASS" + (f" | FAILED: {fails}" if fails else ""))

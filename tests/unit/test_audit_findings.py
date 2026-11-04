@@ -94,12 +94,21 @@ chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.gith
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))
-# NOTICES moved to app/static_data.py (cycle A); read it where it lives now.
-_nt_region = region('app/static_data.py', 'NOTICES = [', '\nTOOLS = [')
-_nt_head = re.search(r'"ver":\s*"v([0-9.]+)"', _nt_region)
-chk('M27', f"release notices mandatory: head notice == current VERSION (v{_pyv})",
-    _nt_head is not None and _nt_head.group(1) == _pyv,
-    ev=f"head={_nt_head.group(1) if _nt_head else None} VERSION={_pyv}")
+# M27: release notes live on GitHub Releases, NOT in the app. This gate is the
+# inverse of what it used to enforce — it fails if a in-app notices feed comes
+# back (data table, widget partial or a VIEW passing it), and it fails if the
+# release pipeline that replaces it goes missing.
+chk('M27', "no in-app release-notes feed (NOTICES table + widget are gone)",
+    not grep_repo(r'\bNOTICES\b', 'app')
+    and not pathlib.Path('app/templates/partials/widgets/notices.html').exists()
+    and 'notices=' not in rd('app/views/dashboard.py'),
+    ev=f"static_data={'NOTICES' in rd('app/static_data.py')} "
+       f"partial={pathlib.Path('app/templates/partials/widgets/notices.html').exists()}")
+chk('M27b', "release pipeline present (tag+Release generated on VERSION change)",
+    pathlib.Path('scripts/release_notes.py').exists()
+    and pathlib.Path('.github/workflows/release.yml').exists()
+    and 'contents: write' in (rd('.github/workflows/release.yml')
+                              if pathlib.Path('.github/workflows/release.yml').exists() else ''))
 
 # ---------- MEDIUM: docs ----------
 chk('D27', "README/SECURITY carry no CDN origin (runtime CDN removed)",

@@ -96,8 +96,11 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
   (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>` +
   `:<short-sha>`, `needs: [lint, tests]` on `main`) · **Scans** (report-only).
   A red `unit`/`e2e` on a PR is a real failure, not a flake.
-- Release = `VERSION` + `pyproject.toml` + `uv.lock` + a `NOTICES` entry **in one commit**,
-  then tag `vX.Y.Z`. `test_audit_findings` reds if the trio and the notice disagree.
+- Release = `VERSION` + `pyproject.toml` + `uv.lock` **in one commit**. Tagging and the
+  Release itself are automatic: `.github/workflows/release.yml` tags `vX.Y.Z` and publishes
+  a GitHub Release whose body is generated from the commits (`scripts/release_notes.py`).
+  The app carries **no** release-notes feed — GitHub Releases is the changelog, and
+  `test_audit_findings` M27 fails if an in-app feed ever comes back.
 - Deploy is manual and separate from merge approval. `scripts/post_deploy.sh` runs the
   whole verification chain (prod SHA == main, static purge, authenticated render).
   `scripts/pr_preflight.sh` is its pre-merge twin.

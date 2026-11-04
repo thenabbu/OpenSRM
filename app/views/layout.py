@@ -9,7 +9,7 @@ re-exported from app.app; index() reads them through app.app's namespace)."""
 # no template, route or test churn beyond the widget's own partial.
 LAYOUT = [
     {"id": "day", "span": 4, "row_span": 2,
-     "widgets": ["profile", "today", "week", "notices"]},
+     "widgets": ["profile", "today", "week"]},
     # `when` = route-context vars that must be truthy for the card to render
     # (all-empty card -> no orphan shell). Missing `when` = always show.
     # `cap` = lg max-height as a fraction of the viewport-fit grid
@@ -28,7 +28,6 @@ WIDGETS = {
     "profile":    {"partial": "partials/widgets/profile.html",  "min_w": 250},
     "today":      {"partial": "partials/widgets/today.html",    "min_w": 260},
     "week":       {"partial": "partials/widgets/week.html",     "min_w": 250},
-    "notices":    {"partial": "partials/widgets/notices.html",  "min_w": 300},
     "marks":      {"partial": "partials/widgets/marks.html",    "min_w": 560},
     "exams":      {"partial": "partials/widgets/exams.html",    "min_w": 560},
     "attendance": {"partial": "partials/widgets/attendance.html", "min_w": 300},

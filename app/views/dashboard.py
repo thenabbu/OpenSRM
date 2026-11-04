@@ -28,7 +28,6 @@ from ..portal.parsers.feedback import _fb_plan
 from ..scope.ops import enabled_features
 from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
 from ..security import require_login
-from ..static_data import NOTICES
 from ..usage_metrics import _track
 from .academics import academics_view
 from .attendance import (
@@ -218,7 +217,7 @@ def index():
         exams=exams, faculty=faculty_view, fb_plan=fb_plan,
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
-        layout=layout, widget_specs=WIDGETS, notices=NOTICES,
+        layout=layout, widget_specs=WIDGETS,
         ticker=_today_ticker(group_key), budgets=_wctx["budgets"],
         teach_groups=_wctx["teach_groups"],
         version=APP_VERSION,

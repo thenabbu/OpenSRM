@@ -44,10 +44,10 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    (patch = fix, minor = feature, major = breaking/user-visible redesign;
    docs/tests-only changes get no bump). The number renders on the login
    page and dashboard navbar, and `tests/unit/test_audit_findings.py` plus
-   CI both enforce the trio. **Also prepend a release entry to `NOTICES`**
-   in `app/app.py` — `test_audit_findings` `M27` fails the suite when the
-   head notice's version stops equaling `VERSION`, so releases without
-   notices cannot ship.
+   CI both enforce the trio. **Nothing else is needed for a release**: the
+   `Release` workflow tags `vX.Y.Z` on `main` and publishes a GitHub Release
+   whose notes are generated from the commits in that range. Release notes
+   are not written by hand and do not live in the app.
 5. **Commit** — one logical change per commit, message = finding + evidence
    + fix + how it was verified.
 6. **Push + PR** — open a PR against `main`. PR CI runs **Lint**
