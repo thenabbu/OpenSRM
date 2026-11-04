@@ -40,6 +40,10 @@ while read -r sha ver; do
               --to "$sha" --title "$tag")"
     gh release create "$tag" --repo "$repo" --target "$sha" \
        --title "$tag" --notes "$body" >/dev/null
+    # The next iteration's range starts at this tag, so it must exist in THIS
+    # clone too — gh creates it remotely only. Skipping this fetch makes the
+    # second iteration die on "unknown revision vX..sha".
+    git fetch --tags --quiet origin
     echo "[$n/$total] $tag created at ${sha:0:8}"
   fi
   prev="$tag"

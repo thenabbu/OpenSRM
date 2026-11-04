@@ -73,10 +73,20 @@ def classify(subject: str) -> tuple[str, str] | None:
     # Version bumps and dependency chores are not changes anyone reads about.
     if kind == "chore" and scope in ("release", "deps"):
         return None
+    # A release commit under another prefix ("release: v2.7.0") is the same
+    # noise — some older releases were cut with a bare `release:` subject.
+    if kind == "release":
+        return None
     # The release workflow appends to CHANGELOG.md by committing; that commit
     # lands inside the NEXT release's range and must never publish as an entry.
     if kind == "docs" and scope == "changelog":
         return None
+    # Merge fallback subjects ("merge: release — v2.6.1 (SCOPE sync speedup)")
+    # read as machine noise; the parenthetical is the actual summary.
+    if kind == "merge":
+        m2 = re.search(r"\(([^)]+)\)\s*$", rest) or re.search(r"[\u2014]\s*(.+)$", rest)
+        clean = (m2.group(1) if m2 else rest).strip(" -()")
+        return ("Internal", clean) if INTERNAL_HINTS.search(clean) else ("What changed", clean)
     # An unknown prefix is not a conventional type — it is a bare subject that
     # happens to contain a colon ("scope: fetch the real dues ..."). Judge it by
     # its text rather than letting the Internal default swallow a user-facing fix.
@@ -99,14 +109,24 @@ def classify(subject: str) -> tuple[str, str] | None:
 
 def notes(from_ref: str, to_ref: str, title: str = "", cwd: str = ".") -> str:
     """Render the markdown body for `from_ref..to_ref`. Raises on a bad range."""
-    out = subprocess.run(
-        ["git", "log", "--no-merges", "--reverse", "--format=%s", f"{from_ref}..{to_ref}"],
-        cwd=cwd, capture_output=True, text=True,
-    )
-    if out.returncode != 0:
-        raise RuntimeError(out.stderr.strip() or f"bad range {from_ref}..{to_ref}")
+    def subjects(*extra: str) -> list[str]:
+        r = subprocess.run(
+            ["git", "log", *extra, "--reverse", "--format=%s", f"{from_ref}..{to_ref}"],
+            cwd=cwd, capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or f"bad range {from_ref}..{to_ref}")
+        return r.stdout.splitlines()
+
+    # Older releases did all their work inside merge commits, so a --no-merges
+    # range can be a lone `release: vX` commit. Fall back to merge subjects
+    # rather than publishing an empty section or a version-string bullet.
+    out = subjects("--no-merges")
+    only_noise = all(classify(x) is None for x in out if x.strip())
+    if only_noise:
+        out = subjects()
     buckets: dict[str, list[str]] = {s: [] for s in ORDER}
-    for subject in out.stdout.splitlines():
+    for subject in out:
         got = classify(subject)
         if got is None:
             continue
@@ -142,6 +162,9 @@ def demo() -> None:
     assert classify("chore(ci): bump runner") == ("Internal", "bump runner")
     # the workflow's own CHANGELOG commit must never publish
     assert classify("docs(changelog): v2.10.1") is None
+    # a bare `release:` subject is the release commit itself, not a change
+    assert classify("release: v2.7.0") is None
+    assert classify("merge: release — v2.6.1 (SCOPE sync speedup versioned)") == ("What changed", "SCOPE sync speedup versioned")
     # unknown prefix = bare subject, judged by text (a real user-facing fix)
     assert classify("scope: fetch the real dues, fix the fees tab (#150)")[0] == "What changed"
     # bare subjects: tooling reads internal, an outcome reads visible
