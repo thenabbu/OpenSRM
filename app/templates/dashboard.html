@@ -912,6 +912,18 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
       <p class="text-xs text-base-content/50 mt-1">As reported by the SCOPE backend</p>
     </div>
     {% endif %}
+    {% if fees.dues %}
+    <div class="bg-base-200 border border-base-300 rounded-box p-4{% if fees.due_disp %} mt-3{% endif %}">
+      <div class="flex flex-col gap-2">
+        {% for d in fees.dues %}
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="text-sm">{% if d.due %}<span class="whitespace-nowrap">Due {{ d.due }}</span>{% else %}Outstanding{% endif %}{% if d.penalised %} <span class="text-xs text-error">penalty applied</span>{% elif d.penalty %} <span class="text-xs text-base-content/50 whitespace-nowrap">penalty after {{ d.penalty }}</span>{% endif %}</span>
+          <span class="font-mono text-sm tabular-nums text-base-content/70">₹{{ d.amt }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     {% if fees.years %}
     <div class="flex items-baseline justify-between gap-3{% if fees.due_disp %} mt-5{% endif %}">
       <h1 class="text-base font-semibold">Paid</h1>

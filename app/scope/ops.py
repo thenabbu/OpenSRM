@@ -1,7 +1,10 @@
 """SCOPE op catalog + feature-toggle registry.
 
-OPS = the 43-op catalog copied verbatim from fixtures/ops.json (mission dir
-scope-integration; XSD-verified against the live WSDL 2026-10-18).
+OPS = the 46-op catalog. 43 came from fixtures/ops.json (mission dir
+scope-integration, XSD-verified against the live WSDL 2026-10-18); the 3 fees ops
+(getStudentExamFeesDetails / getStudentTuitionFeesDetails / getFeetypeWisePG) were
+added 2026-11-04 from the live WSDL + its ?xsd=1 schema, which had grown past that
+snapshot. Only getStudentExamFeesDetails is wired into FEATURES; see the note there.
 
 FEATURES = feature slug -> ops it enables. Every SCOPE feature ships, gated
 by toggles (mission FACTS, user decision): unused-now features are fully
@@ -1965,6 +1968,138 @@ OPS = {
             "minOccurs": "1"
         }
     ]
+,
+    "getStudentExamFeesDetails": [
+        {
+            "name": "studentid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "model",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "androidversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "sdkversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "appversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "deviceid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "parentflag",
+            "type": "int",
+            "minOccurs": "1"
+        },
+        {
+            "name": "androidorios",
+            "type": "int",
+            "minOccurs": "1"
+        }
+    ],
+    "getStudentTuitionFeesDetails": [
+        {
+            "name": "studentid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "model",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "androidversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "sdkversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "appversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "deviceid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "parentflag",
+            "type": "int",
+            "minOccurs": "1"
+        },
+        {
+            "name": "androidorios",
+            "type": "int",
+            "minOccurs": "1"
+        }
+    ],
+    "getFeetypeWisePG": [
+        {
+            "name": "studentid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "feetypids",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "model",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "androidversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "sdkversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "appversion",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "deviceid",
+            "type": "string",
+            "minOccurs": "0"
+        },
+        {
+            "name": "parentflag",
+            "type": "int",
+            "minOccurs": "1"
+        },
+        {
+            "name": "androidorios",
+            "type": "int",
+            "minOccurs": "1"
+        }
+    ]
 }
 
 FEATURES = {
@@ -1972,7 +2107,14 @@ FEATURES = {
     "academics": ["getExamDetails", "getStudentExamProvisionalResult", "getStudentExamRevaluationResult",
                   "getSubjects", "getSubCategoryWiseStatus", "getSubCategorySemesterWiseStatus",
                   "getProgramSubCategoryWiseSubjects"],
-    "fees": ["getFeeDetails", "getFinanceDetails"],
+    # getStudentExamFeesDetails is the ONLY source of real dues: getFeeDetails
+    # reports paid==total and trailing==0 for every head even when the exam fee
+    # is still unpaid (measured 2026-11-04: the fee row said 3150/3150 paid
+    # while this op said 3150 owed, due 25-11-2026). Without it the tab shows
+    # ₹0 to a student who owes money.
+    # getFeetypeWisePG stays OUT of the sync: it maps payment gateways for a
+    # numeric feetypids we cannot enumerate ('' -> Error envelope every call).
+    "fees": ["getFeeDetails", "getFinanceDetails", "getStudentExamFeesDetails"],
     "placement": ["getStudentAllOfferedJobs", "getStudentPlacementRequired", "getJobCriteria",
                   "getJobQuestions", "getResumeUploads", "getWillingnessRejectReasons",
                   "getPlacementRegistrationDetailsList", "getPlacementWillingnessRegistrationOpen"],

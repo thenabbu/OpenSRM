@@ -299,7 +299,25 @@ def run(browser, w, h, arm):
     check(f"{tag}: WCAG contrast {len(pairs) - len(bad)}/{len(pairs)} pairs", not bad,
           str([(p["t"], p["ratio"], p["need"]) for p in bad[:4]]))
 
-    if arm == "dues":
+    if arm == "exam":
+        # the real 2026-11-04 shape: the fee rows all say paid==total, so the
+        # dues panel can ONLY come from getStudentExamFeesDetails
+        e = page.evaluate("""() => {
+          const panel = document.querySelector('#tab-fees');
+          const boxes = [...panel.children];
+          const hero = boxes.find(b => /Outstanding dues/.test(b.textContent));
+          const due = hero ? hero.querySelector('.text-2xl').textContent.trim() : '';
+          const item = [...panel.querySelectorAll('div')]
+            .filter(d => /Due \\d{2}-\\d{2}-\\d{4}/.test(d.textContent || ''))
+            .map(d => d.textContent.replace(/\\s+/g, ' ').trim())
+            .filter((v, i, a) => a.indexOf(v) === i)[0] || '';
+          return {due, item};
+        }""")
+        check(f"{tag}: exam dues hero shows the real amount", e["due"] == "₹3,150.00", e["due"])
+        check(f"{tag}: exam dues row names the due date", "Due 25-11-2026" in e["item"], e["item"])
+        check(f"{tag}: exam dues row carries the amount", "3,150.00" in e["item"], e["item"])
+
+    if arm in ("dues", "exam"):
         d = page.evaluate(DUES_JS)
         check(f"{tag}: dues hero is the first element", d["firstText"].startswith("Outstanding dues"),
               d["firstText"])
@@ -312,7 +330,7 @@ def run(browser, w, h, arm):
 with sync_playwright() as pw:
     b = pw.chromium.launch(headless=True, args=["--no-sandbox"])
     for w, h in ((393, 851), (1280, 900)):
-        for arm in ("dues", "clear"):
+        for arm in ("dues", "clear", "exam"):
             print(f"── {arm} {w}x{h}")
             run(b, w, h, arm)
     b.close()

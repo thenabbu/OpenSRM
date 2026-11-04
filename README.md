@@ -260,7 +260,7 @@ app/
   http_scraper.py     portal HTML fetch (captcha, session reuse, rate limits)
   portal/parsers/     pure functions: portal HTML → JSON (attendance, marks, exams, …)
   scope/client.py     zero-dependency SOAP client: envelope, double-AES, typed faults
-  scope/ops.py        the 43-operation catalogue + FEATURES (slug → ops) + env toggle
+  scope/ops.py        the 46-operation catalogue + FEATURES (slug → ops) + env toggle
   scope/sync.py       SCOPE session, hot/cold TTLs, bounded pool, preserve-if-empty
   views/              per-tab view models (attendance, marks, academics, fees, campus, …)
   blueprints/         auth, dashboard, marks, timetable, feedback, push, internal (metrics)
@@ -273,7 +273,7 @@ app/
 SCOPE is the SOAP API only SRM's Android app talks to. There is no public
 documentation and every call is encrypted:
 
-- **Wire** — `POST https://scopemobileapp.srmist.edu.in/evarsitywebservice/StudentAndroid?wsdl`, SOAP 1.1, 43 operations, each carrying one `<EncryptedData>` blob.
+- **Wire** — `POST https://scopemobileapp.srmist.edu.in/evarsitywebservice/StudentAndroid?wsdl`, SOAP 1.1, 46 operations, each carrying one `<EncryptedData>` blob.
 - **Encryption** — the payload is XML, AES-CBC encrypted, hex-encoded, encrypted *again* under a second key and hex-encoded again, with the app's device fingerprint in every request. The keys, IVs, envelope shape and hex casing were recovered from the app's native code and reproduced byte-for-byte; the implementation is **stdlib only** (`urllib` plus an embedded AES), so enabling SCOPE adds no dependency to the image.
 - **Faults are typed, not guessed** — an empty 200 body or a `NumberFormatException` SOAP fault means the session is dead (→ one relogin and retry of that operation); a network error, non-200 or garbage body is a transport fault (→ abort the run, keep what landed). Retries live in the sync layer, never in the client.
 - **Sessions** — one SCOPE `sid` per student, stored on their row next to the portal session; the first call after a gap re-logs-in transparently.
