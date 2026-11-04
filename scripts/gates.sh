@@ -42,10 +42,7 @@ uv sync --frozen --extra browser|CI runner setup, not a gate; locally the venv a
 .venv/bin/playwright install --only-shell chromium|CI runner setup; locally set PLAYWRIGHT_BROWSERS_PATH instead
 scope_ui_smoke (inside the CI docker job)|needs the built image
 CIEOF
-LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP
-test_fees_dut|FAILS on current main: paid-row vertical rule renders 4px, the layout law says 1px (app CSS, not fixed here)
-test_scope_profile_dut|FAILS on current main: Settings accordion row is not visible when the DUT clicks it (app template, not fixed here)"
-
+LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP"
 
 # The verdict. Called from every exit path so no path can print GREEN after a skip.
 finish() {

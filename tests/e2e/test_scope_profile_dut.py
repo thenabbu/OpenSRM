@@ -213,8 +213,14 @@ SETTINGS = """() => {
 def goto_settings(page):
     """Switch to the Settings panel through its real tab button (the hash is
     NOT a navigation input here — the app restores it once at load only)."""
-    vis = page.locator('#tab-settings-tab:visible')
-    (vis.first if vis.count() else page.locator('#tab-settings-tab')).click()
+    # Desktop tab carries the id; the phone shell moves Settings into the
+    # navbar gear, which has its own id. Click whichever shell is painted.
+    for sel in ('#tab-settings-tab:visible', '#tab-settings-mobile:visible',
+                '#tab-settings-tab', '#tab-settings-mobile'):
+        loc = page.locator(sel)
+        if loc.count():
+            loc.first.click()
+            break
     page.wait_for_timeout(700)
 
 
