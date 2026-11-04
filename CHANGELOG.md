@@ -145,5 +145,152 @@ Generated from git history by `scripts/release_notes.py`. Every GitHub Release b
 - point commit identity at the worktree hook; state the PARTIAL verdict
 - remove the in-app release-notes feed; GitHub Releases is the changelog
 - seed rich data in scroll-dependent suites
+- v2.10.1
+- fetch the real dues, fix the fees tab showing ₹0 to a student who owes (#150)
+
+
+
+- **scope**: zero-dep SOAP client + 43-op catalog + feature toggles
+- **scope**: m018 session columns + cold-sync scaffold
+- **dashboard**: ticker 'now' row can shrink — long subject no longer overflows mobile
+- **scope**: profile widget photo + settings scope fields + one-liner
+- **scope**: Fees tab — dues hero, paid-by-year, receipt ledger
+- **campus**: Campus tab — placement board, library, hostel+transport, notifications
+- **scope**: hourwise attendance joined to timetable + subject-named absences
+- **scope**: Academics tab — released results, derived CGPA, credits, subjects
+- **scope**: ship placement/library/campus DEFAULT-OFF (opt-in via SCOPE_FEATURES)
+- **attendance**: Detailed attendance — month dropdowns of date x hour cells
+- **academics**: CGPA hero owns the results; one credits+subjects card
+- **fees**: quiet paid list + collapsed receipt ledger (review rework)
+- **academics**: SGPA belongs in the expanded body, not the semester summary
+- **fees**: the date|name rule actually paints
+- **sync**: soft-refresh no longer shifts the dashboard frame (card x / top gutter 15 -> 30)
+- **merge**: keep main's fixed navbar in the mobile bar
+- **tools**: every Tools row names a real destination, and hourwise/profile get rows
+- **attendance**: table Margin uses the canonical _bunk_counts sign, not raw attended-ceil(0.75*total)
+- **scope**: give SCOPE a lifecycle trigger so the panels actually populate
+- **scope**: stop sending a password to getStudentLogin — it never validated one
+- **scope**: trigger no-ops when SCOPE_FEATURES is off
+- **scope**: drop getStudentPhoto from the JSON sync ops — it aborts the batch
+- **preflight**: compare VERSION per ref, not via git log -S
+- **obs**: instrument HTTP, DB, scope, push and process
+- **obs**: rebuild the dashboard and add rules for the new series
+- **obs**: stat panels reduce with a calc NAME, not an integer
+- **obs**: user activity, tab usage and per-source sync cost
+- **timetable**: redesign the Timetable tab to the approved reference
+- **tt**: keep the attendance tag's phrase contiguous
+- **tt**: word order per tier — '0 margin' not 'margin 0'
+- **tt**: subject name leads, mobile pass
+- **tt**: mobile row is two lines — code left, attendance tag far right
+- **scope**: fetch sync ops concurrently instead of one-at-a-time
+- **tt**: loosen row spacing, render rooms, cover the room branch
+- **obs**: stat tiles show one correct number
+- **attendance**: 2dp truncated percentages, never rounded
+- **attendance**: 1dp truncated percentages (variant of #120)
+- **edge**: reproducible maintenance page served at the edge during an outage
+- **security**: match Origin against the PUBLIC hostname, not the tunnel's IP
+- **observability**: answer who-uses-it, how long they wait, and where sync time goes
+- **attendance**: stop painting the stale Absences card during a scope sync
+- **sync**: refresh stale portal data on dashboard load
+- **auto-sync**: import decrypt_pw from the crypto leaf, not from db (#144)
+- **auto-sync**: read the payload shape _refresh_core actually returns
+- **fees,settings**: 1px rule not 4px, and the phone gear gets an id
+
+### Internal
+
+- **scope**: foundation test suite — 17/17 offline
+- **test**: pre-migration fixture holds back ALL versions >16, not just 17
+- profile enrichment suite 7/7 + AGENTS matrix row
+- scope profile widget + personal details (1280x900 + 393x851)
+- **fees**: grid columns for paid rows + verification screenshots
+- scope-hourwise before/after (393 + 1280)
+- two-seed DUT screenshots — empty-state navbar proof + synthetic full render
+- **phase-5**: touch feel — press feedback, JS tab motion, bottom sheets, v1.28.0
+- empty commit to re-trigger pull_request workflows
+- **merge**: resolve the VERSION/NOTICES/pyproject conflicts cut off by a truncated conflict log — marker scan across the whole tree is clean, uv lock regenerated at 1.28.0
+- **phase-6**: avatar rest + low-end tier + batched gaze — v1.29.0
+- **phase-7**: pull-to-refresh for touch — v1.30.0
+- **phase-8**: guardrail tests so the whole campaign stays fixed
+- structured suite layout — tests/unit + tests/e2e, consistent names
+- archive the Playwright fallback (PLAYWRIGHT_FALLBACK gate) + slim the image (WITH_PLAYWRIGHT)
+- bump playwright
+- rebuild README, CONTRIBUTING, SECURITY and AGENTS for human readers
+- before/after README rendering evidence (GitHub main vs this branch)
+- dedicated Architecture section — full portal-to-pixel data-flow diagram
+- data-flow diagram tuned for README width (vertical pipeline)
+- refresh README render evidence (architecture diagram iteration)
+- re-capture README render evidence with the diagram painted
+- replace the GitHub-rendered mermaid with a pre-rendered diagram
+- refresh render evidence (pre-rendered diagram on the branch page)
+- architecture diagram rev2 — applies the architecture review
+- refresh render evidence (review-revised diagram)
+- diagram-building guideline + generator as a repo tool
+- refresh render evidence (diagram guideline added to doc list)
+- bump python:3.11-slim digest + system setuptools — fixable HIGH/CRITICAL 6 -> 0
+- rebuild app.css for the .hw-* grid rules (24,845 B gzipped, 36,864 budget)
+- re-capture the profile evidence after the review corrections
+- **nav**: Tools dock tab replaces Settings; refresh/settings flank the wordmark
+- re-capture evidence after the reorganisation
+- evidence for the detailed-attendance grid
+- **tools**: Academics entry gates on released results, not the provisional window
+- full-viewport captures instead of cropped elements
+- before/fixed corner comparison for the layout-shift PR
+- rebuild app.css for the seeded --sbw markup
+- **ui**: self-hiding overlay scrollbar, navbars pinned to the viewport (v1.32.0)
+- resolve sibling conflicts, normalise the version trio to 2.0.0
+- bring in feat/scope-foundation, normalise version trio to 2.0.0
+- **merge**: restore main's viewport pinning and scrollbar model
+- rebuild app.css so the CI currency gate passes
+- before/after full-viewport captures
+- **ci**: remove stray .venv symlink and ignore venv in git
+- assert SCOPE panels actually render, not just that / returns 200
+- **migrations**: reject duplicate version at registration, not mid-boot
+- add dut_server.sh and ci_wait.sh
+- correct stale migration count and static-gate count
+- add wt.sh and prod_logs.sh
+- **obs**: import time in scope client; regenerate dashboard; docs
+- v2.5.0
+- timetable redesign, desktop + mobile (seeded zz9999)
+- bump break-divider + hero-break assertions to the new markup
+- refresh to the final build (tag phrase order)
+- recapture with the real shell chrome (navbar + dock in frame)
+- **scope**: hot/cold TTL split — 24h for settled data
+- v2.6.1
+- v2.7.0
+- README catches up with the two-source architecture (portal + SCOPE) (#119)
+- attendance 2dp capture
+- ATTENDANCE_DECIMALS is the one precision knob
+- extract the four leaf modules from app.py
+- point AGENTS layout and runbook at the edge maintenance worker
+- extract the scraper and the portal control plane
+- extract the declarative tables into app/static_data.py
+- extract the attendance and timetable view models
+- **security**: cross-site guard compared netlocs, refusing same-origin POSTs
+- pin the clock — the suite was red for 60 seconds every day
+- rebuild app.css after the extraction moved templates' class scan
+- extract the dashboard route into app/views/dashboard.py
+- extract push notifications and the health/metrics probes
+- rebuild app.css after cycle F
+- **facade**: constrain the rebind fan-out; repoint stale docs
+- import sort + rebuild app.css (CI ruff + CSS-current steps)
+- **edge**: forward the public host, and close the origin bypass
+- move the proxy-trust helpers out of the facade into app/edge.py
+- **edge**: key the origin bypass guard on X-Forwarded-Host, not Host
+- record that srm-origin is internal-only, enforced by a WAF rule
+- screenshot of the attendance tab mid-sync (old card absent)
+- pin the analytics arithmetic, visit span, and item beacon
+- **observability**: filter 5xx panels on status_class, and gate invented labels
+- add scripts/check_docs.py doc-consistency gate
+- rewrite AGENTS.md as repo facts; add scripts/gates.sh
+- wire test_auto_sync into the unit job
+- rewrite the new panels in plain language
+- **observability**: shorten two truncated titles, finish the plain-legend rename
+- move visit tracking out of app.py into observability
+- wire test_product_analytics into the unit job
+- order the dashboard by the product questions, drop duplicates
+- CI parity, honest verdict, route-auth + comment-balance gates
+- point commit identity at the worktree hook; state the PARTIAL verdict
+- remove the in-app release-notes feed; GitHub Releases is the changelog
+- seed rich data in scroll-dependent suites
 
 
