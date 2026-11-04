@@ -11,9 +11,9 @@ Run:  python tests/e2e/test_lowtier_dut.py   (needs seeded server on DUT_BASE).
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-lowtier")
-from _seed import seed, mint_token, require_own_server
+from _seed import seed_rich, mint_token, require_own_server
 
-seed(with_payload=False)
+seed_rich()  # rich: the dashboard must have real height to scroll (no notices feed pads it any more)
 TOK = mint_token()
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18180")
 require_own_server(BASE)
