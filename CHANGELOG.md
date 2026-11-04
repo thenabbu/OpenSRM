@@ -3,6 +3,11 @@
 Generated from git history by `scripts/release_notes.py`. Every GitHub Release body is the same rendering.
 
 
+- v2.10.1
+- fetch the real dues, fix the fees tab showing ₹0 to a student who owes (#150)
+
+
+
 - **scope**: zero-dep SOAP client + 43-op catalog + feature toggles
 - **scope**: m018 session columns + cold-sync scaffold
 - **dashboard**: ticker 'now' row can shrink — long subject no longer overflows mobile
