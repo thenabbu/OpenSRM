@@ -73,6 +73,16 @@ def classify(subject: str) -> tuple[str, str] | None:
     # Version bumps and dependency chores are not changes anyone reads about.
     if kind == "chore" and scope in ("release", "deps"):
         return None
+    # The release workflow appends to CHANGELOG.md by committing; that commit
+    # lands inside the NEXT release's range and must never publish as an entry.
+    if kind == "docs" and scope == "changelog":
+        return None
+    # An unknown prefix is not a conventional type — it is a bare subject that
+    # happens to contain a colon ("scope: fetch the real dues ..."). Judge it by
+    # its text rather than letting the Internal default swallow a user-facing fix.
+    if kind not in SECTIONS:
+        text = f"{kind}: {rest}" if not scope else f"{kind}({scope}): {rest}"
+        return ("Internal", text) if INTERNAL_HINTS.search(text) else ("What changed", text)
     section = SECTIONS.get(kind, "Internal")
     # A typed feat/fix can still be pure plumbing ("fix(edge): key the guard on
     # X-Forwarded-Host"). Only a subject that reads like a user outcome AND is
@@ -130,6 +140,10 @@ def demo() -> None:
     assert classify("Merge pull request #1 from x")[0] == "What changed"
     assert classify("docs: fix typo") == ("Internal", "fix typo")
     assert classify("chore(ci): bump runner") == ("Internal", "bump runner")
+    # the workflow's own CHANGELOG commit must never publish
+    assert classify("docs(changelog): v2.10.1") is None
+    # unknown prefix = bare subject, judged by text (a real user-facing fix)
+    assert classify("scope: fetch the real dues, fix the fees tab (#150)")[0] == "What changed"
     # bare subjects: tooling reads internal, an outcome reads visible
     assert classify("dut_official_tt wrote screenshots to a dev-host-only path")[0] == "Internal"
     assert classify("delete my data — POST /api/account/delete erases every row")[0] == "What changed"

@@ -2,6 +2,16 @@
 
 Generated from git history by `scripts/release_notes.py`. Every GitHub Release body is the same rendering.
 
+## v2.11.0
+
+### What changed
+
+- scope: fetch the real dues, fix the fees tab showing ₹0 to a student who owes (#150)
+
+
+## v2.10.1
+
+### What changed
 
 - v2.10.1
 - fetch the real dues, fix the fees tab showing ₹0 to a student who owes (#150)
@@ -299,3 +309,4 @@ Generated from git history by `scripts/release_notes.py`. Every GitHub Release b
 - seed rich data in scroll-dependent suites
 
 
+Web Push class reminders (PR #23): migration 11 push tables, pure due-calculation, pywebpush sender, /internal/push/tick + /api/push/*, SW push handlers + receipt, reminders card, docs. Rollout: PUSH_ENABLED off by default.

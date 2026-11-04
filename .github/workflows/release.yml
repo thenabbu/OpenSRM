@@ -28,8 +28,26 @@ jobs:
         with:
           fetch-depth: 0   # the generator needs full history + tags
 
+      - name: Did this push change VERSION?
+        id: gate
+        run: |
+          set -eu
+          # The CHANGELOG step below commits back to main, which triggers this
+          # workflow again. Without this gate that second run adds another
+          # changelog commit (two per release, polluting the next range), so we
+          # only proceed when VERSION actually moved.
+          if git rev-parse -q --verify HEAD~1 >/dev/null \
+             && [ "$(git show HEAD~1:VERSION 2>/dev/null | tr -d '[:space:]')" \
+                = "$(tr -d '[:space:]' < VERSION)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "VERSION unchanged in this push - nothing to release"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve VERSION and previous release
         id: v
+        if: steps.gate.outputs.changed == 'true'
         run: |
           set -eu
           VERSION="$(cat VERSION)"
@@ -40,6 +58,7 @@ jobs:
           echo "VERSION=$VERSION PREV=${PREV:-<none>}"
 
       - name: Generate notes
+        if: steps.gate.outputs.changed == 'true'
         id: notes
         run: |
           set -eu
@@ -55,6 +74,7 @@ jobs:
           echo "---- generated ----"; cat /tmp/notes.md
 
       - name: Create tag and Release
+        if: steps.gate.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -70,17 +90,30 @@ jobs:
           gh release view "$V" --repo "$GITHUB_REPOSITORY" --json tagName,url \
             --jq '"published: \(.tagName) \(.url)"'
 
-      - name: Append to CHANGELOG.md
+      - name: Regenerate CHANGELOG.md from Releases
+        if: steps.gate.outputs.changed == 'true'
         run: |
           set -eu
-          V="v${{ steps.v.outputs.version }}"
-          [ -f CHANGELOG.md ] || printf '# Changelog\n\nGenerated from git history by `scripts/release_notes.py`. Every GitHub Release body is the same rendering.\n\n' > CHANGELOG.md
-          grep -qxF "## $V" CHANGELOG.md && { echo "already in CHANGELOG"; exit 0; }
-          # newest first, right under the preamble
-          { head -3 CHANGELOG.md; echo; tail -n +4 /tmp/notes.md; echo; tail -n +4 CHANGELOG.md; } > /tmp/cl.md
-          mv /tmp/cl.md CHANGELOG.md
+          # Rebuild the whole file from the published Releases instead of
+          # splicing. Splicing needed the preamble offset to stay in sync and
+          # silently dropped the version heading when it drifted; a rebuild is
+          # idempotent by construction and cannot gain duplicate sections.
+          # ponytail: paginated at 100 releases; page if the repo ever passes it.
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName,publishedAt --jq '.[] | .tagName' \
+            | sort -V -r > /tmp/tags.txt
+          {
+            printf '# Changelog\n\n'
+            printf 'Generated from git history by `scripts/release_notes.py`. Every GitHub Release body is the same rendering.\n'
+            while read -r tag; do
+              [ -n "$tag" ] || continue
+              printf '\n'
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+            done < /tmp/tags.txt
+          } > CHANGELOG.md
+          if git diff --quiet CHANGELOG.md; then echo "CHANGELOG already current"; exit 0; fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md
-          git commit -m "docs(changelog): $V" || echo "nothing to commit"
+          git commit -m "docs(changelog): ${{ steps.v.outputs.version }}"
           git push origin HEAD:main
