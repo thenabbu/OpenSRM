@@ -54,15 +54,15 @@ def _parse_fee_rows(data):
 
 
 def _due_of(row):
-    """One fee row's outstanding amount: 0 while paid == total and trailing == 0.
+    """One fee-row's outstanding amount from the ##-row alone: 0 while
+    paid == total and trailing == 0; else trailing when trailing != 0, else
+    total - paid.
 
-    OBSERVED on today's real data (all 3 rows): paid == total, trailing == 0
-    -> 0 dues. A due row is paid != total OR trailing != 0; the amount is
-    trailing when trailing != 0, else (total - paid).
-
-    ponytail: trailing-field semantics unconfirmed on real due data — first
-    row with paid!=total or trailing>0 must be eyeballed against the Scope
-    app; upgrade path = single dict key
+    MEASURED 2026-11-04 against the live backend: this formula is NOT a
+    reliable dues signal. Every row came back paid == total == trailing == 0
+    (so 0.0) while getStudentExamFeesDetails reported 3150 still owed and due
+    25-11-2026. Kept for the rows that do disagree; the fees view no longer
+    treats this as the authority — _exam_dues() does.
     """
     paid, total = _num(row["paid"]), _num(row["total"])
     trailing = _num(row["trailing"]) or 0.0
@@ -71,6 +71,40 @@ def _due_of(row):
     if paid != total or trailing != 0:
         return trailing if trailing != 0 else total - paid
     return 0.0
+
+
+def _exam_dues(data):
+    """getStudentExamFeesDetails rows -> (due total, itemised rows).
+
+    Live shape (2026-11-04):
+      [{"amounttopay": 3150, "paidamount": 0, "minamount": 3150,
+        "startdate": "21-09-2026", "enddate": "25-11-2026",
+        "penaltydate": "24-11-2026", "penaltystatus": 0, "sno": "2440869",
+        "studentname": ..., "officeid": "20", "appln_category_id": "1"}]
+
+    Outstanding per row is amounttopay - paidamount (both are the real money
+    fields; minamount is only the part-payment floor). An envelope-shaped
+    response ({"Status": "Success", "Message": "No Details found", "Data": ""})
+    means nothing is owed -> 0. Never raises: junk rows are skipped.
+    """
+    rows, total = [], 0.0
+    for it in data if isinstance(data, list) else []:
+        if not isinstance(it, dict):
+            continue
+        owe = _num(it.get("amounttopay"))
+        paid = _num(it.get("paidamount")) or 0.0
+        if owe is None:
+            continue
+        due = owe - paid
+        if due <= 0:
+            continue
+        total += due
+        rows.append({"amt": _money(due),
+                     "due": str(it.get("enddate") or ""),
+                     "penalty": str(it.get("penaltydate") or ""),
+                     "penalised": str(it.get("penaltystatus") or "0") not in ("0", "")})
+    rows.sort(key=lambda r: r["due"])
+    return total, rows
 
 
 def _first_clause(text):
@@ -102,17 +136,21 @@ def _fees_view(scope_json, features):
     fee_rows = _parse_fee_rows(data_of("getFeeDetails"))
     fin_rows = data_of("getFinanceDetails")
     fin_rows = fin_rows if isinstance(fin_rows, list) else []
-    if not fee_rows and not fin_rows:
+    exam_total, exam_rows = _exam_dues(data_of("getStudentExamFeesDetails"))
+    if not fee_rows and not fin_rows and not exam_rows:
         return None
 
-    # ── hero: total outstanding. Threshold documented: any rupee owed
-    # (>= 1) is a warning; >= 100000 (a semester-fee scale) escalates to
-    # error. A zero-dues state is never colored (contract).
-    due = 0.0
-    for r in fee_rows:
-        d = _due_of(r)
-        if d > 0:
-            due += d
+    # ── hero: total outstanding. getStudentExamFeesDetails is the authority
+    # when it reports anything; the ##-row formula is the fallback for
+    # deployments that have not fetched it yet (see _due_of). Threshold
+    # documented: any rupee owed (>= 1) is a warning; >= 100000 (a
+    # semester-fee scale) escalates to error. Zero dues is never colored.
+    due = exam_total
+    if not exam_rows:
+        for r in fee_rows:
+            d = _due_of(r)
+            if d > 0:
+                due += d
     level = ""
     if due >= 1:
         level = "text-warning"
@@ -157,6 +195,7 @@ def _fees_view(scope_json, features):
         "due": due,
         "due_disp": _money(due) if due > 0 else "",
         "level": level,
+        "dues": exam_rows,
         "years": years,
         "paid_total": _money(paid_total) if fee_rows else "",
         "ledger": ledger,

@@ -10,7 +10,7 @@ Checks (mission contract):
   - login: uppercase netid + ALWAYS-empty password (backend ignores it); data_op wire order
     {studentid: sid, **FINGERPRINT} in the app's key order.
   - enabled_features(): default / "all" / unknown-slug / "off"; ops_for()
-    dedup; every FEATURES op exists in the 43-op catalog.
+    dedup; every FEATURES op exists in the 46-op catalog.
   - migration m018: fresh DB runs it (columns + defaults), re-runs are
     idempotent, no registry version collision.
   - scope_cold_sync with a MOCKED client: stores {data, ts}; a failing op
@@ -204,7 +204,7 @@ def t_ops_for_dedup():
     """Dedup across features + every FEATURES op must exist in the catalog."""
     for feat, feat_ops in OPS.FEATURES.items():
         for op in feat_ops:
-            assert op in OPS.OPS, f"FEATURES[{feat}] op {op} missing from the 43-op OPS catalog"
+            assert op in OPS.OPS, f"FEATURES[{feat}] op {op} missing from the 46-op OPS catalog"
     all_ops = OPS.ops_for(set(OPS.FEATURES))
     assert len(all_ops) == len(set(all_ops)), "ops_for leaked duplicates"
     orig = OPS.FEATURES

@@ -7,7 +7,7 @@ live-verified against the real backend 2026-10-18. Stdlib only (urllib);
 pycryptodome deliberately NOT used (the reference's embedded AES is proven).
 
 Wire: POST https://scopemobileapp.srmist.edu.in/evarsitywebservice/
-      StudentAndroid?wsdl  (SOAP 1.1, 43 ops)
+      StudentAndroid?wsdl  (SOAP 1.1, 46 ops)
   enc: hex( AES(kA,iA, pad(utf8( hex( AES(kB,iB, pad(inner)) )))) )
   The reference CLI hex-codes the intermediate stage lowercase; the real app
   sends UPPERCASE hex at both stages — port emits uppercase, which reproduces

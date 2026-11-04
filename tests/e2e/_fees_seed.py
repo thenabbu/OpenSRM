@@ -1,10 +1,13 @@
 """Fees seed: writes real-shaped SCOPE fee/finance blobs onto the shared test
 user (tests/_seed.py base user), so the Fees tab renders with no network.
 
-Two arms, chosen by argv[1]:
+Three arms, chosen by argv[1]:
   dues   - one unpaid fee head (tuition 200000 vs 100000 paid) -> hero present
   clear  - every head paid == total, trailing 0      -> hero absent, page
            starts at Paid (the all-clear widget was removed)
+  exam   - the REAL 2026-11-04 shape: every head shows paid == total and
+           trailing 0, while getStudentExamFeesDetails says 3150 is owed and
+           due 25-11-2026. Before the fix this rendered "no dues".
 Receipts are the mission's verbatim finance fixture (6 rows, PayU/IMPS
 narrations) so the collapsed receipt rows are measured on real text.
 """
@@ -49,6 +52,15 @@ CLEAR_FEES = [
 ]
 
 
+# verbatim live getStudentExamFeesDetails row (2026-11-04, netid ng2776)
+EXAM_DUES = [{"partpaymentapplicable": 0, "studentname": "NAVYA GUPTA",
+              "startdate": "21-09-2026", "minamount": 3150, "amounttopay": 3150,
+              "studentid": "709245", "paidamount": 0, "enddate": "25-11-2026",
+              "penaltystatus": 0, "sno": "2440869", "officeid": "20",
+              "amountwithoutpenalty": 3150, "penaltydate": "24-11-2026",
+              "ischeckvisible": "t", "appln_category_id": "1"}]
+
+
 def seed(arm="clear"):
     _seed.seed()
     from app import app as A
@@ -56,6 +68,8 @@ def seed(arm="clear"):
         "getFeeDetails": {"data": DUES_FEES if arm == "dues" else CLEAR_FEES, "ts": 1},
         "getFinanceDetails": {"data": FIN, "ts": 1},
     }
+    if arm == "exam":
+        scope["getStudentExamFeesDetails"] = {"data": EXAM_DUES, "ts": 1}
     c = A.db()
     c.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid='zz9999'",
               (json.dumps(scope), 1))

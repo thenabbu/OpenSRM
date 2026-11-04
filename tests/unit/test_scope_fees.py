@@ -22,7 +22,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from app.views.fees import _due_of, _fees_view, _first_clause, _head_of, _parse_fee_rows  # noqa: E402
+from app.views.fees import (_due_of, _exam_dues, _fees_view, _first_clause, _head_of,  # noqa: E402
+                            _parse_fee_rows)
 from app.scope.ops import enabled_features  # noqa: E402
 
 # verbatim from fixtures/fees.txt + fixtures/finance.txt (mission scope-integration)
@@ -44,9 +45,22 @@ FIN_ROWS = [
 ]
 
 
-def _scope(fee_rows=None, fin_rows=None):
+# verbatim from the live getStudentExamFeesDetails call (2026-11-04, netid ng2776):
+# the student OWES 3150 on the exam fee while the getFeeDetails row above shows
+# Exam Fees as 3150/3150 paid and trailing 0 — this fixture is the regression.
+EXAM_ROWS = [
+    {"partpaymentapplicable": 0, "studentname": "NAVYA GUPTA", "startdate": "21-09-2026",
+     "minamount": 3150, "amounttopay": 3150, "studentid": "709245", "paidamount": 0,
+     "enddate": "25-11-2026", "penaltystatus": 0, "sno": "2440869", "officeid": "20",
+     "amountwithoutpenalty": 3150, "penaltydate": "24-11-2026", "ischeckvisible": "t",
+     "appln_category_id": "1"},
+]
+
+
+def _scope(fee_rows=None, fin_rows=None, exam_rows=None):
     return {"getFeeDetails": {"data": FEE_ROWS if fee_rows is None else fee_rows, "ts": 1},
-            "getFinanceDetails": {"data": FIN_ROWS if fin_rows is None else fin_rows, "ts": 1}}
+            "getFinanceDetails": {"data": FIN_ROWS if fin_rows is None else fin_rows, "ts": 1},
+            "getStudentExamFeesDetails": {"data": EXAM_ROWS if exam_rows is None else exam_rows, "ts": 1}}
 
 
 def t_parser_fixture_row_fields():
@@ -67,7 +81,7 @@ def t_parser_fixture_row_fields():
 def t_dues_zero_when_paid_equals_total():
     rows = _parse_fee_rows(FEE_ROWS)                       # all 3 real rows: paid==total, trailing 0
     assert [_due_of(r) for r in rows] == [0.0, 0.0, 0.0]
-    v = _fees_view(_scope(), {"fees"})
+    v = _fees_view(_scope(exam_rows=[]), {"fees"})          # legacy path: no exam op yet
     assert v["due"] == 0.0 and v["due_disp"] == "" and v["level"] == "", v
 
 
@@ -80,7 +94,8 @@ def t_dues_trailing_field_wins():
     row = _parse_fee_rows([{"feedetails": "Tuition##150.00##150.00##01-Jan-2026##2025-2026##50"}])[0]
     assert _due_of(row) == 50.0, row
     v = _fees_view(_scope(fee_rows=[{"feedetails": "Tuition##100.00##150.00##01-Jan-2026##2025-2026##0"},
-                                    {"feedetails": "Exam##50.00##50.00##01-Jan-2026##2025-2026##25"}]),
+                                    {"feedetails": "Exam##50.00##50.00##01-Jan-2026##2025-2026##25"}],
+                                 exam_rows=[]),
                    {"fees"})
     assert v["due"] == 75.0 and v["due_disp"] == "75.00" and v["level"] == "text-warning", v
 
@@ -111,7 +126,7 @@ def t_receipt_head_is_one_line():
 
 
 def t_ledger_sorted_newest_first():
-    v = _fees_view(_scope(), {"fees"})
+    v = _fees_view(_scope(exam_rows=[]), {"fees"})
     dates = [e["date"] for e in v["ledger"]]
     assert dates == sorted(dates, reverse=True), dates
     assert dates[0] == "2026-07-02" and dates[-1] == "2025-11-21", dates
@@ -120,8 +135,8 @@ def t_ledger_sorted_newest_first():
 
 def t_feature_gate_off_no_tab():
     # view side: feature off (or no data at all) -> None -> template shows nothing
-    assert _fees_view(_scope(), set()) is None
-    assert _fees_view(_scope(), {"hourwise", "academics"}) is None
+    assert _fees_view(_scope(exam_rows=[]), set()) is None
+    assert _fees_view(_scope(exam_rows=[]), {"hourwise", "academics"}) is None
     assert _fees_view({}, {"fees"}) is None                  # feature on, but no data
     # env side: SCOPE_FEATURES without 'fees' disables the slug
     old = os.environ.get("SCOPE_FEATURES")
@@ -142,6 +157,52 @@ def t_feature_gate_off_no_tab():
         assert guard != -1 and guard > endif, f"{needle} not inside {{% if fees %}} guard"
 
 
+def t_exam_dues_beat_the_paid_row():
+    """THE regression: real data has Exam Fees 3150/3150 paid + trailing 0 in
+    getFeeDetails, while getStudentExamFeesDetails says 3150 is still owed and
+    due 25-11-2026. The hero must show 3150, not 0."""
+    assert _due_of(_parse_fee_rows(FEE_ROWS)[2]) == 0.0        # the trap
+    total, rows = _exam_dues(EXAM_ROWS)
+    assert total == 3150.0, total
+    assert rows == [{"amt": "3,150.00", "due": "25-11-2026",
+                     "penalty": "24-11-2026", "penalised": False}], rows
+    v = _fees_view(_scope(), {"fees"})
+    assert v["due"] == 3150.0 and v["due_disp"] == "3,150.00", v
+    assert v["level"] == "text-warning", v
+    assert len(v["dues"]) == 1 and v["dues"][0]["amt"] == "3,150.00", v["dues"]
+
+
+def t_exam_dues_partial_and_penalty():
+    """amounttopay - paidamount is the money owed (minamount is only the
+    part-payment floor), and penaltystatus latches the warning."""
+    data = [{"amounttopay": 5000, "paidamount": 2000, "minamount": 1000,
+             "enddate": "01-12-2026", "penaltydate": "01-12-2026", "penaltystatus": 1}]
+    total, rows = _exam_dues(data)
+    assert total == 3000.0, total
+    assert rows[0]["penalised"] is True, rows
+    # fully paid row is not a due
+    assert _exam_dues([{**data[0], "paidamount": 5000}])[0] == 0.0
+
+
+def t_exam_dues_envelope_means_nothing_owed():
+    """The 'No Details found' envelope is an ALIVE-EMPTY, not a due — and junk
+    never raises (getStudentTuitionFeesDetails returns exactly this shape)."""
+    for data in ({"Status": "Success", "Message": "No Details found", "Data": ""},
+                 [], None, "", [{"junk": 1}], [None], 5):
+        assert _exam_dues(data) == (0.0, []), data
+    # envelope-shaped and nothing else -> a zero-dues view, hero absent
+    v = _fees_view(_scope(exam_rows={"Status": "Success", "Message": "No Details found", "Data": ""}),
+                   {"fees"})
+    assert v["due"] == 0.0 and v["due_disp"] == "" and v["dues"] == [], v
+
+
+def t_exam_dues_alone_still_shows_the_tab():
+    """An exam-fee due with no getFeeDetails/getFinanceDetails rows must not
+    self-hide: the tab is keyed on having ANY fee source with data."""
+    v = _fees_view({"getStudentExamFeesDetails": {"data": EXAM_ROWS, "ts": 1}}, {"fees"})
+    assert v is not None and v["due"] == 3150.0, v
+
+
 TESTS = [
     ("##-split parser: fixture row -> fields (+ junk rows)", t_parser_fixture_row_fields),
     ("dues: paid==total + trailing 0 -> 0", t_dues_zero_when_paid_equals_total),
@@ -151,6 +212,10 @@ TESTS = [
     ("receipt head is one clean line", t_receipt_head_is_one_line),
     ("ledger sorted newest voucherdate first", t_ledger_sorted_newest_first),
     ("feature gate off -> no tab (view + env + template guard)", t_feature_gate_off_no_tab),
+    ("exam dues beat the 'paid' row (real regression)", t_exam_dues_beat_the_paid_row),
+    ("exam dues: amounttopay-paidamount + penalty flag", t_exam_dues_partial_and_penalty),
+    ("exam dues: 'No Details found' envelope = nothing owed", t_exam_dues_envelope_means_nothing_owed),
+    ("exam dues alone still render the tab", t_exam_dues_alone_still_shows_the_tab),
 ]
 
 if __name__ == "__main__":

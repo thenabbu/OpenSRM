@@ -47,7 +47,7 @@ app/portal/parsers/   # pure portal-HTML parsers: attendance, marks, timetable, 
                       # personal, feedback
 app/scope/            # SECOND data source — SRM's SCOPE app backend over SOAP:
                       #   client.py (stdlib-only AES envelope, typed faults)
-                      #   ops.py    (43-operation catalogue + FEATURES: slug → ops)
+                      #   ops.py    (46-operation catalogue + FEATURES: slug → ops)
                       #   sync.py   (session, hot/cold TTLs, connection pool,
                       #              preserve-if-empty; writes users.scope_json)
 app/views/            # dashboard view models: attendance budgets, marks derivation,
