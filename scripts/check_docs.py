@@ -125,6 +125,91 @@ else:
         "migrations.py" in _ag,
         f"registry={len(_versions)} maxv={max(_versions)}, not quoted")
 
+# D8 — every CI `run:` command is executed by gates.sh or named in its CI_ONLY
+# table. Adding a CI step without teaching gates.sh about it is exactly how the
+# local bar silently fell behind CI.
+_wf = rd(".github/workflows/tests.yml")
+_gates = rd("scripts/gates.sh")
+_ci_only = (_gates.split("<<'CIEOF'")[1].split("CIEOF")[0] if "<<'CIEOF'" in _gates else "").lower()
+_LOCAL_ONLY = (_gates.split("LOCAL_ONLY=")[1].split("step()")[0] if "LOCAL_ONLY=" in _gates else "")
+
+# Runner setup and scaffolding, not project gates.
+_SETUP = ("uv sync", "playwright install", "actions/", "git config", "pip install",
+          "::set-output", "echo ", "set -e",
+          # shell scaffolding inside CI's docker job (that whole job is CI_ONLY)
+          "trap ", "NAME=osrm", "sleep ", "docker rm", "docker cp", "docker run",
+          "docker exec", "if ! ", "fi", "then", "for ", "done")
+_runs = []
+for _wf_path in (".github/workflows/tests.yml", ".github/workflows/lint.yml"):
+    _lines = rd(_wf_path).splitlines()
+    _i = 0
+    while _i < len(_lines):
+        _ln = _lines[_i]
+        _m2 = re.match(r"^(\s+)run:\s*(\|)?\s*$", _ln)
+        if _m2:
+            _ind = len(_m2.group(1))
+            _block = []
+            _i += 1
+            while _i < len(_lines):
+                _sub = _lines[_i]
+                if _sub.strip() and len(_sub) - len(_sub.lstrip()) <= _ind:
+                    break
+                if _sub.strip():
+                    _block.append(_sub.strip())
+                _i += 1
+            if _block:
+                _runs.append(" ;; ".join(_block))
+            continue
+        _m3 = re.match(r"^\s+run:\s*(\S.*)$", _ln)
+        if _m3:
+            _runs.append(_m3.group(1).strip())
+        _i += 1
+
+_uncovered = []
+for _cmd in _runs:
+    if any(_s in _cmd for _s in _SETUP) or _cmd.startswith("#"):
+        continue
+    _key = None
+    for _pat in (r"(tests/(?:unit|e2e)/test_[a-z_0-9]+\.py)",
+                 r"(scripts/[a-z_0-9]+\.(?:sh|py))",
+                 r"(docker build)"):
+        _m2 = re.search(_pat, _cmd)
+        if _m2:
+            _key = _m2.group(1); break
+    if _key is None:
+        _k3 = re.search(r"([a-z_0-9]+\.(?:sh|py))", _cmd)
+        _key = _k3.group(1) if _k3 else _cmd.split()[0]
+    _bare = _key.rsplit("/", 1)[-1]
+    # gates.sh may name the script, or DERIVE the set it belongs to: unit_suites()
+    # and e2e_suites() pull from tests.yml, so every unit/e2e path is covered by
+    # the derivation even though the filename never appears in the script.
+    _derived = ("tests/unit/" in _key and "unit_suites" in _gates) or \
+               ("tests/e2e/" in _key and ("e2e_suites" in _gates or "run_push_duts" in _gates))
+    _any = any(t in _gates for t in re.findall(r"[a-z_0-9]+\.(?:sh|py)", _cmd))
+    if (_any or _key in _gates or _bare in _gates or _derived
+            or _bare.lower() in _ci_only or _key.lower() in _ci_only):
+        continue
+    _uncovered.append(_cmd[:70])
+chk("D8", "every CI run: command is in gates.sh or CI_ONLY",
+    not _uncovered, f"uncovered={_uncovered[:4]}")
+
+# D9 — every tests/e2e/test_*.py is run by CI or named in LOCAL_ONLY with a reason.
+_e2e_disk = {p.stem for p in (R / "tests/e2e").glob("test_*.py")}
+# CI arms the shared-server e2e suites as ARGUMENTS to ci_e2e_http.sh, which
+# `_ci` (unit paths only) never sees -- parse those args, the self-booting steps,
+# and run_push_duts' own list.
+_e2e_armed = set()
+_eb = re.search(r"ci_e2e_http\.sh((?:\s*\\?\s*\n?\s*test_[a-z_0-9]+)+)", _yml)
+if _eb:
+    _e2e_armed |= set(re.findall(r"test_[a-z_0-9]+", _eb.group(1)))
+_e2e_armed |= set(re.findall(r"tests/e2e/(test_[a-z_0-9]+)\.py", _wf))
+_rpd = R / "tests/e2e/run_push_duts.sh"
+if _rpd.exists():
+    _e2e_armed |= set(re.findall(r"test_[a-z_0-9]+", _rpd.read_text()))
+_e2e_unarmed = sorted(_e2e_disk - _e2e_armed - set(re.findall(r"(test_[a-z_0-9]+)\|", _LOCAL_ONLY)))
+chk("D9", "every tests/e2e suite runs in CI or is LOCAL_ONLY",
+    not _e2e_unarmed, f"unarmed={_e2e_unarmed}")
+
 fails = [r for r in results if not r[2]]
 for cid, desc, ok, ev in results:
     print(f"{cid:5} {'PASS' if ok else 'FAIL':7} {desc}")

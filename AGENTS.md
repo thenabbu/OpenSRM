@@ -13,7 +13,8 @@ bash scripts/gates.sh --fast   # lint + static gates only (~15 s)
 bash scripts/gates.sh --list   # what it would run, derived from tests.yml
 ```
 
-If it exits 0 a push is safe. It reads the suite list out of
+It exits **3** with `GATES GREEN (PARTIAL: <what>)` when it skipped anything —
+a partial run is not a push bar. Exit 0 (`GATES GREEN`) means nothing was skipped. It reads the suite list out of
 `.github/workflows/tests.yml`, so a suite added to CI is picked up
 automatically — **never hand-maintain a second list of suites in this file.**
 
@@ -87,8 +88,10 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
 
 - **Branches: `main` only.** Merge feature branches, then delete them local and remote.
 - Merge commits, never squash. Atomic commits: finding + evidence + fix + how verified.
-- **Commit email MUST be `128571614+thenabbu@users.noreply.github.com`** or the commit
-  does not link to the account.
+- **Commit email**: `scripts/wt.sh new <slug>` sets it per-worktree and installs a
+  pre-commit hook that refuses a commit in the canonical checkout. If you commit
+  by hand, pass `-c user.email=128571614+thenabbu@users.noreply.github.com`; the
+  wrong one does not link the commit to the account.
 - CI jobs: **Lint** (`ruff` + `uv lock --check` + app.css freshness) · **Tests**
   (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>` +
   `:<short-sha>`, `needs: [lint, tests]` on `main`) · **Scans** (report-only).
