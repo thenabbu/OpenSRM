@@ -50,3 +50,12 @@ while read -r sha ver; do
 done < /tmp/release_points.txt
 
 echo "latest release: $(gh release view --repo "$repo" --json tagName -q .tagName)"
+
+# gh release create re-marks "latest" on EVERY creation, so a backfill running
+# oldest->newest leaves an OLD tag flagged latest (observed: /releases/latest
+# returned v2.10.0 while v2.11.0 was published). Re-mark the true newest.
+if [ "$DRY" != "--dry-run" ]; then
+  newest="$(git tag -l 'v*' | sort -V | tail -1)"
+  [ -n "$newest" ] && gh release edit "$newest" --repo "$repo" --latest >/dev/null 2>&1 \
+    && echo "marked $newest as latest"
+fi
