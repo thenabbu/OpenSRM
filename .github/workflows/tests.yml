@@ -250,7 +250,8 @@ jobs:
             test_pull_dut \
             test_perf_budget_e2e \
             test_delete_dut \
-            test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check
+            test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check \
+            test_fees_dut test_scope_profile_dut
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)
         env:
