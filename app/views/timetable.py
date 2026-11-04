@@ -57,10 +57,6 @@ def _tt_editor_enabled():
     return os.environ.get("TIMETABLE_EDITOR", "archived") == "enabled"
 
 
-# Release notices, newest first (append at release time). The New badge rides
-# the head entry only — release notes verbatim from the real CHANGELOG.
-
-
 def _budget_rows(courses):
     """Attendance widget: (subject name, signed margin, risk) per subject in
     COURSES order (already sorted pct-ascending = risk-first). Value is the

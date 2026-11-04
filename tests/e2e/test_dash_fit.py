@@ -141,14 +141,12 @@ try:
               all(c["scroll"] == 0 for c in m["cards"]),
               str([(c["h"], c["scroll"]) for c in m["cards"]]))
 
-        # notices widget caps instead of stretching the day column
-        nw = pg.evaluate("""() => {
-          const ws = [...document.querySelectorAll('.widget-scroll')];
-          const n = ws.find(e => (e.closest('.wbox')?.querySelector('.wlabel')||{}).textContent === 'Notices');
-          return n ? {ch: n.clientHeight, sh: n.scrollHeight} : null; }""")
-        check("notices widget inside widget-scroll (capped, scrollable)",
-              nw is not None and nw["ch"] <= 320 and nw["sh"] >= nw["ch"],
-              str(nw))
+        # no in-app release-notes feed: the day column must not carry a
+        # 'Notices' widget any more — release notes live on GitHub Releases.
+        check("no notices widget in the day column",
+              pg.evaluate("""() => ![...document.querySelectorAll('.wlabel')]
+                  .some(e => e.textContent.trim() === 'Notices')"""),
+              "a release-notes widget reappeared")
 
         # ---- uniform edge (v1.21): no reserved scrollbar strip any more, so
         # the frame is a literal 15px on BOTH sides AND the navbar runs to the

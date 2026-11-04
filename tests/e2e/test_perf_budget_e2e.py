@@ -15,9 +15,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-budget-e2e")
-from _seed import mint_token, require_own_server, seed
+from _seed import seed_rich, mint_token, require_own_server
 
-seed(with_payload=False)
+seed_rich()  # rich: the dashboard must have real height to scroll (no notices feed pads it any more)
 from app.app import db
 
 MARKS = [

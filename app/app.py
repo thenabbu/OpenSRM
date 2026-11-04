@@ -678,10 +678,9 @@ from .scope_sync import (  # noqa: E402,F401
 )
 
 # ── Timetable (SQLite-backed, per-group) ─────────────────────────
-# Declarative tables (timetable slots, notices, Tools panel) live in
+# Declarative tables (timetable slots, Tools panel) live in
 # app/static_data.py — pure data, imported by the views. Re-exported.
 from .static_data import (  # noqa: E402,F401 — re-exported
-    NOTICES,
     SLOTS,
     TIMETABLE_TIME_OFFSETS,
     TOOLS,
