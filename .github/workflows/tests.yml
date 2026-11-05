@@ -18,8 +18,11 @@
 name: Tests
 
 on:
-  push:
-    branches: [main]
+  # NO `push:` trigger. tests.yml runs standalone on PRs and, on main, only as
+  # the reusable job Build & Push calls. Having both meant every main push
+  # started TWO copies of this workflow on the same ref, and the concurrency
+  # group below (cancel-in-progress) let one cancel the other - which killed
+  # the nested call and left Build & Push with a skipped `build` and no gate.
   pull_request:
     branches: [main]
   workflow_call:
@@ -29,6 +32,9 @@ permissions:
   contents: read
 
 concurrency:
+  # Keyed on workflow+ref, so a PR's own edits cancel their own stale runs. A
+  # workflow_call inherits the CALLER's group, so this cannot collide with the
+  # Build & Push call any more now that push: is gone.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
