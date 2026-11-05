@@ -43,16 +43,39 @@ jobs:
       # deploy can pin/roll back: ghcr.io/thenabbu/opensrm:<VERSION>.
       - name: Read VERSION
         id: version
-        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -eu
+          V="$(cat VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Did THIS push move VERSION? `git diff` against the pushed range,
+          # not HEAD~1: a multi-commit push would hide an earlier bump.
+          # Only a real bump may move :VERSION and :latest - re-pushing them on
+          # every docs commit makes :2.11.0 a moving target and destroys the
+          # rollback point the tag exists for.
+          BEFORE="${{ github.event.before }}"
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE:VERSION" 2>/dev/null; then
+            MOVED=$(git show "${BEFORE}:VERSION" | tr -d '[:space:]')
+          else
+            MOVED=""
+          fi
+          if [ "$MOVED" != "$V" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "VERSION moved (${MOVED:-<none>} -> $V): :$V and :latest will move"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "VERSION unchanged ($V): only the sha tag is published"
+          fi
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/thenabbu/opensrm
+          # :sha ALWAYS (every commit is identifiable). :VERSION and :latest
+          # only on a real VERSION bump, so they name an immutable artifact.
           tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.version.outputs.released == 'true' }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.released == 'true' }}
             type=sha,prefix=
           # metadata-action derives org.opencontainers.image.version from the
           # highest-priority tag (latest) - pin the real release number and
@@ -76,5 +99,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max

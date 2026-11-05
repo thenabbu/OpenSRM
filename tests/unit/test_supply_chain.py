@@ -66,6 +66,19 @@ check("build.yml labels org.opencontainers.image.revision from github.sha",
 # a hardcoded tag would survive a release bump silently
 _check_no_literal = not re.search(r"type=raw,value=\d+\.\d+\.\d+", build)
 check("no hardcoded version literal in tags", _check_no_literal)
+# :VERSION and :latest may only move on a real VERSION bump; re-pushing them on
+# every main commit makes the version tag a moving target and destroys the
+# rollback point it exists for.
+check("version/latest tags are gated on a real VERSION change",
+      "released == 'true'" in build,
+      "tags must be enable=<VERSION moved>, or :2.11.0 drifts with every commit")
+check("sha tag is unconditional", "type=sha,prefix=" in build)
+check("VERSION change compares the pushed range, not HEAD~1",
+      "github.event.before" in build)
+# Provenance + SBOM make the artifact's origin and contents verifiable at
+# deploy time instead of trusting a mutable tag.
+check("build records provenance", "provenance: mode=max" in build)
+check("build records an SBOM", "sbom: true" in build)
 
 # ── 3. scans.yml: report-only surface ───────────────────────────────────────
 scans = rd(".github/workflows/scans.yml")
