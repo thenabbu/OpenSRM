@@ -138,14 +138,18 @@ that catch people out first:
   `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
   `OPENSRM_TAG` (see AGENTS.md "Prod deploy").
 - **Scans** — gitleaks / pip-audit / trivy in
-  `.github/workflows/scans.yml`, **report-only** by design:
-  [docs/SCANS.md](docs/SCANS.md) documents what each would block on and how
-  to flip one to blocking.
-- **Deploy** — **manual**, there is no watcher: once CI is green on `main`,
-  follow [docs/runbook.md](docs/runbook.md) (sync the compose file first,
-  then `ssh lab 'cd /docker/opensrm && docker compose pull && docker compose
-  up -d opensrm'`). An auto-deploy watcher was deliberately removed at the
-  maintainer's request — do not add one back.
+  `.github/workflows/scans.yml`, **blocking**. A leaked secret, a vulnerable
+  dependency or a fixable HIGH/CRITICAL CVE fails the run.
+  [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
+  `.trivyignore`-style escape hatch.
+- **Deploy** — **gated, never automatic**: there is still no watcher. Nothing
+  deploys until a human approves the `production` environment on a
+  `workflow_dispatch` run, and `scripts/deploy_gated.sh` then does the
+  mechanical part (verified snapshot, digest pin, health + render checks,
+  auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
+  [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
+  removed at the maintainer's request — do not add one back. The approval gate
+  is what keeps that promise while removing the 1am manual steps.
 
 ## Portal rate limits
 

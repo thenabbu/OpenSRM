@@ -41,7 +41,30 @@ image carries no node/npm and no bundler.
 Deploy is **manual** — no watcher exists, by maintainer decision
 (CONTRIBUTING.md "Deploy").
 
-## Deploy
+## Deploy (gated, scripted)
+
+`scripts/deploy_gated.sh <tag-or-digest>` automates the steps *after* the
+decision, not the decision. The "no watcher" rule stands: nothing fires on its
+own, and the `production` GitHub Environment requires an approval before the
+workflow runs at all.
+
+What it does, in order: snapshot the DB (verified — a snapshot with no users or
+a failed integrity check aborts the deploy), pull the target **before** stopping
+anything, pin `OPENSRM_TAG` in the project `.env`, `compose up -d`, then verify
+container health + public `/healthz` + an in-container render. Any red step
+re-pins the previous tag and recreates, then re-verifies the rollback.
+
+`DEPLOY_DRY_RUN=1` rehearses the plan and changes nothing — always run that
+first. Run it **on the lab**: the box is NAT'd, so a runner cannot dial in.
+
+Two host facts this script encodes, both learned the hard way:
+- the container rootfs is `read_only` and `/app/data` is not writable, so the
+  snapshot goes to the `/tmp` tmpfs and is streamed out with `docker exec cat`
+  (`docker cp` cannot see files on that tmpfs);
+- the image reverts on rollback but the **schema does not** — which is exactly
+  why the snapshot comes first.
+
+## Deploy (by hand, for reference)
 
 **Sequence: sync the compose file FIRST, then pull.** `docker compose pull`
 never touches the compose file, so every compose-level feature the repo
