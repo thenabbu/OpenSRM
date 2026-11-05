@@ -2,8 +2,10 @@
 #
 # unit  — every suite that needs no server and no network (AGENTS.md matrix,
 #         verified by running each on a clean clone with a fresh DATA_DIR).
-# docker — image built but NOT pushed; boots on an empty volume and proves an
-#         authenticated dashboard renders (login-only smoke misses 500s).
+# docker — image built but NOT pushed; booted by `docker compose` against the
+#         real compose file (prod hardening + healthcheck) on an empty volume,
+#         proving an authenticated dashboard renders (login-only smoke misses
+#         500s).
 # e2e   — the Playwright suites: self-booting ones plus those that need a
 #         server (one gunicorn behind them, guarded by require_own_server).
 #
