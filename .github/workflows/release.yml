@@ -98,7 +98,7 @@ jobs:
             echo "created $V"
           fi
           gh release view "$V" --repo "$GITHUB_REPOSITORY" --json tagName,url \
-            --jq '"published: \(.tagName) \(.url)"'
+            --jq '"published: \(.tagName) \(.url)"' # shellcheck disable=SC2016 — jq, not bash
 
       - name: Regenerate CHANGELOG.md from Releases
         if: steps.gate.outputs.changed == 'true'
