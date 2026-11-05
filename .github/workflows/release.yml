@@ -18,15 +18,25 @@ on:
 permissions:
   contents: read
 
+# Two pushes landing together each try `gh release create` for the same tag and
+# then both push CHANGELOG.md; serialise instead of racing on non-fast-forward.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0   # the generator needs full history + tags
+          # persist-credentials stays ON here (zizmor finding accepted): the
+          # CHANGELOG step below pushes back to main with this token. Every
+          # other workflow sets it false.
 
       - name: Did this push change VERSION?
         id: gate

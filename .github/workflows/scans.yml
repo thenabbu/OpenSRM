@@ -31,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0 # full history — leaks only matter if they are old
       - name: Scan git history for secrets
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
@@ -57,6 +58,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -72,9 +75,13 @@ jobs:
 
       - name: Audit python dependencies (OSV)
         run: |
-          # pip-audit only writes -o output when it has findings
+          # pip-audit exits non-zero WHEN IT FINDS VULNERABILITIES. Under the
+          # runner's `bash -e` an unguarded call therefore killed this step at
+          # the exact moment there was something to report. `|| true` is on
+          # both calls on purpose; the Python block below is the reporter and
+          # its own exit code is what this step means.
           uvx pip-audit -r requirements-audit.txt --format markdown -o pip-audit.md || true
-          uvx pip-audit -r requirements-audit.txt --format json -o pip-audit.json
+          uvx pip-audit -r requirements-audit.txt --format json -o pip-audit.json || true
           python3 - <<'PY'
           import json, os, pathlib
           deps = json.load(open("pip-audit.json"))["dependencies"]
@@ -94,6 +101,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # Same image CI ships (build.yml), never pushed from here.
       - name: Build image (never pushed)
