@@ -21,6 +21,16 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["playwright==1.64.1"]
 
+# Dev tooling that CI gates on. These live in the lockfile on purpose: `uvx
+# ruff` resolves the newest release on every run, so an unrelated ruff bump
+# could turn main red with no code change. Versions are exact.
+[dependency-groups]
+dev = [
+    "ruff==0.14.4",
+    "pip-audit==2.9.0",
+    "actionlint-py==1.7.12.25",
+]
+
 [project.scripts]
 
 [tool.uv.sources]

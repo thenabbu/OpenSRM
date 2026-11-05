@@ -1,7 +1,7 @@
 # Supply-chain scans (report-only)
 
 `.github/workflows/scans.yml` runs three read-only scans on every PR to `main`
-and every push to `main`. **All three are `continue-on-error: true`** — a
+and every push to `main`. **All three block the merge** — a
 finding lands in the job summary and as a PR annotation, never as a red check.
 This is deliberate: scans land green-first so a baseline can be observed, and
 the maintainer flips the ones worth gating on (see below).

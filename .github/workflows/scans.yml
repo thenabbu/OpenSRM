@@ -1,9 +1,13 @@
-# Supply-chain scans — report-only by design.
+# Supply-chain scans — BLOCKING.
 #
-# Every job below is `continue-on-error: true`: a finding shows up in the
-# job summary (and as a non-blocking annotation) instead of failing the
-# PR. The maintainer flips a scan to blocking by deleting that one line
-# (see "flipping to blocking" in docs/SCANS.md for what each would gate).
+# All three jobs gate the merge. The baseline was clean on the day they were
+# flipped (gitleaks full history, pip-audit on the locked export, trivy
+# HIGH/CRITICAL with a fix available), so blocking cost nothing then; from
+# here a new finding is a red check rather than a line in a summary nobody
+# opens. docs/SCANS.md keeps the per-job "what this gates" notes.
+#
+# Flipping one back to report-only is a maintainer decision, not a fix: delete
+# the `continue-on-error` guard on that job ONLY, and say why in the PR.
 name: Scans
 
 on:
@@ -27,7 +31,6 @@ jobs:
     name: gitleaks (secrets in history)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -55,7 +58,6 @@ jobs:
     name: pip-audit (python deps)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -63,6 +65,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Sync dev tools (locked)
+        run: uv sync --locked --group dev
 
       # pip cannot resolve a git+ requirement for hashing, so the pinned-git
       # blobatar line (a commit-pinned supply-chain item covered by the
@@ -80,25 +87,31 @@ jobs:
           # the exact moment there was something to report. `|| true` is on
           # both calls on purpose; the Python block below is the reporter and
           # its own exit code is what this step means.
-          uvx pip-audit -r requirements-audit.txt --format markdown -o pip-audit.md || true
-          uvx pip-audit -r requirements-audit.txt --format json -o pip-audit.json || true
+          uv run --locked pip-audit -r requirements-audit.txt --format markdown -o pip-audit.md || true
+          uv run --locked pip-audit -r requirements-audit.txt --format json -o pip-audit.json || true
           python3 - <<'PY'
           import json, os, pathlib
           deps = json.load(open("pip-audit.json"))["dependencies"]
           vulns = {d["name"]: d["vulns"] for d in deps if d["vulns"]}
           md = pathlib.Path("pip-audit.md")
+          total = sum(len(v) for v in vulns.values())
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write(f"\n\npip-audit: {len(deps)} dependencies audited, "
-                     f"{sum(len(v) for v in vulns.values())} known vulnerabilities\n")
+                     f"{total} known vulnerabilities\n")
               if md.exists():
                   f.write("\n\n" + md.read_text())
+          # Blocking gate: the reporter's own exit code is what the step means.
+          # pip-audit exits 0 when it only LISTED findings and its exit code is
+          # swallowed by `|| true` above, so the failure has to be raised here
+          # or the job goes green with a vulnerability in it.
+          if total:
+              raise SystemExit(f"pip-audit: {total} known vulnerabilit(y/ies) - see the summary above")
           PY
 
   image:
     name: trivy (built image)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -113,7 +126,7 @@ jobs:
         with:
           image-ref: opensrm:scan
           format: table
-          exit-code: 0 # report-only
+          exit-code: 1 # blocking: a fixable HIGH/CRITICAL CVE fails the merge
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           output: trivy.txt

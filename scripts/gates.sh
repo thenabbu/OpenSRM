@@ -75,8 +75,8 @@ unit_suites() {
 if [ "${1:-}" = "--list" ]; then
   echo "== run set (derived from .github/workflows/tests.yml)"
   echo "-- lint"
-  echo "  uvx ruff check app/"
-  echo "  uvx --from actionlint-py actionlint"
+  echo "  uv run --locked ruff check app/"
+  echo "  uv run --locked actionlint"
   echo "  uv lock --check"
   echo "  bash scripts/build-css.sh  + git diff --exit-code app/static/app.css"
   echo "-- static gates"
@@ -104,10 +104,10 @@ if [ "${1:-}" = "--fast" ]; then FAST=1; shift; else FAST=""; fi
 
 # --- 1. Lint (mirrors lint.yml) -------------------------------------------
 step "lint (== CI Lint job)"
-if uvx --quiet ruff check app/ >/tmp/ruff-$$.log 2>&1; then ok "ruff check app/"; else
+if uv run --locked --quiet ruff check app/ >/tmp/ruff-$$.log 2>&1; then ok "ruff check app/"; else
   bad "ruff check app/"; sed -n '1,40p' /tmp/ruff-$$.log | sed 's/^/         /'
 fi
-if uvx --quiet --from actionlint-py actionlint >/tmp/al-$$.log 2>&1; then ok "actionlint (workflow syntax)"; else
+if uv run --locked --quiet actionlint >/tmp/al-$$.log 2>&1; then ok "actionlint (workflow syntax)"; else
   bad "actionlint"; sed -n '1,20p' /tmp/al-$$.log | sed 's/^/         /'
 fi
 if uv lock --check >/tmp/lock-$$.log 2>&1; then ok "uv lock --check"; else

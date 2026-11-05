@@ -24,16 +24,21 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
+      # Pinned through uv.lock (dev group). Resolving the newest ruff release on
+      # every run meant an unrelated ruff bump could turn main red with no code
+      # change.
+      - name: Sync dev tools (locked)
+        run: uv sync --locked --group dev
+
       - name: Run ruff
-        run: uvx ruff check app/
+        run: uv run --locked ruff check app/
 
       # actionlint catches what YAML parsers cannot: duplicated keys that a
       # loader silently keeps last (a second `with:` swallowed a fetch-depth),
       # bad expression syntax, and shellcheck-grade mistakes in run: blocks.
       # It found a real one the day it was added.
       - name: Workflow syntax (actionlint)
-        run: |
-          uvx --from actionlint-py actionlint
+        run: uv run --locked actionlint
 
       - name: Lockfile freshness
         run: uv lock --check

@@ -32,15 +32,24 @@ FAILS = []
 TOTAL = [0]
 
 def _now():
-    """Clock read at SEED time, never at import.
+    """One timestamp, used by BOTH the seed and every query in this suite.
 
-    Events are anchored to this and the queries compare against
-    strftime('now') at call time, so a value frozen at import drifts
-    relative to the query as the suite runs — a user seeded '0 days
-    ago' slowly becomes 'a few minutes ago' and then crosses a bucket
-    boundary. That produced an intermittent active_24h failure.
+    The seed stamps events relative to this value and the queries used to
+    compare against strftime('now') at their own call time. Two clocks: on a
+    busy machine the suite took long enough for a user seeded 1 day back to
+    cross the 24h line mid-run, which is the intermittent active_24h failure
+    the old docstring tried to explain away. Freezing the value at import fixes
+    nothing under load either.
+
+    The queries now take the anchor explicitly (`now_sql=`), so seed and query
+    are the same instant by construction, not by luck.
     """
     return int(time.time())
+
+
+# SQL literal for the seed instant — the same clock the queries are given.
+_ANCHOR = _now()
+_NOW_SQL = f"({_ANCHOR})"
 
 
 def check(name, fn):
@@ -81,7 +90,7 @@ def _seed():
             ]
             for user, first_d, last_d in rows:
                 for d in ((first_d, last_d) if first_d != last_d else (last_d,)):
-                    ts = _now() - d * 86400
+                    ts = _ANCHOR - d * 86400
                     c.execute("INSERT INTO usage_events (ts, day, user, event, target, detail) "
                               "VALUES (?, date(?, 'unixepoch'), ?, 'page_view', 'dashboard', '')",
                               (ts, ts, user))
@@ -89,11 +98,11 @@ def _seed():
             c.execute("INSERT INTO users (netid, password, attendance_json, marks_json, "
                       "subjects_json, scope_json, personal_details_json, exam_schedule_json, "
                       "faculty_map_json, photo_b64, last_fetch) "
-                      "VALUES ('olduser','x','[]','[]','[]','{}','{}','{}','{}',NULL,?)", (_now() - 60,))
+                      "VALUES ('olduser','x','[]','[]','[]','{}','{}','{}','{}',NULL,?)", (_ANCHOR - 60,))
             c.execute("INSERT INTO users (netid, password, last_fetch) "
                       "VALUES ('never','x',0)")
             c.execute("INSERT INTO users (netid, password, last_fetch) "
-                      "VALUES ('midnight','x',?)", (_now() - 90000,))
+                      "VALUES ('midnight','x',?)", (_ANCHOR - 90000,))
             c.commit()
         finally:
             c.close()
@@ -115,17 +124,17 @@ def t_active_and_new_counts():
     with A.app.app_context():
         c = DB.connect()
         try:
-            assert OBS._active_users_24h(c) == 3, f"active_24h got {OBS._active_users_24h(c)}"
-            assert OBS._new_users_24h(c) == 1, f"new_24h got {OBS._new_users_24h(c)}"
-            assert OBS._returning_users_24h(c) == 2, f"returning got {OBS._returning_users_24h(c)}"
+            assert OBS._active_users_24h(c, now_sql=_NOW_SQL) == 3, f"active_24h got {OBS._active_users_24h(c, now_sql=_NOW_SQL)}"
+            assert OBS._new_users_24h(c, now_sql=_NOW_SQL) == 1, f"new_24h got {OBS._new_users_24h(c, now_sql=_NOW_SQL)}"
+            assert OBS._returning_users_24h(c, now_sql=_NOW_SQL) == 2, f"returning got {OBS._returning_users_24h(c, now_sql=_NOW_SQL)}"
             # new + returning == active is the invariant the panel description
             # promises the reader; if these ever disagree the dashboard lies
-            assert (OBS._new_users_24h(c) + OBS._returning_users_24h(c)
-                    == OBS._active_users_24h(c))
+            assert (OBS._new_users_24h(c, now_sql=_NOW_SQL) + OBS._returning_users_24h(c, now_sql=_NOW_SQL)
+                    == OBS._active_users_24h(c, now_sql=_NOW_SQL))
             # 7d window catches the lapsed user (4 days back) as well
-            assert OBS._active_users_7d(c) == 4, f"active_7d got {OBS._active_users_7d(c)}"
+            assert OBS._active_users_7d(c, now_sql=_NOW_SQL) == 4, f"active_7d got {OBS._active_users_7d(c, now_sql=_NOW_SQL)}"
             # newbie (today) + midnight (first seen 2d ago) are both inside 7d
-            assert OBS._new_users_7d(c) == 2, f"new_7d got {OBS._new_users_7d(c)}"
+            assert OBS._new_users_7d(c, now_sql=_NOW_SQL) == 2, f"new_7d got {OBS._new_users_7d(c, now_sql=_NOW_SQL)}"
         finally:
             c.close()
 
