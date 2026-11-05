@@ -1,4 +1,4 @@
-target-version = "py311"
+target-version = "py314"   # must match .python-version + the image
 line-length = 200
 
 [lint]

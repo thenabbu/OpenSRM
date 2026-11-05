@@ -74,9 +74,13 @@ check("scans.yml has the three scan jobs", set(jobs) == {"secrets", "deps", "ima
 for job in jobs:
     block = re.split(rf"^  {job}:\n", scans, flags=re.M)[1]
     block = re.split(r"^  \w", block, flags=re.M)[0]  # cut at the next job key
-    check(f"scan job '{job}' is continue-on-error",
-          "continue-on-error: true" in block,
-          "flipping a scan to blocking is a maintainer decision (docs/SCANS.md)")
+    # Blocking since 2026-11-05: the baseline was clean, so a finding is now a
+    # red check instead of a summary line nobody reads. Re-introducing
+    # `continue-on-error` on a scan is a maintainer decision and must be
+    # deliberate, which is exactly what this pin makes it.
+    check(f"scan job '{job}' blocks the merge (no continue-on-error)",
+          "continue-on-error: true" not in block,
+          "a scan that cannot fail the run is not a gate (docs/SCANS.md)")
 check("scans default permissions read-only",
       re.search(r"^permissions:\n  contents: read$", scans, re.M) is not None)
 uses = re.findall(r"uses: (\S+)@([0-9a-f]{40})", scans)
@@ -88,8 +92,17 @@ check("pip-audit audits the frozen export minus git+ lines",
       "uv export --frozen --no-dev" in scans and "grep -v 'git+'" in scans)
 check("trivy filters HIGH,CRITICAL with a fix available",
       "severity: HIGH,CRITICAL" in scans and "ignore-unfixed: true" in scans)
+check("trivy fails the job on a fixable CVE (exit-code 1)",
+      "exit-code: 1" in scans)
+check("pip-audit raises on findings (its exit code is swallowed)",
+      "raise SystemExit" in scans)
 check("each scan writes a job summary",
       scans.count("GITHUB_STEP_SUMMARY") >= 3)
+# uvx resolves the newest release on every run; the lockfile pins it.
+check("scans run pip-audit from the locked dev group", "uv run --locked pip-audit" in scans)
+check("no uvx in CI or gates.sh (unpinned resolution)",
+      "uvx ruff" not in scans and "uvx ruff" not in rd(".github/workflows/lint.yml")
+      and "uvx ruff" not in rd("scripts/gates.sh"))
 
 # ── 4. docs ─────────────────────────────────────────────────────────────────
 scans_doc = rd("docs/SCANS.md")

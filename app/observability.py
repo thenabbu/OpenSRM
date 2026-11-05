@@ -201,7 +201,18 @@ def _distinct_users(c):
     return c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
-def _active_users_24h(c):
+def _now_sql():
+    """The clock the usage queries compare against — SQLite's, in prod.
+
+    Rows are stamped with the DB's clock, so the window must be measured with
+    the SAME clock or the two drift apart under load and a user who is 1 day
+    back flips across the 24h line mid-suite. Tests that seed their own
+    timeline pass their own timestamp here instead of racing wall-clock.
+    """
+    return "strftime('%s','now')"
+
+
+def _active_users_24h(c, now_sql=None):
     """Distinct people who did ANYTHING in the last 24h.
 
     The live counter opensrm_active_users_total{uid} answers "who is on right
@@ -209,18 +220,20 @@ def _active_users_24h(c):
     cannot answer "how many people used the app today". This reads usage_events
     directly: one row per event, one user column, a 24h floor on ts.
     """
+    now_sql = now_sql or _now_sql()
     return c.execute("SELECT COUNT(DISTINCT user) FROM usage_events "
-                     "WHERE ts >= strftime('%s','now') - 86400 "
+                     f"WHERE ts >= {now_sql} - 86400 "
                      "AND user != ''").fetchone()[0]
 
 
-def _active_users_7d(c):
+def _active_users_7d(c, now_sql=None):
+    now_sql = now_sql or _now_sql()
     return c.execute("SELECT COUNT(DISTINCT user) FROM usage_events "
-                     "WHERE ts >= strftime('%s','now') - 7*86400 "
+                     f"WHERE ts >= {now_sql} - 7*86400 "
                      "AND user != ''").fetchone()[0]
 
 
-def _new_users_24h(c):
+def _new_users_24h(c, now_sql=None):
     """First-time users: accounts whose EARLIEST usage event is within 24h.
 
     This is "first time login" in the sense the dashboard needs — the moment
@@ -228,25 +241,28 @@ def _new_users_24h(c):
     and an existing account that finally opened the app DOES, which is what
     "new users came" means when reading a growth curve.
     """
+    now_sql = now_sql or _now_sql()
     return c.execute(
         "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
-        "WHERE user != '' GROUP BY user HAVING first_ts >= strftime('%s','now') - 86400)"
+        f"WHERE user != '' GROUP BY user HAVING first_ts >= {now_sql} - 86400)"
     ).fetchone()[0]
 
 
-def _new_users_7d(c):
+def _new_users_7d(c, now_sql=None):
+    now_sql = now_sql or _now_sql()
     return c.execute(
         "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
-        "WHERE user != '' GROUP BY user HAVING first_ts >= strftime('%s','now') - 7*86400)"
+        f"WHERE user != '' GROUP BY user HAVING first_ts >= {now_sql} - 7*86400)"
     ).fetchone()[0]
 
 
-def _returning_users_24h(c):
+def _returning_users_24h(c, now_sql=None):
     """Active in the last 24h, but NOT first-timers: the loyalty number."""
+    now_sql = now_sql or _now_sql()
     return c.execute(
         "SELECT COUNT(*) FROM (SELECT user, MIN(ts) AS first_ts FROM usage_events "
-        "WHERE user != '' GROUP BY user HAVING MAX(ts) >= strftime('%s','now') - 86400 "
-        "AND first_ts < strftime('%s','now') - 86400)"
+        f"WHERE user != '' GROUP BY user HAVING MAX(ts) >= {now_sql} - 86400 "
+        f"AND first_ts < {now_sql} - 86400)"
     ).fetchone()[0]
 
 

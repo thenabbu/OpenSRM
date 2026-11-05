@@ -45,6 +45,16 @@ LABEL org.opencontainers.image.title="OpenSRM" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="thenabbu"
 
+# Security patches from the Debian security repo that landed after the pinned
+# base image was published. Without this the image keeps apt 3.0.3 forever and
+# trivy reports CVE-2026-109518 (fix available: 3.0.4) on every scan. The
+# digest pin is still what makes builds reproducible; this brings the patched
+# packages the pin cannot know about yet.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
 # Chromium's shared-library stack — only for WITH_PLAYWRIGHT=1; the pure-HTTP
 # pipeline needs none of it (this layer was 250 MB uncompressed / 81 MB
 # compressed on every pull).
@@ -61,11 +71,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Base image's system setuptools 79.0.1 vendors wheel 0.45.1 and
 # jaraco.context 5.3.0 — both flagged HIGH by trivy (the app runs from
 # /app/.venv and never touches setuptools, but it sits in the scanned
-# layer). Bump setuptools+wheel to current. pip is deliberately NOT
-# upgraded: base pip 24.0 has only MEDIUM CVEs, while pip 26.x ships a
-# vendored bom.cdx.json SBOM (urllib3 2.7.0 / msgpack 1.1.2) that trivy
-# parses as 4 new HIGH findings — trading 6 MEDIUM rows for 4 HIGH rows.
-RUN pip install --no-cache-dir -U setuptools wheel
+# layer). Bump setuptools+wheel to current.
+#
+# pip is upgraded too, and that reverses the old note here. The base ships pip
+# 26.2.2, whose vendored libs are urllib3 2.7.0 / msgpack 1.1.2 / setuptools
+# 70.3.0, and pip ships a bom.cdx.json declaring exactly those versions —
+# which trivy reads as 5 HIGH findings even though setuptools on disk is
+# 84.2.1 and the app's venv has fixed urllib3. Bumping to pip 26.3 vendors
+# urllib3 2.8.0 / msgpack 1.2.4 and regenerates that BOM, so all five clear
+# without touching the app's dependencies at all.
+# pip 26.3's own bom.cdx.json still declares setuptools 70.3.0 (verified:
+# on-disk 84.2.1, BOM 70.3.0), so trivy reports a CVE for a version that is not
+# installed. That file is pip's bookkeeping manifest, not a runtime component —
+# the app never imports it — so it goes rather than the finding being ignored.
+RUN pip install --no-cache-dir -U setuptools wheel \
+ && pip install --no-cache-dir -U pip==26.3 \
+ && rm -f /usr/local/lib/python3.14/site-packages/pip/_vendor/bom.cdx.json
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /ms-playwright /ms-playwright

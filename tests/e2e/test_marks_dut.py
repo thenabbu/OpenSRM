@@ -263,9 +263,17 @@ with sync_playwright() as p:
         page.click("#tab-marks .py-1 summary >> nth=1")
         page.wait_for_timeout(250)
         page.select_option("#tab-marks details[open] select[name=role]", "IE-2")
+        page.wait_for_timeout(150)   # the select's change handler enables Save
         page.click("#tab-marks details[open] button:has-text('Save')")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(600)
+        # Wait for the SAVE TO LAND rather than sleeping 600ms and hoping: the
+        # assertion below reads the rendered row, so the only honest gate is
+        # that row changing. On a loaded CI runner the fixed sleep expired
+        # first and the check read the pre-save DOM.
+        page.wait_for_function(
+            """() => [...document.querySelectorAll('#tab-marks .py-1')]
+                     .some(r => /46\\.8\\/60/.test(r.innerText))""",
+            timeout=10000)
         check(tag + "save redirects back to the marks tab",
               page.evaluate("() => location.hash") == "#marks", page.url)
         after = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .py-1')]
