@@ -1,0 +1,111 @@
+# Gated deploy: one digest, approved by a human, verified, auto-reverted.
+#
+# CONTRIBUTING says deploy is manual and there is NO WATCHER, because a blind
+# auto-deploy is unacceptable. This is not a watcher. It never fires on its own
+# - it is workflow_dispatch only - and it stops at the `production` environment,
+# which requires Navya's approval. Nothing is automated before that button.
+# What IS automated is everything after it: the snapshot, the digest pin, the
+# verification, and the rollback. Those are the steps a human forgets at 1am.
+#
+# The lab is behind NAT, so this cannot push to it. The workflow runs the
+# deployer ON the lab through the existing outbound path; the runner never
+# dials in.
+name: Deploy (gated)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Image tag to deploy (e.g. 2.11.0) or digest"
+        required: true
+        type: string
+      dry_run:
+        description: "Rehearse: snapshot + show the plan, change nothing"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two deploys at once, and never cancel one mid-flight: a cancelled
+  # deploy could leave the tag pinned to an image that was never verified.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production       # <- the human approval gate; configure required reviewers
+      url: https://srm.200871.xyz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # The path to the lab is outbound-only by design. If this secret is not
+      # configured the job fails loudly rather than silently skipping a deploy
+      # that the operator believes happened.
+      # The lab is NAT'd: the runner cannot dial in, so the deploy goes out over
+      # a key that must already be provisioned. Failing here - with the exact
+      # setup steps - beats a run that appears to deploy and did nothing.
+      - name: Check the lab deploy key is provisioned
+        env:
+          LAB_SSH: ${{ secrets.LAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          if [ -z "${LAB_SSH:-}" ]; then
+            echo "::error::LAB_DEPLOY_SSH is not configured, so this deploy cannot reach the lab."
+            echo "::error::"
+            echo "::error::One-time setup (run on the lab, as navya):"
+            echo "::error::  ssh-keygen -t ed25519 -N '' -f ~/.ssh/gha_deploy"
+            echo "::error::  cat ~/.ssh/gha_deploy.pub >> ~/.ssh/authorized_keys"
+            echo "::error::"
+            echo "::error::Then add the PRIVATE key to this repo:"
+            echo "::error::  gh secret set LAB_DEPLOY_SSH --repo thenabbu/OpenSRM < ~/.ssh/gha_deploy"
+            echo "::error::"
+            echo "::error::Until then use scripts/deploy_gated.sh directly on the lab."
+            exit 1
+          fi
+          echo "lab deploy key present"
+
+      - name: Ship the deployer and rehearse the plan
+        env:
+          LAB_SSH: ${{ secrets.LAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          install -m 700 -D /dev/null ~/.ssh/lab_deploy
+          printf '%s\n' "$LAB_SSH" > ~/.ssh/lab_deploy
+          chmod 600 ~/.ssh/lab_deploy
+          SSH="ssh -i ~/.ssh/lab_deploy -o StrictHostKeyChecking=accept-new"
+          TARGET="${{ inputs.ref }}"
+          $SSH lab 'mkdir -p /tmp/opensrm-deploy'
+          scp -i ~/.ssh/lab_deploy -q scripts/deploy_gated.sh scripts/post_deploy.sh \
+            lab:/tmp/opensrm-deploy/ || {
+            echo "::error::could not copy the deployer to the lab"; exit 1; }
+          echo "=== rehearsal (changes nothing) ==="
+          $SSH lab "DEPLOY_DRY_RUN=1 bash /tmp/opensrm-deploy/deploy_gated.sh '$TARGET'"
+
+      - name: Deploy
+        if: ${{ inputs.dry_run == false }}
+        env:
+          LAB_SSH: ${{ secrets.LAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          SSH="ssh -i ~/.ssh/lab_deploy -o StrictHostKeyChecking=accept-new"
+          $SSH lab "bash /tmp/opensrm-deploy/deploy_gated.sh '${{ inputs.ref }}'"
+
+      - name: Post-deploy verification (the same checks the runbook asks a human to run)
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -eu
+          ssh -i ~/.ssh/lab_deploy -o StrictHostKeyChecking=accept-new \
+            lab 'rm -rf /tmp/opensrm-deploy'
+          bash scripts/post_deploy.sh --skip-purge || {
+            echo "::error::post-deploy verification failed. deploy_gated.sh already rolled the"
+            echo "::error::image back if the container was unhealthy; if it reached this step the"
+            echo "::error::container is running - investigate before the next deploy."
+            exit 1; }

@@ -39,6 +39,7 @@ read -r -d '' CI_ONLY <<'CIEOF'
 DOCKER_BUILDKIT=1 docker build -t opensrm:ci .|needs a docker daemon and a multi-minute build; CI does this on every PR
 bash scripts/ci_docker_smoke.sh|needs the image built above; CI job "docker"
 bash scripts/ci_upgrade_smoke.sh|needs BOTH images (a published release + the one built above); CI job "docker"
+bash scripts/deploy_gated.sh|touches LIVE prod (snapshot, recreate, rollback) and runs on the lab, never a runner
 uv sync --frozen --extra browser|CI runner setup, not a gate; locally the venv already exists
 .venv/bin/playwright install --only-shell chromium|CI runner setup; locally set PLAYWRIGHT_BROWSERS_PATH instead
 scope_ui_smoke (inside the CI docker job)|needs the built image
