@@ -183,6 +183,33 @@ jobs:
       - name: Boot on empty volume + authenticated render smoke
         run: bash scripts/ci_docker_smoke.sh
 
+      # Upgrade path: the smoke above only ever proves a FRESH install. Every
+      # real deploy carries the previous release's data, and a migration that
+      # only works on an empty DB is the failure that reaches prod and takes
+      # the dashboard down. Boots the oldest still-published release on this
+      # volume, then this image on the same one.
+      - name: Log in to GHCR (read the previous release)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upgrade smoke (previous release's data under this image)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          set -eu
+          OLD_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" \
+            | python3 -c "import json,sys;print([r['tag_name'] for r in json.load(sys.stdin) if r['tag_name'].startswith('v')][-1])")
+          echo "oldest published release: $OLD_TAG"
+          if ! docker pull "ghcr.io/thenabbu/opensrm:${OLD_TAG#v}"; then
+            echo "::error::could not pull $OLD_TAG - an unreachable previous image is not a passing upgrade test"
+            exit 1
+          fi
+          OLD_IMAGE="ghcr.io/thenabbu/opensrm:${OLD_TAG#v}" NEW_IMAGE=opensrm:ci \
+            bash scripts/ci_upgrade_smoke.sh
+
       # The old smoke only greps the netid on /, which passes even when every
       # data-gated panel is empty - the exact hole that let a SCOPE integration
       # ship "green" while the browser showed nothing. This asserts the chain:
