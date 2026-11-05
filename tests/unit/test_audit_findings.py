@@ -90,7 +90,7 @@ _pyv = re.search(r'^version = "([^"]+)"', rd('pyproject.toml'), re.M).group(1)
 chk('M23', f"versions consistent (pyproject=lock=VERSION={_pyv})",
     has('uv.lock', rf'name = "opensrm"[\s\S]{{0,200}}?version = "{re.escape(_pyv)}"')
     and rd('VERSION').strip() == _pyv)
-chk('M24', "CI: uv lock --check in build + lint", 'uv lock --check' in rd('.github/workflows/build.yml') and 'uv lock --check' in rd('.github/workflows/lint.yml'))
+chk('M24', "CI: uv lock --check in lint (the one lint home)", 'uv lock --check' in rd('.github/workflows/lint.yml'))
 chk('M25', "DEPLOY.md: no token path/line disclosure",
     not has('egress/DEPLOY.md', r'/docker/\.env.*line 20|line 20.*CF_FULL', re.I | re.S) and not has('egress/DEPLOY.md', r'CF_FULL_TOKEN, line'))
 chk('M26', "app.py: no zz9999 references", not grep_repo('zz9999', 'app'))

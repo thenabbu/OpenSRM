@@ -21,7 +21,7 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -205,7 +205,14 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
     # read. usage_events retention moved to _prune_usage_events (env-config,
     # default 365d, at most once a day) so a per-minute tick stops paying it.
     try:
-        prune_push_sent_log(time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400)))
+        # Retention is relative to the tick's OWN clock, not wall-clock: the
+        # tick already takes `now`, and a row's local_date comes from that same
+        # clock. Pruning against time.time() made the horizon drift away from
+        # the rows the tick itself writes, which is what turned the push_tick
+        # suite into a 30-day time bomb (rows dated NOW fell outside a horizon
+        # computed from today).
+        _horizon = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        prune_push_sent_log(_horizon)
     except Exception as e:
         log_push.warning("log retention prune failed: %r", e)
     stats["took_ms"] = int((time.monotonic() - t0) * 1000)
