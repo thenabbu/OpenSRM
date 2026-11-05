@@ -18,11 +18,9 @@
 name: Tests
 
 on:
-  # NO `push:` trigger. tests.yml runs standalone on PRs and, on main, only as
-  # the reusable job Build & Push calls. Having both meant every main push
-  # started TWO copies of this workflow on the same ref, and the concurrency
-  # group below (cancel-in-progress) let one cancel the other - which killed
-  # the nested call and left Build & Push with a skipped `build` and no gate.
+  # No `push:` trigger on purpose. On main this workflow runs ONLY as the
+  # reusable job Build & Push gates on; a second standalone copy on the same
+  # push was pure duplication.
   pull_request:
     branches: [main]
   workflow_call:
@@ -32,10 +30,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Keyed on workflow+ref, so a PR's own edits cancel their own stale runs. A
-  # workflow_call inherits the CALLER's group, so this cannot collide with the
-  # Build & Push call any more now that push: is gone.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Distinct from Build & Push's group on purpose. Both run on a main push, and
+  # a shared group with cancel-in-progress lets one kill the other - observed
+  # as "build: skipped" with no tests job at all in the Build & Push run.
+  group: tests-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
