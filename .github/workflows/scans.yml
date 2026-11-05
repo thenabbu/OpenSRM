@@ -131,12 +131,22 @@ jobs:
           ignore-unfixed: true
           output: trivy.txt
 
+      # `if: always()` because trivy now exits 1 on a finding: without it the
+      # action fails first and the table explaining WHY never renders, leaving
+      # a red check with no CVE in the log (it read exactly that way the day
+      # blocking was switched on).
       - name: Job summary
+        if: always()
         run: |
           {
             echo "### Trivy — HIGH/CRITICAL with a fix available"
             echo
-            echo '```'
-            tail -n +1 trivy.txt
-            echo '```'
+            if [ -s trivy.txt ]; then
+              echo '```'
+              tail -n +1 trivy.txt
+              echo '```'
+            else
+              echo "No findings above the threshold (or the scan did not run —"
+              echo "check the step above)."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
