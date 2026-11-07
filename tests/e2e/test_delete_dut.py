@@ -11,6 +11,8 @@ Contrast: the OPEN modal is swept (oklch-aware parser copied from
 test_personal); 0 fails is the gate. Geometry: no horizontal overflow at
 either viewport, touch floors (row >= 44px, rendered confirm >= 42px).
 Server under test: AGENTS.md (DUT_BASE + DATA_DIR on every call).
+Needs a LIVE seeded gunicorn on DUT_BASE sharing DATA_DIR (see
+scripts/dut_server.sh); with no server listening it ABORTS — an abort is not a pass.
 """
 import json
 import math
@@ -197,7 +199,7 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={'width': 1280, 'height': 900}, device_scale_factor=2)
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.goto(f'{BASE}/settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(700)
     s = page.evaluate(STRUCT)
@@ -231,9 +233,11 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={'width': 393, 'height': 851}, device_scale_factor=2.75)
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.goto(f'{BASE}/settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(700)
+    check('mobile: /settings route serves the Settings panel', page.url.endswith('/settings')
+          and page.evaluate("() => !!document.getElementById('tab-settings')"), page.url)
     s = page.evaluate(STRUCT)
     check('mobile: row present, last, 44px floor, aligned, no h-overflow',
           s['kids'] == EXPECTED_KIDS and s['rowLast'] and s['rowH'] >= 44
@@ -251,12 +255,15 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={'width': 1280, 'height': 900}, device_scale_factor=2)
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.goto(f'{BASE}/settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(700)
     page.evaluate(MODAL)
     page.click('#del-confirm')
-    page.wait_for_url('**/login', timeout=10000)
+    try:
+        page.wait_for_url('**/login', timeout=10000)
+    except Exception:
+        pass   # reported as a FAIL below, never as a bare traceback
     check('confirm POSTs and the browser lands on /login', page.url.rstrip('/').endswith('/login'),
           page.url)
     cookies = [c['name'] for c in ctx.cookies()]

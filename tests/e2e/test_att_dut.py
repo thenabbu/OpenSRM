@@ -5,6 +5,8 @@ both). Payload mirrors the real portal shape: 9-char codes (21CSC201J), ALL-CAPS
 descriptions, plain-string hours ("46"), a CL / CLASS IN CHARGE row,
 monthly "MMM / YYYY", daily rows DD-MM-YYYY {date, hours} — values fabricated.
 Usage: DATA_DIR=/tmp/x DUT_BASE=http://127.0.0.1:P python tests/e2e/test_att_dut.py
+Needs a LIVE seeded gunicorn on DUT_BASE sharing DATA_DIR (see
+scripts/dut_server.sh); with no server listening it ABORTS — an abort is not a pass.
 """
 import json
 import os
@@ -76,7 +78,7 @@ def main():
                             service_workers="block")
         ctx.add_cookies([{"name": "srm_session", "value": tok, "url": BASE}])
         page = ctx.new_page()
-        page.goto(BASE + "/#attendance", wait_until="networkidle")
+        page.goto(BASE + "/attendance", wait_until="networkidle")
         page.reload()
         page.evaluate("localStorage.removeItem('attView')")
         page.reload()

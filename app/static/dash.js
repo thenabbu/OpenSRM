@@ -134,6 +134,15 @@ function softRefresh() {
         // live open panels stay the LIVE nodes: the tag form's submit listener
         // and the user's focus ride on them (the old morph kept the node too)
         var openDets = Array.prototype.slice.call(mainEl.querySelectorAll('details[open]'));
+        // The swap below DESTROYS every node in <main>, so whatever had focus
+        // goes with it and the browser drops focus to <body>. Carry the focused
+        // node across the rebuild the same way details[open] is carried: a user
+        // who was parked on the graph/table toggle must still be on it after a
+        // sync. Keyed by id; a control with no id can't be re-found, so it gets
+        // its focus restored by matching selector+position instead.
+        var focusEl = document.activeElement;
+        var focusKey = (focusEl && focusEl !== document.body && mainEl.contains(focusEl))
+          ? (focusEl.id ? '#' + focusEl.id : null) : null;
         var attTable = !!(mainEl.querySelector('#att-table') && !mainEl.querySelector('#att-table').hidden);
         while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
         mainEl.append.apply(mainEl, Array.prototype.slice.call(doc.querySelector('main').childNodes));
@@ -141,6 +150,10 @@ function softRefresh() {
           var fresh = mainEl.querySelector(k);
           if (fresh && fresh !== live[k]) fresh.parentNode.replaceChild(live[k], fresh);
         });
+        if (focusKey) {
+          var again = mainEl.querySelector(focusKey);
+          if (again && document.activeElement === document.body) again.focus();
+        }
         openDets.forEach(function (old) {
           var fresh = old.id ? document.getElementById(old.id) : null;
           if (!fresh || fresh === old) return;
@@ -162,16 +175,26 @@ function softRefresh() {
 function ref(quiet) {
   var btns = Array.prototype.slice.call(document.querySelectorAll('[data-refresh]'));
   var icons = document.querySelectorAll('.refresh-icon');
-  // disabling the focused button blurs it to <body> — remember it so the
-  // sync never visibly steals focus, then restore once the round trip ends
-  var focusedBtn = btns.indexOf(document.activeElement) !== -1 ? document.activeElement : null;
-  btns.forEach(function(b) { b.disabled = true; });
+  // Disabling any button blurs the focused element to <body>. Remember
+  // WHATEVER had focus (not just a refresh button): a user parked on the
+  // graph/table toggle was being dropped onto the dock after every sync.
+  var hadFocus = document.activeElement && document.activeElement !== document.body
+    ? document.activeElement : null;
+  // aria-disabled, not the disabled attribute: `disabled` on the focused
+  // element forces the browser to blur it to <body> immediately, which is what
+  // dropped the user onto the dock mid-sync. aria-disabled keeps focus where it
+  // is and still blocks a second click (see the handler below).
+  btns.forEach(function(b) { b.setAttribute('aria-disabled', 'true'); b.dataset.busy = '1'; });
   icons.forEach(function(i) { i.classList.add('animate-spin'); });
   document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); });
   function restore() {
-    btns.forEach(function(b) { b.disabled = false; });
+    btns.forEach(function(b) { b.removeAttribute('aria-disabled'); delete b.dataset.busy; });
     icons.forEach(function(i) { i.classList.remove('animate-spin'); });
-    if (focusedBtn && document.activeElement === document.body) focusedBtn.focus();
+    // only pull focus back if it went nowhere; never steal it from a user who
+    // moved on during the round trip, and never onto a node that was replaced
+    if (hadFocus && hadFocus.isConnected && document.activeElement === document.body) {
+      hadFocus.focus();
+    }
     renderSyncLines();
   }
   fetch('/api/refresh', {method: 'POST'})
@@ -196,7 +219,12 @@ function ref(quiet) {
     });
 }
 document.querySelectorAll('[data-refresh]').forEach(function(b) {
-  b.addEventListener('click', function() { ref(false); });
+  b.addEventListener('click', function() {
+    // aria-disabled replaces the `disabled` attribute so focus is never
+    // dropped mid-sync; honour it here or a double-click starts two syncs.
+    if (b.getAttribute('aria-disabled') === 'true') return;
+    ref(false);
+  });
 });
 
 // ── Item-level interaction beacon ─────────────────────────────────────────
