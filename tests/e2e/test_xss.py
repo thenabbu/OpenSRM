@@ -22,7 +22,11 @@ async def main():
         page.on("dialog", lambda d: (dialogs.append(d.message), asyncio.ensure_future(d.dismiss())))
         page.on("pageerror", lambda e: js_errors.append(str(e)))
         page.on("console", lambda m: csp.append(m.text) if "Content Security Policy" in m.text else None)
-        await page.goto(f"{BASE}/", wait_until="networkidle")
+        # P3.1: the seeded XSS payload lives in timetable_slots, which now
+        # render on /timetable (the dashboard no longer carries the panel).
+        # Each route is checked on its own; the checks below run on the route
+        # that is expected to carry the escaped payload.
+        await page.goto(f"{BASE}/timetable", wait_until="networkidle")
         await page.wait_for_timeout(800)
 
         checks = {
