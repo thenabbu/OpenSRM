@@ -17,7 +17,7 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
-from flask import redirect, render_template
+from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
 from ..auto_sync import auto_sync_kick_if_stale
@@ -196,6 +196,7 @@ def index(active_panel="dashboard"):
     # knob, so the feature set is read per request like every other gate.
     campus = campus_view(_jload(row["scope_json"] if row else None, {}),
                          enabled_features())
+    tools = _tools_entries(netid)
     # an authenticated visit that finds the SCOPE blob missing/stale starts
     # the background sync — the surfaces fill in on the next reload
     _scope_sync_kick_if_stale(netid)
@@ -208,6 +209,17 @@ def index(active_panel="dashboard"):
     # -> <panel>.html. (The old 1,060-line 9-panel dashboard.html is gone: it was
     # never routed after P3.1 and only existed as a duplication.)
     tpl = "home.html" if active_panel == "dashboard" else f"{active_panel}.html"
+    # P3.1: every panel template wraps its <main> content in a {% if %} on its
+    # own data, so with no data the route would serve 200 + page chrome + an
+    # empty <main>. The nav entry is hidden in that same case, so nobody can
+    # arrive here by clicking — only a stale bookmark or a push deep link — and
+    # a URL that renders nothing is a broken link, not a page: 404 (all four
+    # gated routes alike). /attendance's hourwise/marks/exams sections have
+    # independent fallbacks, so it is not gated this way.
+    present = {"campus": campus["show"], "academics": academics,
+               "fees": fees, "tools": tools}.get(active_panel, True)
+    if not present:
+        abort(404)
     return render_template(
         tpl, netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
@@ -232,8 +244,7 @@ def index(active_panel="dashboard"):
         # the profile widget's avatar stays the generated blobatar
         personal=merge_personal(personal_data, _scope_fields),
         campus=campus,
-        tools=_tools_entries(netid),
-        active_panel=active_panel,
+        tools=tools,
         scope_sync_state=_scope_sync_state(netid))
 
 

@@ -69,7 +69,7 @@ class Reminder:
             body += f" · {b.location}"
         return {"title": title, "body": body,
                 "tag": f"cls-{b.local_date}-{b.start_epoch}-{b.code}",
-                "url": "/#timetable"}
+                "url": "/timetable"}
 
 
 def blocks_for_day(day, day_slots, on_date, group_key=None):

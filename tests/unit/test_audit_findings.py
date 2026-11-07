@@ -22,6 +22,20 @@ def region(p, start, end):
     j = t.find(end, i + len(start))
     return t[i:j if j > 0 else i + 8000]
 
+def _meters_ok(tpl):
+    """Every progress bar in a template carries a real accessible name.
+
+    The bars are inert <i> stacks, so a screen reader gets nothing from their
+    geometry: the name has to ride on the bar itself (an aria-label on the
+    meter, or a nested labelled <progress>). A count of aria-labels anywhere
+    in the file proves nothing — the nav/dock icons alone used to satisfy it."""
+    t = rd('app/templates/' + tpl)
+    bars = re.findall(r'class="meter"(?:\s[^\n>]*)?>', t)
+    if len(bars) < 1:
+        return False, f'no .meter in {tpl}'
+    unlabelled = [b for b in bars if 'aria-label=' not in b]
+    return not unlabelled, f'{len(bars)} meter tag(s), {len(unlabelled)} unlabelled'
+
 # ---------- CRITICAL ----------
 chk('C1a', "migrations: @migration(version=1) on m001_base", has('app/migrations.py', r'@migration\(version=1'))
 chk('C1b', "migrations: excepts narrow to 'duplicate column'", has('app/migrations.py', r'duplicate column'))
@@ -146,7 +160,7 @@ chk('L42', "dead code: photo_b64 gone from users SQL (comments excepted)",
 chk('L43', "dead code: dataset.copyFlash gone", not grep_repo('copyFlash', 'app'))
 chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
     has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
-chk('L45', "a11y: progress bars have aria-label", len(re.findall(r'aria-label', rd('app/templates/home.html'))) >= 5)
+chk('L45', "a11y: attendance progress meters carry an accessible name", *_meters_ok('attendance.html'))
 chk('L46', "manifest linked on dashboard", has('app/templates/home.html', r'rel="manifest"'))
 chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
     has('app/templates/partials/theme.html', r"asset\('app\.css'\)")

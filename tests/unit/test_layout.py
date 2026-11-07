@@ -157,12 +157,16 @@ check("assess + people cards present (when-filter OR-semantics)",
 check("marks chip renders", 'Internal marks' in html and '17.5/20' in html)
 # P3.1: the budget rows/alert classes render on /attendance now, not on "/";
 # the layout assertions above stay on "/" because the cards live there.
-# P3.1: 'attend N' is rendered by the timetable grid, which now lives on
-# /timetable; the attendance widget's 'can skip'/'att-neg' stay on "/".
-_att = html + "\n" + GET("/timetable").get_data(as_text=True)
-check("attendance budget rows + alert class",
-      'can skip' in _att and 'att-neg' in _att and 'attend 3' in _att,
-      "skip=%s neg=%s att3=%s" % ('can skip' in _att, 'att-neg' in _att, 'attend 3' in _att))
+# 'attend N' is rendered by the timetable grid, which now lives on /timetable.
+# Each token is asserted against the ONE route that must render it — joining
+# the pages first let a token pass on either page, which is no assertion.
+_att = GET("/attendance").get_data(as_text=True)
+_tt = GET("/timetable").get_data(as_text=True)
+check("attendance budget rows + alert class (/attendance)",
+      'can skip' in _att and 'att-neg' in _att,
+      "skip=%s neg=%s" % ('can skip' in _att, 'att-neg' in _att))
+check("'attend N' budget rendered by the timetable grid (/timetable)",
+      'attend 3' in _tt, "'attend 3' %s /timetable" % ('in' if 'attend 3' in _tt else 'MISSING from'))
 check("people card lays widgets out 2-up (cols contract)",
       'sm:grid-cols-2' in html, "cols wrapper missing")
 check("teachers grouped + Practical mode tag",
