@@ -88,7 +88,7 @@ def features(spec):
 def GET():
     cl = A.app.test_client()
     cl.set_cookie("srm_session", TOKEN)
-    return cl.get("/").get_data(as_text=True)
+    return cl.get("/campus").get_data(as_text=True)
 
 
 c = A.db()

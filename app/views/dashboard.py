@@ -60,7 +60,7 @@ with open(os.path.join(os.path.dirname(__file__), "..", "..", "VERSION")) as _vf
 
 
 @require_login
-def index():
+def index(active_panel="dashboard"):
     netid = get_current_user()
     if not netid:
         # race: require_login validated, then the row vanished before this
@@ -204,8 +204,12 @@ def index():
     # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
     # the knob is 0.
     auto_sync_kick_if_stale(netid)
+    # Each route renders only its own panel: "/" -> home.html, everything else
+    # -> <panel>.html. (The old 1,060-line 9-panel dashboard.html is gone: it was
+    # never routed after P3.1 and only existed as a duplication.)
+    tpl = "home.html" if active_panel == "dashboard" else f"{active_panel}.html"
     return render_template(
-        "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
+        tpl, netid=netid, courses=courses, monthly=monthly_abs,
         hourwise=hourwise,
         days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
@@ -229,7 +233,47 @@ def index():
         personal=merge_personal(personal_data, _scope_fields),
         campus=campus,
         tools=_tools_entries(netid),
+        active_panel=active_panel,
         scope_sync_state=_scope_sync_state(netid))
+
+
+# ── P3.1: one document -> nine real routes ───────────────────────────────
+# Each panel is its own URL; every route runs the SAME view model (index()
+# computes the data once) but renders a per-route template containing only that
+# panel. index keeps endpoint `index` (Flask pins it on __name__). The eight
+# wrappers below are bare per-panel endpoints; they exist as real `def`s so
+# __name__ == the endpoint name (FlatBlueprint derives endpoint from __name__).
+def attendance():
+    return index("attendance")
+
+
+def timetable():
+    return index("timetable")
+
+
+def marks():
+    return index("marks")
+
+
+def campus():
+    return index("campus")
+
+
+def academics():
+    return index("academics")
+
+
+def fees():
+    return index("fees")
+
+
+def tools():
+    return index("tools")
+
+
+def settings():
+    return index("settings")
+# end P3.1
 
 
 def _load_component_tags(class_key, marks):

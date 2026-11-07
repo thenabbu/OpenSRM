@@ -16,16 +16,21 @@ html[data-theme="openSRM"] {
   --size-selector: 0.25rem; --size-field: 0.25rem; --border: 1px; --depth: 1; --noise: 0;
   color-scheme: dark;
 }
-/* Selected navbar tab — two cues on purpose. The tint is the subtle background
+/* Selected navbar route — two cues on purpose. The tint is the subtle background
    the bar needs; the 2px currentColor bar is the non-color state signal
    (WCAG 1.4.1 — same bar the mobile dock's .dock-active draws). daisyUI's own
    .btn-active fills base-200 with 5% black = #090909, byte-identical to this
    bar, so it could never show (DESIGN §10.11). Tint = 1.25:1 vs the navbar
-   (the base-300 over base-200 step, §2.3); bar = 19.9:1. */
+   (the base-300 over base-200 step, §2.3); bar = 19.9:1.
+   P3.1 route model: the active nav element is a real <a aria-current="page">
+   (not role=tab/aria-selected), so the rule targets it directly; the old
+   button form is kept too in case any role=tab node remains. */
+.navbar-center a[aria-current="page"],
 .navbar [role="tab"][aria-selected="true"] {
   position: relative;
   background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
 }
+.navbar-center a[aria-current="page"]::after,
 .navbar [role="tab"][aria-selected="true"]::after {
   content: "";
   position: absolute;

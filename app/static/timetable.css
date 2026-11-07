@@ -168,9 +168,9 @@
 /* Tab switch: panel motion is JS element.animate() in dash.js (off the main
    thread, interruptible, reduced-motion aware) — no CSS transition here.
    Dock: shared phase-5 press tokens; dock-active keeps its raised state. */
-.dock button{transition:transform var(--t-ui) var(--ease-out), color var(--t-ui) var(--ease-out)}
-.dock button.dock-active{transform:translateY(-4px) scale(1.06)}
-.dock button:active{transform:scale(.92); transition-duration:var(--t-press)}
+.dock button,.dock a{transition:transform var(--t-ui) var(--ease-out), color var(--t-ui) var(--ease-out)}
+.dock button.dock-active,.dock a.dock-active{transform:translateY(-4px) scale(1.06)}
+.dock button:active,.dock a:active{transform:scale(.92); transition-duration:var(--t-press)}
 .cursor-copy{cursor:pointer;user-select:none}
 .cursor-copy:active{opacity:.6}
 

@@ -146,8 +146,8 @@ chk('L42', "dead code: photo_b64 gone from users SQL (comments excepted)",
 chk('L43', "dead code: dataset.copyFlash gone", not grep_repo('copyFlash', 'app'))
 chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
     has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
-chk('L45', "a11y: progress bars have aria-label", len(re.findall(r'aria-label', rd('app/templates/dashboard.html'))) >= 5)
-chk('L46', "manifest linked on dashboard", has('app/templates/dashboard.html', r'rel="manifest"'))
+chk('L45', "a11y: progress bars have aria-label", len(re.findall(r'aria-label', rd('app/templates/home.html'))) >= 5)
+chk('L46', "manifest linked on dashboard", has('app/templates/home.html', r'rel="manifest"'))
 chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
     has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r'jsdelivr')

@@ -311,7 +311,7 @@ def t_rendered_tab_registers_and_gates():
 
     cl = A.app.test_client()
     cl.set_cookie("srm_session", tok)
-    html = cl.get("/").get_data(as_text=True)
+    html = cl.get("/academics").get_data(as_text=True)
     assert 'id="tab-academics-tab"' in html, "tab button missing with feature on"
     assert 'id="tab-academics"' in html, "tabpanel missing with feature on"
     assert 'data-tab="academics"' in html

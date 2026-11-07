@@ -91,7 +91,7 @@ def _html(features=None):
     try:
         cl = A.app.test_client()
         cl.set_cookie("srm_session", A.make_session_token(NETID))
-        return cl.get("/").get_data(as_text=True)
+        return cl.get("/attendance").get_data(as_text=True)
     finally:
         if old is None:
             os.environ.pop("SCOPE_FEATURES", None)

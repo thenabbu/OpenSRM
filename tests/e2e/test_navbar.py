@@ -90,9 +90,10 @@ with sync_playwright() as p:
 
     d = page.evaluate("""() => {
       const nav = document.querySelector('.navbar.hidden');
-      const tabs = [...nav.querySelectorAll('[role="tab"]')];
-      const on = tabs.find(t => t.getAttribute('aria-selected') === 'true');
-      const off = tabs.find(t => t.getAttribute('aria-selected') === 'false');
+      // P3.1 route model: real <a href> nav links, active carries aria-current="page"
+      const tabs = [...nav.querySelectorAll('nav a[data-tab]')];
+      const on = tabs.find(t => t.getAttribute('aria-current') === 'page');
+      const off = tabs.find(t => t.getAttribute('aria-current') !== 'page');
       const end = [...nav.querySelector('.navbar-end').children];
       const sync = nav.querySelector('.sync-line');
       const refresh = nav.querySelector('[data-refresh]');
@@ -151,25 +152,29 @@ with sync_playwright() as p:
     page.reload(wait_until='networkidle')   # restore server-rendered state
 
     page.click('#tab-attendance-tab')
+    page.wait_for_load_state('networkidle')
     page.wait_for_timeout(300)
     moved = page.evaluate("""() => {
-      const tabs = [...document.querySelectorAll('.navbar.hidden [role="tab"]')];
+      const nav = document.querySelector('.navbar.hidden');
+      const tabs = [...nav.querySelectorAll('nav a[data-tab]')];
       const bg = t => getComputedStyle(t).backgroundColor;
-      return {on: tabs.find(t => t.getAttribute('aria-selected') === 'true').dataset.tab,
-              onBg: bg(tabs.find(t => t.getAttribute('aria-selected') === 'true')),
+      const on = tabs.find(t => t.getAttribute('aria-current') === 'page');
+      return {path: location.pathname, on: on.dataset.tab, onBg: bg(on),
               prevBg: bg(tabs.find(t => t.dataset.tab === 'dashboard'))};
     }""")
-    check('desktop: tint follows the tab you select', moved['on'] == 'attendance'
+    check('desktop: tint follows the route you navigate to', moved['path'] == '/attendance'
+          and moved['on'] == 'attendance'
           and moved['prevBg'] in ('rgba(0, 0, 0, 0)', 'transparent'), json.dumps(moved))
-    # state must not be carried by color alone (WCAG 1.4.1): the selected tab
+    # state must not be carried by color alone (WCAG 1.4.1): the selected route
     # also draws the same currentColor bar the mobile dock uses
     ind = page.evaluate("""() => {
-      const tabs = [...document.querySelectorAll('.navbar.hidden [role="tab"]')];
+      const nav = document.querySelector('.navbar.hidden');
+      const tabs = [...nav.querySelectorAll('nav a[data-tab]')];
       const style = t => { const cs = getComputedStyle(t, '::after');
         return {h: cs.height, bg: cs.backgroundColor, pos: cs.position,
                 w: cs.width, left: cs.left, right: cs.right}; };
-      const on = tabs.find(t => t.getAttribute('aria-selected') === 'true');
-      const off = tabs.find(t => t.getAttribute('aria-selected') === 'false');
+      const on = tabs.find(t => t.getAttribute('aria-current') === 'page');
+      const off = tabs.find(t => t.getAttribute('aria-current') !== 'page');
       return {on: style(on), off: style(off),
               pillW: Math.round(on.getBoundingClientRect().width),
               padW: on.clientWidth};   /* ::after offsets resolve against the PADDING box */
@@ -193,24 +198,26 @@ with sync_playwright() as p:
     # content, and pinned the navbars to the viewport edges — so the bar can
     # neither take layout width nor sit above the navbar, and one navW value
     # must hold across a marks round-trip.
-    cycle = page.evaluate("""async () => {
-      const navW = () => +[...document.querySelectorAll('.navbar')].filter(n => getComputedStyle(n).display !== 'none')[0].getBoundingClientRect().width.toFixed(1);
-      const out = {gutter: getComputedStyle(document.documentElement).scrollbarGutter, widths: []};
-      const sleep = ms => new Promise(r => setTimeout(r, ms));
-      for (const tab of ['dashboard', 'marks', 'dashboard']) {
-        document.getElementById('tab-' + tab + '-tab').click();
-        await sleep(150);
-        out.widths.push(navW());
-      }
-      return out;
-    }""")
+    # P3.1: real routes — navbar width must hold across a marks round-trip.
+    # marks is taller than the viewport; its overlay scrollbar appearing must
+    # not resize/narrow the bar (DESIGN §10.14). Measure per real navigation.
+    navw = []
+    for rt in ['/', '/marks', '/']:
+        page.goto(f'{BASE}{rt}', wait_until='networkidle')
+        page.wait_for_timeout(400)
+        navw.append(page.evaluate("""() => +[...document.querySelectorAll('.navbar')]
+            .filter(n => getComputedStyle(n).display !== 'none')[0]
+            .getBoundingClientRect().width.toFixed(1)"""))
+    gutter_mode = page.evaluate("() => getComputedStyle(document.documentElement).scrollbarGutter")
     check('desktop: no reserved gutter + navbar width identical across a marks round-trip',
-          cycle['gutter'] == 'auto' and len(set(cycle['widths'])) == 1,
-          json.dumps(cycle))
+          gutter_mode == 'auto' and len(set(navw)) == 1,
+          json.dumps({'gutter': gutter_mode, 'widths': navw}))
+    page.goto(f'{BASE}/', wait_until='networkidle')
+    page.wait_for_timeout(300)
     check('desktop: no horizontal overflow', d['overflow'] <= 0, str(d['overflow']))
     # DESIGN.md §5: uniform 15px edge — main and navbar share .edge-x, whose
     # left inset = max(15px, reserved scrollbar strip) (headless overlay
-    # scrollbars reserve 0 -> 15px; see dashboard.html style block)
+    # scrollbars reserve 0 -> 15px; see home.html style block)
     check('desktop: page gutter = 15px (lg column, matches navbar edge-x)',
           d['gutter'] == 15, f"gutter={d['gutter']}px")
     ctx.close()
@@ -306,27 +313,26 @@ with sync_playwright() as p:
           and 'settings' not in m['dockTabs'],
           str(m['dockTabs']))
     page.click('.navbar-end [data-tab=settings]')
-    page.wait_for_timeout(250)
+    page.wait_for_load_state('networkidle')
+    page.wait_for_timeout(300)
     st = page.evaluate("""() => ({
-        shown: getComputedStyle(document.getElementById('tab-settings')).display,
-        hash: location.hash,
-        dashboardShown: getComputedStyle(document.getElementById('tab-dashboard')).display,
+        path: location.pathname,
+        settingsPresent: !!document.getElementById('tab-settings'),
+        dashboardPresent: !!document.getElementById('tab-dashboard'),
+        gearCurrent: document.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-current'),
         gearActive: document.querySelector('.navbar-end [data-tab=settings]').classList.contains('dock-active')
       })""")
-    check('mobile: settings gear is the only route to Settings and it switches the tab',
-          st['shown'] != 'none' and st['dashboardShown'] == 'none' and st['hash'] == '#settings',
+    check('mobile: settings gear is the only route to Settings and it navigates',
+          st['path'] == '/settings' and st['settingsPresent'] and not st['dashboardPresent']
+          and st['gearCurrent'] == 'page',
           json.dumps(st))
-    page.go_back()
-    page.wait_for_timeout(250)
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
-    page.wait_for_timeout(400)
     back = page.evaluate("""() => ({
-        shown: getComputedStyle(document.getElementById('tab-settings')).display,
-        active: document.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-selected'),
+        path: location.pathname,
+        gearCurrent: document.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-current'),
         overflow: document.documentElement.scrollWidth - window.innerWidth
       })""")
-    check('mobile: #settings hash restores the tab with the gear marked selected',
-          back['shown'] != 'none' and back['active'] == 'true' and back['overflow'] <= 0,
+    check('mobile: /settings route keeps the gear marked current (aria-current=page)',
+          back['path'] == '/settings' and back['gearCurrent'] == 'page' and back['overflow'] <= 0,
           json.dumps(back))
     # A visible caption grows the left cell; it must not push the wordmark off
     # centre or the settings gear off the right edge (the widest caption is

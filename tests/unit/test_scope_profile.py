@@ -11,7 +11,7 @@ Checks (mission contract):
     empty facultyadvisor/academicadvisor -> the label is ABSENT (never ""),
     and any portal value beats the scope value (scope fills gaps only).
   - the merge never invents or overwrites template group keys: every scope
-    label already exists in dashboard.html's Settings groups (no row that the
+    label already exists in settings.html's Settings groups (no row that the
     template would silently drop), and the portal's header slots (Program,
     Semester, Section as the portal names them) are untouched.
   - feature gate off -> the Settings template input is today's personal dict.
@@ -125,10 +125,10 @@ def t_family_academic_group_rows_and_empty_advisor_absent():
 
 def t_every_scope_label_lands_in_a_settings_group():
     """A scope label the template does not list is a silent no-op — pin the
-    contract: every FIELDS value appears in dashboard.html's groups list."""
-    html = (REPO / "app/templates/dashboard.html").read_text()
+    contract: every FIELDS value appears in settings.html's groups list."""
+    html = (REPO / "app/templates/settings.html").read_text()
     block = re.search(r"\{% set groups = \[(.*?)\] %\}", html, re.S)
-    assert block, "Settings groups list not found in dashboard.html"
+    assert block, "Settings groups list not found in settings.html"
     for label in FIELDS.values():
         assert f'"{label}"' in block.group(1), f"Settings group missing scope label: {label}"
 

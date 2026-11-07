@@ -149,7 +149,7 @@ def t_feature_gate_off_no_tab():
         else:
             os.environ["SCOPE_FEATURES"] = old
     # template side: navbar item AND panel both guarded by {% if fees %}
-    tpl = (REPO / "app" / "templates" / "dashboard.html").read_text()
+    tpl = (REPO / "app" / "templates" / "fees.html").read_text()
     for needle in ("id=\"tab-fees-tab\"", "id=\"tab-fees\""):
         i = tpl.index(needle)
         guard = tpl.rfind("{% if fees %}", 0, i)

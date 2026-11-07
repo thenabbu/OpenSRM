@@ -1,6 +1,6 @@
 """Unit: class tokens that only exist AFTER render must exist in the
 compiled app.css. Tailwind's scanner reads source files, so families
-assembled in Jinja (dashboard.html LAYOUT loop -> col-span / row-span /
+assembled in Jinja (home.html LAYOUT loop -> col-span / row-span /
 grid-cols / max-h cap) or Python (_BAND_BAR -> progress band) live in
 app/static/safelist/classes.html (DESIGN §2.6 / §10.16). If LAYOUT or
 _BAND_BAR gains a value nobody safelists, THIS suite fails — the render
@@ -33,8 +33,13 @@ from app.app import app  # noqa: E402
 tok = seed_mod.mint_token()
 client = app.test_client()
 client.set_cookie("srm_session", tok)
+# P3.1: the panels are separate routes now, so the dynamic tokens that used to
+# all live on "/" are spread across them. Scan the routes that render them:
+# "/" carries the LAYOUT grid spans, "/attendance" the progress bands.
 resp = client.get("/")
 html = resp.get_data(as_text=True)
+for _route in ("/attendance", "/marks"):
+    html += "\n" + client.get(_route).get_data(as_text=True)
 
 fails = []
 total = [0]

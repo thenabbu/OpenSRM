@@ -358,5 +358,5 @@
 
 // audit R1: drag-drop-touch.js shipped but polyfill() was never called —
 // touch drag was dead on mobile. No-op on desktop (native DnD detected
-// inside polyfill()); dashboard.html loads the lib before this file.
+// inside polyfill()); the route templates load the lib before this file.
 if (window.MobileDragDrop) MobileDragDrop.polyfill();

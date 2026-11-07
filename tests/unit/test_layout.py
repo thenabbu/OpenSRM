@@ -155,9 +155,14 @@ check("day card spans 4 + row-span 2", 'lg:col-span-4' in html and 'lg:row-span-
 check("assess + people cards present (when-filter OR-semantics)",
       html.count('lg:col-span-8') == 2, str(html.count('lg:col-span-8')))
 check("marks chip renders", 'Internal marks' in html and '17.5/20' in html)
+# P3.1: the budget rows/alert classes render on /attendance now, not on "/";
+# the layout assertions above stay on "/" because the cards live there.
+# P3.1: 'attend N' is rendered by the timetable grid, which now lives on
+# /timetable; the attendance widget's 'can skip'/'att-neg' stay on "/".
+_att = html + "\n" + GET("/timetable").get_data(as_text=True)
 check("attendance budget rows + alert class",
-      'can skip' in html and 'att-neg' in html and 'attend 3' in html,
-      "skip=%s neg=%s att3=%s" % ('can skip' in html, 'att-neg' in html, 'attend 3' in html))
+      'can skip' in _att and 'att-neg' in _att and 'attend 3' in _att,
+      "skip=%s neg=%s att3=%s" % ('can skip' in _att, 'att-neg' in _att, 'attend 3' in _att))
 check("people card lays widgets out 2-up (cols contract)",
       'sm:grid-cols-2' in html, "cols wrapper missing")
 check("teachers grouped + Practical mode tag",

@@ -119,6 +119,9 @@ EXPECTED = {
     "/api/push/unsubscribe", "/api/push/settings", "/api/push/test", "/api/push/receipt",
     "/api/account/delete", "/logout",
     "/api/track/tab",
+    # P3.1: nine real panel routes
+    "/attendance", "/timetable", "/marks", "/campus",
+    "/academics", "/fees", "/tools", "/settings",
 }
 got = {r.rule for r in a1.url_map.iter_rules()} - {"/avatar", "/avatar/<name>"}  # blobatar's routes
 check("factory: every app route registered", got == EXPECTED,
@@ -158,6 +161,15 @@ EXPECTED_EP = {
     "/api/track/tab": {("track_tab", "track_tab")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
+    # P3.1: nine real panel routes (each endpoint == its view __name__)
+    "/attendance": {("attendance", "attendance")},
+    "/timetable": {("timetable", "timetable")},
+    "/marks": {("marks", "marks")},
+    "/campus": {("campus", "campus")},
+    "/academics": {("academics", "academics")},
+    "/fees": {("fees", "fees")},
+    "/tools": {("tools", "tools")},
+    "/settings": {("settings", "settings")},
 }
 got_ep = {}
 for r in a1.url_map.iter_rules():
