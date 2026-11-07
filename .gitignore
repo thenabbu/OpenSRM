@@ -12,6 +12,11 @@ core.*
 *.egg-info/
 dist/
 build/
+# committed build output (served statically; see scripts/build-web.sh)
+!app/static/dist/
+!app/static/dist/**
+# pnpm install in web/ (builds run on the laptop, never commit)
+web/node_modules/
 .vscode/
 .idea/
 requirements.txt
