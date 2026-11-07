@@ -901,6 +901,11 @@ def asset(name):
         _asset_cache[name] = hit
     return "/static/%s?v=%s" % (name, hit[1])
 
+
+# asset_dist() (the Vite dist/ URL mapper) lives in app/assets_dist.py to keep
+# this module under its line budget — see scripts/check_architecture.py.
+
+
 # ── Typed sync results ─────────────────────────────────────────────────
 # A failed sync carries a `kind`; its HTTP status comes from KIND_STATUS.
 # Both live in app/errors.py (pure data — no imports), so pipeline modules
@@ -1283,7 +1288,11 @@ def create_app(config=None):
         # pre-warm ddddocr so the first real scrape isn't +3s cold (was a
         # module-level thread at import time)
         threading.Thread(target=get_solver, daemon=True, name="srm-captcha-prewarm").start()
+    from app.assets_dist import asset_dist  # call-time: keeps app->assets_dist a leaf edge
     a.jinja_env.globals["asset"] = asset  # versioned /static/ URLs (DESIGN §10.16)
+    # P4.1 build output (content-hashed by Vite): '' when dist/ is not built yet,
+    # so the page falls back to the legacy scripts + app.css
+    a.jinja_env.globals["asset_dist"] = asset_dist
     return a
 
 

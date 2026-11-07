@@ -90,3 +90,11 @@ html[data-theme="openSRM"] {
 html { background: oklch(20% 0 0); }
 </style>
 <link rel="stylesheet" href="{{ asset('app.css') }}">
+{# P4.1 build output: one CSS + one module entry (both content-hashed by Vite;
+   asset_dist() maps the import name through app/static/dist/.vite/manifest.json).
+   NOT deferred: a defer'd module runs after the legacy dash.js, whose auto-sync
+   ref() would blank/mark-busy the island's span before the island mounts. In
+   <head> a module runs after parsing, before DOMContentLoaded, so the island
+   owns the caption first and ref()'s "Syncing…" is preserved by it. #}
+<link rel="stylesheet" href="{{ asset_dist('app.css') }}">
+<script type="module" src="{{ asset_dist('app') }}"></script>

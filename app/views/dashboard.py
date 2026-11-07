@@ -45,6 +45,7 @@ from .fees import _fees_view
 from .layout import LAYOUT, WIDGETS
 from .marks import _marks_summary, _marks_view
 from .profile import merge_personal, scope_profile
+from .sync_age import caption as _sync_age_caption, island_props as _sync_age_props
 from .ticker import _today_brief, _today_ticker, _week_updates
 from .timetable import (
     _budget_rows,
@@ -227,6 +228,11 @@ def index(active_panel="dashboard"):
         stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
         days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
         last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
+        # P4.1: the sync caption is progressive enhancement — the server paints
+        # exactly what the island would (same bucket table), so first paint is
+        # correct with JS blocked and hydration is a no-op repaint.
+        sync_age_text=_sync_age_caption(last_epoch),
+        sync_age_props=_sync_age_props(last_epoch, last),
         student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
         academics=academics,
         fees=fees,

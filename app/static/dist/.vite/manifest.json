@@ -1,9 +1,18 @@
 {
+  "src/islands/sync-age.tsx": {
+    "file": "assets/sync-age-ISd5Yyfm.js",
+    "name": "sync-age",
+    "src": "src/islands/sync-age.tsx",
+    "isDynamicEntry": true
+  },
   "src/main.ts": {
-    "file": "assets/app-qXX0kTtd.js",
+    "file": "assets/app-CCFs4L53.js",
     "name": "app",
     "src": "src/main.ts",
     "isEntry": true,
+    "dynamicImports": [
+      "src/islands/sync-age.tsx"
+    ],
     "css": [
       "assets/app-Dw5KSv9_.css"
     ]
