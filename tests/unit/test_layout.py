@@ -194,7 +194,16 @@ c.execute("""UPDATE users SET marks_json='[]', faculty_map_json='{}',
           (json.dumps({"courses": [], "monthly": [], "period": None,
                        "daily_absent": {}}),))
 c.commit(); c.close()
-h3 = GET().get_data(as_text=True)
+# The seed has classes Mon-Fri only, and both widgets this checks are
+# weekday-driven (today.html hides itself on an empty day by design). Pin the
+# clock to a weekday or the assertion only passes Tue-Fri and fails every
+# weekend — which is exactly how this stayed "known pre-existing".
+A.datetime = type("M", (), {"now": staticmethod(
+    lambda: _dt.datetime(2026, 10, 12, 9, 45))})  # Monday 09:45
+try:
+    h3 = GET().get_data(as_text=True)
+finally:
+    A.datetime = real_dt
 check("all-empty cards hidden (no orphan shells)",
       'lg:col-span-4' in h3 and 'lg:col-span-8' not in h3)
 check("day card still renders its widgets", 'This week' in h3 and 'Today' in h3, h3[:400])
