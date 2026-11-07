@@ -199,7 +199,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 </div>
 <main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   {% if tools %}
-  <div id="tab-tools" role="tabpanel" aria-labelledby="tab-tools-title" data-tabpanel class="max-w-3xl mx-auto" style="">
+  <div id="tab-tools" role="tabpanel" aria-labelledby="tab-tools-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
     <div class="flex flex-col gap-3">
       <!-- Tools: the SCOPE-sourced surfaces that used to be nowhere on a phone.
            Anatomy is the Settings log-out row (one row = one destination);
@@ -207,11 +207,11 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
            reserved for attendance thresholds (DESIGN §0 rules 2 and 6). -->
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body p-4">
-          <h2 class="text-base font-semibold mb-3" id="tab-tools-title">Tools</h2>
+          <h2 class="text-base font-semibold mb-3">Tools</h2>
           <ul class="flex flex-col gap-2">
             {% for t in tools %}
             <li>
-              <a href="#{{ t.tab }}" data-tool-tab="{{ t.tab }}" data-tool-slug="{{ t.slug }}"
+              <a href="/{{ t.tab }}" data-tool-tab="{{ t.tab }}" data-tool-slug="{{ t.slug }}"
                  class="pressable flex items-center justify-between gap-3 bg-base-300/50 border border-base-300 rounded-box px-4 py-3.5 hover:bg-base-300 transition-colors">
                 <span class="min-w-0">
                   <span class="block text-sm font-semibold">{{ t.label }}</span>
