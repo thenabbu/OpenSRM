@@ -42,11 +42,11 @@ renderSyncLines();
 setInterval(renderSyncLines, 60000);   // "(15m ago)" must keep ageing, and reappear once fresh
 
 // ── Soft refresh: update the page in place (DESIGN §10.16 rule 3) ──
-// A data-changing sync morphs <main> from a freshly fetched '/' with
-// idiomorph: nodes with the same id are kept (their listeners survive),
-// client state listed in PRESERVE_ATTR survives, and [data-morph="ignore"]
-// subtrees (avatar wrapper, push card) are skipped wholesale. A full
-// location.reload() remains only as the catch net.
+// A data-changing sync morphs <main> from a freshly fetched render of THIS
+// route with idiomorph: nodes with the same id are kept (their listeners
+// survive), client state listed in PRESERVE_ATTR survives, and
+// [data-morph="ignore"] subtrees (avatar wrapper, push card) are skipped
+// wholesale. A full location.reload() remains only as the catch net.
 function PRESERVE_ATTR(attr, el) {
   // visible-tab display state lives on the panel's inline style
   if (attr === 'style' && el.closest('[data-tabpanel]')) return true;
@@ -73,7 +73,11 @@ var MORPH_OPTS = {
 };
 
 function softRefresh() {
-  return fetch('/', {credentials: 'same-origin', headers: {Accept: 'text/html'}})
+  // P3.1: one panel per route — re-render THIS page, never the dashboard.
+  // ('/' would morph the dashboard's <main> into /marks and leave the URL
+  // saying /marks over dashboard content.)
+  return fetch(location.pathname + location.search,
+               {credentials: 'same-origin', headers: {Accept: 'text/html'}})
     .then(function (r) {
       // dead session: server 302s to /login — go there, not "network error".
       if (r.redirected && new URL(r.url).pathname === '/login') { location.href = '/login'; return null; }
@@ -105,19 +109,27 @@ function softRefresh() {
       });
       renderSyncLines();
       // Swap <main>'s markup for the freshly rendered one. idiomorph left the
-      // dashboard panel offset by one extra edge after a sync (card x / top
-      // gutter 15px -> 30px on a real device, persisted across tab switches);
-      // a plain markup swap lands the panel AND the shells on the template's
-      // classes with nothing restored. What the morph callbacks used to protect
-      // is kept by hand: [data-morph="ignore"] subtrees stay the LIVE nodes,
-      // open <details>, the visible panel and the attendance view choice ride
-      // along, and the tab is re-shown after the swap.
+      // panel offset by one extra edge after a sync (card x / top gutter 15px
+      // -> 30px on a real device); a plain markup swap lands the panel AND the
+      // shells on the template's classes with nothing restored. What the morph
+      // callbacks used to protect is kept by hand: [data-morph="ignore"]
+      // subtrees stay the LIVE nodes, open <details> ride along, and the
+      // attendance view choice is re-shown after the swap. (The fetched
+      // document is THIS route, so its only panel is the visible one — there
+      // is no tab to carry.)
       (function () {
         var mainEl = document.querySelector('main');
-        var keepTab = (mainEl.querySelector('[data-tabpanel]:not([style*="none"])') || {}).id;
+        // [data-morph="ignore"] subtrees stay the LIVE nodes. Key on the id
+        // when there is one; the avatar wrapper carries none but holds the
+        // gaze driver's inline vars, so it is keyed by its class instead.
         var live = {};
+        var keyOf = function (el) {
+          if (el.id) return '#' + el.id;
+          return el.classList.contains('blobatar-gaze') ? '.blobatar-gaze' : null;
+        };
         mainEl.querySelectorAll('[data-morph="ignore"]').forEach(function (el) {
-          if (el.id) live[el.id] = el;
+          var k = keyOf(el);
+          if (k) live[k] = el;
         });
         // live open panels stay the LIVE nodes: the tag form's submit listener
         // and the user's focus ride on them (the old morph kept the node too)
@@ -125,9 +137,9 @@ function softRefresh() {
         var attTable = !!(mainEl.querySelector('#att-table') && !mainEl.querySelector('#att-table').hidden);
         while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
         mainEl.append.apply(mainEl, Array.prototype.slice.call(doc.querySelector('main').childNodes));
-        Object.keys(live).forEach(function (id) {
-          var fresh = document.getElementById(id);
-          if (fresh && fresh !== live[id]) fresh.parentNode.replaceChild(live[id], fresh);
+        Object.keys(live).forEach(function (k) {
+          var fresh = mainEl.querySelector(k);
+          if (fresh && fresh !== live[k]) fresh.parentNode.replaceChild(live[k], fresh);
         });
         openDets.forEach(function (old) {
           var fresh = old.id ? document.getElementById(old.id) : null;
@@ -140,10 +152,6 @@ function softRefresh() {
           var g = mainEl.querySelector('#att-graph'), t = mainEl.querySelector('#att-table');
           if (g && t) { g.hidden = true; t.hidden = false; }
         }
-        var keep = keepTab && mainEl.querySelector('#' + keepTab);
-        if (keep) mainEl.querySelectorAll('[data-tabpanel]').forEach(function (p) {
-          p.style.display = (p === keep ? '' : 'none');
-        });
       })();
       setupCopyTargets(document.querySelector('main'));
     })
@@ -191,68 +199,6 @@ document.querySelectorAll('[data-refresh]').forEach(function(b) {
   b.addEventListener('click', function() { ref(false); });
 });
 
-// ── Tabs (desktop navbar + mobile dock) ───────────────────────────
-var scrollMemo = {};   // per-tab reading position (phase 5)
-// CSSOM, not an attribute substring: the server renders display:none both
-// with and without a space — [style*="display: none"] picks a hidden panel
-// as "current" and then shows two panels at once (phase-0 lesson, ACTIVE_JS)
-function activePanel() {
-  var ps = document.querySelectorAll('[data-tabpanel]');
-  for (var i = 0; i < ps.length; i++) if (ps[i].style.display !== 'none') return ps[i];
-  return null;
-}
-function switchTab(name, btn, byKeyboard) {
-  var next = document.getElementById('tab-' + name);
-  if (!next) return;
-  var current = activePanel();
-  if (current && current !== next) {
-    scrollMemo[current.id] = window.scrollY;
-    current.style.display = 'none';
-  }
-  next.style.display = '';
-  window.scrollTo(0, scrollMemo[next.id] || 0);
-  // motion only in response to a tap/click (§7); element.animate runs off
-  // the main thread, forces no layout, and a new tap interrupts it cleanly
-  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var low = document.documentElement.dataset.perf === 'low';
-  if (!reduced) {
-    next.animate(
-      low
-        ? [{opacity: 0}, {opacity: 1}]
-        : [{opacity: 0, transform: 'translateY(6px)'}, {opacity: 1, transform: 'none'}],
-      {duration: 200, easing: 'cubic-bezier(.22,1,.36,1)'});
-  }
-  document.querySelectorAll('[data-tab]').forEach(function(b) {
-    var on = (b === btn) || (b.dataset.tab === name && !btn);
-    b.classList.toggle('tab-active', on);   // navbar buttons
-    b.classList.toggle('dock-active', on);  // dock items
-    b.classList.toggle('btn-active', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-    if (b.hasAttribute('aria-current')) b.setAttribute('aria-current', on ? 'page' : 'false');
-    b.tabIndex = on ? 0 : -1;
-  });
-  if (history.replaceState) history.replaceState(null, '', '#' + name);
-  // Which tab a student actually reads is invisible to the server — tabs
-  // switch client-side with no page load, so every visit looks like
-  // "dashboard" from the request log. Fire-and-forget beacon so page usage
-  // is measurable at all. Wrapped: a failed beacon must never break the UI,
-  // and keepalive lets it survive a tab-switch-while-navigating-away.
-  try {
-    if (self.fetch) {
-      self.fetch('/api/track/tab', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({tab: name}),
-        keepalive: true,
-        credentials: 'same-origin'
-      }).catch(function () {});
-    }
-  } catch (e) {}
-  // focus follows KEYBOARD navigation only — a tap or mouse click must not
-  // move focus (Safari never focuses buttons on tap; keep all platforms alike)
-  if (byKeyboard && btn && btn.offsetParent) btn.focus();
-}
-
 // ── Item-level interaction beacon ─────────────────────────────────────────
 // "Which tab" is already measured; "what inside the tab" is not, and adding a
 // listener per widget would rot the moment markup changes. One delegated
@@ -288,26 +234,20 @@ function switchTab(name, btn, byKeyboard) {
     } catch (e) {}
   }, {passive: true});
 })();
-var tabButtons = Array.prototype.slice.call(document.querySelectorAll('[data-tab]'));
-tabButtons.forEach(function(b) {
-  b.addEventListener('click', function() { switchTab(b.dataset.tab, b); });
-  b.addEventListener('keydown', function(e) {
-    // cycle within the visible nav set (navbar OR dock), not across both
-    var vis = tabButtons.filter(function(x) { return x.offsetParent !== null; });
-    var idx = vis.indexOf(b), next = null;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = vis[(idx + 1) % vis.length];
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = vis[(idx - 1 + vis.length) % vis.length];
-    else if (e.key === 'Home') next = vis[0];
-    else if (e.key === 'End') next = vis[vis.length - 1];
-    if (next) { e.preventDefault(); switchTab(next.dataset.tab, next, true); }
-  });
-});
-// Tools rows point at the panel their surface's own PR mounts (fees,
-// academics, ...). Until that PR lands the panel does not exist, so the row
-// must not write a hash that switches nothing — mark it inert instead
-// (aria-disabled, no pointer affordance, default click prevented).
+// Tools rows name the panel their surface belongs to (app/static_data.TOOLS).
+// P3.1 made those panels real routes, so the row is a plain link: rewrite the
+// legacy '#panel' href to the route. A row naming a panel that is neither on
+// this page nor a route is marked inert (no pointer affordance, click
+// prevented) rather than becoming a dead hash.
+var ROUTES = ['dashboard', 'attendance', 'timetable', 'marks', 'campus',
+              'academics', 'fees', 'tools', 'settings'];
 document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
-  if (document.getElementById('tab-' + a.dataset.toolTab)) return;
+  var panel = a.dataset.toolTab;
+  if (document.getElementById('tab-' + panel)) return;          // still a link, unchanged
+  if (ROUTES.indexOf(panel) !== -1) {
+    a.setAttribute('href', panel === 'dashboard' ? '/' : '/' + panel);
+    return;
+  }
   a.removeAttribute('href');
   a.setAttribute('aria-disabled', 'true');
   a.removeAttribute('data-tool-tab');
@@ -316,13 +256,6 @@ document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
   a.querySelector('svg').classList.replace('text-base-content/60', 'text-base-content/50');
   a.addEventListener('click', function(e) { e.preventDefault(); });
 });
-
-// Restore tab from hash (survives refresh/reload); default dashboard
-(function() {
-  var h = (location.hash || '').replace('#', '');
-  var valid = document.getElementById('tab-' + h);
-  switchTab(valid ? h : 'dashboard');
-})();
 
 // ── Click-to-copy: any element with data-copy gets copied on click (task 10).
 //    Values only — keys/labels never carry data-copy.

@@ -81,13 +81,12 @@ with sync_playwright() as p:
         status=200, content_type="application/json",
         body=json.dumps({"ok": True, "cached": False})))
 
-    pg.goto(BASE + "/#marks", wait_until="load")
+    pg.goto(BASE + "/marks", wait_until="load")
     pg.wait_for_timeout(2500)      # let the boot auto-sync settle first
     pg.evaluate("window.__alive = true")
 
     # ── LEG A: quiet sync must preserve all user state ────────────────
-    pg.click('[data-tab="marks"]:visible')
-    pg.wait_for_timeout(300)
+    # P3.1: /marks is a route, not a tab — no click needed to get here.
     pg.click("#tab-marks .py-1 summary >> nth=0")   # open the first tag panel
     pg.wait_for_timeout(250)
     pg.evaluate("""() => {
@@ -96,19 +95,45 @@ with sync_playwright() as p:
     }""")
     check("setup: first marks panel is open (real click set the attribute)",
           pg.evaluate("window.__detNode.open === true && window.__detNode.hasAttribute('open')"))
-    pg.evaluate("""() => {  // attendance view choice = table
-      document.getElementById('att-table').hidden = false;
-      document.getElementById('att-graph').hidden = true;
-    }""")
     pg.evaluate("window.scrollTo(0, 300)")   # marks tab overflows at 400px height
     state_before = pg.evaluate("""() => ({
       scrollY: window.scrollY,   // may clamp below 300 — compare like for like
-      pushText: document.getElementById('push-state').textContent,
-      pushHidden: document.getElementById('push-controls').hidden,
-      avatarVar: document.querySelector('.blobatar-gaze')
-                   .style.getPropertyValue('--mo-track-x'),
       focusTag: document.activeElement.tagName,
     })""")
+    # P3.1: the push card lives on /settings and the avatar on / — measure each
+    # where it is rendered, then soft-refresh there too.
+    pg2 = ctx.new_page()
+    pg2.goto(BASE + "/settings", wait_until="networkidle")
+    pg2.wait_for_timeout(1200)
+    push_before = pg2.evaluate("""() => ({
+        t: document.getElementById('push-state').textContent,
+        h: document.getElementById('push-controls').hidden})""")
+    pg2.evaluate("async () => { await softRefresh(); }")
+    pg2.wait_for_timeout(600)
+    push_after = pg2.evaluate("""() => ({
+        t: document.getElementById('push-state').textContent,
+        h: document.getElementById('push-controls').hidden,
+        ignore: !!document.getElementById('push-card').closest('[data-morph=ignore]')})""")
+    check("push card untouched by a /settings soft refresh (data-morph=ignore)",
+          push_after["t"] == push_before["t"] and push_after["h"] == push_before["h"]
+          and push_after["ignore"],
+          f"before={push_before} after={push_after}")
+    pg2.close()
+    dash = ctx.new_page()
+    dash.goto(BASE + "/", wait_until="networkidle")
+    dash.wait_for_timeout(1200)
+    avatar_before = dash.evaluate("""() => {
+        const el = document.querySelector('.blobatar-gaze');
+        el.style.setProperty('--mo-test-marker', 'kept');
+        return el.style.getPropertyValue('--mo-test-marker'); }""")
+    dash.evaluate("async () => { await softRefresh(); }")
+    dash.wait_for_timeout(600)
+    avatar_after = dash.evaluate("""() => {
+        const el = document.querySelector('.blobatar-gaze');
+        return {v: el.style.getPropertyValue('--mo-test-marker')}; }""")
+    check("avatar inline gaze vars survived a dashboard soft refresh (data-morph=ignore)",
+          avatar_after["v"] == avatar_before, f"before={avatar_before} after={avatar_after}")
+    dash.close()
 
     # change the data the refreshed page must show: FT-I scored 4.5 -> 3.0
     for cp in MARKS[0]["components"]:
@@ -123,7 +148,8 @@ with sync_playwright() as p:
     pg.evaluate("ref(true)")
     pg.wait_for_timeout(2000)
 
-    check("quiet sync caused NO navigation", pg.evaluate("window.__alive === true"))
+    check("quiet sync caused NO navigation (still /marks, dashboard never swapped in)",
+          pg.evaluate("window.__alive === true && location.pathname === '/marks' && !document.getElementById('tab-dashboard')"))
     check("scroll position survived (window scroll unchanged)",
           pg.evaluate("window.scrollY") == state_before["scrollY"],
           f"before {state_before['scrollY']} after {pg.evaluate('window.scrollY')}")
@@ -136,17 +162,6 @@ with sync_playwright() as p:
           pg.evaluate("""() => document.activeElement === window.__focusNode ||
                                document.activeElement === document.body"""),
           pg.evaluate("document.activeElement.tagName"))
-    check("attendance view choice survived (#att-table visible)",
-          pg.evaluate("document.getElementById('att-table').hidden === false"))
-    check("push card untouched by morph (state + hidden flag)",
-          pg.evaluate("""() => ({
-            t: document.getElementById('push-state').textContent,
-            h: document.getElementById('push-controls').hidden })""")
-          == {"t": state_before["pushText"], "h": state_before["pushHidden"]})
-    check("avatar inline gaze vars survived (data-morph=ignore)",
-          pg.evaluate("""() => document.querySelector('.blobatar-gaze')
-                           .style.getPropertyValue('--mo-track-x')""")
-          == state_before["avatarVar"])
     ft_row = pg.evaluate("""() => {
       const rows = [...document.querySelectorAll('#tab-marks .py-1')];
       const row = rows.find(r => r.textContent.includes('FT-I'));
@@ -167,7 +182,8 @@ with sync_playwright() as p:
           pg.evaluate("document.getElementById('overlay') === null"))
 
     # post-morph listeners on morphed nodes ------------------------------
-    pg.click('[data-tab="dashboard"]:visible')
+    pg.click('.navbar [data-tab="dashboard"]:visible, .dock [data-tab="dashboard"]:visible')
+    pg.wait_for_load_state("networkidle")
     pg.wait_for_timeout(300)
     tgt = pg.query_selector("#tab-dashboard [data-copy]")
     if tgt:
@@ -182,8 +198,10 @@ with sync_playwright() as p:
               "no data-copy target on dashboard tab")
 
     # tag form on the morphed tree: fetch path, no navigation ------------
-    pg.click('[data-tab="marks"]:visible')
+    pg.click('.navbar [data-tab="marks"]:visible, .dock [data-tab="marks"]:visible')
+    pg.wait_for_load_state("networkidle")
     pg.wait_for_timeout(300)
+    pg.evaluate("window.__alive = true")   # fresh document after the real navigation
     pg.click("#tab-marks .py-1 summary >> nth=0")
     pg.wait_for_timeout(250)
     pg.select_option("#tab-marks details[open] select[name=role]", "IE-1")
@@ -191,7 +209,8 @@ with sync_playwright() as p:
     pg.wait_for_timeout(1200)
     check("tag save: no navigation, still the same page",
           pg.evaluate("window.__alive === true"))
-    check("tag save: hash still #marks", pg.evaluate("location.hash") == "#marks")
+    check("tag save: still on the /marks route, no hash",
+          pg.evaluate("location.pathname + location.hash") == "/marks")
     c = db()
     row = c.execute("SELECT role FROM component_tags").fetchall()
     c.close()

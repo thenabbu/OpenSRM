@@ -46,7 +46,9 @@ JS_AUDIT = r"""() => {
   const out = {overflow: null, chips: [], dateGroups: {}, overlaps: [], status: [],
                accent: 0, contrast: [], pctTexts: [], cards: [], overall: null};
   out.overflow = document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth;
-  const marks = document.getElementById('tab-marks');
+  // P3.1: one panel per route — the marks audit runs on /marks, the glance
+  // audit on /, so the "panel" is whichever one this page rendered.
+  const marks = document.querySelector('[data-tabpanel]') || document.body;
   out.overall = /Overall internal marks/.test(marks.innerText);
 
   marks.querySelectorAll('span.bg-base-300.rounded-full').forEach(el => {
@@ -153,7 +155,7 @@ with sync_playwright() as p:
         ctx.add_cookies([{"name": "srm_session", "value": TOK, "domain": "127.0.0.1", "path": "/"}])
         page = ctx.new_page()
         tag = f"[{label}] "
-        page.goto(f"{BASE}/#marks", wait_until="networkidle")
+        page.goto(f"{BASE}/marks", wait_until="networkidle")
         page.wait_for_timeout(800)
         a = page.evaluate(JS_AUDIT)
         check(tag + "no horizontal page overflow", a["overflow"] <= 0, str(a["overflow"]))
@@ -221,8 +223,9 @@ with sync_playwright() as p:
                  padB: parseFloat(getComputedStyle(document.querySelector('main')).paddingBottom)})""")
             check(tag + "main clears the fixed dock (pb-24 >= dock)",
                   dock["padB"] >= dock["dockH"], str(dock))
-        # dashboard tab: glance redesign + its own contrast sweep
-        page.click('[data-tab="dashboard"]:visible')
+        # dashboard ROUTE: glance redesign + its own contrast sweep
+        page.click('.navbar [data-tab="dashboard"]:visible, .dock [data-tab="dashboard"]:visible')
+        page.wait_for_load_state('networkidle')
         page.wait_for_timeout(500)
         d = page.evaluate(JS_AUDIT)
         check(tag + "dashboard glance: no overall number, no accent, contrast clean",
@@ -239,8 +242,9 @@ with sync_playwright() as p:
         check(tag + "glance chips = marks/max as synced, no %",
               g and g["chips"] and not g["pct"] and all("/" in c for c in g["chips"]),
               json.dumps(g))
-        # ── tag round-trip (marks tab) ─────────────────────────────────
-        page.click('[data-tab="marks"]:visible')
+        # ── tag round-trip (marks route) ─────────────────────────��─────
+        page.click('.navbar [data-tab="marks"]:visible, .dock [data-tab="marks"]:visible')
+        page.wait_for_load_state('networkidle')
         page.wait_for_timeout(400)
         page.click("#tab-marks .py-1 summary >> nth=1")   # FT-II (derived IE-1)
         page.wait_for_timeout(300)
@@ -274,8 +278,8 @@ with sync_playwright() as p:
             """() => [...document.querySelectorAll('#tab-marks .py-1')]
                      .some(r => /46\\.8\\/60/.test(r.innerText))""",
             timeout=10000)
-        check(tag + "save redirects back to the marks tab",
-              page.evaluate("() => location.hash") == "#marks", page.url)
+        check(tag + "save stays on the marks route (fetch path, no hash)",
+              page.evaluate("() => location.pathname + location.hash") == "/marks", page.url)
         after = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .py-1')]
           .filter(r => /^FT-II/.test((r.querySelector('.bg-base-300') || {}).textContent || ''))
           .map(r => r.innerText.replace(/\\s+/g, ' ').trim())""")

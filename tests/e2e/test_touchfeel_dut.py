@@ -1,10 +1,10 @@
 """
 Touch-feel DUT — smoothness campaign phase 5.
 
-Asserts the phase-5 contracts: press feedback tokens compiled in, the tab
-transition runs via element.animate (present under normal motion, ABSENT
-under prefers-reduced-motion), per-tab scroll memoization, keyboard-only
-focus, and the bottom-sheet dialog classes.
+Asserts the phase-5 contracts that survive P3.1's route split: press
+feedback tokens compiled in (off only under prefers-reduced-motion), no
+client-side tab animation, a nav click is a real navigation to exactly one
+panel, and the bottom-sheet dialog classes.
 
 Run:  python tests/e2e/test_touchfeel_dut.py   (needs a seeded server on
 DUT_BASE like the other browser DUTs).
@@ -44,20 +44,9 @@ with sync_playwright() as p:
     pg.goto(BASE + "/", wait_until="load")
     pg.wait_for_timeout(1500)
 
-    # sample animations at the end of the click dispatch (inside the 200ms
-    # window, no race with evaluate round-trips)
-    pg.evaluate("""() => {
-      // CSSOM, not attribute substring: server renders style="display:none"
-      // (no space) on some panels — [style*="display: none"] would pick one
-      const active = () => [...document.querySelectorAll('[data-tabpanel]')]
-        .find(p => p.style.display !== 'none');
-      document.addEventListener('click', () => setTimeout(() => {
-        const el = active();
-        window.__animSeen = el ? el.getAnimations().length : -1;
-      }, 0), true);
-    }""")
-
-    # press feedback exists on the settings rows
+    # press feedback exists on the rows that carry it (settings log-out/danger rows)
+    pg.goto(BASE + "/settings", wait_until="load")
+    pg.wait_for_timeout(600)
     check("settings rows carry .pressable",
           pg.evaluate("document.querySelectorAll('.pressable').length >= 2"),
           str(pg.evaluate("document.querySelectorAll('.pressable').length")))
@@ -73,64 +62,28 @@ with sync_playwright() as p:
                                  d.classList.contains('sm:modal-middle'));
           }"""))
 
-    # tab switch animation runs under normal motion
-    pg.click('[data-tab="marks"]:visible')
-    pg.wait_for_timeout(120)
-    seen = pg.evaluate("window.__animSeen || 0")
-    check("tab switch runs an element.animate() on the panel", seen >= 1, str(seen))
+    # P3.1: nav is real navigation now — no client-side tab switch, so no
+    # panel animation and no per-tab scroll memo. What must still hold: a nav
+    # click loads exactly one panel and lands on that route.
+    pg.click('.dock a[data-tab="marks"]:visible, .navbar [data-tab="marks"]:visible')
+    pg.wait_for_load_state("networkidle")
+    pg.wait_for_timeout(300)
+    nav = pg.evaluate("""() => ({path: location.pathname, hash: location.hash,
+        panels: [...document.querySelectorAll('[data-tabpanel]')].map(p => p.id),
+        anims: [...document.querySelectorAll('[data-tabpanel]')]
+                 .reduce((n, p) => n + p.getAnimations().length, 0)})""")
+    check("nav click loads the target route, one panel, no JS tab animation",
+          nav["path"] == "/marks" and nav["hash"] == ""
+          and nav["panels"] == ["tab-marks"] and nav["anims"] == 0, str(nav))
 
-    # scroll memo: dashboard scroll survives a round trip to marks and back
-    pg.click('[data-tab="dashboard"]:visible')
-    pg.wait_for_timeout(300)
-    pg.evaluate("window.scrollTo(0, 300)")
-    pg.click('[data-tab="marks"]:visible')
-    pg.wait_for_timeout(300)
-    pg.click('[data-tab="dashboard"]:visible')
-    pg.wait_for_timeout(300)
-    check("per-tab scroll memo restores the reading position",
-          abs(pg.evaluate("window.scrollY") - 300) <= 4,
-          str(pg.evaluate("window.scrollY")))
-    check("exactly one panel visible after a switch round-trip",
-          pg.evaluate("""() => [...document.querySelectorAll('[data-tabpanel]')]
-            .filter(p => p.style.display !== 'none').length""") == 1)
-
-    # keyboard navigation moves focus (byKeyboard flag); mouse click does not
-    # force focus away (switchTab only focuses on the keyboard path)
-    pg.evaluate("""() => {
-      const vis = [...document.querySelectorAll('[data-tab]')]
-        .filter(x => x.offsetParent);
-      vis[0].focus();
-      window.__kbdFrom = document.activeElement.dataset.tab;
-      window.__visCount = vis.length;
-    }""")
-    pg.keyboard.press("ArrowRight")
-    pg.wait_for_timeout(300)
-    check("keyboard arrow moves focus to the next tab",
-          pg.evaluate("document.activeElement.dataset.tab") !=
-          pg.evaluate("window.__kbdFrom"),
-          pg.evaluate("document.activeElement.dataset.tab || document.activeElement.tagName"))
-
-    # reduced motion: press + tab motion must be off
+    # reduced motion: press motion must be off
     pg2 = ctx.new_page()
     pg2.emulate_media(reduced_motion="reduce")
-    pg2.goto(BASE + "/", wait_until="load")
+    pg2.goto(BASE + "/settings", wait_until="load")
     pg2.wait_for_timeout(1200)
     tr = pg2.evaluate("""() => getComputedStyle(document.querySelector('.pressable')).transition""")
     check("prefers-reduced-motion: .pressable transition is off",
           tr == "none" or tr.startswith("none"), str(tr))
-    pg2.evaluate("""() => {
-      const active = () => [...document.querySelectorAll('[data-tabpanel]')]
-        .find(p => p.style.display !== 'none');
-      document.addEventListener('click', () => setTimeout(() => {
-        const el = active();
-        window.__animRM = el ? el.getAnimations().length : -1;
-      }, 0), true);
-    }""")
-    pg2.click('[data-tab="marks"]:visible')
-    pg2.wait_for_timeout(120)
-    rm = pg2.evaluate("window.__animRM")
-    check("prefers-reduced-motion: no tab animation runs",
-          rm == 0, str(rm))
 try:
     b.close()
 except Exception:

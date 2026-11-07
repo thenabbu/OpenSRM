@@ -304,6 +304,7 @@ jobs:
         run: |
           bash scripts/ci_e2e_http.sh \
             test_sw test_xss test_navbar test_route_panels test_marks_dut test_personal \
+            test_nav_routes \
             test_softrefresh_dut \
             test_touchfeel_dut \
             test_lowtier_dut \
