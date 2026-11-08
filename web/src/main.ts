@@ -3,6 +3,7 @@ import { createElement, render } from 'preact';
 import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
+import { wireLogoutLink } from './session';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -113,3 +114,7 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
 
 // Bootstrap: the entry is a deferred module, so the document is parsed here.
 void hydrateAll(document, Date.now() / 1000);
+
+// Logout: the href stays as the no-JS path; this only gets the netid-scoped
+// IndexedDB wipe done first (capped, so a hung wipe cannot block the link).
+wireLogoutLink(document);

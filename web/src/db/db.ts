@@ -206,9 +206,44 @@ export async function readMeta(netid: string): Promise<MetaRecord | undefined> {
   }
 }
 
+/**
+ * True when this browser can open an IndexedDB at all. Safari private mode —
+ * and a page whose storage is denied — throw synchronously from
+ * `indexedDB.open`; `undefined` is a browser with no API. Both are KNOWN
+ * UP FRONT, so `wipeAll` bails before a query: a Dexie query on a poisoned
+ * singleton fails its ready promise for the rest of the page, which in private
+ * mode would mean paying that cost on every load, not just at logout.
+ *
+ * `indexedDB.databases()` (rather than `open()`) is the probe: it throws under
+ * the same conditions and never hands back a request whose `.result` is still
+ * null. Browsers without it skip the probe and let Dexie decide — the old
+ * behaviour, for a browser that is not Safari 14.
+ *
+ * `probe` is injectable only so the guard is testable with a factory that
+ * throws — a real browser that throws cannot be simulated from the outside.
+ */
+export function canStore(probe: Pick<IDBFactory, 'databases'> | undefined = globalThis.indexedDB): boolean {
+  if (!probe) return false;
+  const databases = probe.databases;
+  if (typeof databases !== 'function') return true; // no probe available: trust it
+  try {
+    void databases.call(probe).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Logout ⇒ everything goes, matching the SW dropping its cache. With a netid
- *  only that student's rows go; without, every account on this device. */
+ *  only that student's rows go; without, every account on this device. Never
+ *  rejects: a logout must complete on a device with no usable storage.
+ *  (`canStore()` is checked per call, not once at load: storage can be denied
+ *  after first paint and re-granted after a reload.) */
 export async function wipeAll(netid?: string): Promise<void> {
+  if (!canStore()) {
+    log('no usable IndexedDB — nothing to wipe');
+    return;
+  }
   try {
     if (netid === undefined) {
       await Promise.all([...PANELS, 'meta'].map((t) => db.table(t).clear()));
