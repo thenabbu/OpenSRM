@@ -41,6 +41,12 @@ describe('netid isolation on a shared device', () => {
   it("student B cannot read student A's records", async () => {
     await writePanel('attendance', { netid: A, groupKey: 'g1', payload: ATTN });
     await writePanel('fees', { netid: A, payload: FEES });
+    // Positive control: A reads their OWN data back. Without this the two
+    // assertions below would also pass if the write path silently stored
+    // nothing — exactly the "passes for the wrong reason" failure this
+    // project has been bitten by before.
+    expect(await readPanel('attendance', A, 'g1')).toEqual(ATTN);
+    expect(await readPanel('fees', A)).toEqual(FEES);
     // SAME group key — the classmates-share-a-group case.
     expect(await readPanel('attendance', B, 'g1')).toBeUndefined();
     expect(await readPanel('fees', B)).toBeUndefined();
