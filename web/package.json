@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "dexie": "^4",
     "preact": "^10.27.0",
     "zod": "^4"
   },
@@ -20,6 +21,7 @@
     "@preact/preset-vite": "^2",
     "@tailwindcss/vite": "4.3.3",
     "daisyui": "5.7.46",
+    "fake-indexeddb": "^6",
     "jsdom": "^26",
     "tailwindcss": "4.3.3",
     "typescript": "^7.0.0",
