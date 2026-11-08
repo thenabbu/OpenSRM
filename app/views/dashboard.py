@@ -48,7 +48,8 @@ from .fees import _fees_view
 from .layout import LAYOUT, WIDGETS
 from .marks import _marks_summary, _marks_view
 from .profile import merge_personal, scope_profile
-from .sync_age import caption as _sync_age_caption, island_props as _sync_age_props
+from .sync_age import caption as _sync_age_caption
+from .sync_age import island_props as _sync_age_props
 from .ticker import _today_brief, _today_ticker, _week_updates
 from .timetable import (
     _budget_rows,
