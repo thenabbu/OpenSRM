@@ -1,9 +1,11 @@
-"""The dashboard page: one route, one view model, everything it renders.
+"""The dashboard page: one view model, one presentation, nine routes.
 
-Extracted from app/app.py (facade pump, cycle E). `index` is the app's main
-screen — it gathers attendance, marks, timetable, exams, fees, academics,
-campus and the ticker, then hands one flat dict to the template. It lives here
-because it is a VIEW: it only reads, joins and shapes.
+Extracted from app/app.py (facade pump, cycle E). `panel_data` is the app's
+main data screen — attendance, marks, timetable, exams, fees, academics,
+campus, the ticker — as one dict; `index` renders a panel from it, and the
+/api/<panel> endpoints (P50) serve slices of the SAME dict as JSON, so the
+page and the offline store cannot disagree. It lives here because it is a
+VIEW: it only reads, joins and shapes.
 
 `_load_component_tags`, `_week_marks` and `_exams_view` travel with it: nothing
 outside the dashboard renders those three, so they are part of this page's view
@@ -21,7 +23,7 @@ from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
 from ..auto_sync import auto_sync_kick_if_stale
-from ..db import component_tags, day_slots, group_id, group_subjects, user_dashboard, user_scope_data
+from ..db import component_tags, day_slots, group_id, group_slots, group_subjects, user_dashboard, user_scope_data
 from ..db import jload as _jload
 from ..portal.parsers.common import _class_key, _group_key
 from ..portal.parsers.feedback import _fb_plan
@@ -35,6 +37,7 @@ from .attendance import (
     _attendance_budgets,
     _attendance_index,
     _course_view,
+    _join_attendance,
     _month_view,
     _title_case,
     _weekly_slots,
@@ -67,7 +70,109 @@ def index(active_panel="dashboard"):
         # race: require_login validated, then the row vanished before this
         # re-read (logout in another tab mid-request) — redirect, not 500.
         return redirect("/login")
-    # one row read: marks/faculty live on the same users row (was three queries)
+    return presentation(panel_data(netid, active_panel))
+
+
+def presentation(vm):
+    """Render one panel from panel_data()'s view model.
+
+    The page-only tail: the hourwise section, the Absences-vs-hourwise choice
+    for `monthly`, the two background kicks, the per-panel template name and
+    the P3.1 404 gate. /api/<panel> (app/blueprints/panels.py) does NOT go
+    through this — it serves `vm["data"]`, the same numbers without them.
+
+    `monthly` stays the complete list in `vm`; only the render sees the
+    choice. No panel template reads `monthly` without `hourwise` (/attendance
+    branches on `hourwise` first), so moving that choice here is what keeps
+    this split behaviour-neutral: keeping it inside panel_data would have
+    made an hourwise user whose grid came back empty silently lose the
+    Absences card.
+    """
+    netid = vm["netid"]
+    group_key, monthly = vm["group_key"], vm["monthly"]
+    hourwise = vm["hourwise"]
+    monthly_abs = [] if hourwise else monthly
+    # an authenticated visit that finds the SCOPE blob missing/stale starts
+    # the background sync — the surfaces fill in on the next reload
+    _scope_sync_kick_if_stale(netid)
+    # portal data has no background refresher of its own: without this a
+    # dashboard opened the next morning shows yesterday's numbers until
+    # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
+    # the knob is 0.
+    auto_sync_kick_if_stale(netid)
+    # Each route renders only its own panel: "/" -> home.html, everything else
+    # -> <panel>.html. (The old 1,060-line 9-panel dashboard.html is gone: it was
+    # never routed after P3.1 and only existed as a duplication.)
+    tpl = "home.html" if vm["panel"] == "dashboard" else f"{vm['panel']}.html"
+    # P3.1: every panel template wraps its <main> content in a {% if %} on its
+    # own data, so with no data the route would serve 200 + page chrome + an
+    # empty <main>. The nav entry is hidden in that same case, so nobody can
+    # arrive here by clicking — only a stale bookmark or a push deep link — and
+    # a URL that renders nothing is a broken link, not a page: 404 (all four
+    # gated routes alike). /attendance's hourwise/marks/exams sections have
+    # independent fallbacks, so it is not gated this way.
+    gated = {"campus": vm["campus"]["show"], "academics": vm["academics"],
+             "fees": vm["fees"], "tools": vm["tools"]}
+    if not gated.get(vm["panel"], True):
+        abort(404)
+    return render_template(
+        tpl, netid=netid, courses=vm["courses"], monthly=monthly_abs,
+        hourwise=hourwise,
+        days_left_90=next((c["days_left_90"] for c in vm["courses"] if c["days_left_90"] is not None), None),
+        stop=next((c["stop"] for c in vm["courses"] if c["stop"] is not None), None),
+        days_left_exam=next((c["days_left_exam"] for c in vm["courses"] if c["days_left_exam"] is not None), None),
+        last=vm["last"], last_epoch=vm["last_epoch"], hours_old=vm["hours_old"],
+        has_budgets=vm["has_budgets"],
+        # P4.1: the sync caption is progressive enhancement — the server paints
+        # exactly what the island would (same bucket table), so first paint is
+        # correct with JS blocked and hydration is a no-op repaint.
+        sync_age_text=_sync_age_caption(vm["last_epoch"]),
+        sync_age_props=_sync_age_props(vm["last_epoch"], vm["last"]),
+        student_name=vm["student_name"], dash=vm["dash"], marks=vm["marks_view"],
+        marks_summary=vm["marks_summary"],
+        academics=vm["academics"],
+        fees=vm["fees"],
+        exams=vm["exams"], faculty=vm["faculty_view"], fb_plan=vm["fb_plan"],
+        # card/widget engine: layout registry + derived widget data (route-side
+        # joins — partials consume flat dicts only)
+        layout=vm["layout"], widget_specs=WIDGETS,
+        ticker=_today_ticker(vm["group_key"]), budgets=vm["wctx"]["budgets"],
+        teach_groups=vm["wctx"]["teach_groups"],
+        version=APP_VERSION,
+        timetable=timetable_html(vm["group_key"], vm["attendance"]),
+        tt_fetched_at=_tt_fetched_at(vm["group_key"]),
+        tt_editor_enabled=_tt_editor_enabled(),
+        # scope-filled copy of personal (portal values win, scope gaps only);
+        # the profile widget's avatar stays the generated blobatar
+        personal=merge_personal(vm["personal_data"], vm["scope_fields"]),
+        campus=vm["campus"],
+        tools=vm["tools"],
+        scope_sync_state=_scope_sync_state(netid))
+
+
+def panel_data(netid, active_panel="dashboard"):
+    """The dashboard view model for `netid`: what every panel shows, as data.
+
+    ONE computation, two consumers — presentation() renders templates from it
+    and the /api/<panel> endpoints serve a slice of it as JSON, so the page and
+    the offline store cannot disagree.
+
+    EXCLUDED on purpose: everything that is already-rendered HTML or a UI flag
+    rather than a value, plus `layout`/`widget_specs` (the card registry):
+      * timetable  — timetable_html() output. Consumers get `schedule` instead,
+                     the structured {day: {period: {code, name, location,
+                     attendance}}} grid the HTML is drawn from, attendance
+                     join already applied. Storing HTML in IndexedDB is the
+                     coupling the rewrite exists to remove.
+      * layout, widget_specs  — LAYOUT/WIDGETS presentation registry.
+      * version, tt_editor_enabled — UI flags.
+      * tools — the Tools panel's link registry (app-owned URLs), not data.
+      * sync captions — derived from last_epoch, which IS included, so a
+                     consumer formats its own relative time.
+    Display strings that the page prints verbatim (`pct_disp`, `due_disp`,
+    `days_left_90`, `fill`, ...) stay IN: they are the same numbers the page
+    shows and the offline copy wants them for parity; they cost nothing.
+    """
     row = user_dashboard(netid)
     _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
@@ -162,12 +267,11 @@ def index(active_panel="dashboard"):
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
     # Detailed attendance (SCOPE hourwise × timetable): replaces the Absences
     # card when the feature, the group's timetable and the stored hour rows
-    # are all present; otherwise the card above renders exactly as on main.
+    # are all present; otherwise the Absences card renders exactly as on main.
+    # Data, not presentation: /api/attendance serves it too. Computed HERE,
+    # after courses (hourwise_view joins the course objects), and kept ahead
+    # of `dash` only because that is where it always was.
     hourwise = _hourwise_section(netid, group_key, monthly)
-    if hourwise:
-        monthly_abs = []
-    else:
-        monthly_abs = monthly
     dash = {
         # institute mail is NetID@srmist.edu.in (the portal login page states
         # it verbatim) — the personal Gmail from the profile is NOT shown here
@@ -198,60 +302,47 @@ def index(active_panel="dashboard"):
     campus = campus_view(_jload(row["scope_json"] if row else None, {}),
                          enabled_features())
     tools = _tools_entries(netid)
-    # an authenticated visit that finds the SCOPE blob missing/stale starts
-    # the background sync — the surfaces fill in on the next reload
-    _scope_sync_kick_if_stale(netid)
-    # portal data has no background refresher of its own: without this a
-    # dashboard opened the next morning shows yesterday's numbers until
-    # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
-    # the knob is 0.
-    auto_sync_kick_if_stale(netid)
-    # Each route renders only its own panel: "/" -> home.html, everything else
-    # -> <panel>.html. (The old 1,060-line 9-panel dashboard.html is gone: it was
-    # never routed after P3.1 and only existed as a duplication.)
-    tpl = "home.html" if active_panel == "dashboard" else f"{active_panel}.html"
-    # P3.1: every panel template wraps its <main> content in a {% if %} on its
-    # own data, so with no data the route would serve 200 + page chrome + an
-    # empty <main>. The nav entry is hidden in that same case, so nobody can
-    # arrive here by clicking — only a stale bookmark or a push deep link — and
-    # a URL that renders nothing is a broken link, not a page: 404 (all four
-    # gated routes alike). /attendance's hourwise/marks/exams sections have
-    # independent fallbacks, so it is not gated this way.
-    present = {"campus": campus["show"], "academics": academics,
-               "fees": fees, "tools": tools}.get(active_panel, True)
-    if not present:
-        abort(404)
-    return render_template(
-        tpl, netid=netid, courses=courses, monthly=monthly_abs,
-        hourwise=hourwise,
-        days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
-        stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
-        days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
-        last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
-        # P4.1: the sync caption is progressive enhancement — the server paints
-        # exactly what the island would (same bucket table), so first paint is
-        # correct with JS blocked and hydration is a no-op repaint.
-        sync_age_text=_sync_age_caption(last_epoch),
-        sync_age_props=_sync_age_props(last_epoch, last),
-        student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
-        academics=academics,
-        fees=fees,
-        exams=exams, faculty=faculty_view, fb_plan=fb_plan,
-        # card/widget engine: layout registry + derived widget data (route-side
-        # joins — partials consume flat dicts only)
-        layout=layout, widget_specs=WIDGETS,
-        ticker=_today_ticker(group_key), budgets=_wctx["budgets"],
-        teach_groups=_wctx["teach_groups"],
-        version=APP_VERSION,
-        timetable=timetable_html(group_key, attendance),
-        tt_fetched_at=_tt_fetched_at(group_key),
-        tt_editor_enabled=_tt_editor_enabled(),
-        # scope-filled copy of personal (portal values win, scope gaps only);
-        # the profile widget's avatar stays the generated blobatar
-        personal=merge_personal(personal_data, _scope_fields),
-        campus=campus,
-        tools=tools,
-        scope_sync_state=_scope_sync_state(netid))
+    return dict(
+        # ── panels the API serves (app/blueprints/panels.py) ──
+        courses=courses,          # /api/attendance: code, pct, budgets, tints
+        monthly=monthly,          # /api/attendance: month bars + absence chips
+        hourwise=hourwise,        # /api/attendance: detailed grid (None = feature off)
+        fees=fees,                # /api/fees: None when gated (one rule)
+        campus=campus,            # /api/campus: {"show", "cards"}
+        academics=academics,      # /api/academics: {"cgpa", "courses"} or None
+        schedule=_schedule(group_key, attendance),  # timetable AS DATA, not HTML
+        # ── the rest of the page model (home/marks/timetable/settings) ──
+        netid=netid, panel=active_panel, data=data, personal_data=personal_data,
+        scope_fields=_scope_fields, student_name=student_name,
+        marks_view=marks_view, marks_summary=marks_summary, exams=exams,
+        faculty_view=faculty_view, fb_plan=fb_plan, group_key=group_key,
+        attendance=attendance, has_budgets=has_budgets, dash=dash, tools=tools,
+        layout=layout, wctx=_wctx, last=last, last_epoch=last_epoch,
+        hours_old=hours_old,
+    )
+
+
+def _schedule(group_key, attendance):
+    """The timetable tab's grid as DATA — what timetable_html renders from.
+
+    {day: {period: {code, name, location, attendance}}} with the spec §4
+    attendance join already applied (a joined course dict or None for "no
+    data"). This is the JSON-side counterpart of timetable= (an escaped HTML
+    string): the API needs values, not markup. Empty dict = no timetable.
+    """
+    gid = group_id(group_key) if group_key else None
+    if gid is None:
+        return {}
+    custom_codes = {r[0] for r in group_subjects(gid) if r[3] and r[0]} if attendance else set()
+    out = {}
+    for r in group_slots(gid):
+        out.setdefault(r[0], {})[r[1]] = {
+            "code": r[2] or "", "name": r[3] or "", "location": r[4] or "",
+            # the ROW rule of timetable_html (audit 2026-09-27): a custom subject
+            # never joins; otherwise code-exact, then normalized name.
+            "attendance": _join_attendance(attendance, custom_codes, r[2] or "", r[3] or ""),
+        }
+    return out
 
 
 # ── P3.1: one document -> nine real routes ───────────────────────────────

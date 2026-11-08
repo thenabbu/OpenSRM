@@ -709,6 +709,7 @@ from .views.dashboard import (  # noqa: E402,F401 — re-exported
     _load_component_tags,
     _week_marks,
     index,
+    panel_data,
 )
 
 # The timetable is fully portal-owned: the manual editor entry + save API are
@@ -1274,11 +1275,12 @@ def create_app(config=None):
     from .blueprints.feedback import bp as feedback_bp
     from .blueprints.internal import bp as internal_bp
     from .blueprints.marks import bp as marks_bp
+    from .blueprints.panels import bp as panels_bp
     from .blueprints.push import bp as push_bp
     from .blueprints.timetable import bp as timetable_bp
 
     for _bp in (auth_bp, dashboard_bp, marks_bp, timetable_bp,
-                push_bp, feedback_bp, internal_bp):
+                push_bp, feedback_bp, internal_bp, panels_bp):
         a.register_blueprint(_bp)
     # boot the schema on THIS app's DB: the app context below is what points
     # db.connect() at config.db_path (per-app resolution in app/db.py).

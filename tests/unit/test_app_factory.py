@@ -119,6 +119,8 @@ EXPECTED = {
     "/api/push/unsubscribe", "/api/push/settings", "/api/push/test", "/api/push/receipt",
     "/api/account/delete", "/logout",
     "/api/track/tab",
+    # P50: the four read APIs behind the data-gated panels
+    "/api/attendance", "/api/fees", "/api/campus", "/api/academics",
     # P3.1: nine real panel routes
     "/attendance", "/timetable", "/marks", "/campus",
     "/academics", "/fees", "/tools", "/settings",
@@ -159,6 +161,11 @@ EXPECTED_EP = {
     "/api/push/test": {("push_test", "push_test")},
     "/api/push/receipt": {("push_receipt", "push_receipt")},
     "/api/track/tab": {("track_tab", "track_tab")},
+    # P50: one endpoint per read API, views in app/blueprints/panels.py
+    "/api/attendance": {("api_attendance", "api_attendance")},
+    "/api/fees": {("api_fees", "api_fees")},
+    "/api/campus": {("api_campus", "api_campus")},
+    "/api/academics": {("api_academics", "api_academics")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
     # P3.1: nine real panel routes (each endpoint == its view __name__)
