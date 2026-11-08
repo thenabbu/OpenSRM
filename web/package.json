@@ -9,7 +9,7 @@
     "ignoredBuiltDependencies": []
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsc -p tsconfig.design.json && vite build",
     "test": "vitest run"
   },
   "dependencies": {
