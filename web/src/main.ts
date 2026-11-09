@@ -5,6 +5,7 @@ import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
 import { showStale, removeStale } from './data/stale';
+import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 
@@ -133,7 +134,14 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   if (!hasIslandProjection(name)) return;    // attendance/marks/timetable: no island yet
 
   const outcome = await loadPanel(name, { netid, groupKey: sessionGroupKey() });
-  if (!outcome.ok) return;                   // failed load: screen untouched, by design
+  if (!outcome.ok) {
+    // P7.3: the screen is still untouched — but a blank panel is not an answer
+    // when the student is logged out or offline with nothing saved. `showFailure`
+    // picks the affordance from the reason; `invalid`/`http` paint nothing.
+    showFailure(el, outcome);
+    return;
+  }
+  removeFailure(el);                         // a good load clears any earlier message
   // Server paint already correct and fresh: only a cache hit serves offline.
   if (parsed.success && outcome.source === 'network') {
     removeStale(el);                         // fresh data: drop any old caption
