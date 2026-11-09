@@ -208,7 +208,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body p-4">
           <h2 class="text-base font-semibold mb-3">Tools</h2>
-          <ul class="flex flex-col gap-2">
+          <ul class="flex flex-col gap-2" data-island="tools" data-props="#island-tools">
             {% for t in tools %}
             <li>
               <a href="/{{ t.tab }}" data-tool-tab="{{ t.tab }}" data-tool-slug="{{ t.slug }}"
@@ -231,6 +231,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
   </div>
   {% endif %}
 </main>
+{{ tools_props|safe }}
 {{ sync_age_props|safe }}
 
 <div id="offline-banner" role="status" aria-live="polite"></div>

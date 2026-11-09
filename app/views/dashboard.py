@@ -31,7 +31,7 @@ from ..scope.ops import enabled_features
 from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
 from ..security import require_login
 from ..usage_metrics import _track
-from . import academics_island, campus_island, fees_island, settings_island
+from . import academics_island, campus_island, fees_island, settings_island, tools_island
 from .academics import academics_view
 from .attendance import (
     _absences_view,
@@ -174,6 +174,9 @@ def presentation(vm):
         tools=vm["tools"],
         # P7.1: whose IndexedDB rows this page may read. See layout.session_netid.
         data_netid=session_netid(netid),
+        # rows only - the route 404s when the list is empty, so vm["tools"] is
+        # non-empty here; the card and footnote stay template markup.
+        tools_props=tools_island.block(tools_island.props(vm["tools"])),
         scope_sync_state=_scope_sync_state(netid))
 
 
