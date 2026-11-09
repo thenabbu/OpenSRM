@@ -3,6 +3,7 @@ import type { ComponentType } from 'preact';
 import { academicsProps } from '../panels/academics/contract';
 import { campusProps } from '../panels/campus/contract';
 import { feesProps } from '../panels/fees/contract';
+import { settingsProps } from '../panels/settings/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
 // Server emits, at the mount point:
@@ -33,6 +34,7 @@ export const schemas = {
   fees: feesProps,
   academics: academicsProps,
   campus: campusProps,
+  settings: settingsProps,
 };
 
 export type IslandName = keyof typeof schemas;

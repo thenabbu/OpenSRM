@@ -91,6 +91,10 @@ def presentation(vm):
     Absences card.
     """
     netid = vm["netid"]
+    # scope-filled copy of personal (portal values win, scope gaps only); the
+    # profile widget's avatar stays the generated blobatar. Read once: the
+    # template and the settings island must paint the same keys.
+    personal = merge_personal(vm["personal_data"], vm["scope_fields"])
     group_key, monthly = vm["group_key"], vm["monthly"]
     hourwise = vm["hourwise"]
     monthly_abs = [] if hourwise else monthly
@@ -149,7 +153,8 @@ def presentation(vm):
         tt_editor_enabled=_tt_editor_enabled(),
         # scope-filled copy of personal (portal values win, scope gaps only);
         # the profile widget's avatar stays the generated blobatar
-        personal=merge_personal(vm["personal_data"], vm["scope_fields"]),
+        personal=personal,
+        settings_props=settings_island.block(settings_island.props(personal)),
         campus=vm["campus"],
         campus_props=campus_island.block(campus_island.props(vm["campus"])),
         tools=vm["tools"],
