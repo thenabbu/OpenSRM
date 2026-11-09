@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ComponentType } from 'preact';
 import { academicsProps } from '../panels/academics/contract';
+import { attendanceProps } from '../panels/attendance/contract';
 import { campusProps } from '../panels/campus/contract';
 import { feesProps } from '../panels/fees/contract';
 import { settingsProps } from '../panels/settings/contract';
@@ -30,10 +31,13 @@ export const schemas = {
     full: z.string(),
     busy: z.string().nullable(),
   }),
+  // A nested payload, so it rides the <script type="application/json"> block
   // Nested payload -> the <script type="application/json"> block form.
-  fees: feesProps,
+  // form, not data-props (the case the header comment calls out).
   academics: academicsProps,
+  attendance: attendanceProps,
   campus: campusProps,
+  fees: feesProps,
   settings: settingsProps,
 };
 

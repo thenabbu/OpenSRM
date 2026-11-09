@@ -15,9 +15,11 @@ import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from 
  */
 const registry: Record<IslandName, () => Promise<ComponentType<HostProps>>> = {
   'sync-age': () => import('./islands/sync-age').then((m) => m.default as ComponentType<HostProps>),
-  fees: () => import('./panels/fees/FeesPanel').then((m) => m.default as ComponentType<HostProps>),
+    import('./panels/attendance/AttendancePanel').then((m) => m.default as ComponentType<HostProps>),
   academics: () => import('./panels/academics/AcademicsPanel').then((m) => m.default as ComponentType<HostProps>),
+  attendance: () =>
   campus: () => import('./panels/campus/CampusPanel').then((m) => m.default as ComponentType<HostProps>),
+  fees: () => import('./panels/fees/FeesPanel').then((m) => m.default as ComponentType<HostProps>),
   settings: () => import('./panels/settings/SettingsPanel').then((m) => m.default as ComponentType<HostProps>),
 };
 
