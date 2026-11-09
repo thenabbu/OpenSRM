@@ -47,6 +47,7 @@ from ..db import (
 from ..portal.parsers.common import _group_key, _semester_int
 from ..portal.parsers.timetable import DAY_ORDER
 from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS, TOOLS
+from markupsafe import Markup
 from .attendance import _join_attendance, _title_case
 from . import timetable_island
 from .ticker import _now_next_from_slots
@@ -484,4 +485,8 @@ def timetable_html(group_key, attendance=None):
                  + '<div class="panels" data-island="timetable" data-props="#island-timetable">'
                  + "".join(panels) + "</div></div>")
     payload = timetable_island.props(day_slots, grid, today)
-    return grid_html + timetable_island.block(payload)
+    # Markup + str escapes the str: `Markup.__add__` treats a plain str operand as
+    # text to be escaped, which turned every `class="tt-row"` into `&#34;tt-row&#34;`
+    # and destroyed the rows for any caller reading the markup. Wrap the html
+    # side so both operands are already-safe Markup.
+    return Markup(grid_html) + timetable_island.block(payload)
