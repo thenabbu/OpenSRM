@@ -13,9 +13,18 @@ import { ageCaption } from '../lib/syncAge';
  */
 export const STALE_ATTR = 'data-island-stale';
 
+/**
+ * `fetchedAt` arrives in MILLISECONDS (load.ts writes `Date.now()`), but
+ * `ageCaption(ts, nowS)` takes SECONDS. Converting here, once, is what makes
+ * the caption appear at all: passing ms straight through made the difference
+ * negative, which reads as "fresh" inside FRESH_S, so every stale panel
+ * silently rendered no caption. Its old test fed pre-converted seconds and so
+ * could not see this.
+ */
 export function showStale(el: HTMLElement, fetchedAt: number, nowS: number): HTMLElement | null {
   removeStale(el);
-  const caption = ageCaption(fetchedAt, nowS);
+  const fetchedS = fetchedAt > 1e12 ? Math.floor(fetchedAt / 1000) : fetchedAt;
+  const caption = ageCaption(fetchedS, nowS);
   // ageCaption returns '' inside FRESH_S: a fresh payload needs no label.
   if (!caption) return null;
 
@@ -31,7 +40,13 @@ export function showStale(el: HTMLElement, fetchedAt: number, nowS: number): HTM
   return span;
 }
 
+/**
+ * Remove ONLY the caption this mount owns. Looking up `[data-island-stale]`
+ * on the parent finds the FIRST caption in the whole panel — so one island
+ * refreshing would delete a different island's caption. The caption is
+ * inserted immediately after `el`, so only that immediate sibling counts.
+ */
 export function removeStale(el: HTMLElement): void {
-  const prev = el.parentElement?.querySelector(`[${STALE_ATTR}]`);
-  if (prev) prev.remove();
+  const next = el.nextElementSibling;
+  if (next && next.hasAttribute(STALE_ATTR)) next.remove();
 }

@@ -66,17 +66,24 @@ function Row({ c }: { c: AttendanceCourse }) {
 /**
  * The attendance course meters, hydrated.
  *
- * Returns the `.mrows` grid; main.ts's render() replaces the mount element's
- * children with it. Rendering happens inside the boundary's try, so a bad prop
- * throws there and the server's markup is restored — nothing here may defer work
- * to useEffect/useState, whose throws the boundary cannot see.
+ * Returns a FRAGMENT, not a wrapper. The mount point
+ * (attendance.html:221) is already `<div class="mrows" data-island="attendance">`,
+ * so returning another `.mrows` put a grid inside an identical grid — the row
+ * geometry then depended on CSS that was written for one level, not two. The
+ * fragment makes the rows direct children of the mount, which is the contract
+ * every other island follows (P6.3/P6.6/P6.7/P6.9 shipped this same bug).
+ *
+ * main.ts's render() replaces the mount element's children with this; rendering
+ * happens inside the boundary's try, so a bad prop throws there and the server's
+ * markup is restored — nothing here may defer work to useEffect/useState, whose
+ * throws the boundary cannot see.
  */
 export default function AttendancePanel({ el, props }: AttendanceHost) {
   el.setAttribute(HYDRATED_ATTR, '1');
   const { courses } = props as AttendanceProps;
   return (
-    <div class="mrows">
+    <>
       {courses.map((c) => <Row key={c.code} c={c} />)}
-    </div>
+    </>
   );
 }
