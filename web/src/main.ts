@@ -4,6 +4,7 @@ import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
+import { showStale, removeStale } from './data/stale';
 import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 
@@ -134,10 +135,16 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   const outcome = await loadPanel(name, { netid, groupKey: sessionGroupKey() });
   if (!outcome.ok) return;                   // failed load: screen untouched, by design
   // Server paint already correct and fresh: only a cache hit serves offline.
-  if (parsed.success && outcome.source === 'network') return;
+  if (parsed.success && outcome.source === 'network') {
+    removeStale(el);                         // fresh data: drop any old caption
+    return;
+  }
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
   mountBounded(name, Comp, el, props, now);
+  // P7.2: label a cache-served mount with its age, so "what we had earlier"
+  // never reads as "live". One helper for every island (data/stale.ts).
+  showStale(el, outcome.fetchedAt, now);
 }
 
 export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
