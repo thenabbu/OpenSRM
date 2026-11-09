@@ -129,8 +129,8 @@ export const hasIslandProjection = (name: string): name is keyof typeof PROJECT 
  * schema. Never throws: a shape that drifted is a cache MISS, not a crash.
  */
 export function propsFromCache(panel: Panel, data: unknown): Record<string, unknown> | undefined {
+  if (!hasIslandProjection(panel)) return undefined;
   const project = PROJECT[panel];
-  if (!project) return undefined;
   const schema = (schemas as Record<string, { safeParse: (v: unknown) => { success: boolean } }>)[
     panel
   ];
