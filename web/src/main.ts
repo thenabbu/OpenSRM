@@ -20,6 +20,7 @@ const registry: Record<IslandName, () => Promise<ComponentType<HostProps>>> = {
   attendance: () =>
   campus: () => import('./panels/campus/CampusPanel').then((m) => m.default as ComponentType<HostProps>),
   fees: () => import('./panels/fees/FeesPanel').then((m) => m.default as ComponentType<HostProps>),
+  marks: () => import('./panels/marks/MarksPanel').then((m) => m.default as ComponentType<HostProps>),
   settings: () => import('./panels/settings/SettingsPanel').then((m) => m.default as ComponentType<HostProps>),
 };
 

@@ -4,6 +4,7 @@ import { academicsProps } from '../panels/academics/contract';
 import { attendanceProps } from '../panels/attendance/contract';
 import { campusProps } from '../panels/campus/contract';
 import { feesProps } from '../panels/fees/contract';
+import { marksProps } from '../panels/marks/contract';
 import { settingsProps } from '../panels/settings/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
@@ -38,6 +39,7 @@ export const schemas = {
   attendance: attendanceProps,
   campus: campusProps,
   fees: feesProps,
+  marks: marksProps,
   settings: settingsProps,
 };
 
