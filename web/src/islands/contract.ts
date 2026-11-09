@@ -6,6 +6,7 @@ import { campusProps } from '../panels/campus/contract';
 import { feesProps } from '../panels/fees/contract';
 import { marksProps } from '../panels/marks/contract';
 import { settingsProps } from '../panels/settings/contract';
+import { timetableProps } from '../panels/timetable/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
 // Server emits, at the mount point:
@@ -41,6 +42,7 @@ export const schemas = {
   fees: feesProps,
   marks: marksProps,
   settings: settingsProps,
+  timetable: timetableProps,
 };
 
 export type IslandName = keyof typeof schemas;

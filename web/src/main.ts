@@ -22,6 +22,7 @@ const registry: Record<IslandName, () => Promise<ComponentType<HostProps>>> = {
   fees: () => import('./panels/fees/FeesPanel').then((m) => m.default as ComponentType<HostProps>),
   marks: () => import('./panels/marks/MarksPanel').then((m) => m.default as ComponentType<HostProps>),
   settings: () => import('./panels/settings/SettingsPanel').then((m) => m.default as ComponentType<HostProps>),
+  timetable: () => import('./panels/timetable/TimetablePanel').then((m) => m.default as ComponentType<HostProps>),
 };
 
 export const diag = {
