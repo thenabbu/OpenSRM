@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ComponentType } from 'preact';
+import { marksProps } from '../panels/marks/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
 // Server emits, at the mount point:
@@ -26,6 +27,9 @@ export const schemas = {
     full: z.string(),
     busy: z.string().nullable(),
   }),
+  // A nested payload, so it rides the <script type="application/json"> block
+  // form, not data-props (the case the header comment calls out).
+  marks: marksProps,
 };
 
 export type IslandName = keyof typeof schemas;
