@@ -5,6 +5,7 @@ import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
 import { hasIslandProjection, propsFromCache } from './data/props';
+import { type StaleProps, withStale } from './islands/stale';
 import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 
 /**
@@ -57,8 +58,9 @@ export function readProps(el: HTMLElement): unknown {
  * server's child nodes, leaving *this* element exactly as it arrived. Callers
  * (and hydrateAll's Promise.all) never see the exception.
  */
-function mountBounded(name: string, Comp: ComponentType<HostProps>, el: HTMLElement,
-                     props: unknown, now: number): boolean {
+function mountBounded(name: string, Comp: ComponentType<HostProps>,
+                     el: HTMLElement, props: unknown, now: number,
+                     stamp = 0, stale = false): boolean {
   const saved = Array.from(el.childNodes);
   try {
     // createElement, not JSX: this module is .ts (the bootstrap, with the CSS
@@ -69,7 +71,10 @@ function mountBounded(name: string, Comp: ComponentType<HostProps>, el: HTMLElem
     // left the stale children behind - duplicated content in production. The
     // snapshot `saved` is still what the catch restores on a throw.
     el.replaceChildren();
-    render(createElement(Comp, { el, props, now } as HostProps) as VNode<HostProps>, el);
+    // Every island routes through here, so wrapping HERE is what makes the
+    // staleness caption "one implementation, used by every island" (P7.2).
+    const Stale = withStale(Comp);
+    render(createElement(Stale, { el, props, now, stamp, stale } as StaleProps) as VNode<StaleProps>, el);
     return true;
   } catch (err) {
     el.replaceChildren(...saved);
@@ -137,7 +142,9 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   if (parsed.success && outcome.source === 'network') return;
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
-  mountBounded(name, Comp, el, props, now);
+  // The cache is the only source that can be old: label it with its own stamp
+  // (and `outcome.stale`, which is that stamp measured against STALE_MS).
+  mountBounded(name, Comp, el, props, now, outcome.fetchedAt, outcome.stale);
 }
 
 export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
