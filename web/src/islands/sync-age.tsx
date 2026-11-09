@@ -20,8 +20,9 @@ export const HYDRATED_ATTR = 'data-hydrated';
  * the server owns (no flash, no focus loss, no layout shift).
  */
 export default function SyncAge({ el, props }: SyncAgeHost) {
-  // Preact empties the mount point before calling this function; main.ts's
-  // boundary captured the server's child nodes first, so a throw restores them.
+  // main.ts's mountBounded clears the mount BEFORE rendering (render() alone
+  // only appends), and it captured the server's child nodes first, so a throw
+  // still restores them. Do not rely on Preact emptying anything for you.
   const paint = (): void => {
     if (el.textContent === SYNCING) return;   // a refresh is in flight: not ours
     const text = props.busy ?? ageCaption(props.ts, Date.now() / 1000);

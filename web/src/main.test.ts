@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hydrateAll } from './main';
+import { createElement } from 'preact';
+import { hydrateAll, mountBounded } from './main';
 
 // Exactly what the server emits (templates + app/views/sync_age.py): the same
 // two spans, the same caption/title/classes, `data-island` on each, and ONE
@@ -157,3 +158,28 @@ describe('P4.1 island hydration', () => {
   });
 });
 
+describe('mountBounded clears the mount before rendering', () => {
+  // Preact's render() APPENDS into a container that already has children
+  // (<b>NEW</b><span>SERVER</span>) and a null component leaves them alone;
+  // both verified by direct probe. The server's markup is still in the mount
+  // at hydrate time, so without an explicit clear an island painting fewer
+  // nodes than the server painted leaves stale content on the page.
+  // mountBounded is the boundary that must guarantee the clear.
+  it('removes the server children before rendering the island', () => {
+    const el = document.createElement('div');
+    el.innerHTML = '<span>SERVER</span><span>PAINT</span>';
+    const Comp = () => createElement('b', null, 'NEW');
+    expect(mountBounded('t', Comp as never, el, {}, 0)).toBe(true);
+    expect(el.innerHTML).not.toContain('SERVER');
+    expect(el.innerHTML).not.toContain('PAINT');
+    expect(el.textContent).toBe('NEW');
+  });
+
+  it('restores the server markup when the island throws', () => {
+    const el = document.createElement('div');
+    el.innerHTML = '<span>SERVER</span>';
+    const Boom = () => { throw new Error('boom'); };
+    expect(mountBounded('t', Boom as never, el, {}, 0)).toBe(false);
+    expect(el.textContent).toContain('SERVER');
+  });
+});
