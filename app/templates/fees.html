@@ -199,7 +199,8 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 </div>
 <main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   {% if fees %}
-  <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
+  <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto" style=""
+       data-island="fees" data-props="#island-fees">
     <!-- ONE hero: the tab's single loud number. Dues >= 1 rupee = warning,
          >= 100000 (semester-fee scale) = error (documented in views/fees.py).
          Zero dues = the hero is ABSENT and the page opens at Paid. -->
@@ -285,6 +286,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
     </details>
     {% endif %}
   </div>
+  {{ fees_props|safe }}
   {% endif %}
 </main>
 {{ sync_age_props|safe }}
