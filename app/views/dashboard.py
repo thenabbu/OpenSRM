@@ -45,6 +45,7 @@ from .attendance import (
 )
 from .campus import campus_view
 from .fees import _fees_view
+from . import fees_island
 from .layout import LAYOUT, WIDGETS
 from .marks import _marks_summary, _marks_view
 from .profile import merge_personal, scope_profile
@@ -133,6 +134,7 @@ def presentation(vm):
         marks_summary=vm["marks_summary"],
         academics=vm["academics"],
         fees=vm["fees"],
+        fees_props=fees_island.block(fees_island.props(vm["fees"])) if vm["fees"] else "",
         exams=vm["exams"], faculty=vm["faculty_view"], fb_plan=vm["fb_plan"],
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
