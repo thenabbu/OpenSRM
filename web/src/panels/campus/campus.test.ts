@@ -31,11 +31,17 @@ const PROPS: CampusProps = {
 };
 
 let pageId = 0;
-/** Server markup: the mount node itself with cards painted + the inert block. */
+/**
+ * Server markup mirroring campus.html: the mount node (data-island="campus")
+ * whose children are the cards themselves, plus the inert props block.
+ * NOT a wrapper div inside the mount - the island returns a fragment, so its
+ * children must sit at the same level as the ones hydration replaces. A
+ * fixture that nests a wrapper here cannot detect the island nesting another.
+ */
 const page = (props: unknown = PROPS, id = `island-campus-${++pageId}`) => `
   <section id="markup">
     <div id="tab-campus" role="tabpanel" data-island="campus" data-props="#${id}">
-      <div class="flex flex-col gap-3"><div class="card">SERVER PAINT: Acme Corp</div></div>
+      <div class="card">SERVER PAINT: Acme Corp</div>
     </div>
     <script type="application/json" id="${id}">${JSON.stringify(props)}</script>
   </section>`;
@@ -49,7 +55,10 @@ beforeEach(async () => {
 });
 
 const mount = () => document.querySelector<HTMLElement>('[data-island="campus"]')!;
-const stack = () => mount().firstElementChild as HTMLElement;
+// The island returns a fragment, so cards are direct children of the mount.
+// (Was mount().firstElementChild - which walked INTO the wrapper the nest bug
+// created, so the suite could never see the extra level.)
+const stack = () => mount();
 const NOW = Date.parse('2026-11-09T10:20:00Z') / 1000;
 const hydrate = async () => { document.body.innerHTML = page(); return hydrateAll(document.body, NOW); };
 

@@ -88,12 +88,15 @@ function Card({ c }: { c: CampusCard }) {
 /** Returns the card stack that replaces the server's children 1:1. */
 export function CampusCards({ props }: { props: unknown }) {
   const { cards } = props as CampusProps;
+  // No wrapper div: campus.html:208 already renders the
+  // `flex flex-col gap-3` container inside the mount (data-island="campus"),
+  // so returning one here nests a second identical level. Cards are siblings.
   return (
-    <div class="flex flex-col gap-3">
+    <>
       {cards.map((c, i) => (
         <Card key={`${c.title}-${i}`} c={c} />
       ))}
-    </div>
+    </>
   );
 }
 

@@ -60,6 +60,13 @@ function mountBounded(name: string, Comp: ComponentType<HostProps>, el: HTMLElem
   try {
     // createElement, not JSX: this module is .ts (the bootstrap, with the CSS
     // import Vite needs); islands stay .tsx.
+    // Preact's render() APPENDS into a container that already has children; it
+    // does not clear them. The server's markup is still there, so islands that
+    // render fewer nodes than the server painted (an empty list, say) left the
+    // old children behind - duplicated content in production, calibrated away
+    // in tests only because a wrapper div used to hide it. Clear first, and
+    // keep the snapshot so the catch can restore it on a throw.
+    el.replaceChildren();
     render(createElement(Comp, { el, props, now } as HostProps) as VNode<HostProps>, el);
     return true;
   } catch (err) {
