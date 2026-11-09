@@ -164,6 +164,8 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_fees.py
       - name: test_scope_profile (SCOPE profile enrichment + Settings merge)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_profile.py
+      - name: test_readpath_netid (P7.1 offline read path — data-netid is the cache key)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_readpath_netid.py
 
   docker:
     runs-on: ubuntu-latest
