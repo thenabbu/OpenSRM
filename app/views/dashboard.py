@@ -31,7 +31,7 @@ from ..scope.ops import enabled_features
 from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
 from ..security import require_login
 from ..usage_metrics import _track
-from . import academics_island, campus_island, fees_island
+from . import academics_island, campus_island, fees_island, settings_island
 from .academics import academics_view
 from .attendance import (
     _absences_view,

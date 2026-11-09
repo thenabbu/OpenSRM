@@ -172,6 +172,71 @@ def t_widget_renders_blobatar_name_email_regno_only():
         "route still computes a photo/one-liner input"
 
 
+# ── island props (P6.8) ────────────────────────────────────────────────────
+def t_settings_island_props_match_the_template_groups():
+    """The island payload carries exactly the rows the template would paint —
+    same group order, same wide/mono flags — and the badge count the template
+    counted. settings.html is the source of truth; this pins the copy."""
+    import json as _json
+
+    from app.views import settings_island as si
+
+    html = (REPO / "app/templates/settings.html").read_text()
+    # the island's GROUPS list is the template's, key for key
+    block = re.search(r"\{% set groups = \[(.*?)\] %\}", html, re.S).group(1)
+    for _title, keys in si.GROUPS:
+        for k in keys:
+            assert f'"{k}"' in block, f"island group lists a key the template dropped: {k}"
+    assert sum(len(keys) for _, keys in si.GROUPS) == len(re.findall(r'"[^"]+"', block)) - 4, \
+        "island groups and the template's differ"
+
+    fields = SCOPE_STORE["getPersonalDetails"]["data"]
+    # Institution/Semester only arrive from the portal; Family/Contact from scope
+    personal = merge_personal({"Student Name": "Aarav Mehta", "Program": "CSE [B.Tech]",
+                               "Institution": "SRMIST Delhi-NCR", "Register No.": "RA1"}, fields)
+    payload = si.props(personal)
+    # identity header + groups in the template's order, only present keys
+    assert payload["personal"]["name"] == "Aarav Mehta"
+    assert payload["personal"]["program"] == "CSE [B.Tech]"
+    groups = {g["title"]: [i["key"] for i in g["items"]] for g in payload["personal"]["groups"]}
+    assert list(groups) == ["Academic", "Personal", "Family", "Contact"]
+    assert "Faculty Advisor" not in groups["Academic"], "empty advisor rendered"
+    # count = every cell + the two header slots (settings.html:188 nd.n)
+    cells = sum(len(v) for v in groups.values())
+    assert payload["count"] == cells + 2
+    # the two template branches the island must reproduce
+    flat = {i["key"]: i for g in payload["personal"]["groups"] for i in g["items"]}
+    assert flat["Institution"]["wide"] is True and flat["Address"]["wide"] is True
+    assert flat["Address"]["mono"] is False, "Address is prose, not mono"
+    assert flat["Register No."]["mono"] is True and flat["Register No."]["wide"] is False
+    # empty portal -> the template's alert branch
+    assert si.props({}) == {"personal": None, "count": 0}
+    assert si.props(None) == {"personal": None, "count": 0}
+    # '<' escaped so a payload value can never unbalance the script block
+    assert r"\u003c" in si.block({"personal": None, "count": 0, "x": "<"})
+
+
+def t_settings_page_mounts_the_island_over_its_own_markup():
+    """JS off: the server paints the whole collapse AND the mount rides the
+    same node; the props block parses back to the same rows."""
+    import json as _json
+
+    html = (REPO / "app/templates/settings.html").read_text()
+    assert 'id="personal-details"\n           data-island="settings" data-props="#island-settings"' in html, \
+        "the mount is not #personal-details itself"
+    assert '{{ settings_props|safe }}' in html, "props block not rendered"
+    # the server markup the island replaces is still there (fallback)
+    for chrome in ('collapse collapse-arrow bg-base-200 border border-base-300',
+                   'collapse-title text-sm font-semibold flex items-center justify-between gap-2',
+                   'No personal details available.'):
+        assert chrome in html, chrome
+    from app.views import settings_island as si
+    payload = si.props(merge_personal({"Register No.": "RA1"}, {}))
+    blk = si.block(payload)
+    raw = re.search(r'id="island-settings">(.*?)</script>', blk).group(1)
+    assert _json.loads(raw) == payload
+
+
 TESTS = [
     ("parser: bare dict + data/ts + Status wrapper", t_parser_accepts_bare_dict_and_status_wrapper),
     ("parser: feature gate off -> {}", t_parser_feature_gate_off_returns_empty),
@@ -179,6 +244,10 @@ TESTS = [
     ("settings: every scope label lands in a group", t_every_scope_label_lands_in_a_settings_group),
     ("settings: portal keys intact, section/batch gap-fill", t_settings_copy_leaves_portal_keys_intact),
     ("feature gate off -> settings input identical to today", t_feature_gate_off_settings_input_identical_to_today),
+    ("island props mirror the template groups + flags",
+     t_settings_island_props_match_the_template_groups),
+    ("settings page mounts the island over its own markup",
+     t_settings_page_mounts_the_island_over_its_own_markup),
     ("widget: blobatar + name + email + reg no, no photo, no course line", t_widget_renders_blobatar_name_email_regno_only),
 ]
 
