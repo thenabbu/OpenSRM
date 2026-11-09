@@ -44,6 +44,8 @@ from .attendance import (
     hourwise_view,
 )
 from .campus import campus_view
+from .dashboard_island import block as _island_block
+from .dashboard_island import props as _island_props
 from .fees import _fees_view
 from .layout import LAYOUT, WIDGETS
 from .marks import _marks_summary, _marks_view
@@ -148,7 +150,14 @@ def presentation(vm):
         personal=merge_personal(vm["personal_data"], vm["scope_fields"]),
         campus=vm["campus"],
         tools=vm["tools"],
-        scope_sync_state=_scope_sync_state(netid))
+        scope_sync_state=_scope_sync_state(netid),
+        # P6.2: the widgets' own inputs, serialised unchanged for the island.
+        # Built from the SAME locals the partials read — see _island_props.
+        dashboard_island_props=_island_block(_island_props(
+            ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
+            budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
+            exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
+            fb_plan=vm["fb_plan"])))
 
 
 def panel_data(netid, active_panel="dashboard"):

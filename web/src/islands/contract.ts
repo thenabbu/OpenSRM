@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ComponentType } from 'preact';
+import { dashboardProps } from '../panels/dashboard/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
 // Server emits, at the mount point:
@@ -21,6 +22,8 @@ export type IslandComponent = ComponentType<HostProps>;
 
 /** Every island's props schema — one entry, one island (YAGNI otherwise). */
 export const schemas = {
+  // Nested payload -> the <script type="application/json"> block form.
+  dashboard: dashboardProps,
   'sync-age': z.object({
     ts: z.number().int().nonnegative(),
     full: z.string(),
