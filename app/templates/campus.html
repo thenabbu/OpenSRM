@@ -203,7 +203,8 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
        Every card below exists only when it has rows (the view drops the
        empty ones), so this panel and its two nav entries disappear with the
        last card — empty SCOPE answers never render a note or an error. -->
-  <div id="tab-campus" role="tabpanel" aria-labelledby="tab-campus-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
+  <div id="tab-campus" role="tabpanel" aria-labelledby="tab-campus-tab" data-tabpanel class="max-w-3xl mx-auto" style=""
+       data-island="campus" data-props="#island-campus">
     <div class="flex flex-col gap-3">
       {% for c in campus.cards %}
       <div class="card bg-base-200 border border-base-300">
@@ -256,6 +257,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
   </div>
   {% endif %}
 </main>
+{{ campus_props|safe }}
 {{ sync_age_props|safe }}
 
 <div id="offline-banner" role="status" aria-live="polite"></div>
