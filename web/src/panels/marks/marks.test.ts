@@ -46,7 +46,8 @@ beforeEach(async () => {
 });
 
 const mount = () => document.querySelector<HTMLElement>('[data-island="marks"]')!;
-const cards = () => Array.from(mount().querySelectorAll(':scope > .rounded-box'));
+// direct card children of the grid the island returns (MarksPanel.tsx)
+const cards = () => Array.from(mount().children) as HTMLElement[];
 
 describe('P6.3 marks island', () => {
   it('no-JS: server markup stands, nothing hydrated', () => {
@@ -84,8 +85,11 @@ describe('P6.3 marks island', () => {
     document.body.innerHTML = page();
     await hydrateAll(document, Date.now() / 1000);
     const weak = cards()[0];
-    const chips = Array.from(weak.querySelectorAll('.rounded-full')).map((e) => e.textContent);
-    expect(chips).toEqual(['FT-I', 'FT-II', 'IE-1']);
+    // Chips only: `w-14 h-5` is the chip fill (marks.html:216, DESIGN §4.13).
+    // `.rounded-full` also catches the tag summary button + its sr-only label.
+    const chips = Array.from(weak.querySelectorAll('.w-14.h-5')).map((e) => e.textContent);
+    // DOM order follows the component: FT-I, then its nested IE row, then FT-II.
+    expect(chips).toEqual(['FT-I', 'IE-1', 'FT-II']);
     expect(weak.textContent).toContain('04 Sep');
     expect(weak.textContent).toContain('8.5/15');
     expect(weak.textContent).toContain('28.33/50');

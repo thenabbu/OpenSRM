@@ -114,9 +114,13 @@ function Subject({ s }: { s: MarksSubject }) {
 export default function MarksPanel({ el, props }: MarksHost) {
   el.setAttribute(HYDRATED_ATTR, '1');
   const { subjects } = props as MarksProps;
+  // No wrapper div: the mount point IS the `grid` (marks.html), so the island
+  // returns the cards as siblings. Wrapping them nested a second grid inside
+  // the server's, which put one extra level of DOM between the mount and its
+  // cards and broke every `mount().children` query.
   return (
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <>
       {subjects.map((s) => <Subject key={s.code} s={s} />)}
-    </div>
+    </>
   );
 }
