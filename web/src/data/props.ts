@@ -108,18 +108,45 @@ const academicsProps = (data: unknown): AcademicsProps => {
   };
 };
 
-/** `settings` has no /api endpoint (its props come from merge_personal, not a
- *  panel_data slice) so there is nothing to restore offline yet. */
+/**
+ * Endpoint -> island props for the four panels whose handler already returns
+ * the island's own payload (panels.py calls marks_island.props(),
+ * timetable_island.props(), tools_island.props() server-side, and the
+ * attendance handler emits the same course rows the island reads). The
+ * projection is therefore identity — reshaping here would only create a second
+ * definition of the wire format that could drift from the server's.
+ *
+ * `propsFromCache` still runs the island's zod schema over the result, so a
+ * server-side shape change is a cache MISS rather than a broken paint.
+ */
+const asIslandProps =
+  <T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T } }) =>
+  (data: unknown): T => {
+    const parsed = schema.safeParse(data);
+    if (!parsed.success) throw new TypeError('cache payload is not island-shaped');
+    return parsed.data as T;
+  };
+
 const PROJECT = {
   fees: feesProps,
   campus: campusProps,
   academics: academicsProps,
+  attendance: asIslandProps(schemas.attendance),
+  marks: asIslandProps(schemas.marks),
+  timetable: asIslandProps(schemas.timetable),
 } satisfies Partial<Record<Panel, Project>>;
 
-/** Island names that HAVE a projection. `sync-age`/`settings` are absent (no
- *  store behind them), and so are attendance/marks/timetable — their islands do
- *  not exist yet. Narrowing through this is what lets main.ts pass an island
- *  name where `loadPanel` wants a `Panel`, instead of casting. */
+/** Island names that HAVE a projection, and therefore a cache path.
+ *
+ *  Absent, each for a different reason:
+ *   - `sync-age` renders a clock from props, no store.
+ *   - `settings` has no endpoint at all — identity data is server-rendered only,
+ *     so it can never be cached offline.
+ *   - `dashboard` composes several panels rather than one `/api` feed.
+ *   - `tools` has no Dexie store in `RECORD_SCHEMA`, so there is nowhere to
+ *     write what /api/tools/island returns. Adding the store is a schema
+ *     migration, not a projection — that is why the endpoint exists but this
+ *     map does not list it. */
 export const hasIslandProjection = (name: string): name is keyof typeof PROJECT =>
   Object.hasOwn(PROJECT, name);
 

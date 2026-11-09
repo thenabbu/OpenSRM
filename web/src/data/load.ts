@@ -63,8 +63,12 @@ const ENDPOINT: Record<Panel, string> = {
   fees: '/api/fees',
   campus: '/api/campus',
   academics: '/api/academics',
-  marks: '/api/marks',
-  timetable: '/api/timetable',
+  // The island feeds, not the legacy ones: /api/marks (app.py:741) returns raw
+  // stored JSON and /api/timetable is the GET+POST the user WRITES the grid
+  // through. Neither carries the payload the island's zod schema validates,
+  // so caching them would poison the store with a shape propsFromCache refuses.
+  marks: '/api/marks/island',
+  timetable: '/api/timetable/island',
 };
 
 /** Which reason an island acts on:
