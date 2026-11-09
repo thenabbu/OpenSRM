@@ -1,6 +1,26 @@
 """Dashboard card/widget registries: LAYOUT + WIDGETS (moved from app.app;
 re-exported from app.app; index() reads them through app.app's namespace)."""
 
+import re
+
+
+def session_netid(netid):
+    """The netid `<body data-netid="…">` may carry, or '' to omit it.
+
+    P7.1: the offline read path (web/src/session) needs a netid to key IndexedDB
+    on, and nothing emitted one — so the store had no safe owner and every write
+    would have been keyed on a guess. It goes here because `presentation()` is
+    the ONLY page renderer and this is the only definition of the value: ten
+    templates read it, none gets to invent its own.
+
+    Re-checked against the netid grammar (``^[a-z0-9]{2,20}$``, app/app.py) before
+    it is interpolated. Jinja escapes it again, but this string is the key of a
+    student's cached attendance — a value that can only be ``[a-z0-9]`` cannot
+    carry an attribute break even if the template's autoescape changed.
+    """
+    return netid if netid and re.fullmatch(r"[a-z0-9]{2,20}", netid) else ""
+
+
 # ── Dashboard card/widget engine ────────────────────────────────────────────
 # Contract (session spec, engine-spec.md): a card is one LAYOUT entry (grid
 # span + widget ids); a widget is one WIDGETS entry pointing at a partial that

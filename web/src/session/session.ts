@@ -15,6 +15,33 @@ let netid: string | undefined;
 export const setNetid = (n: string | undefined): void => void (netid = n || undefined);
 export const currentNetid = (): string | undefined => netid;
 
+/**
+ * Adopt the netid the page was rendered for, from `<body data-netid>`.
+ *
+ * P7.1: the server now emits it (app/views/layout.py + the template's <body>),
+ * and this is the ONLY place it is read. Deliberately NOT from `<title>` or the
+ * navbar: those are display strings — a copy edit or a rename there would
+ * silently re-key the cache and hand a student another student's rows, or wipe
+ * their own. A missing/blank attribute leaves `netid` undefined, which makes
+ * `loadPanel` a no-op and the logout wipe a no-op: an unknown owner caches
+ * nothing rather than caching against a guess.
+ *
+ * Returns the netid it adopted, or undefined when the page carried none.
+ */
+export function bootstrapSession(doc: Document = document): string | undefined {
+  const raw = doc.body?.dataset.netid ?? '';
+  const clean = raw.trim().toLowerCase();
+  // Same grammar the server validates (app/app.py): lowercase alnum, 2-20.
+  setNetid(/^[a-z0-9]{2,20}$/.test(clean) ? clean : undefined);
+  return netid;
+}
+
+/** Group key for the per-group stores (timetable/attendance/marks). Absent in
+ *  the page today, so every per-group read uses the '' bucket the server writes
+ *  until a page emits one — read here, never invented by a call site. */
+export function sessionGroupKey(doc: Document = document): string {
+  return (doc.body?.dataset.groupKey ?? '').trim();
+}
 /** The wipe must never outlive the navigation it blocks. */
 export const WIPE_CAP_MS = 1500;
 

@@ -46,7 +46,7 @@ from .attendance import (
 )
 from .campus import campus_view
 from .fees import _fees_view
-from .layout import LAYOUT, WIDGETS
+from .layout import LAYOUT, WIDGETS, session_netid
 from .marks import _marks_summary, _marks_view
 from .profile import merge_personal, scope_profile
 from .sync_age import caption as _sync_age_caption
@@ -158,6 +158,8 @@ def presentation(vm):
         campus=vm["campus"],
         campus_props=campus_island.block(campus_island.props(vm["campus"])),
         tools=vm["tools"],
+        # P7.1: whose IndexedDB rows this page may read. See layout.session_netid.
+        data_netid=session_netid(netid),
         scope_sync_state=_scope_sync_state(netid))
 
 

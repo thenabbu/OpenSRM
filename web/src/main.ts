@@ -3,7 +3,9 @@ import { createElement, render } from 'preact';
 import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
-import { wireLogoutLink } from './session';
+import { loadPanel } from './data/load';
+import { hasIslandProjection, propsFromCache } from './data/props';
+import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -99,13 +101,6 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     return;
   }
   const parsed = schemas[name].safeParse(readProps(el));   // Zod at the trust boundary
-  if (!parsed.success) {
-    if (!warnedProps.has(name)) {
-      warnedProps.add(name);
-      diag.warn(`"${name}" invalid props — rendering nothing`, parsed.error.issues);
-    }
-    return;
-  }
   let Comp: ComponentType<HostProps>;
   try {
     Comp = await registry[name]();
@@ -113,7 +108,36 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     diag.warn(`could not load island "${name}"`, err);
     return;
   }
-  mountBounded(name, Comp, el, parsed.data, now);
+
+  // ── P7.1 read path ────────────────────────────────────────────────────
+  // Two ways in, one rule: the SERVER PAINT is the first paint whenever it is
+  // valid. The cache only ever takes over when the page arrived with no props
+  // (a shell) — re-rendering over good server markup would be a flash for
+  // nothing, and on a slow response a strictly worse paint than what the user
+  // already had.
+  if (parsed.success) {
+    mountBounded(name, Comp, el, parsed.data, now);
+  } else if (!warnedProps.has(name)) {
+    warnedProps.add(name);
+    diag.warn(`"${name}" invalid props — trying the cache`, parsed.error.issues);
+  }
+
+  // Cache → network. `loadPanel` never rejects and never returns unvalidated
+  // data, so a failed load (offline, 401, bad payload) lands here as `ok:false`
+  // and this function simply leaves whatever is on screen alone: the server
+  // paint if it mounted, nothing otherwise. A throw inside Preact is caught by
+  // mountBounded, which restores the pre-render children either way.
+  const netid = currentNetid();
+  if (!netid) return;                        // no owner => cache nothing, reuse nothing
+  if (!hasIslandProjection(name)) return;    // attendance/marks/timetable: no island yet
+
+  const outcome = await loadPanel(name, { netid, groupKey: sessionGroupKey() });
+  if (!outcome.ok) return;                   // failed load: screen untouched, by design
+  // Server paint already correct and fresh: only a cache hit serves offline.
+  if (parsed.success && outcome.source === 'network') return;
+  const props = propsFromCache(name, outcome.data);
+  if (!props) return;                        // projection refused the shape: keep the paint
+  mountBounded(name, Comp, el, props, now);
 }
 
 export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
@@ -123,6 +147,10 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
 }
 
 // Bootstrap: the entry is a deferred module, so the document is parsed here.
+//
+// P7.1: adopt the netid BEFORE hydrating — every cache read and the logout wipe
+// key on it, and <body data-netid> is the only place the server publishes it.
+bootstrapSession(document);
 void hydrateAll(document, Date.now() / 1000);
 
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped
