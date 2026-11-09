@@ -259,6 +259,42 @@ def t_alive_empty_scope_hides_the_tab():
         assert leak not in html, f"alive-empty message leaked into the UI: {leak}"
 
 
+# ── island props (P6.7) ────────────────────────────────────────────────────
+def t_island_mount_and_props_block():
+    """The mount rides #tab-campus itself (no wrapper) and its inert block
+    validates as the payload contract.ts parses — for BOTH card shapes."""
+    import re as _re
+
+    from app.views import campus_island
+    from app.views.campus import campus_view as _cv
+
+    set_scope(SYNTHETIC_AS_SYNC); features("placement,library,campus")
+    html = GET()
+    # JS-off: the server still paints every card, and the mount is the node itself
+    assert 'id="tab-campus" role="tabpanel"' in html, "panel id gone"
+    assert 'data-island="campus" data-props="#island-campus"' in html
+    assert '<script type="application/json" id="island-campus">' in html
+    # both shapes reach the template
+    for chrome in ('font-mono text-sm text-base-content', 'badge badge-outline badge-sm',
+                   '>Details<'):
+        assert chrome in html, chrome
+
+    payload = campus_island.props(_cv(SYNTHETIC_AS_SYNC, {"placement", "library", "campus"}))
+    titles = [c["title"] for c in payload["cards"]]
+    assert titles == ["Placement", "Library", "Hostel & transport", "Notifications"], titles
+    assert "rows" in payload["cards"][0] and "kv" not in payload["cards"][0]
+    assert "kv" in payload["cards"][2] and "rows" not in payload["cards"][2]
+    assert payload["cards"][2]["kv"][0] == {"label": "Hostel", "pairs": [["Room No", "412"], ["Block Name", "C"]]}
+    # every value the template printed is in the payload the island will paint
+    block = _re.search(r'id="island-campus">(.*?)</script>', html).group(1)
+    assert block == json.dumps(payload, separators=(",", ":"))
+
+    # cards: [] when the tab hides — the island never sees a shape the template did not
+    assert campus_island.props({"show": False, "cards": []}) == {"cards": []}
+    # '<' is escaped so a payload value can never unbalance the script block
+    assert r"\u003c" in campus_island.block({"cards": [], "x": "<"})
+
+
 TESTS = [
     ("alive-empty fixtures -> [] (never an error)", t_alive_empty_fixtures_parse_to_empty),
     ("envelope Data as string/list/dict -> rows", t_real_envelope_shapes_parse),
@@ -274,6 +310,7 @@ TESTS = [
     ("each slug off -> only its card(s) absent", t_each_slug_off_hides_only_its_card),
     ("all slugs off -> no tab registration", t_all_features_off_registers_no_tab),
     ("alive-empty scope -> hidden navbar", t_alive_empty_scope_hides_the_tab),
+    ("island mount + props block, both card shapes", t_island_mount_and_props_block),
 ]
 
 if __name__ == "__main__":

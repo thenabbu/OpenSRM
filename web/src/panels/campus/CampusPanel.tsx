@@ -67,13 +67,19 @@ function LineRowBlock({ r }: { r: LineRow }) {
 
 /** One card, whichever of the two shapes it is (campus.html:212-256). */
 function Card({ c }: { c: CampusCard }) {
+  // `'kv' in c` does not narrow a z.union infer (both arms declare the other
+  // key as optional), so narrow on the value itself — the same test the
+  // server made when it decided the shape (campus.py:campus_view).
+  const groups = 'kv' in c ? c.kv : undefined;
   return (
     <div class={CARD}>
       <div class={BODY}>
         <h3 class="text-base font-semibold">{c.title}</h3>
-        {'kv' in c
-          ? c.kv.map((g, i) => <KvGroupBlock key={`${g.label}-${i}`} g={g} first={i === 0} />)
-          : c.rows.map((r, i) => <LineRowBlock key={`${r.title}-${i}`} r={r} />)}
+        {groups
+          ? groups.map((g, i) => <KvGroupBlock key={`${g.label}-${i}`} g={g} first={i === 0} />)
+          : c.rows
+            ? c.rows.map((r, i) => <LineRowBlock key={`${r.title}-${i}`} r={r} />)
+            : null}
       </div>
     </div>
   );
@@ -96,7 +102,9 @@ export function CampusCards({ props }: { props: unknown }) {
  * boundary, so this default export only paints. `null` = show nothing, which
  * lets the boundary restore the server's children.
  */
-export default function CampusPanel({ props }: CampusHost) {
-  if (!props || typeof props !== 'object' || !Array.isArray((props as CampusProps).cards)) return null;
+export default function CampusPanel({ el, props }: CampusHost) {
+  // Marks the node as client-owned BEFORE returning, inside the boundary's try:
+  // a throw here still leaves the server's children restored and un-marked.
+  el.setAttribute(HYDRATED_ATTR, '1');
   return <CampusCards props={props} />;
 }

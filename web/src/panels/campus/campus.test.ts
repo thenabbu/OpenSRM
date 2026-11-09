@@ -50,7 +50,8 @@ beforeEach(async () => {
 
 const mount = () => document.querySelector<HTMLElement>('[data-island="campus"]')!;
 const stack = () => mount().firstElementChild as HTMLElement;
-const hydrate = async () => { document.body.innerHTML = page(); return hydrateAll(); };
+const NOW = Date.parse('2026-11-09T10:20:00Z') / 1000;
+const hydrate = async () => { document.body.innerHTML = page(); return hydrateAll(document.body, NOW); };
 
 describe('campus island', () => {
   it('hydrates: sets data-hydrated and paints every card', async () => {
@@ -115,14 +116,14 @@ describe('campus island', () => {
   it('invalid props (card with neither shape) render nothing and keep the server markup', async () => {
     document.body.innerHTML = page({ cards: [{ title: 'Nope' }] });
     const before = mount().innerHTML;
-    await hydrateAll();
+    await hydrateAll(document.body, NOW);
     expect(mount().innerHTML).toBe(before);
     expect(mount().hasAttribute('data-hydrated')).toBe(false);
   });
 
   it('empty cards list paints an empty stack, not a crash', async () => {
     document.body.innerHTML = page({ cards: [] });
-    await hydrateAll();
+    await hydrateAll(document.body, NOW);
     expect(mount().hasAttribute('data-hydrated')).toBe(true);
     expect(stack().children).toHaveLength(0);
   });
