@@ -1,8 +1,8 @@
 <!doctype html><html data-theme="openSRM"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
-<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{ asset('icon-192.png') }}">
+<link rel="apple-touch-icon" href="{{ asset('icon-192.png') }}">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="description" content="OpenSRM attendance dashboard for {{ netid }}.">
 <meta name="theme-color" content="#111111">
@@ -82,7 +82,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 <div class="navbar bg-base-200 border-b border-base-300 fixed top-0 left-0 right-0 z-20 hidden lg:flex edge-x"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start items-center gap-2 min-w-0">
-    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
+    <img src="{{ asset('logo-rect.png') }}" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
     <span class="text-base-content/30 mx-1">|</span>
     <span class="text-sm truncate">{{ student_name or netid }}</span>
   </div>
@@ -146,7 +146,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
     <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap truncate" data-ts="{{ last_epoch }}" data-full="{{ last }}"></span>
   </div>
   <div class="navbar-center justify-center">
-    <img src="/static/logo-rect.png" alt="OpenSRM" class="h-6 w-auto rounded-sm" width="120" height="32">
+    <img src="{{ asset('logo-rect.png') }}" alt="OpenSRM" class="h-6 w-auto rounded-sm" width="120" height="32">
   </div>
   <div class="navbar-end flex-1 justify-end">
     <button id="tab-settings-mobile" class="btn btn-ghost btn-square min-h-11 w-11 h-11" data-tab="settings" aria-label="Settings" aria-controls="tab-settings">
