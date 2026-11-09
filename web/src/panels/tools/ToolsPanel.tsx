@@ -30,8 +30,11 @@ function Row({ t }: { t: ToolRow }) {
 }
 
 /** The tools list. Fragment: the <ul> sits where the server's <ul> sits. */
-export default function ToolsPanel({ props }: ToolsHost) {
+export default function ToolsPanel({ el, props }: ToolsHost) {
   const { rows } = props as ToolsProps;
+  // Marker goes on the mount (the <ul> itself), the way every other island
+  // does it - the island's own root is a fragment, so it has no element.
+  el.setAttribute(HYDRATED_ATTR, '1');
   // No wrapper <ul>: tools.html:211 puts data-island="tools" ON the <ul> and
   // its children are the <li> rows. Returning a <ul> here nests a second list
   // inside the first (the P6.3/P6.6/P6.7 bug, now caught by island-verify).
