@@ -48,6 +48,7 @@ from ..portal.parsers.common import _group_key, _semester_int
 from ..portal.parsers.timetable import DAY_ORDER
 from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS, TOOLS
 from .attendance import _join_attendance, _title_case
+from . import timetable_island
 from .ticker import _now_next_from_slots
 
 log = __import__("logging").getLogger("opensrm")
@@ -475,6 +476,12 @@ def timetable_html(group_key, attendance=None):
         panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(
             d, "".join(rows)))
 
-    return ("<div class=tt-wrap>" + radios + hero
-            + "<div class=tt-days>" + tabs + "</div>"
-            + "<div class=panels>" + "".join(panels) + "</div></div>")
+    # ── Panels + the island payload (P6.4) ───────────────────────────────
+    # Returns the SAME string as before, plus the inert props block appended
+    # after it — existing callers that only grep the markup are untouched.
+    grid_html = ("<div class=tt-wrap>" + radios + hero
+                 + "<div class=tt-days>" + tabs + "</div>"
+                 + '<div class="panels" data-island="timetable" data-props="#island-timetable">'
+                 + "".join(panels) + "</div></div>")
+    payload = timetable_island.props(day_slots, grid, today)
+    return grid_html + timetable_island.block(payload)

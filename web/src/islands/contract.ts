@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ComponentType } from 'preact';
+import { timetableProps } from '../panels/timetable/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
 // Server emits, at the mount point:
@@ -26,6 +27,8 @@ export const schemas = {
     full: z.string(),
     busy: z.string().nullable(),
   }),
+  // Nested payload -> the <script type="application/json"> block form.
+  timetable: timetableProps,
 };
 
 export type IslandName = keyof typeof schemas;
