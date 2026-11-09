@@ -177,8 +177,6 @@ def t_settings_island_props_match_the_template_groups():
     """The island payload carries exactly the rows the template would paint —
     same group order, same wide/mono flags — and the badge count the template
     counted. settings.html is the source of truth; this pins the copy."""
-    import json as _json
-
     from app.views import settings_island as si
 
     html = (REPO / "app/templates/settings.html").read_text()
