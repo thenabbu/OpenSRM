@@ -188,10 +188,13 @@ export default function AcademicsPanel({ el, props }: AcademicsHost) {
   el.setAttribute(HYDRATED_ATTR, '1');
   const p = props as AcademicsProps;
   if (!p.cgpa && !p.courses) return null;
+  // No wrapper div: academics.html:204 already provides the
+  // `flex flex-col gap-3` container inside the mount, so returning one here
+  // nests a second identical wrapper. Fragment, cards as siblings.
   return (
-    <div class="flex flex-col gap-3">
+    <>
       {p.cgpa ? <Cgpa c={p.cgpa} /> : null}
       {p.courses ? <Courses c={p.courses} /> : null}
-    </div>
+    </>
   );
 }
