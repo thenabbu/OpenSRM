@@ -31,7 +31,7 @@ from ..scope.ops import enabled_features
 from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
 from ..security import require_login
 from ..usage_metrics import _track
-from . import fees_island
+from . import academics_island, fees_island
 from .academics import academics_view
 from .attendance import (
     _absences_view,
@@ -134,6 +134,8 @@ def presentation(vm):
         marks_summary=vm["marks_summary"],
         academics=vm["academics"],
         fees=vm["fees"],
+        academics_props=academics_island.block(academics_island.props(vm["academics"]))
+        if vm["academics"] else "",
         fees_props=fees_island.block(fees_island.props(vm["fees"])) if vm["fees"] else "",
         exams=vm["exams"], faculty=vm["faculty_view"], fb_plan=vm["fb_plan"],
         # card/widget engine: layout registry + derived widget data (route-side

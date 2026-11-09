@@ -199,7 +199,8 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 </div>
 <main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   {% if academics %}
-  <div id="tab-academics" role="tabpanel" aria-labelledby="tab-academics-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
+  <div id="tab-academics" role="tabpanel" aria-labelledby="tab-academics-tab" data-tabpanel class="max-w-3xl mx-auto" style=""
+       data-island="academics" data-props="#island-academics">
     <div class="flex flex-col gap-3">
       {% if academics.cgpa %}
       <!-- 1. Hero: CGPA + earned credits, then one dropdown per semester.
@@ -336,6 +337,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
   </div>
   {% endif %}
 </main>
+{{ academics_props|safe }}
 {{ sync_age_props|safe }}
 
 <div id="offline-banner" role="status" aria-live="polite"></div>

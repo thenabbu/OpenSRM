@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ComponentType } from 'preact';
+import { academicsProps } from '../panels/academics/contract';
 import { feesProps } from '../panels/fees/contract';
 
 // ── The island contract (notes/ISLAND_CONTRACT.md) ───────────────────────
@@ -29,6 +30,7 @@ export const schemas = {
   }),
   // Nested payload -> the <script type="application/json"> block form.
   fees: feesProps,
+  academics: academicsProps,
 };
 
 export type IslandName = keyof typeof schemas;
