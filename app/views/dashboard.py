@@ -50,6 +50,10 @@ from .marks import _marks_summary, _marks_view
 from .profile import merge_personal, scope_profile
 from .sync_age import caption as _sync_age_caption
 from .sync_age import island_props as _sync_age_props
+from .attendance_island import block as _attendance_block
+from .attendance_island import label as _att_label
+from .attendance_island import nudge as _att_nudge
+from .attendance_island import pole as _att_pole
 from .ticker import _today_brief, _today_ticker, _week_updates
 from .timetable import (
     _budget_rows,
@@ -129,6 +133,11 @@ def presentation(vm):
         # correct with JS blocked and hydration is a no-op repaint.
         sync_age_text=_sync_age_caption(vm["last_epoch"]),
         sync_age_props=_sync_age_props(vm["last_epoch"], vm["last"]),
+        # P6.1: the attendance meters hydrate from this inert block. The rows
+        # below it are already server-painted, so the block is the ONLY thing
+        # that needs JS; with it blocked the page is unchanged.
+        attendance_props=_attendance_block(vm["courses"]),
+        att_nudge=_att_nudge, att_pole=_att_pole, att_label=_att_label,
         student_name=vm["student_name"], dash=vm["dash"], marks=vm["marks_view"],
         marks_summary=vm["marks_summary"],
         academics=vm["academics"],

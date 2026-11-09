@@ -11,6 +11,8 @@ import { wireLogoutLink } from './session';
  */
 const registry: Record<IslandName, () => Promise<ComponentType<HostProps>>> = {
   'sync-age': () => import('./islands/sync-age').then((m) => m.default as ComponentType<HostProps>),
+  attendance: () =>
+    import('./panels/attendance/AttendancePanel').then((m) => m.default as ComponentType<HostProps>),
 };
 
 export const diag = {
