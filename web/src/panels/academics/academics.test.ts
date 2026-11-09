@@ -135,7 +135,8 @@ describe('academics island', () => {
     const meter = cats()[0].querySelector('.meter') as HTMLElement;
     expect(meter.getAttribute('role')).toBe('img');
     expect(meter.getAttribute('aria-label')).toBe('Basic Science Courses (B): 20 of 32 credits');
-    expect((meter.querySelector('.mz') as HTMLElement).getAttribute('style')).toBe('width:62.5%');
+    // the style string rides through untouched (jsdom only adds the ';')
+    expect((meter.querySelector('.mz') as HTMLElement).getAttribute('style')).toContain('width: 62.5%');
     const done = cats()[1].querySelector('.meter') as HTMLElement;
     expect(done.getAttribute('aria-label')).toContain(', complete');
   });
