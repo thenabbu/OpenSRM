@@ -19,7 +19,9 @@ Contract, identical on all four:
 from flask import jsonify
 
 from ..app import get_current_user
+from ..views import marks_island, timetable_island, tools_island
 from ..views.dashboard import panel_data
+from ..views.timetable import _day_slots, _tt_grid
 from . import FlatBlueprint
 
 bp = FlatBlueprint("panels", __name__)
@@ -76,7 +78,38 @@ def api_academics():
     return _panel(lambda vm: vm["academics"], "no academics data yet — sync first")
 
 
+def api_marks_island():
+    """/api/marks/island as data: the payload the marks ISLAND validates —
+    {"subjects": [...]}. marks_island.props() returns the bare row list; the
+    island's zod schema wraps it under `subjects` (marks_island.block() wraps it
+    the same way for the server paint), so this wraps too. Distinct from the
+    legacy /api/marks (app.py:741) which serves raw stored JSON from before the
+    island contract existed."""
+    return _panel(lambda vm: {"subjects": marks_island.props(vm["marks_view"])},
+                  "no marks data yet — sync first")
+
+
+def api_timetable():
+    """/timetable as data: timetable_island.props() for the current group."""
+    def get(vm):
+        gk = vm["group_key"]
+        slots = _day_slots(gk)
+        if slots is None:
+            return None
+        return timetable_island.props(slots, _tt_grid(gk), None)
+    return _panel(get, "no timetable yet — sync first")
+
+
+def api_tools():
+    """/tools as data: tools_island.props() — {"rows": [...]}."""
+    return _panel(lambda vm: tools_island.props(vm["tools"]),
+                  "no tools available")
+
+
 bp.add_url_rule("/api/attendance", methods=["GET"], view_func=api_attendance)
 bp.add_url_rule("/api/fees", methods=["GET"], view_func=api_fees)
 bp.add_url_rule("/api/campus", methods=["GET"], view_func=api_campus)
 bp.add_url_rule("/api/academics", methods=["GET"], view_func=api_academics)
+bp.add_url_rule("/api/marks/island", methods=["GET"], view_func=api_marks_island)
+bp.add_url_rule("/api/timetable/island", methods=["GET"], view_func=api_timetable)
+bp.add_url_rule("/api/tools/island", methods=["GET"], view_func=api_tools)
