@@ -67,7 +67,10 @@ beforeEach(async () => {
 });
 
 const mount = () => document.querySelector<HTMLElement>('[data-island="academics"]')!;
-const stack = () => mount().firstElementChild as HTMLElement;
+// The island returns a fragment, so its cards are direct children of the
+// mount. (Was mount().firstElementChild, which only worked while the island
+// wrongly wrapped them - the P6.3/P6.6 nest.)
+const stack = () => mount();
 const cards = () => Array.from(stack().children) as HTMLElement[];
 const sems = () => Array.from(mount().querySelectorAll('.acad-sem')) as HTMLElement[];
 const cats = () => Array.from(mount().querySelectorAll('.acad-cat')) as HTMLElement[];
