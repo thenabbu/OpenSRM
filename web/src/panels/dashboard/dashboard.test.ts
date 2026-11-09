@@ -102,6 +102,9 @@ describe('P6.2 dashboard island', () => {
     expect(text(el)).toContain('Computer Organization And Architecture');
     expect(text(el)).toContain('-4');
     expect(text(el)).toContain('18/20');
+    // risk-first order IS the view (attendance widget comment, teachers.py:61)
+    const rows = Array.from(el.querySelectorAll('.widget-scroll li')).map((n) => n.querySelector('span')!.textContent);
+    expect(rows[0]).toBe('Computer Organization And Architecture');
     expect(text(el)).toContain('First exam in');
     expect(text(el)).toContain('Dr. Priyanka Gupta');
     expect(text(el)).toContain('Auto-fill mid-sem feedback');
@@ -115,6 +118,10 @@ describe('P6.2 dashboard island', () => {
     await hydrateAll(document, Date.now() / 1000);
     expect(text(grid())).toContain('days absent');
     expect(text(grid())).toContain('3 hrs lost');
+    // the week chips keep their token mapping (BADGE_VARIANTS.warning, week.html:8)
+    const chip = grid().querySelector('.badge-warning');
+    expect(chip).not.toBeNull();
+    expect(chip!.className).toContain('badge-soft');
   });
 
   it('an empty widget self-hides exactly as the partial does', async () => {
