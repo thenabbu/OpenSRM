@@ -121,6 +121,9 @@ EXPECTED = {
     "/api/track/tab",
     # P50: the four read APIs behind the data-gated panels
     "/api/attendance", "/api/fees", "/api/campus", "/api/academics",
+    # P7: island-shaped feeds for the panels whose legacy endpoints carry a
+    # different payload (raw JSON / the write API the user POSTs through)
+    "/api/marks/island", "/api/timetable/island", "/api/tools/island",
     # P3.1: nine real panel routes
     "/attendance", "/timetable", "/marks", "/campus",
     "/academics", "/fees", "/tools", "/settings",
@@ -166,6 +169,9 @@ EXPECTED_EP = {
     "/api/fees": {("api_fees", "api_fees")},
     "/api/campus": {("api_campus", "api_campus")},
     "/api/academics": {("api_academics", "api_academics")},
+    "/api/marks/island": {("api_marks_island", "api_marks_island")},
+    "/api/timetable/island": {("api_timetable", "api_timetable")},
+    "/api/tools/island": {("api_tools", "api_tools")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
     # P3.1: nine real panel routes (each endpoint == its view __name__)
