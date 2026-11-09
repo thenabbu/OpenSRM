@@ -5,7 +5,7 @@ import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
 import { hasIslandProjection, propsFromCache } from './data/props';
-import { type StaleProps, withStale } from './islands/stale';
+import withStale, { type StaleProps } from './islands/stale';
 import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 
 /**
@@ -74,6 +74,9 @@ function mountBounded(name: string, Comp: ComponentType<HostProps>,
     // Every island routes through here, so wrapping HERE is what makes the
     // staleness caption "one implementation, used by every island" (P7.2).
     const Stale = withStale(Comp);
+    // stamp/stale ride the render host, NOT the island's props: propsFromCache
+    // returns the panel props only, and rebuilding them with a stamp would put
+    // a field the island's Zod schema rejects inside the payload it validates.
     render(createElement(Stale, { el, props, now, stamp, stale } as StaleProps) as VNode<StaleProps>, el);
     return true;
   } catch (err) {

@@ -8,7 +8,7 @@ export interface StaleProps extends HostProps {
   /** whether this copy is past STALE_MS */
   stale: boolean;
   /** injectable clock (tests); defaults to the wall clock */
-  nowMs?: () => number;
+  nowMs?: (() => number) | undefined;
 }
 
 /** Client-only marker: tests and the DUT key off it. */
@@ -32,12 +32,24 @@ export const STALE_ATTR = 'data-stale';
  * fall back to a generic line if the age is too young to bucket (e.g. a row
  * with no stamp, which ageCaption reports as "Never synced").
  */
-export function StaleCaption({ stamp, stale, nowMs = Date.now }: Pick<StaleProps, 'stamp' | 'stale' | 'nowMs'>) {
+type CaptionProps = {
+  stamp: number;
+  stale: boolean;
+  nowMs?: (() => number) | undefined;
+};
+
+export function StaleCaption({ stamp, stale, nowMs = Date.now }: CaptionProps) {
   if (!stale) return null;
-  const age = ageCaption(stamp, nowMs() / 1000).replace(/^\((.*)\)$/, '$1').trim();
+  // syncAge speaks SECONDS (it mirrors the server's time.time()), while the
+  // cache row's stamp is Date.now() in MILLISECONDS. Mixing them made every
+  // age negative and every caption fall back to "age unknown".
+  // syncAge returns '(7h ago)' — or 'Never synced' for a row with no stamp,
+  // which is not an age and must not be rendered as "as of Never synced".
+  const capped = stamp ? ageCaption(Math.floor(stamp / 1000), nowMs() / 1000) : '';
+  const age = capped.replace(/^\((.*)\)$/, '$1').trim();
   return (
     <div class="text-xs" aria-live="polite" {...{ [STALE_ATTR]: '' }}>
-      {age ? `as of ${age}` : 'showing a saved copy that may be out of date'}
+      {age ? `as of ${age}` : 'saved copy, age unknown'}
     </div>
   );
 }
@@ -45,10 +57,13 @@ export function StaleCaption({ stamp, stale, nowMs = Date.now }: Pick<StaleProps
 /** Wraps an island so its paint carries the staleness caption. Always used
  *  with `stamp`/`stale`: a fresh paint renders no caption at all. */
 export default function withStale(Comp: ComponentType<HostProps>): ComponentType<StaleProps> {
+  // `nowMs ?? Date.now` at the call site, not left to the parameter default:
+  // Preact hands an explicit `nowMs: undefined` down, and a passed undefined
+  // overrides a default parameter — which silently made every age NaN.
   const Wrapped = ({ stamp, stale, nowMs, ...host }: StaleProps) => (
     <>
       <Comp {...host} />
-      <StaleCaption stamp={stamp} stale={stale} nowMs={nowMs} />
+      <StaleCaption stamp={stamp} stale={stale} nowMs={nowMs ?? Date.now} />
     </>
   );
   return Wrapped;

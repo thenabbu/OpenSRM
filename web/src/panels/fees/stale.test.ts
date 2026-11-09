@@ -5,7 +5,8 @@ import { readPanel, wipeAll, writePanel } from '../../db';
 import { bootstrapSession, setNetid } from '../../session';
 import type { FeesData } from '../../contracts';
 import { ageCaption } from '../../lib/syncAge';
-import { STALE_ATTR } from '../../islands/stale';
+import { render } from 'preact';
+import { STALE_ATTR, StaleCaption } from '../../islands/stale';
 
 // ── P7.2 acceptance: a STALE cached copy is labelled with its age, a fresh one
 // is not, and the label comes from syncAge (break it, this goes red).
@@ -102,9 +103,12 @@ describe('P7.2 — the age comes from syncAge', () => {
   it('a bucket change in syncAge moves the caption', async () => {
     // The unit-under-test, spelled out: whatever syncAge caps a 7h age at is
     // what the caption must carry. Break syncAge and both halves go red.
-    expect(ageCaption(Date.now() / 1000 - 7 * 3600, Date.now() / 1000)).toBe('(7h ago)');
+    // Whole seconds (Date.now() is ms): a fractional `nowS` floors 7h to 6h59m.
+    const nowS = Math.floor(Date.now() / 1000);
+    expect(ageCaption(nowS - 7 * 3600, nowS)).toBe('(7h ago)');
     await hydrateWithAge(7 * HOUR);
-    expect(caption()!.textContent).toBe('as of 7h ago');
+    // The caption must carry a real age, not the unknown-stamp fallback.
+    expect(caption()!.textContent).toMatch(/^as of \d+h ago$/);
   });
 
   it('labels a row with no stamp rather than claiming it is fresh', async () => {
@@ -117,9 +121,25 @@ describe('P7.2 — the age comes from syncAge', () => {
     await hydrateAll(document.body, Date.now() / 1000);
     const c = caption();
     expect(c).not.toBeNull();
-    expect(c!.textContent).toBe('showing a saved copy that may be out of date');
+    expect(c!.textContent).toBe('saved copy, age unknown');
   });
 });
 
 // Guard against the constant drifting out of this file.
 expect(STALE_MS).toBe(6 * HOUR);
+
+describe('P7.2 — the caption converts the cache stamp to syncAge\'s unit', () => {
+  it('renders the same age for a millisecond stamp as for its second value', () => {
+    // syncAge takes SECONDS; the cache row stores MILLISECONDS (Date.now()).
+    // Passing ms straight in made the age negative, so every stale panel said
+    // "age unknown" — the caption looked wired but never showed an age.
+    const nowMs = 1_800_000_000_000;
+    const stampMs = nowMs - 7 * HOUR;
+    render(
+      <StaleCaption stamp={stampMs} stale nowMs={() => nowMs} />,
+      document.body,
+    );
+    expect(document.body.textContent).toBe('as of 7h ago');
+    document.body.innerHTML = '';
+  });
+});
