@@ -224,7 +224,13 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
          tests/test_dash_fit.py (zero card-body residue at 1280x900,
          1920x944 AND 1366x768; uniform edge; no page scrollbar). The
          literal moves with the chrome: fixed navbar => 79px. -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-94px)] gap-6">
+    {# P6.2: the card grid is the `dashboard` island's mount point. The
+       widgets below it stay the server's markup and remain the no-JS paint;
+       hydration replaces this element's children with the same tree. The
+       props ride the inert block emitted after </main> (a <div> cannot nest
+       a <script> that must not be a child of the grid). #}
+    <div class="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[minmax(0,auto)_minmax(0,1fr)] lg:h-[calc(100dvh-94px)] gap-6"
+         data-island="dashboard" data-props="#island-dashboard">
       {% for c in layout %}
       <div class="card bg-base-200 border border-base-300 lg:col-span-{{ c.span }}{% if c.row_span %} lg:row-span-{{ c.row_span }}{% endif %}{% if c.cap %} lg:max-h-[calc((100dvh-94px)*{{ c.cap }})]{% endif %} lg:overflow-hidden">
         <div class="card-body p-4 gap-3 lg:min-h-0 lg:overflow-y-auto">
@@ -241,6 +247,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
   </div>
 </main>
 {{ sync_age_props|safe }}
+{{ dashboard_island_props|safe }}
 
 <div id="offline-banner" role="status" aria-live="polite"></div>
 {% if fb_plan %}<dialog id="fb-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="fb-modal-title">

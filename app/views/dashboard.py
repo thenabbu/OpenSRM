@@ -45,6 +45,8 @@ from .attendance import (
     hourwise_view,
 )
 from .campus import campus_view
+from .dashboard_island import block as _island_block
+from .dashboard_island import props as _island_props
 from .fees import _fees_view
 from .layout import LAYOUT, WIDGETS, session_netid
 from .marks import _marks_summary, _marks_view
@@ -177,6 +179,13 @@ def presentation(vm):
         # rows only - the route 404s when the list is empty, so vm["tools"] is
         # non-empty here; the card and footnote stay template markup.
         tools_props=tools_island.block(tools_island.props(vm["tools"])),
+        # P6.2: the widgets' own inputs, serialised unchanged for the island.
+        # Built from the SAME locals the partials read — see _island_props.
+        dashboard_island_props=_island_block(_island_props(
+            ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
+            budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
+            exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
+            fb_plan=vm["fb_plan"])),
         scope_sync_state=_scope_sync_state(netid))
 
 

@@ -3,6 +3,7 @@ import type { ComponentType } from 'preact';
 import { academicsProps } from '../panels/academics/contract';
 import { attendanceProps } from '../panels/attendance/contract';
 import { campusProps } from '../panels/campus/contract';
+import { dashboardProps } from '../panels/dashboard/contract';
 import { feesProps } from '../panels/fees/contract';
 import { marksProps } from '../panels/marks/contract';
 import { settingsProps } from '../panels/settings/contract';
@@ -29,6 +30,8 @@ export type IslandComponent = ComponentType<HostProps>;
 
 /** Every island's props schema — one entry, one island (YAGNI otherwise). */
 export const schemas = {
+  // Nested payload -> the <script type="application/json"> block form.
+  dashboard: dashboardProps,
   'sync-age': z.object({
     ts: z.number().int().nonnegative(),
     full: z.string(),
