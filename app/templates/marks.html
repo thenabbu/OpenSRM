@@ -200,7 +200,8 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 <main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
     {% if marks %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {{ marks_props|safe }}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" data-island="marks" data-props="#island-marks">
       {% for s in marks %}
       <div class="bg-base-200 border border-base-300 rounded-box p-4">
         <div class="flex items-baseline justify-between gap-2">

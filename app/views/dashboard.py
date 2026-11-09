@@ -47,6 +47,7 @@ from .campus import campus_view
 from .fees import _fees_view
 from .layout import LAYOUT, WIDGETS
 from .marks import _marks_summary, _marks_view
+from .marks_island import block as _marks_block
 from .profile import merge_personal, scope_profile
 from .sync_age import caption as _sync_age_caption
 from .sync_age import island_props as _sync_age_props
@@ -129,6 +130,10 @@ def presentation(vm):
         # correct with JS blocked and hydration is a no-op repaint.
         sync_age_text=_sync_age_caption(vm["last_epoch"]),
         sync_age_props=_sync_age_props(vm["last_epoch"], vm["last"]),
+        # P6.3: the marks cards hydrate from this inert block. The cards below
+        # are already server-painted, so the block is the ONLY thing that
+        # needs JS; with it blocked the page is unchanged.
+        marks_props=_marks_block(vm["marks_view"]),
         student_name=vm["student_name"], dash=vm["dash"], marks=vm["marks_view"],
         marks_summary=vm["marks_summary"],
         academics=vm["academics"],
