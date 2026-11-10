@@ -30,7 +30,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from . import metrics
+from . import captcha_dataset, metrics
 
 log = logging.getLogger("opensrm.portal")
 
@@ -286,6 +286,9 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     if on_step: on_step("Reading captcha…", 30)
     log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
               len(img_bytes), ocr)
+    # Dataset: stage the pair, never act on it here. Overwrites any earlier
+    # attempt in this scope; _post_login decides whether it was CORRECT.
+    captcha_dataset.offer(img_bytes, ocr)
     return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
             "rdelim": rdelim, "ocr": ocr}
 
@@ -326,6 +329,9 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
               attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
     if ok:
+        # The captcha was accepted (the POST succeeded) — this is the pair the
+        # solver got RIGHT. Scoped: nothing is staged outside a scrape scope.
+        captcha_dataset.commit()
         return "ok", None
     low = rhtml.lower()
     alert = _portal_alert(rhtml)
@@ -346,6 +352,8 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     if "invalid captcha" in low:
         log.info("login attempt=%d invalid_captcha ocr=%s portal_alert=%r",
                  attempt, ctx["ocr"], alert)
+        # The portal judged this read WRONG — that is a real negative sample.
+        captcha_dataset.reject()
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")

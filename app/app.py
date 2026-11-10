@@ -416,6 +416,9 @@ def init_db():
 # Portal constants + captcha solver: app/captcha.py (leaf). Re-exported.
 # Session identity lives in app/auth.py (get_current_user has 18 consumers —
 # it belongs under this facade, not inside it). Re-exported for callers.
+# CAPTCHA dataset capture (off unless CAPTCHA_DATASET=1) — re-exported so the
+# blueprints and tests reach it through the facade like every other module.
+from . import captcha_dataset  # noqa: E402,F401 — re-exported
 from .auth import (  # noqa: E402,F401 — re-exported
     # CF_EDGE_SECRET is deliberately NOT imported: a copy would land in this
     # module's __dict__ and shadow the _FacadeModule proxy, so
@@ -580,7 +583,7 @@ def _log_request(resp):
 _CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # session-authenticated POSTs served through the tunnel (see above);
 # the push tick is secret-header auth, same exemption for the same reason.
-_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
+_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/internal/captcha", "/marks/tag")
 
 # Edge/proxy trust (Origin host check + X-Forwarded-Host) lives in app/edge.py.
 from .edge import (  # noqa: E402,F401 — re-exported
@@ -1007,6 +1010,7 @@ from .observability import (  # noqa: E402,F401 — re-exported
     _proc_threads,
     _push_tick_last_ok_ts,
     healthz,
+    internal_captcha_capture,
     internal_metrics,
     track_session_activity,
 )

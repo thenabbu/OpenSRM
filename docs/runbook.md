@@ -283,6 +283,65 @@ Two design notes worth knowing before adding a series:
   their own short-lived connection rather than using `db()`, so a scrape can
   never join an in-flight transaction or block a writer.
 
+## CAPTCHA dataset capture (off by default)
+
+Every portal login can keep the CAPTCHA image the portal served plus the OCR
+string that was submitted — a labelled dataset of REAL captchas for
+retraining/evaluating the solver. Nothing about the login path changes; capture
+is best-effort and can never fail a request.
+
+**Two folders, split by the portal's own verdict:**
+
+| Folder | Written when | Name is |
+|---|---|---|
+| `captcha-dataset/success/` | the login succeeded (`HRDSystem`) | the OCR text that was ACCEPTED |
+| `captcha-dataset/failed/` | the portal answered `Invalid captcha` | the OCR text ddddocr returned |
+
+Inside the container that is `/app/data/captcha-dataset/{success,failed}` — the
+`opensrm-data` volume on the host.
+
+Only those two branches are captured. A wrong **password** is NOT a captcha
+failure (the captcha may well have been right), and a silent rate-limit
+rejection means the portal never judged the text at all — neither writes to
+`failed/`, because the label would be a lie.
+
+- **`CAPTCHA_DATASET=1`** turns it on (read per call, so no rebuild needed).
+  Unset/`0` = every entry point costs one env lookup.
+- **Only inside a scrape scope.** A preflight solved while a visitor is still
+  typing is discarded if they never submit — that image was never validated.
+- The LAST attempt wins: each attempt restages its own image+OCR, so a rejected
+  attempt lands in `failed/` and the retry that finally succeeds lands in
+  `success/` under its own answer.
+- Byte-identical images are deduped per folder (sha256); a cap of 100 000 files
+  writes a `.full` marker instead of filling the volume.
+- Each written pair appends one `captcha_seen(hash, ts, source)` row, where
+  `source` is `success`/`failed` — so the solver's real accuracy is
+  `success / (success + failed)` straight out of SQLite.
+
+The OCR answer is also now filtered to the portal's own alphabet before submit
+(`sanitize_captcha` in `app/captcha.py`): ddddocr was observed returning a `+`,
+a character the captcha field can never contain, which is a guaranteed miss.
+
+Manual drop-in for copies found outside the login path (another host, a
+browser extension, a probe): `POST /internal/captcha` with
+`{"image_b64","text","ext","folder"}` where `folder` is `success` or `failed`
+(defaults to `success`), auth `X-Captcha-Token: $CAPTCHA_SECRET`
+(unset = endpoint off; deliberately a DIFFERENT secret from `METRICS_SECRET`).
+`GET /internal/captcha` returns `{enabled, success:{dir,count,size_bytes},
+failed:{...}}`.
+
+```bash
+docker exec -e CAPTCHA_DATASET=1 opensrm printenv CAPTCHA_DATASET   # sanity
+docker exec opensrm sh -c 'ls /app/data/captcha-dataset/success | head'
+docker exec opensrm sh -c 'ls /app/data/captcha-dataset/success | wc -l;
+                           ls /app/data/captcha-dataset/failed  | wc -l'
+```
+
+Expected rate: **one pair per cold login** (success) plus one per rejected OCR
+attempt, so success accumulates slowly (a few a day) while `failed/` fills
+whenever the solver misreads.
+
+
 ## Observability stack (optional)
 
 `ops/observability/` in the repo is a self-contained metrics stack —

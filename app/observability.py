@@ -53,6 +53,83 @@ def healthz():
     return {"status": "ok"}
 
 
+CAPTCHA_HEADER = "X-Captcha-Token"
+CAPTCHA_DIR = "/app/data/captcha-dataset"   # same volume, host-visible path
+
+
+def _captcha_token_ok():
+    """Same fail-closed contract as internal_metrics, DIFFERENT secret
+    (CAPTCHA_SECRET): the harness that reads images must never hold the
+    metrics token, and vice versa."""
+    secret = os.environ.get("CAPTCHA_SECRET", "").strip()
+    got = request.headers.get(CAPTCHA_HEADER, "")
+    try:
+        ok = hmac.compare_digest(got.encode("utf-8"), secret.encode("utf-8"))
+    except UnicodeEncodeError:
+        ok = False
+    return bool(secret) and ok
+
+
+def internal_captcha_capture():
+    """The one entry point for copies outside the login path.
+
+    Two uses, both behind CAPTCHA_SECRET:
+      GET  -> {"ok", "enabled": CAPTCHA_DATASET, "dir", "count", "size_bytes"}
+      POST {"image_b64", "text", "ext"} -> {"ok", "path"} — writes one labelled
+              pair into the dataset dir. Deliberately does NOT go through
+              captcha_dataset.write() so it still works with the toggle off
+              (a collector harvesting on another host may want that).
+
+    Dir/limit guards copied from captcha_dataset (MAX_FILES, no traversal in
+    `text`, ext whitelist) — this route writes to disk on request, so it
+    validates its own input instead of trusting the caller.
+    """
+    if not _captcha_token_ok():
+        return _bare(401, "captcha auth failed — secret missing or wrong")
+    import base64 as _b64
+
+    from . import captcha_dataset as cds
+    if request.method == "GET":
+        out = {"ok": True, "enabled": cds.enabled()}
+        for folder in ("success", "failed"):
+            d = cds.dataset_dir(folder)
+            count = size = 0
+            try:
+                for _r, _dd, files in os.walk(d):
+                    count += len(files)
+                    for f in files:
+                        try:
+                            size += os.path.getsize(os.path.join(_r, f))
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+            out[folder] = {"dir": d, "count": count, "size_bytes": size}
+        return out, 200
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") if isinstance(body.get("text"), str) else ""
+    img_b64 = body.get("image_b64") if isinstance(body.get("image_b64"), str) else ""
+    ext = body.get("ext") if isinstance(body.get("ext"), str) else "png"
+    folder = body.get("folder") if isinstance(body.get("folder"), str) else "success"
+    if folder not in ("success", "failed"):
+        return _bare(400, "folder must be success or failed")
+    if ext not in ("png", "jpg", "gif", "svg", "webp") or not cds.safe_name(text) or not img_b64:
+        return _bare(400, "text, image_b64 and a whitelisted ext are required")
+    try:
+        raw = _b64.b64decode(img_b64, validate=True)
+    except Exception:
+        return _bare(400, "image_b64 is not valid base64")
+    if len(raw) > 256 * 1024:
+        return _bare(413, "image too large")
+    # One writer, one sanitiser, one containment check — cds.write owns the
+    # path handling, so this route can never drift from the login path (and
+    # there is exactly one place that has to be path-injection-safe).
+    path = cds.write(raw, text, ext, folder=folder)
+    if not path:
+        return _bare(507, "not written — dataset full, duplicate, or empty name")
+    return {"ok": True, "path": path}, 200
+
+
 def internal_metrics():
     """In-process sync/portal counters as Prometheus text (app/metrics.py).
 
