@@ -146,8 +146,13 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   // paint if it mounted, nothing otherwise. A throw inside Preact is caught by
   // mountBounded, which restores the pre-render children either way.
   const netid = currentNetid();
-  if (!netid) { diag.warn(`${name}: no netid, cache skipped`); return; }
-  if (!hasIslandProjection(name)) { diag.warn(`${name}: no projection, cache skipped`); return; }
+  // Silent on purpose: no netid / no projection are NORMAL states (an anonymous
+  // page, an island with no store) — not faults. Warning here broke the marks
+  // island's "hydration logs nothing" contract, and a console warning per island
+  // per load is noise, not diagnosis. The interesting failures (a cache that
+  // reads but cannot project) log from data/props.ts instead.
+  if (!netid) return;                        // no owner => cache nothing, reuse nothing
+  if (!hasIslandProjection(name)) return;    // panel has no cached feed
 
   const outcome = await loadPanel(name, { netid, groupKey: sessionGroupKey() });
   if (!outcome.ok) {

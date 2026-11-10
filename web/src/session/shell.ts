@@ -40,6 +40,46 @@ const log = (msg: string, e?: unknown): void =>
  * first paint. A failure is logged and skipped — a missing shell degrades to the
  * existing "offline and no saved copy" page, never to a broken app.
  */
+/**
+ * Warm the island CHUNKS through the service worker.
+ *
+ * The SW caches hashed chunks on first request (sw.js, the
+ * /static/dist/assets/ branch), but a lazy import that happens BEFORE the
+ * worker controls the page never passes through it — so the chunk is never
+ * cached, and the next offline visit dies with "Failed to fetch dynamically
+ * imported module" even though the shell and the rows are both present.
+ *
+ * The chunk list comes from Vite's own manifest, served at
+ * /static/dist/.vite/manifest.json. Probing window.__vite__mapDeps looked
+ * clever and returned the WRONG hashes: it is keyed by import index, so a
+ * mistyped range silently warms chunks that no longer exist.
+ */
+async function warmChunks(): Promise<number> {
+  if (typeof caches === 'undefined' || !navigator.onLine) return 0;
+  if (!navigator.serviceWorker?.controller) return 0;   // nothing would cache them
+  try {
+    const res = await fetch('/static/dist/.vite/manifest.json', { credentials: 'same-origin' });
+    if (!res.ok) return 0;
+    const manifest = (await res.json()) as Record<string, { file?: string }>;
+    const files = Object.values(manifest)
+      .map((v) => v.file)
+      .filter((f): f is string => typeof f === 'string' && f.endsWith('.js'));
+    let n = 0;
+    for (const f of new Set(files)) {
+      try {
+        const r = await fetch(`/static/dist/${f}`, { credentials: 'same-origin' });
+        if (r.ok) n += 1;
+      } catch {
+        // a missing chunk degrades that one island offline, nothing else
+      }
+    }
+    return n;
+  } catch (err) {
+    log('chunk warm failed', err);
+    return 0;
+  }
+}
+
 export async function warmShells(): Promise<number> {
   if (typeof caches === 'undefined' || !navigator.onLine) return 0;
   let stored = 0;
@@ -63,6 +103,7 @@ export async function warmShells(): Promise<number> {
   } catch (err) {
     log('shell cache unavailable', err);
   }
+  void warmChunks();
   return stored;
 }
 

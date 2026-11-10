@@ -1,13 +1,17 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import attendance from '../contracts/fixtures/attendance.json';
-import { AttendanceData } from '../contracts';
+import attendanceIsland from '../contracts/fixtures/attendance_island.json';
+import { attendanceProps } from '../panels/attendance/contract';
 import { db, readPanel, wipeAll, writePanel } from '../db';
 import { loadPanel, STALE_MS } from './load';
 
 const A = 'zz1111';
 const G = 'g1';
-const ATTN = AttendanceData.parse(attendance.data);
+// Attendance caches the ISLAND payload, not the /api/attendance panel slice:
+// load.ts points it at /api/attendance/island, and the island's own schema is
+// what validates what goes into IndexedDB. Deriving the fixture from the island
+// contract keeps this file honest about which shape the cache actually holds.
+const ATTN = attendanceProps.parse(attendanceIsland.data);
 const HOUR = 60 * 60 * 1000;
 
 /** A fresh valid payload per test, distinguishable from what is cached. */
@@ -75,7 +79,7 @@ describe('cache miss → network', () => {
     const before = Date.now();
     const out = await loadPanel('attendance', { netid: A, groupKey: G, fetcher });
 
-    expect(fetcher).toHaveBeenCalledWith('/api/attendance', expect.anything());
+    expect(fetcher).toHaveBeenCalledWith('/api/attendance/island', expect.anything());
     expect(out).toMatchObject({ ok: true, source: 'network', stale: false, data: body });
     if (!out.ok) throw new Error('unreachable');
     expect(out.fetchedAt).toBeGreaterThanOrEqual(before);

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v40';
+const CACHE_NAME = 'opensrm-v43';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -52,6 +52,46 @@ self.addEventListener('fetch', e => {
   // bytes. On store, older ?v= generations of the same pathname are deleted
   // so the cache never piles up deploy generations. Offline: a cached
   // version still answers.
+  // Vite's content-hashed chunks: /static/dist/assets/<Name>-<hash>.js
+  //
+  // These are immutable by construction (the hash IS the content), and they are
+  // the DYNAMIC IMPORTS every island loads lazily. They carry no ?v= param, so
+  // before this branch existed they fell through to network-first, failed
+  // offline, and every island reported "Failed to fetch dynamically imported
+  // module" — the shell loaded, the netid was recovered, the cached rows were
+  // sitting in IndexedDB, and the panel still painted nothing because the
+  // component could not be fetched.
+  //
+  // Same policy as the ?v= assets: cache-first, and on store drop older hashes
+  // of the same basename so a deploy does not pile generations up.
+  if (url.pathname.startsWith('/static/dist/assets/') && /-[A-Za-z0-9_-]{8,}\.(js|css)$/.test(url.pathname)) {
+    e.respondWith((async () => {
+      const hit = await caches.match(e.request);
+      if (hit) return hit;
+      try {
+        const resp = await fetch(e.request);
+        if (resp.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(e.request, resp.clone());
+          const base = url.pathname.replace(/-[A-Za-z0-9_-]{8,}\.(js|css)$/, '');
+          const keys = await cache.keys();
+          await Promise.all(keys.map(k => {
+            const ku = new URL(k.url);
+            return (ku.pathname.replace(/-[A-Za-z0-9_-]{8,}\.(js|css)$/, '') === base
+                    && ku.pathname !== url.pathname)
+              ? cache.delete(k) : null;
+          }));
+        }
+        return resp;
+      } catch (err) {
+        const stale = await caches.match(e.request);
+        if (stale) return stale;
+        throw err;
+      }
+    })());
+    return;
+  }
+
   if (url.pathname.startsWith('/static/') && url.searchParams.get('v')) {
     e.respondWith((async () => {
       const hit = await caches.match(e.request);

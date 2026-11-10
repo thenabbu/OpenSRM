@@ -186,7 +186,16 @@ export function propsFromCache(panel: Panel, data: unknown): Record<string, unkn
   if (!schema) return undefined;
   try {
     const props = project(data);
-    return schema.safeParse(props).success ? (props as Record<string, unknown>) : undefined;
+    const check = schema.safeParse(props);
+    if (!check.success) {
+      // Say WHY. A silent undefined here cost an entire debugging session: the
+      // cache row was present and valid-looking, the netid was right, and the
+      // only symptom was an empty panel.
+      console.warn(`[props] ${panel} rejected by island schema`,
+        JSON.stringify((check as { error?: { issues?: unknown } }).error?.issues ?? []).slice(0, 400));
+      return undefined;
+    }
+    return props as Record<string, unknown>;
   } catch (e) {
     // Was a silent `return undefined`, which made an offline cache miss
     // indistinguishable from "this panel has no projection". A cache that reads

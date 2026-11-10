@@ -1,13 +1,15 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import attendance from '../contracts/fixtures/attendance.json';
+import attendanceIsland from '../contracts/fixtures/attendance_island.json';
 import fees from '../contracts/fixtures/fees.json';
-import { AttendanceData, FeesData } from '../contracts';
+import { FeesData } from '../contracts';
+import { attendanceProps } from '../panels/attendance/contract';
 import { db, io, PANELS, readMeta, readPanel, wipeAll, writeMeta, writePanel } from './db';
 
 const A = 'zz1111';
 const B = 'zz2222';
-const ATTN = AttendanceData.parse(attendance.data);
+// The ISLAND payload: that is what the attendance store holds (see RECORD_SCHEMA).
+const ATTN = attendanceProps.parse(attendanceIsland.data);
 const FEES = FeesData.parse(fees.data);
 
 const LOG: string[] = [];

@@ -149,9 +149,12 @@ Two promises shape everything:
   (5/10/15/30 min), a test button with delivery receipts.
 
 - **Installable PWA** — Add to Home Screen on Android, iOS and Windows. The
-  service worker keeps an offline shell (`opensrm-v40` cache): HTML is
-  network-first with navigation preload, versioned assets are cache-first,
-  so warm visits move zero bytes and deploys never serve stale files.
+  service worker keeps the app usable offline (`opensrm-v43` cache): panel
+  pages are network-first with navigation preload, and offline the worker
+  serves a PII-free shell (`/shell/<panel>`) that boots the app so each island
+  can paint its own rows from IndexedDB. Versioned and content-hashed assets are
+  cache-first, so warm visits move zero bytes and deploys never serve stale
+  files. Rendered account pages are never cached; logout clears every store.
 
 - **Hot and cold data** — attendance, marks, the official timetable and exams
   refresh on every sync; personal details and course lists are reused until

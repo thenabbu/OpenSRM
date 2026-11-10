@@ -1,8 +1,9 @@
 import Dexie, { type Table } from 'dexie';
 import type { z } from 'zod';
 import {
-  AcademicsData, AttendanceData, CampusData, FeesData, MarksData, TimetableData,
+  AcademicsData, CampusData, FeesData, MarksData, TimetableData,
 } from '../contracts';
+import { attendanceProps } from '../panels/attendance/contract';
 
 // ── The one module that owns IndexedDB. Nothing else may touch `indexedDB` ──
 //
@@ -27,7 +28,11 @@ export const SCHEMA_VERSION = 1;
 
 /** Payload schema per panel — the same contracts the read path validates with. */
 const RECORD_SCHEMA = {
-  attendance: AttendanceData,
+  // The ATTENDANCE ISLAND payload, not the /api/attendance panel slice: that is
+  // what load.ts caches (it reads /api/attendance/island), so this is what
+  // readPanel must validate on the way back out. They were different schemas,
+  // so every cached row read as "corrupt" and was deleted on the next visit.
+  attendance: attendanceProps,
   marks: MarksData, // the array: /api/marks stores its json as a list
   timetable: TimetableData,
   fees: FeesData,
