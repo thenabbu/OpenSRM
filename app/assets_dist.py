@@ -20,12 +20,21 @@ def _versioned(rel):
 
 
 def asset_dist(name):
-    """Versioned /static/dist/ URL for the Vite build.
+    """Served /static/dist/ URL for the Vite build.
 
     `name` is the Vite import name ('app' -> JS entry, 'app.css' -> the CSS the
     entry imports); the hashed filename comes from dist/manifest.json. Returns
     '' when dist/ is absent so a checkout without a build still renders (the
     page then runs on the legacy scripts alone — progressive enhancement).
+
+    The JS entry is NOT `?v=`-versioned, and that is load-bearing. Every island
+    chunk imports the entry RELATIVELY (`import … from "./app-<hash>.js"`), so a
+    query string here gives the browser two module-map keys for one file: the
+    body evaluated twice, two Preact instances, and `mountBounded` called twice
+    on the same mount node — the second render reconciled the first tree away
+    and left 0 rows (P7.6, docs/audit/p76-island-zero-rows.md). The filename is
+    already content-hashed, so `?v=` buys nothing; CSS keeps it because a
+    stylesheet has no module map to split.
     """
     path = os.path.join(_STATIC_DIR, "dist", "manifest.json")
     try:
@@ -36,8 +45,7 @@ def asset_dist(name):
     entry = manifest.get("src/main.ts") or {}
     if name == "app.css":
         files = entry.get("css") or []
-    else:
-        files = [entry["file"]] if entry.get("file") else []
-    if not files:
+        return _versioned("dist/" + files[0]) if files else ""
+    if not entry.get("file"):
         return ""
-    return _versioned("dist/" + files[0])
+    return "/static/dist/" + entry["file"]

@@ -118,6 +118,11 @@ const claimed = new WeakSet<HTMLElement>();
 export async function hydrateIsland(el: HTMLElement, now: number): Promise<void> {
   const name = el.dataset.island ?? '';
   if (claimed.has(el)) return;               // already hydrated this load
+  claimed.add(el);                           // claim BEFORE any await: two boots
+  // overlapping (the bootstrap plus a re-run) would otherwise both pass the
+  // check above. Both branches below mount through this point, so this is the
+  // only guard: mountBounded into a container Preact already owns reconciles the
+  // second tree against the first and leaves 0 children.
   if (!isIslandName(name)) {
     if (!warnedUnknown.has(name)) {          // log once, never throw
       warnedUnknown.add(name);
@@ -184,27 +189,12 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   }
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
-  // Guard on the ELEMENT ITSELF, not on module memory. This module is evaluated
-  // more than once per page load (the worker serves the shell, then the real
-  // document boots), so a WeakSet is fresh while the mount element is the SAME
-  // node. Rendering twice into one container makes Preact reconcile the second
-  // tree against the first and paint NOTHING — measured as exactly
-  // ["children=8", "children=0"] on one element.
-  //
-  // A fingerprint of what was rendered, on the element.
-  // `data-hydrated` alone is wrong — the component stamps it on ITS first mount,
-  // so a page whose first boot ran before the data arrived then refuses the
-  // second boot that has the data. Record the SOURCE and a cheap fingerprint:
-  // same data on a re-boot is a no-op, different data still renders.
-  // An element is mounted at most once, period. The earlier fingerprint idea
-  // let a second boot re-render when the payload differed by a byte (server
-  // props vs cache are not identical), and Preact then reconciled the new tree
-  // against the old and painted nothing. Any second mount into the same
-  // container is wrong: the content on screen came from ONE of the two paths
-  // and is already correct.
-  if (el.dataset.mountedAt) return;
-  el.dataset.mountedAt = outcome.source;
+  // No per-branch guard here: `claimed` claimed this element at the top of the
+  // function. The old one keyed on el.dataset.mountedAt, which the SERVER's own
+  // markup can carry — and the server-paint branch above sets no marker at all,
+  // so that element re-mounted on the second boot.
   mountBounded(name, Comp, el, props, now);
+  el.dataset.mountedAt = outcome.source;     // informational (the gate reads it)
   // P7.2: label a cache-served mount with its age, so "what we had earlier"
   // never reads as "live". One helper for every island (data/stale.ts).
   showStale(el, outcome.fetchedAt, now);
