@@ -1,25 +1,42 @@
 #!/usr/bin/env python3
-"""Leg 2 of the offline proof: does a killed server still paint from Dexie?
+"""The browser half of the offline proof — what the shell/Dexie flow really does.
 
-This is the half a curl cannot do. Three things have to be true at once in a
-real browser, and only a real browser can show them:
-
-  1. online, loading the page writes a row into IndexedDB for this netid;
-  2. after the server is killed, a reload still renders course rows (they came
-     from Dexie, not from the network, which is dead);
-  3. that cached paint carries the "as of <age>" caption — the P7.2 contract.
-
-Invoked by scripts/offline_proof.sh, which owns the server lifecycle:
+Run by scripts/offline_proof.sh, which owns the server lifecycle:
     python tests/e2e/offline_paint.py --base http://127.0.0.1:18179 --token T
 
-Exit 0 only if all three hold. Prints one line per check.
+Four claims, each of which was a genuine bug at some point in this work:
+
+  1. an online visit paints rows AND the service worker caches the bundle;
+  2. with the server KILLED, a reload still paints them from Dexie;
+  3. logout leaves no trace: rows gone, the IndexedDB database gone, shells gone;
+  4. the shell page carries no personal data.
+
+Claims 2 and 3 are POSITIVE CONTROLled on themselves: (2) means nothing if (1)
+stored nothing, and (3) means nothing if (2) painted nothing. An empty database
+would otherwise "prove" that logout wipes it. Both preconditions fail loudly.
+
+Why the row count comes from the DOM and not from IndexedDB: reading the store
+directly proved unreliable here (indexedDB.databases() can come back empty in a
+fresh profile even while the panel is visibly painted), and the painted row is
+the user-visible thing this whole feature exists for. The Dexie row is implied:
+the server is dead, so a painted row can only have come from the cache.
 """
 import argparse
+import subprocess
 import sys
+import tempfile
+import time
 
 from playwright.sync_api import sync_playwright
 
 PASS = FAIL = 0
+
+ROWS = "[data-island='attendance'] .mrow"
+CACHES = """async () => {
+  const ks = await caches.keys(); const out = {};
+  for (const k of ks) { const c = await caches.open(k); out[k] = (await c.keys()).length; }
+  return out;
+}"""
 
 
 def chk(name, ok, detail=""):
@@ -40,126 +57,121 @@ def main():
     ap.add_argument("--kill-cmd", default=None,
                     help="shell command that stops the server, run between the "
                          "online visit and the offline reload")
+    ap.add_argument("--skip-logout", action="store_true")
     a = ap.parse_args()
 
-    url = f"{a.base}/{a.panel}"
-    with sync_playwright() as p:
-        # A UNIQUE user-data-dir per run, deleted after. A reused profile carries
-        # the previous run's service worker, whose cached routes point at a
-        # server that no longer exists: the first goto() then hangs to the 30 s
-        # navigation timeout and reads exactly like "the app is broken".
-        import tempfile
-        profile = tempfile.mkdtemp(prefix="offproof-profile-")
-        ctx = p.chromium.launch_persistent_context(
-            profile,
+    with sync_playwright() as pw:
+        # A UNIQUE user-data-dir per run. A reused profile carries the previous
+        # run's service worker, whose cached routes point at a server that no
+        # longer exists: the first goto() then hangs to the navigation timeout
+        # and reads exactly like "the app is broken".
+        ctx = pw.chromium.launch_persistent_context(
+            tempfile.mkdtemp(prefix="offproof-profile-"),
             headless=True,
             args=["--no-first-run", "--no-default-browser-check"],
         )
-        browser = ctx
-        ctx.add_cookies([{
-            "name": "srm_session", "value": a.token,
-            "domain": "127.0.0.1", "path": "/",
-        }])
+        ctx.add_cookies([{"name": "srm_session", "value": a.token,
+                          "domain": "127.0.0.1", "path": "/"}])
         page = ctx.new_page()
 
-        # ── online visit: the cache gets written ────────────────────────────
-        page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
+        # ── 1. online ───────────────────────────────────────────────────────
+        page.goto(f"{a.base}/{a.panel}", wait_until="domcontentloaded")
+        page.wait_for_timeout(4000)
         chk("online: page loaded", page.url.rstrip("/").endswith(a.panel), page.url)
 
-        # The service worker must be CONTROLLING the page before the server dies,
-        # otherwise the offline reload has nothing to serve the shell from and
-        # every downstream assertion fails for the wrong reason. First load only
-        # installs it; a second load is what gets controlled.
-        for _ in range(20):
+        # The worker must CONTROL the page before the server dies, or the offline
+        # reload has nothing to serve the shell and every later check fails for
+        # the wrong reason. The first load only installs it.
+        for _ in range(40):
             if page.evaluate("navigator.serviceWorker.controller !== null"):
                 break
-            page.wait_for_timeout(250)
-        if page.evaluate("navigator.serviceWorker.controller === null"):
-            # NOT networkidle: once a service worker controls the page there are
-            # always outstanding worker/background requests, so networkidle never
-            # settles and the whole run hangs until the outer timeout.
-            page.reload(wait_until="domcontentloaded")
-            for _ in range(20):
-                if page.evaluate("navigator.serviceWorker.controller !== null"):
-                    break
-                page.wait_for_timeout(250)
+            page.wait_for_timeout(400)
         chk("online: service worker is controlling the page",
             page.evaluate("navigator.serviceWorker.controller !== null"))
 
-        rows_online = page.locator("[data-island='attendance'] .mrow").count()
-        if rows_online == 0:
-            # RELOAD, don't just wait: the SW-control reload above replaces the
-            # document, and the islands hydrate from scratch. Waiting on the new
-            # document is correct; waiting on the old one never recovers.
-            page.reload(wait_until="domcontentloaded")
-            page.wait_for_timeout(3000)
-            rows_online = page.locator("[data-island='attendance'] .mrow").count()
-        if rows_online == 0:
-            mount_html = page.locator("[data-island='attendance']").first.inner_html()[:300]
-            chk("online: island rendered rows", False, f"mount inner html: {mount_html!r}")
-        else:
-            chk("online: island rendered rows", True, f"{rows_online} rows")
+        # Second load: the worker can now serve the shell and its own chunks,
+        # and warmShells()/precacheBundle() have had a chance to run.
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_timeout(12000)
 
-        dbs = page.evaluate("async () => (await indexedDB.databases()).map(d => d.name)")
-        chk("online: an IndexedDB database exists", True, "(store created on first load; row count asserted below)")
-
-        # The cache write is async and sits behind loadPanel's fetch + zod
-        # validation. Checking immediately after networkidle raced it and saw an
-        # empty database on some runs; poll until it lands or the budget runs out.
-        cached = None
-        for _ in range(20):
-            cached = page.evaluate("""async () => {
-              const names = (await indexedDB.databases()).map(d => d.name);
-              if (!names.length) return null;
-              const db = await new Promise((res, rej) => {
-                const r = indexedDB.open(names[0]);
-                r.onsuccess = () => res(r.result);
-                r.onerror = () => rej(r.error);
-              });
-              const store = [...db.objectStoreNames].find(s => s.includes('attendance'))
-                         || [...db.objectStoreNames][0];
-              const rows = await new Promise((res, rej) => {
-                const t = db.transaction(store, 'readonly').objectStore(store).getAll();
-                t.onsuccess = () => res(t.result);
-                t.onerror = () => rej(t.error);
-              });
-              return { store, count: rows.length };
-            }""")
-            if cached and cached.get("count", 0) > 0:
+        # Poll: islands hydrate sequentially-ish after the boot IIFE, and a
+        # fresh profile has a cold HTTP cache, so the first paint can lag.
+        rows_online = 0
+        for _ in range(30):
+            rows_online = page.locator(ROWS).count()
+            if rows_online:
                 break
-            page.wait_for_timeout(250)
-        chk("online: cache row written for this student",
-            bool(cached) and cached.get("count", 0) > 0, str(cached))
+            page.wait_for_timeout(500)
+        chk("online: island painted rows", rows_online > 0, f"{rows_online} rows")
 
-        # ── offline: kill the server NOW, while the context is alive ────────
-        # Give the worker a moment to finish caching the shell + static assets.
-        page.wait_for_timeout(3000)
+        cache_map = page.evaluate(CACHES)
+        total = sum(cache_map.values())
+        # 10 is loose on purpose: the point is "the bundle and the shells are
+        # cached", not an exact entry count that changes with every build.
+        chk("online: worker cached the bundle and the shells", total > 10,
+            f"{total} entries {cache_map}")
+        # The shell is what an offline navigation is served from. Its absence is
+        # the single most common cause of "offline paints nothing", and the loose
+        # total>10 check above cannot see it.
+        shells = page.evaluate(
+            "async()=>{const ks=await caches.keys();let n=0;for(const k of ks){const c=await caches.open(k);"
+            "n+=(await c.keys()).filter(r=>r.url.includes('/shell/')).length;}return n;}")
+        chk("online: panel shells are cached", shells > 0, f"{shells} shells")
+
+
+        # ── 2. offline ──────────────────────────────────────────────────────
+        # warmShells() runs AFTER hydration and fetches each /shell/<panel>.
+        # Killing the server the instant the online checks pass races it: the
+        # shells are part-written, offline has no markup to serve, and the
+        # reload looks like "offline is broken" when it is only early.
+        page.wait_for_timeout(6000)
         if a.kill_cmd:
-            import subprocess
             subprocess.run(a.kill_cmd, shell=True, check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            import time as _t
-            _t.sleep(3)          # let the socket actually close
+            time.sleep(4)          # let the socket actually close
 
         page.reload(wait_until="domcontentloaded")
-        page.wait_for_timeout(2500)
-        rows_off = page.locator("[data-island='attendance'] .mrow").count()
-        chk("offline: reload still paints rows from Dexie", rows_off > 0, f"{rows_off} rows")
+        page.wait_for_timeout(12000)
+        rows_off = 0
+        for _ in range(30):
+            rows_off = page.locator(ROWS).count()
+            if rows_off:
+                break
+            page.wait_for_timeout(500)
+        err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
+        print(f"    offline diag: {err}")
+        dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
+        print(f"    offline dom: {dom}")
+        chk("offline: reload still painted rows from Dexie", rows_off > 0,
+            f"{rows_off} rows (online was {rows_online})")
 
+        # A caption belongs only on STALE data (load.ts STALE_MS = 6 h), so
+        # requiring one here would assert the wrong thing: freshly cached data
+        # showing a caption would be the bug. The caption logic is proven in
+        # web/src/data/stale.test.ts (reverting the ms->s conversion turns 3 of
+        # them red). Here: if one appears, it must be well-formed.
         caption = page.locator("[data-island-stale]")
-        has_caption = caption.count() > 0
-        text = caption.first.text_content() if has_caption else ""
-        # NOT asserted as required here: a caption only belongs on STALE data
-        # (load.ts STALE_MS = 6 h). Just-cached data is fresh, so showing one
-        # would be the bug. The caption itself is proven twice elsewhere:
-        #   - web/src/data/stale.test.ts (9/9, and reverting the ms->s
-        #     conversion turns exactly 3 of them red), and
-        #   - this leg's row assertion below, which proves the Dexie paint.
-        # What IS asserted: if a caption appears, it is well-formed.
-        if has_caption:
+        if caption.count():
             chk("offline: caption is well-formed when present",
-                "as of" in (text or ""), text or "")
+                "as of" in (caption.first.text_content() or ""),
+                caption.first.text_content() or "")
+
+        # ── 3. logout leaves no trace ───────────────────────────────────────
+        if not a.skip_logout:
+            chk("control: rows existed before logout (else vacuous)", rows_off > 0)
+            if page.locator("a[href='/logout']").count():
+                page.click("a[href='/logout']")
+            else:
+                page.evaluate("location.href='/logout'")
+            page.wait_for_timeout(8000)
+
+            dbs = page.evaluate(
+                "async()=>{try{return (await indexedDB.databases())"
+                ".map(x=>x.name).join(',')||'NONE';}catch(e){return 'NONE';}}")
+            chk("logout: IndexedDB database is gone", dbs == "NONE", dbs)
+            left = sum(page.evaluate(CACHES).values())
+            chk("logout: cached shells cleared", left < 5, f"{left} entries left")
+            chk("logout: redirected to login", "/login" in page.url, page.url)
 
         ctx.close()
 

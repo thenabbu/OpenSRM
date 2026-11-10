@@ -98,7 +98,6 @@ export async function bootstrapSessionOffline(doc: Document = document): Promise
   const sync = bootstrapSession(doc);
   if (sync) return sync;
   const remembered = await recallNetid();
-  console.warn(`[boot] shell page: remembered netid = ${remembered ?? '(none)'}`);
   if (remembered) setNetid(remembered);
   // The per-group stores need their key too; without it the cache read misses
   // even though the rows are present (this is what made offline "work" but

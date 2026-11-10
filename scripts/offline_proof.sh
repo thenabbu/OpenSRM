@@ -25,7 +25,7 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
 KEEP=${1:-}
-PORT=${PORT:-18179}
+PORT=${PORT:-18183}
 SLUG=offlineproof
 PW=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
 export PLAYWRIGHT_BROWSERS_PATH=$PW
@@ -66,9 +66,21 @@ _scope_fixture.inject(os.environ["DATA_DIR"])
 print("  seeded")
 PY
 
-( cd "$PWD" && env DATA_DIR="$DATA_DIR" LOG_LEVEL=WARNING \
+env DATA_DIR="$DATA_DIR" LOG_LEVEL=WARNING \
     .venv/bin/python -m gunicorn -w 1 --threads 4 -b 127.0.0.1:"$PORT" app.app:app \
-    >"$LOG" 2>&1 & )
+    >"$LOG" 2>&1 &
+# Wait for the socket, then capture the bound PID (gunicorn's master). The
+# teardown kills its process group so master + worker both die; killing just
+# "whoever holds the port" left a worker rebinding it.
+# Wait for gunicorn to answer, then take its PID from the command line. `ss`
+# reports nothing in this container (no socket table access), which is why every
+# listener-based probe here silently returned an empty PID.
+for _ in $(seq 1 40); do
+  curl -sf -m 2 -o /dev/null "http://127.0.0.1:$PORT/login" && break
+  sleep 1
+done
+SERVER_PID=$(pgrep -f "gunicorn.*:$PORT|gunicorn.*-b 127.0.0.1:$PORT" | head -1)
+[ -z "$SERVER_PID" ] && { echo "  [FAIL] server never started (see $LOG)"; exit 1; }
 say "  DATA_DIR=$DATA_DIR  log=$LOG  port=$PORT"
 
 # wait for the socket (gunicorn needs a few seconds)
@@ -126,7 +138,7 @@ say "== leg 2: browser online visit, then server killed, then reload =="
 if [ -x .venv/bin/python ] && [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d "${PLAYWRIGHT_BROWSERS_PATH}" ]; then
   if .venv/bin/python tests/e2e/offline_paint.py \
         --base "http://127.0.0.1:$PORT" --token "$TOKEN" \
-        --kill-cmd "bash scripts/dut_server.sh stop $PORT"; then
+        --kill-cmd "kill -9 $SERVER_PID \$(pgrep -P $SERVER_PID | tr '\\n' ' ') 2>/dev/null; true"; then
     ok "browser: offline reload painted rows from Dexie + age caption"
   else
     bad "browser: offline reload did not paint (see output above)"
@@ -139,6 +151,7 @@ else
   bash scripts/dut_server.sh stop "$PORT" >/dev/null 2>&1
 fi
 
+kill -9 "$SERVER_PID" $(pgrep -P "$SERVER_PID" 2>/dev/null) 2>/dev/null
 sleep 2
 if curl -sf -m 3 -o /dev/null "http://127.0.0.1:$PORT/attendance"; then
   bad "server still reachable — offline leg cannot be proven"

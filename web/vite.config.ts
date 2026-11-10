@@ -15,7 +15,10 @@ export default defineConfig({
   build: {
     outDir: '../app/static/dist',
     emptyOutDir: true,
-    manifest: true,
+    // .vite/manifest.json starts with a dot, and Flask's send_from_directory
+    // refuses dotfiles — so the service worker could never fetch it and its
+    // precache list was always empty. Emit a plain-named copy instead.
+    manifest: 'manifest.json',
     target: 'es2022',
     cssCodeSplit: true,
     rollupOptions: { input: { app: 'src/main.ts' } },

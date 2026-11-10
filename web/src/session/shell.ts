@@ -50,15 +50,25 @@ const log = (msg: string, e?: unknown): void =>
  * imported module" even though the shell and the rows are both present.
  *
  * The chunk list comes from Vite's own manifest, served at
- * /static/dist/.vite/manifest.json. Probing window.__vite__mapDeps looked
+ * /static/dist/manifest.json. Probing window.__vite__mapDeps looked
  * clever and returned the WRONG hashes: it is keyed by import index, so a
  * mistyped range silently warms chunks that no longer exist.
  */
+/** Surface the warm result on window for the offline DUT: console events from a
+ *  page that navigates are dropped by Playwright, so a log is not evidence. */
+function expose(diag: string[], verdict: string): void {
+  try {
+    (window as unknown as { __shellWarm?: unknown }).__shellWarm = { verdict, diag };
+  } catch {
+    // non-browser context (unit tests): nothing to expose
+  }
+}
+
 async function warmChunks(): Promise<number> {
   if (typeof caches === 'undefined' || !navigator.onLine) return 0;
   if (!navigator.serviceWorker?.controller) return 0;   // nothing would cache them
   try {
-    const res = await fetch('/static/dist/.vite/manifest.json', { credentials: 'same-origin' });
+    const res = await fetch('/static/dist/manifest.json', { credentials: 'same-origin' });
     if (!res.ok) return 0;
     const manifest = (await res.json()) as Record<string, { file?: string }>;
     const files = Object.values(manifest)
@@ -81,7 +91,8 @@ async function warmChunks(): Promise<number> {
 }
 
 export async function warmShells(): Promise<number> {
-  if (typeof caches === 'undefined' || !navigator.onLine) return 0;
+  const diag: string[] = [`start ctrl=${!!navigator.serviceWorker?.controller} online=${navigator.onLine}`];
+  if (typeof caches === 'undefined' || !navigator.onLine) { expose(diag, 'bailed: caches or offline'); return 0; }
   let stored = 0;
   try {
     const cache = await caches.open(SHELL_CACHE);
@@ -104,6 +115,7 @@ export async function warmShells(): Promise<number> {
     log('shell cache unavailable', err);
   }
   void warmChunks();
+  expose(diag, `done stored=${stored}`);
   return stored;
 }
 

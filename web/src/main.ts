@@ -109,8 +109,15 @@ export function __resetWarnOnce(): void {
   warnedProps.clear();
 }
 
+/** Mounts Preact has already rendered into. Rendering the SAME element twice is
+ *  not idempotent: the second render goes into a container Preact already owns,
+ *  and the result alternates between 0 and N children — which is exactly what a
+ *  flaky "offline paints sometimes" DUT was showing. */
+const claimed = new WeakSet<HTMLElement>();
+
 export async function hydrateIsland(el: HTMLElement, now: number): Promise<void> {
   const name = el.dataset.island ?? '';
+  if (claimed.has(el)) return;               // already hydrated this load
   if (!isIslandName(name)) {
     if (!warnedUnknown.has(name)) {          // log once, never throw
       warnedUnknown.add(name);
@@ -170,6 +177,15 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   }
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
+  // Guard on the ELEMENT, not just an in-memory Set. The module is re-evaluated
+  // on each navigation, so a WeakSet resets while the element persists — and
+  // rendering twice into one container makes Preact reconcile the new tree
+  // against the old and paint NOTHING. That was the 8-then-0 alternation.
+  // Checking `data-hydrated` alone is wrong: the SERVER paint is what gets
+  // replaced, and a fresh page's mount is not marked yet, so only the WeakSet
+  // plus the render-time claim is correct here.
+  if (claimed.has(el)) return;
+  claimed.add(el);
   mountBounded(name, Comp, el, props, now);
   // P7.2: label a cache-served mount with its age, so "what we had earlier"
   // never reads as "live". One helper for every island (data/stale.ts).
@@ -177,9 +193,15 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
 }
 
 export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
-  await Promise.all(
-    Array.from(root.querySelectorAll<HTMLElement>('[data-island]')).map((el) => hydrateIsland(el, now)),
-  );
+  // SEQUENTIAL. Nine concurrent dynamic imports on a cold profile (and on a cold
+  // service worker) race each other: the browser's connection budget is small and
+  // a chunk arriving late rejects with "Failed to fetch dynamically imported
+  // module", which leaves that island showing the server paint or nothing at all.
+  // That intermittency is what made this DUT pass one run and fail the next.
+  // Hydration is not latency-critical — the server paint is already on screen.
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-island]'))) {
+    await hydrateIsland(el, now);
+  }
 }
 
 // Bootstrap: the entry is a deferred module, so the document is parsed here.
@@ -195,8 +217,14 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
 void (async () => {
   await bootstrapSessionOffline(document);
   await hydrateAll(document, Date.now() / 1000);
-  void warmShells();
 })();
+
+// NOT chained behind hydrateAll. Islands hydrate against the network, and a slow
+// or stalled island would hold the shell warm back indefinitely — which is
+// exactly what happened: the shells were never cached because this line never
+// ran. Warming is independent of hydration in both directions (it fetches
+// /shell/<panel>, not the islands), so it starts on its own.
+void warmShells();
 
 
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped

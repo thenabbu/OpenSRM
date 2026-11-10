@@ -23,11 +23,11 @@ def asset_dist(name):
     """Versioned /static/dist/ URL for the Vite build.
 
     `name` is the Vite import name ('app' -> JS entry, 'app.css' -> the CSS the
-    entry imports); the hashed filename comes from .vite/manifest.json. Returns
+    entry imports); the hashed filename comes from dist/manifest.json. Returns
     '' when dist/ is absent so a checkout without a build still renders (the
     page then runs on the legacy scripts alone — progressive enhancement).
     """
-    path = os.path.join(_STATIC_DIR, "dist", ".vite", "manifest.json")
+    path = os.path.join(_STATIC_DIR, "dist", "manifest.json")
     try:
         with open(path, "rb") as fh:
             manifest = json.load(fh)

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v45';
+const CACHE_NAME = 'opensrm-v60';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -23,7 +23,11 @@ self.addEventListener('install', e => {
 // exactly what happened while the shell, the netid and the rows were all fine.
 async function precacheBundle() {
   try {
-    const res = await fetch('/static/dist/.vite/manifest.json', { cache: 'no-store' });
+    const res = await fetch('/static/dist/manifest.json', { cache: 'no-store' });
+    // Visible from the page via the client postMessage below and from DevTools:
+    // without it, "did activate even run the precache?" is unanswerable, which is
+    // exactly the hole this cost.
+    self.clients.matchAll().then(cs => cs.forEach(c => c.postMessage({ precache: 'start', status: res.status })));
     if (!res.ok) return;
     const manifest = await res.json();
     const files = Object.values(manifest)
@@ -37,6 +41,7 @@ async function precacheBundle() {
         if (r.ok) await cache.put(u, r);
       } catch (err) { /* one missing file degrades one island, not the app */ }
     }));
+    self.clients.matchAll().then(cs => cs.forEach(c => c.postMessage({ precache: 'done', files: urls.length })));
   } catch (err) { /* no manifest (dev build / first deploy): skip */ }
 }
 
