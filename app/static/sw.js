@@ -97,27 +97,37 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // HTML pages: network-first, NO offline copy of account pages (audit
-  // run-1 #12). Cached HTML holds attendance/marks/PII and the worker
-  // cannot bind a cached entry to the CURRENT session while offline — on a
-  // shared browser profile the previous student's dashboard was served to
-  // the next one. Offline now gets a generic page with zero account data;
-  // static assets above stay offline-ready.
+  // HTML pages: network-first, and offline gets the SHELL — never a rendered
+  // page. This is the design Navya set on 2026-11-09: personal data may live on
+  // the device (that is what makes offline work), but the app must remove it
+  // completely on logout, and a rendered page must never be one of the places
+  // it lives. The shell is the panel's own markup with every personal value
+  // blanked server-side (/shell/<panel>, app/views/dashboard.py:shell()), so it
+  // is the same bytes for every student and safe to keep in this cache.
+  //
+  // Offline flow: serve shell -> islands mount with no props -> each asks
+  // IndexedDB for ITS OWN netid's rows -> a different student simply misses.
   if (e.request.headers.get('accept')?.includes('text/html')) {
     e.respondWith((async () => {
       try {
-        // navigation preload started the fetch while the worker booted —
-        // use it when present, else fetch now.
         const preloaded = await e.preloadResponse;
         if (preloaded) return preloaded;
         return await fetch(e.request);
       } catch (err) {
+        // Offline. Which panel? Ask from the URL, so an offline visit to
+        // /marks gets the marks shell rather than the dashboard one.
+        const panel = (url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard');
+        const shell = await caches.match('/shell/' + panel)
+                   || await caches.match('/shell/dashboard')
+                   || await caches.match('/shell/');
+        if (shell) return shell;
         return new Response(
-          '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline. Your dashboard needs a connection.</p><p>Connect to the internet and try again.</p></div></body></html>',
+          '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this device has no saved copy yet.</p><p>Connect to the internet and open the site once to enable offline access.</p></div></body></html>',
           { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
         );
       }
     })());
+    return;
   }
 });
 

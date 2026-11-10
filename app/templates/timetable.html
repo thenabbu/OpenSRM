@@ -8,14 +8,14 @@
 <meta name="theme-color" content="#111111">
 <meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="OpenSRM - {{ netid }}">
+<meta property="og:title" content="OpenSRM{% if netid %} - {{ netid }}{% endif %}">
 <meta property="og:description" content="Student attendance dashboard.">
 <meta property="og:image" content="https://srm.200871.xyz/static/icon-512.png">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="OpenSRM - {{ netid }}">
+<meta name="twitter:title" content="OpenSRM{% if netid %} - {{ netid }}{% endif %}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="msapplication-TileColor" content="#111111">
-<title>OpenSRM - {{ netid }}</title>
+<title>OpenSRM{% if netid %} - {{ netid }}{% endif %}</title>
 {% include "partials/theme.html" %}
 <style>
 /* Card/widget engine styles — the approved mockup's computed values, ported

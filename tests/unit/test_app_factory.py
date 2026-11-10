@@ -124,6 +124,10 @@ EXPECTED = {
     # P7: island-shaped feeds for the panels whose legacy endpoints carry a
     # different payload (raw JSON / the write API the user POSTs through)
     "/api/marks/island", "/api/timetable/island", "/api/tools/island",
+    # offline shell: the PII-free markup the service worker caches
+    "/shell/", "/shell/attendance", "/shell/timetable", "/shell/marks",
+    "/shell/campus", "/shell/academics", "/shell/fees", "/shell/tools",
+    "/shell/settings",
     # P3.1: nine real panel routes
     "/attendance", "/timetable", "/marks", "/campus",
     "/academics", "/fees", "/tools", "/settings",
@@ -172,6 +176,15 @@ EXPECTED_EP = {
     "/api/marks/island": {("api_marks_island", "api_marks_island")},
     "/api/timetable/island": {("api_timetable", "api_timetable")},
     "/api/tools/island": {("api_tools", "api_tools")},
+    "/shell/": {("shell_dashboard", "shell_dashboard")},
+    "/shell/attendance": {("shell_attendance", "shell_attendance")},
+    "/shell/timetable": {("shell_timetable", "shell_timetable")},
+    "/shell/marks": {("shell_marks", "shell_marks")},
+    "/shell/campus": {("shell_campus", "shell_campus")},
+    "/shell/academics": {("shell_academics", "shell_academics")},
+    "/shell/fees": {("shell_fees", "shell_fees")},
+    "/shell/tools": {("shell_tools", "shell_tools")},
+    "/shell/settings": {("shell_settings", "shell_settings")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
     # P3.1: nine real panel routes (each endpoint == its view __name__)

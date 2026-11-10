@@ -82,6 +82,70 @@ def index(active_panel="dashboard"):
     return presentation(panel_data(netid, active_panel))
 
 
+# Keys in the view model that carry something identifying about one student.
+# The offline shell keeps the page's SHAPE and drops every one of these, so the
+# result can be cached in the HTTP cache without the October leak coming back.
+_PII_KEYS = (
+    "netid", "student_name", "personal_data", "scope_fields", "data",
+    "courses", "monthly", "hourwise", "fees", "campus", "academics",
+    "schedule", "marks_view", "marks_summary", "exams", "faculty_view",
+    "fb_plan", "attendance", "has_budgets", "dash", "tools", "wctx",
+    "last", "last_epoch", "hours_old",
+)
+
+
+def shell(active_panel="dashboard"):
+    """The offline shell: the panel page with every personal VALUE blanked.
+
+    Why not scrub the rendered HTML: a regex over output silently misses the day
+    someone adds a field to a template. This blanks the view model instead, so
+    the template renders its own empty states and never held the data.
+
+    The subtlety is that `presentation()` GATES on this model — `campus["show"]`,
+    `fees`, `academics` and `tools` must stay truthy or the panel 404s, and
+    `merge_personal()` needs `personal_data`/`scope_fields` to be dicts. So the
+    STRUCTURE is preserved and only leaf values are emptied: a shell looks like
+    the real page with every number, name and row replaced by an empty value.
+    """
+    netid = get_current_user()
+    if not netid:
+        return redirect("/login")
+
+    vm = panel_data(netid, active_panel)
+
+    def blank(value):
+        """Keep containers and the flags gates read; empty everything else."""
+        if isinstance(value, dict):
+            return {k: blank(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return []
+        if isinstance(value, bool):
+            return value            # `show`/`has_*` flags are structure, not data
+        if isinstance(value, str):
+            return ""
+        if isinstance(value, (int, float)):
+            return 0
+        return None
+
+    for k in _PII_KEYS:
+        if k in vm:
+            vm[k] = blank(vm[k])
+    vm["student_name"] = ""
+    vm["netid"] = ""
+    vm["is_shell"] = True
+    return presentation(vm)
+
+
+def _shell_off(vm, rendered):
+    """In shell mode an island prop block must be EMPTY, not merely data-free.
+
+    The blocks still serialize a `<script type="application/json">` even with no
+    rows, and the shell's whole contract is "no payloads in the page". A helper
+    at the call sites beats five separate conditionals that someone can forget.
+    """
+    return "" if vm.get("is_shell") else rendered
+
+
 def presentation(vm):
     """Render one panel from panel_data()'s view model.
 
@@ -140,23 +204,23 @@ def presentation(vm):
         # exactly what the island would (same bucket table), so first paint is
         # correct with JS blocked and hydration is a no-op repaint.
         sync_age_text=_sync_age_caption(vm["last_epoch"]),
-        sync_age_props=_sync_age_props(vm["last_epoch"], vm["last"]),
+        sync_age_props="" if vm.get("is_shell") else _sync_age_props(vm["last_epoch"], vm["last"]),
         # P6.1: the attendance meters hydrate from this inert block. The rows
         # below it are already server-painted, so the block is the ONLY thing
         # that needs JS; with it blocked the page is unchanged.
-        attendance_props=_attendance_block(vm["courses"]),
+        attendance_props=_shell_off(vm, _attendance_block(vm["courses"])),
         att_nudge=_att_nudge, att_pole=_att_pole, att_label=_att_label,
         # P6.3: the marks cards hydrate from this inert block. The cards below
         # are already server-painted, so the block is the ONLY thing that
         # needs JS; with it blocked the page is unchanged.
-        marks_props=_marks_block(vm["marks_view"]),
+        marks_props=_shell_off(vm, _marks_block(vm["marks_view"])),
         student_name=vm["student_name"], dash=vm["dash"], marks=vm["marks_view"],
         marks_summary=vm["marks_summary"],
         academics=vm["academics"],
         fees=vm["fees"],
-        academics_props=academics_island.block(academics_island.props(vm["academics"]))
-        if vm["academics"] else "",
-        fees_props=fees_island.block(fees_island.props(vm["fees"])) if vm["fees"] else "",
+        academics_props=_shell_off(vm, academics_island.block(academics_island.props(vm["academics"]))
+        if vm["academics"] else ""),
+        fees_props=_shell_off(vm, fees_island.block(fees_island.props(vm["fees"])) if vm["fees"] else ""),
         exams=vm["exams"], faculty=vm["faculty_view"], fb_plan=vm["fb_plan"],
         # card/widget engine: layout registry + derived widget data (route-side
         # joins — partials consume flat dicts only)
@@ -170,15 +234,15 @@ def presentation(vm):
         # scope-filled copy of personal (portal values win, scope gaps only);
         # the profile widget's avatar stays the generated blobatar
         personal=personal,
-        settings_props=settings_island.block(settings_island.props(personal)),
+        settings_props=_shell_off(vm, settings_island.block(settings_island.props(personal))),
         campus=vm["campus"],
-        campus_props=campus_island.block(campus_island.props(vm["campus"])),
+        campus_props=_shell_off(vm, campus_island.block(campus_island.props(vm["campus"]))),
         tools=vm["tools"],
         # P7.1: whose IndexedDB rows this page may read. See layout.session_netid.
         data_netid=session_netid(netid),
         # rows only - the route 404s when the list is empty, so vm["tools"] is
         # non-empty here; the card and footnote stay template markup.
-        tools_props=tools_island.block(tools_island.props(vm["tools"])),
+        tools_props=_shell_off(vm, tools_island.block(tools_island.props(vm["tools"]))),
         # P6.2: the widgets' own inputs, serialised unchanged for the island.
         # Built from the SAME locals the partials read — see _island_props.
         dashboard_island_props=_island_block(_island_props(

@@ -1,4 +1,5 @@
 import { wipeAll } from '../db';
+import { clearShells } from './shell';
 
 /**
  * Session scope: which netid this page is caching against, and what logout
@@ -86,7 +87,15 @@ export async function onLogout(
   href: string = '/login',
   opts: { netid?: string | undefined; navigate?: (u: string) => void } = {},
 ): Promise<string | null> {
-  await wipeCapped(opts.netid ?? netid);
+  // Wipe EVERY netid, not just this one. Personal data is allowed to live on
+  // the device while a student is logged in — that is what makes offline work —
+  // but logout must leave no trace, and on a shared device "no trace" includes
+  // a previous student's rows, which a netid-scoped delete would happily keep.
+  // Passing undefined is wipeAll's documented "clear every store" branch.
+  await wipeCapped(undefined);
+  // And the shell cache: offline markup with no PII in it, but a logged-out
+  // device should have no trace of the app's cached surfaces either.
+  await clearShells();
   const target = sanitize(href);
   if (!target) return null;
   (opts.navigate ?? ((u: string) => location.assign(u)))(target);

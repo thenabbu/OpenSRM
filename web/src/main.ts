@@ -8,6 +8,7 @@ import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
+import { warmShells } from './session/shell';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -174,6 +175,12 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
 // key on it, and <body data-netid> is the only place the server publishes it.
 bootstrapSession(document);
 void hydrateAll(document, Date.now() / 1000);
+
+// Offline support: cache this student's panel shells once the page is up, so a
+// later offline visit has markup to boot into. Safe to cache because the shell
+// carries no personal values; the rows live in IndexedDB keyed by netid and are
+// wiped on logout. Fire-and-forget: a failure must never affect the live page.
+void warmShells();
 
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped
 // IndexedDB wipe done first (capped, so a hung wipe cannot block the link).
