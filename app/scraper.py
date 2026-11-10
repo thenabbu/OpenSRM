@@ -241,6 +241,8 @@ async def _do_login(page, ctx, netid, password):
                     last_err = "captcha expired"
                 elif "invalid captcha" in err_lower:
                     last_err = f"invalid captcha (read: {captcha})"
+                    # Portal judged the read WRONG — real negative sample.
+                    captcha_dataset.reject()
                 elif "HRDSystem" not in current_url and "login" in current_url.lower():
                     # Silent rejection: portal returned login page with no error
                     # This means portal rate-limited us

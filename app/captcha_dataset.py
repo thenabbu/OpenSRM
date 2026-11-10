@@ -1,31 +1,35 @@
-"""CAPTCHA dataset capture — one labelled pair per successful portal login.
+"""CAPTCHA dataset capture — a labelled pair per login attempt the portal judged.
 
-Navya's ask (2026-11-10): every time a login actually SUCCEEDS, keep the image
-the portal served and the OCR string that was submitted, so the same solver can
-later be retrained/evaluated on real traffic instead of synthetic guesses.
+Navya's shape (2026-11-10):
 
-Design (see references/captcha-dataset.md in the opensrm skill for the why):
+    <DATA_DIR>/captcha-dataset/success/<correct ocr>.<ext>   portal ACCEPTED
+    <DATA_DIR>/captcha-dataset/failed/<what ddddocr read>.<ext> portal said
+                                                             "Invalid captcha"
 
-  * Best-effort only. Nothing here may raise into the login path, cost a
-    request, or change a response. Every entry point is wrapped.
-  * The recording is SCOPED to a contextvar that only the scrape flow sets
-    (`_sync_ctx`), same trick app/scraper.py uses for portal-fail counting —
-    so a preflight solved for a visitor who never submits a password stores
-    NOTHING (that image was never validated against the portal).
-  * ONLY a confirmed success writes a file: `HRDSystem` in the final URL (http
-    pipeline) or the post-login URL check (playwright). A wrong-password login
-    carries a correct captcha but is not evidence about the solver, and in the
-    http pipeline a verified captcha whose credentials failed answers "retry"
-    with the same context — 3 copies of the same image — so the last attempt
-    wins.
-  * Filenames are `<ocr>.<ext>` in one flat folder, byte-identical pairs
-    deduped by sha256 of the image (session reuse and repeated logins in one
-    process hit the same bytes). Collisions on OCR text are what a dataset
-    wants: two images labelled the same string.
-  * File size + count are capped so an unattended box cannot fill the volume.
+The portal's own verdict is the only label that cannot lie — a vision model's
+opinion is not ground truth (measured: ddddocr beat mistral-large-4 on 5 of 6
+human-checked images, so any "they agree" metric understates the solver).
 
-Toggle: CAPTCHA_DATASET=1 (env, read per call so ops can flip without a
-rebuild). Unset/0 = the module costs one env lookup and returns.
+What counts as a FAILURE is read off the pipeline, never guessed:
+
+  http_scraper._post_login  -> `"invalid captcha" in rhtml.lower()`
+  scraper._do_login         -> `"invalid captcha" in err_lower`
+
+Only those two branches mean "the OCR answer was rejected". Deliberately NOT
+captured as failures:
+  - `invalid credentials` — the captcha may well have been CORRECT; the label
+    would be a lie and the portal then counts it against the 3-attempts lockout
+  - silent rejection / captcha expired — the portal never judged the text
+  - OCR empty — there is no answer to label
+
+Rules that keep it honest:
+  * Only inside a scrape scope (`_sync_ctx`), so a preflight solved for a
+    visitor who never submits stores nothing.
+  * Success is committed where the pipeline already knows it won (HRDSystem).
+  * Byte-identical images are deduped per folder; a cap writes `.full`.
+  * Never raises into the login path.
+
+Toggle: CAPTCHA_DATASET=1 (env, read per call).
 """
 import hashlib
 import logging
@@ -34,13 +38,25 @@ import threading
 
 log = logging.getLogger("opensrm.captcha_dataset")
 
-MAX_FILES = 100_000                       # ~1.2 KB each -> ~120 MB ceiling
+MAX_FILES = 100_000          # ~1.2 KB each -> ~120 MB per folder ceiling
 _EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
         "image/svg+xml": "svg", "image/webp": "webp"}
 
-_ctx = None          # contextvars.ContextVar, created lazily (py3.14 ok either way)
+# Anything that is not a plain filename character becomes nothing. A CAPTCHA
+# answer is alnum; this exists because the same string reaches a path in two
+# places (write() here, /internal/captcha in observability). A whitelist is the
+# only sanitiser static analysis accepts (py/path-injection).
+_NAME_SAFE = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+
+
+def safe_name(text):
+    """A bare filename stem: whitelist, never blacklist. Empty -> \"\"."""
+    return "".join(c for c in str(text) if c in _NAME_SAFE)[:64]
+
+
+_ctx = None          # contextvars.ContextVar, created lazily
 _ctx_lock = threading.Lock()
-_seen = set()        # sha256[:16] already written by THIS process
+_seen = {}           # folder -> set of sha256[:16] written by THIS process
 _seen_lock = threading.Lock()
 
 
@@ -48,10 +64,10 @@ def enabled():
     return os.environ.get("CAPTCHA_DATASET", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def dataset_dir():
-    """<DATA_DIR>/captcha-dataset — the app's volume, so it survives restarts."""
-    root = os.environ.get("DATA_DIR", "/app/data")
-    return os.path.join(root, "captcha-dataset")
+def dataset_dir(folder=None):
+    """<DATA_DIR>/captcha-dataset[/success|/failed]."""
+    root = os.path.join(os.environ.get("DATA_DIR", "/app/data"), "captcha-dataset")
+    return os.path.join(root, folder) if folder else root
 
 
 def begin():
@@ -71,7 +87,7 @@ def clear():
 
 
 def offer(img_bytes, ocr, content_type=None):
-    """Stage a (image, ocr) pair. Overwrites the previous offer in this scope."""
+    """Stage a (image, ocr) pair for the CURRENT attempt, replacing the last."""
     if _ctx is None or not enabled():
         return
     try:
@@ -87,8 +103,16 @@ def offer(img_bytes, ocr, content_type=None):
 
 
 def commit():
-    """A login just succeeded — write the staged pair, keep it staged as a
-    candidate (a mid-scrape relogin may certify the same image again)."""
+    """Login SUCCEEDED — the staged pair is the one the portal accepted."""
+    _flush("success")
+
+
+def reject():
+    """The portal answered "Invalid captcha" — the staged read was wrong."""
+    _flush("failed")
+
+
+def _flush(folder):
     if _ctx is None:
         return
     try:
@@ -97,55 +121,59 @@ def commit():
         return
     if not s or not s.get("img"):
         return
-    write(*s["img"])
+    write(*s["img"], folder=folder)
 
 
-def write(img_bytes, ocr, ext="png"):
-    """Write one pair + log the solved-image digest. Never raises; returns the
-    path written or None."""
+def write(img_bytes, ocr, ext="png", folder="success"):
+    """Write one pair. Never raises; returns the path written or None."""
     if not enabled():
         return None
     digest = None
     try:
-        safe = "".join(c for c in ocr if 32 <= ord(c) < 127).replace("/", "_").strip()
+        safe = safe_name(ocr)
         if not safe:
             return None
         digest = hashlib.sha256(img_bytes).hexdigest()[:16]
         with _seen_lock:
-            if digest in _seen:
+            seen = _seen.setdefault(folder, set())
+            if digest in seen:
                 return None
-            if len(_seen) > 5000:      # ponytail: process-lifetime dedupe memory
-                _seen.clear()
-            _seen.add(digest)
-        d = dataset_dir()
+            if len(seen) > 5000:        # ponytail: process-lifetime dedupe memory
+                seen.clear()
+            seen.add(digest)
+        d = dataset_dir(folder)
         os.makedirs(d, exist_ok=True)
         try:
             if sum(len(f) for _r, _dd, f in os.walk(d)) >= MAX_FILES:
-                if not os.path.exists(os.path.join(d, ".full")):
-                    open(os.path.join(d, ".full"), "w").close()
-                    log.warning("captcha dataset full at %d files dir=%s — stop capturing",
-                                MAX_FILES, d)
+                marker = os.path.join(d, ".full")
+                if not os.path.exists(marker):
+                    open(marker, "w").close()
+                    log.warning("captcha dataset full at %d files dir=%s", MAX_FILES, d)
                 return None
         except OSError:
             pass
         path = os.path.join(d, f"{safe}.{ext}")
+        # The whitelist already makes traversal impossible; this proves the
+        # result still resolves inside the folder before anything is opened.
+        if os.path.dirname(os.path.realpath(path)) != os.path.realpath(d):
+            log.warning("captcha dataset refused out-of-dir path ocr=%r", ocr)
+            return None
         tmp = path + ".tmp"
         with open(tmp, "wb") as f:
             f.write(img_bytes)
         os.replace(tmp, path)
         if digest:
-            _note_seen(digest)
+            _note_seen(digest, folder)
         return path
     except Exception as e:      # a dataset write must never break a login
         log.warning("captcha dataset write failed ocr=%r err=%r", ocr, e)
         return None
 
 
-def _note_seen(digest):
-    """One captcha_seen row. Same transaction the login flow already uses
-    (persist_sync runs after the scrape), so this deduped INSERT is free."""
+def _note_seen(digest, folder):
+    """One captcha_seen row, tagged success/failed, for pacing + a quick ratio."""
     try:
         from .db import insert_captcha_seen
-        insert_captcha_seen(digest, "login")
+        insert_captcha_seen(digest, folder)
     except Exception as e:
         log.debug("captcha_seen insert failed err=%r", e)

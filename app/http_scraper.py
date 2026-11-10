@@ -352,6 +352,8 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     if "invalid captcha" in low:
         log.info("login attempt=%d invalid_captcha ocr=%s portal_alert=%r",
                  attempt, ctx["ocr"], alert)
+        # The portal judged this read WRONG — that is a real negative sample.
+        captcha_dataset.reject()
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
