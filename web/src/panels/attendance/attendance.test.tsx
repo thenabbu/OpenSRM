@@ -112,3 +112,24 @@ describe('attendance island', () => {
     expect(el2.querySelectorAll('.mrow').length).toBe(1);
   });
 });
+
+describe('the REAL server payload renders rows', () => {
+  // The unit fixtures above use pole:false and skip_now:null. The server sends
+  // pole:0 and skip_now:0, and that difference is the whole reason the panel
+  // painted nothing in a real browser while every unit test passed. Assert
+  // against a capture of the actual block so the two cannot drift again.
+  const serverCourse = {
+    code: 'CL', description: 'Class In Charge',
+    attended: 2, max_hours: 4, pct_disp: '50.0', fill: 50, t75: 3,
+    skip_now: 0, attend_now: 4, tint: 'red', nudge: 'n-a', pole: 0,
+  };
+
+  it('paints one .mrow per course with the server value shape', () => {
+    const el = mount({ courses: [serverCourse, { ...serverCourse, code: 'X' }] });
+    const rows = el.querySelectorAll('.mrow');
+    expect(rows.length).toBe(2);
+    // positive control: the text really landed, not just an empty shell
+    expect(rows[0]?.textContent).toContain('Class In Charge');
+    expect(el.getAttribute(HYDRATED_ATTR)).toBe('1');
+  });
+});
