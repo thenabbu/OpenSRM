@@ -158,6 +158,36 @@ describe('P4.1 island hydration', () => {
   });
 });
 
+describe('one island mounts at most once per element per document', () => {
+  // The bug this pins: `claimed` was declared and read but never populated, so
+  // hydrateAll() twice over the same document mounted every island twice. On a
+  // real page that is what the offline DUT saw — Preact renders on a microtask,
+  // so the second tree reconciles against the first and the container ends up
+  // with 0 children (["attendance:children=8", "attendance:children=0"]).
+  //
+  // Counting mounts, not inspecting the DOM: a re-mount RE-STAMPS data-hydrated
+  // and re-paints the same text, so every DOM assertion in this file stays green
+  // through a double mount. The observable that actually doubles is the island's
+  // own work — each mount sets its own 60s timer.
+  it('hydrateAll twice: each island mounts once, children kept', async () => {
+    const timers = vi.spyOn(globalThis, 'setInterval');
+    try {
+      document.body.innerHTML = newPage('(15m ago)', ago(900));
+      await hydrateAll(document, now());
+      const afterFirst = spans().map((el) => el.childNodes.length);
+      expect(timers).toHaveBeenCalledTimes(2);           // one per span, first pass
+      expect(afterFirst.every((n) => n > 0)).toBe(true); // server paint is there
+
+      await hydrateAll(document, now());                 // the second boot
+      expect(timers).toHaveBeenCalledTimes(2);           // NO second mount
+      expect(spans().map((el) => el.childNodes.length)).toEqual(afterFirst);
+      for (const el of spans()) expect(el.textContent).toBe('(15m ago)');
+    } finally {
+      timers.mockRestore();
+    }
+  });
+});
+
 describe('mountBounded clears the mount before rendering', () => {
   // Preact's render() APPENDS into a container that already has children
   // (<b>NEW</b><span>SERVER</span>) and a null component leaves them alone;
