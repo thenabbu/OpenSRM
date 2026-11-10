@@ -1,4 +1,4 @@
-const CACHE_NAME = 'opensrm-v43';
+const CACHE_NAME = 'opensrm-v45';
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -7,6 +7,38 @@ self.addEventListener('install', e => {
     ).then(() => self.skipWaiting())
   );
 });
+
+// Precache the BUILT BUNDLE at activate time, from Vite's own manifest.
+//
+// Why here and not from the page: the page can only fetch a chunk through this
+// worker, and this worker only stores a chunk when it gets one from the NETWORK
+// (cache-first branch, cache miss path). A fetch issued once the entry has
+// already been served from cache therefore never populates anything. Doing it
+// in the worker is the one place the list is authoritative and the fetch is
+// guaranteed to reach the network.
+//
+// This is what makes offline actually paint: the entry (app-<hash>.js) and its
+// shared deps are imported by every island chunk, so ONE missing file fails
+// every dynamic import with "Failed to fetch dynamically imported module" —
+// exactly what happened while the shell, the netid and the rows were all fine.
+async function precacheBundle() {
+  try {
+    const res = await fetch('/static/dist/.vite/manifest.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const manifest = await res.json();
+    const files = Object.values(manifest)
+      .map(v => v && v.file)
+      .filter(f => typeof f === 'string' && /\.(js|css)$/.test(f));
+    const urls = [...new Set(files)].map(f => '/static/dist/' + f);
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(urls.map(async u => {
+      try {
+        const r = await fetch(u, { cache: 'reload' });
+        if (r.ok) await cache.put(u, r);
+      } catch (err) { /* one missing file degrades one island, not the app */ }
+    }));
+  } catch (err) { /* no manifest (dev build / first deploy): skip */ }
+}
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
@@ -20,6 +52,7 @@ self.addEventListener('activate', e => {
     }
     const keys = await caches.keys();
     await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await precacheBundle();
     await self.clients.claim();
   })());
 });
