@@ -93,6 +93,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  tests/e2e/test_dash_fit.py        (self-booting)"
   echo "  tests/e2e/test_dut_official_tt.py (self-booting)"
   echo "  bash tests/e2e/run_push_duts.sh   (boots 18185-18187 itself)"
+  echo "  bash scripts/offline_proof.sh     (own server on 18183, killed mid-run)"
   echo
   echo "== CI_ONLY (CI runs it, gates.sh cannot — with the reason)"
   printf '%s\n' "$CI_ONLY" | sed 's/^/  /'
@@ -171,6 +172,11 @@ else
   else
     skip "push DUTs (no docker)"
   fi
+  # Offline read path: boots its own server on 18183 and kills it mid-run, so it
+  # cannot share the ports above. Exits non-zero when any leg fails — assert that
+  # rather than trusting a parsed log line.
+  run_step "offline proof (offline_proof.sh)" env OUT=/tmp/offline-proof-$$.md \
+    bash scripts/offline_proof.sh
 fi
 
 finish

@@ -18,9 +18,15 @@
 name: Tests
 
 on:
-  # No `push:` trigger on purpose. On main this workflow runs ONLY as the
+  # No bare `push:` on main on purpose. On main this workflow runs ONLY as the
   # reusable job Build & Push gates on; a second standalone copy on the same
   # push was pure duplication.
+  #
+  # feat/preact-migration is the one exception: a long-lived branch that is not
+  # merging to main yet, so without this trigger its browser gates never run at
+  # all on push (a PR to main is what would otherwise carry them).
+  push:
+    branches: [feat/preact-migration]
   pull_request:
     branches: [main]
   workflow_call:
@@ -330,6 +336,16 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_dut_official_tt.py
+
+      # The offline read path: online visit writes the cache, then the SAME
+      # server is killed and the page must still paint. Boots its own server on
+      # 18183 (nothing above holds that port), so it needs no fixture here.
+      # The script exits non-zero when any leg fails, which is the whole point
+      # of this step — a gate that cannot fail is worse than no gate.
+      - name: Offline read path (scripts/offline_proof.sh)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: bash scripts/offline_proof.sh
 
       # Boots its own three gunicorn instances (18185 unconfigured /
       # 18186 push-enabled / 18187 same DB with push env stripped) and runs
