@@ -159,6 +159,39 @@ def t_sanitize_strips_unissued_glyphs():
     assert sanitize_captcha("") == ""
 
 
+# ── the regression that shipped broken: HTTP path never opened a scope ──────
+def t_http_login_path_opens_a_scope():
+    """INCIDENT: begin() lived only in scraper._do_login (the Playwright
+    fallback), so prod — which runs the pure-HTTP pipeline — staged nothing and
+    every real login wrote zero files while returning ok:true.
+
+    The guard: _login must open a scope, so an offer right after it lands.
+    """
+    import inspect
+
+    from app import http_scraper
+    src = inspect.getsource(http_scraper._login)
+    assert "captcha_dataset.begin()" in src, (
+        "http_scraper._login must open a captcha_dataset scope — without it the "
+        "pipeline capture silently writes nothing (this is the bug that shipped)")
+    # and the loop that calls _prepare must run INSIDE that scope, i.e. begin()
+    # appears before the retry loop in source order.
+    assert src.index("captcha_dataset.begin()") < src.index("for attempt in range"), (
+        "begin() must precede the captcha retry loop, or each attempt's staged "
+        "pair is dropped before _post_login can judge it")
+
+
+def t_offer_outside_scope_is_noop():
+    """The inverse control: with no scope, staging must do nothing. Together
+    with the test above this proves the guard is load-bearing, not decorative."""
+    _reset()
+    cds.clear()                     # no scope
+    cds.offer(PNG, "ghost1")
+    cds.commit()
+    cds.reject()
+    assert not os.path.exists(cds.dataset_dir()), "no scope -> nothing written"
+
+
 # ── the route ───────────────────────────────────────────────────────────────
 def t_route_auth_fails_closed():
     seed()
