@@ -146,6 +146,8 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_route_auth.py
       - name: test_comment_balance (no orphaned CSS comment)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_comment_balance.py
+      - name: test_captcha_dataset (captcha image+OCR pairs written only on a confirmed login)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_captcha_dataset.py
       - name: test_auto_sync (dashboard refreshes stale portal data)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_auto_sync.py
       - name: test_product_analytics (visit beacon + analytics recording)

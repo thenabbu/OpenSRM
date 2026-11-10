@@ -283,6 +283,43 @@ Two design notes worth knowing before adding a series:
   their own short-lived connection rather than using `db()`, so a scrape can
   never join an in-flight transaction or block a writer.
 
+## CAPTCHA dataset capture (off by default)
+
+Every successful portal login can keep the CAPTCHA image the portal served plus
+the OCR string that was submitted — a labelled dataset of REAL captchas for
+retraining/evaluating the solver. Nothing about the login path changes; capture
+is best-effort and can never fail a request.
+
+- **`CAPTCHA_DATASET=1`** turns it on (read per call, so no rebuild needed).
+  Unset/`0` = every entry point costs one env lookup.
+- Files land in `<DATA_DIR>/captcha-dataset/<ocr>.<png|jpg|…>` — flat, one pair
+  per file, e.g. `aywbmn.png`. That is `/app/data/captcha-dataset` inside the
+  container, i.e. the `opensrm-data` volume on the host.
+- **Only a confirmed success writes.** A wrong-password login carries a correct
+  captcha but says nothing about the solver, and the http pipeline answers
+  "retry" (same context, same image) 3 times, so the LAST attempt wins.
+- **Only inside a scrape scope.** A preflight solved while a visitor is still
+  typing is discarded if they never submit — that image was never validated.
+- Byte-identical pairs are deduped (sha256 of the image); a cap of 100 000
+  files writes a `.full` marker instead of filling the volume.
+- Each written pair also appends one `captcha_seen(hash, ts, source)` row, so
+  "captchas per hour/day" is queryable for pacing — no image, no netid.
+
+Manual drop-in for copies found outside the login path (another host, a
+browser extension, a probe): `POST /internal/captcha` with
+`{"image_b64","text","ext"}`, auth `X-Captcha-Token: $CAPTCHA_SECRET`
+(unset = endpoint off; deliberately a DIFFERENT secret from `METRICS_SECRET`).
+`GET /internal/captcha` returns `{enabled, dir, count, size_bytes}`.
+
+```bash
+docker exec -e CAPTCHA_DATASET=1 opensrm printenv CAPTCHA_DATASET   # sanity
+docker exec opensrm ls /app/data/captcha-dataset | head
+docker exec opensrm sh -c 'ls /app/data/captcha-dataset | wc -l'
+```
+
+Expected rate: **one pair per cold login**, so roughly one per account per
+session-expiry (every 2–7 days) — a few a day at current traffic, not a firehose.
+
 ## Observability stack (optional)
 
 `ops/observability/` in the repo is a self-contained metrics stack —

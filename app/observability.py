@@ -53,6 +53,85 @@ def healthz():
     return {"status": "ok"}
 
 
+CAPTCHA_HEADER = "X-Captcha-Token"
+CAPTCHA_DIR = "/app/data/captcha-dataset"   # same volume, host-visible path
+
+
+def _captcha_token_ok():
+    """Same fail-closed contract as internal_metrics, DIFFERENT secret
+    (CAPTCHA_SECRET): the harness that reads images must never hold the
+    metrics token, and vice versa."""
+    secret = os.environ.get("CAPTCHA_SECRET", "").strip()
+    got = request.headers.get(CAPTCHA_HEADER, "")
+    try:
+        ok = hmac.compare_digest(got.encode("utf-8"), secret.encode("utf-8"))
+    except UnicodeEncodeError:
+        ok = False
+    return bool(secret) and ok
+
+
+def internal_captcha_capture():
+    """The one entry point for copies outside the login path.
+
+    Two uses, both behind CAPTCHA_SECRET:
+      GET  -> {"ok", "enabled": CAPTCHA_DATASET, "dir", "count", "size_bytes"}
+      POST {"image_b64", "text", "ext"} -> {"ok", "path"} — writes one labelled
+              pair into the dataset dir. Deliberately does NOT go through
+              captcha_dataset.write() so it still works with the toggle off
+              (a collector harvesting on another host may want that).
+
+    Dir/limit guards copied from captcha_dataset (MAX_FILES, no traversal in
+    `text`, ext whitelist) — this route writes to disk on request, so it
+    validates its own input instead of trusting the caller.
+    """
+    if not _captcha_token_ok():
+        return _bare(401, "captcha auth failed — secret missing or wrong")
+    import base64 as _b64
+
+    from . import captcha_dataset as cds
+    d = cds.dataset_dir()
+    if request.method == "GET":
+        count = size = 0
+        try:
+            for _r, _dd, files in os.walk(d):
+                count += len(files)
+                for f in files:
+                    try:
+                        size += os.path.getsize(os.path.join(_r, f))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return {"ok": True, "enabled": cds.enabled(), "dir": d,
+                "count": count, "size_bytes": size}, 200
+    body = request.get_json(silent=True) or {}
+    text = body.get("text") if isinstance(body.get("text"), str) else ""
+    img_b64 = body.get("image_b64") if isinstance(body.get("image_b64"), str) else ""
+    ext = body.get("ext") if isinstance(body.get("ext"), str) else "png"
+    safe = "".join(c for c in text if 32 <= ord(c) < 127).replace("/", "_").strip()
+    if not safe or not img_b64 or ext not in ("png", "jpg", "gif", "svg", "webp"):
+        return _bare(400, "text, image_b64 and a whitelisted ext are required")
+    try:
+        raw = _b64.b64decode(img_b64, validate=True)
+    except Exception:
+        return _bare(400, "image_b64 is not valid base64")
+    if len(raw) > 256 * 1024:
+        return _bare(413, "image too large")
+    try:
+        os.makedirs(d, exist_ok=True)
+        files = sum(len(f) for _r, _dd, f in os.walk(d))
+        if files >= cds.MAX_FILES:
+            return _bare(507, "captcha dataset full")
+        path = os.path.join(d, f"{safe}.{ext}")
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, path)
+    except OSError as e:
+        return _bare(500, f"write failed: {e!r}")
+    return {"ok": True, "path": path}, 200
+
+
 def internal_metrics():
     """In-process sync/portal counters as Prometheus text (app/metrics.py).
 

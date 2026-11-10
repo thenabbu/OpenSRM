@@ -629,3 +629,17 @@ def jload(raw, default):
         log.warning("stored json wrong shape — returning default")
         return default
     return v
+
+
+# ── repository: captcha_seen ─────────────────────────────────────────
+def insert_captcha_seen(digest, source="http"):
+    """One row per CAPTCHA the solver got right. INSERT OR IGNORE: the digest
+    is the PRIMARY KEY, so a re-solved image simply does not double-count."""
+    with transaction() as c:
+        c.execute("INSERT OR IGNORE INTO captcha_seen(hash, source) VALUES(?,?)",
+                  (digest[:32], source[:16]))
+
+
+def captcha_seen_since(ts):
+    return _read("SELECT COUNT(*) AS n, MIN(ts) AS lo FROM captcha_seen WHERE ts >= ?",
+                 (int(ts),), one=True)
