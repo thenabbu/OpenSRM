@@ -92,16 +92,25 @@ def main():
         # Second load: the worker can now serve the shell and its own chunks,
         # and warmShells()/precacheBundle() have had a chance to run.
         page.reload(wait_until="domcontentloaded")
-        page.wait_for_timeout(12000)
-
-        # Poll: islands hydrate sequentially-ish after the boot IIFE, and a
-        # fresh profile has a cold HTTP cache, so the first paint can lag.
-        rows_online = 0
-        for _ in range(30):
-            rows_online = page.locator(ROWS).count()
-            if rows_online:
+        # DETERMINISTIC, not a timer. Hydration has settled when every island
+        # carries a completion marker of its own (set by the app, not by this
+        # test): `data-mounted-at` on the cache branch, `data-hydrated` stamped
+        # by the component itself. Poll until no island is unfinished, with a
+        # hard ceiling so a page that never hydrates fails loudly instead of
+        # being silently measured mid-boot.
+        hydrated = False
+        for _ in range(60):
+            st = page.evaluate(
+                "()=>{const is=[...document.querySelectorAll('[data-island]')];"
+                "return {n:is.length, done:is.filter(e=>e.dataset.mountedAt||e.dataset.hydrated).length};}")
+            if st["n"] and st["done"] == st["n"]:
+                hydrated = True
                 break
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(250)
+        chk("online: hydration settled without an exception",
+            hydrated, f"{st['done']}/{st['n']} islands finished")
+
+        rows_online = page.locator(ROWS).count()
         chk("online: island painted rows", rows_online > 0, f"{rows_online} rows")
 
         cache_map = page.evaluate(CACHES)
@@ -121,23 +130,31 @@ def main():
 
         # ── 2. offline ──────────────────────────────────────────────────────
         # warmShells() runs AFTER hydration and fetches each /shell/<panel>.
-        # Killing the server the instant the online checks pass races it: the
-        # shells are part-written, offline has no markup to serve, and the
-        # reload looks like "offline is broken" when it is only early.
-        page.wait_for_timeout(6000)
+        # Killing the server before the shells are cached races it: offline has
+        # no markup to serve and the reload looks like "offline is broken" when
+        # it is only early. Wait for the CONDITION (shells cached), not a timer.
+        for _ in range(40):
+            if page.evaluate(
+                    "async()=>{const ks=await caches.keys();let n=0;"
+                    "for(const k of ks){const c=await caches.open(k);"
+                    "n+=(await c.keys()).filter(r=>r.url.includes('/shell/')).length;}return n;}"):
+                break
+            page.wait_for_timeout(250)
         if a.kill_cmd:
             subprocess.run(a.kill_cmd, shell=True, check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(4)          # let the socket actually close
 
         page.reload(wait_until="domcontentloaded")
-        page.wait_for_timeout(12000)
+        # Same deterministic settle as the online leg: wait for the islands to
+        # announce they are done. Offline the marker is `data-mounted-at` (the
+        # cache branch) — `data-hydrated` also appears, both are app-stamped.
         rows_off = 0
-        for _ in range(30):
+        for _ in range(60):
             rows_off = page.locator(ROWS).count()
             if rows_off:
                 break
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(250)
         err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
         print(f"    offline diag: {err}")
         dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
@@ -169,7 +186,15 @@ def main():
                 "async()=>{try{return (await indexedDB.databases())"
                 ".map(x=>x.name).join(',')||'NONE';}catch(e){return 'NONE';}}")
             chk("logout: IndexedDB database is gone", dbs == "NONE", dbs)
-            left = sum(page.evaluate(CACHES).values())
+            # `caches` only exists on a secure-context document. After logout the
+            # page can be a /login redirect where the API is absent, and an
+            # uncaught ReferenceError here killed the whole run — the remaining
+            # checks (green on restore) never executed. Probe defensively.
+            cache_map = page.evaluate(
+                "async()=>{if(!self.caches) return {__nocaches:0};"
+                "const ks=await caches.keys();const o={};"
+                "for(const k of ks){const c=await caches.open(k);o[k]=(await c.keys()).length;}return o;}")
+            left = sum(cache_map.values())
             chk("logout: cached shells cleared", left < 5, f"{left} entries left")
             chk("logout: redirected to login", "/login" in page.url, page.url)
 
