@@ -1,20 +1,139 @@
 {
+  "_design-m1uS3-4X.js": {
+    "file": "assets/design-m1uS3-4X.js",
+    "name": "design"
+  },
+  "_jsxRuntime.module-BjAOCrPQ.js": {
+    "file": "assets/jsxRuntime.module-BjAOCrPQ.js",
+    "name": "jsxRuntime.module",
+    "imports": [
+      "src/main.ts"
+    ]
+  },
   "src/islands/sync-age.tsx": {
-    "file": "assets/sync-age-ISd5Yyfm.js",
+    "file": "assets/sync-age-C0TieTnT.js",
     "name": "sync-age",
     "src": "src/islands/sync-age.tsx",
-    "isDynamicEntry": true
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ]
   },
   "src/main.ts": {
-    "file": "assets/app-CCFs4L53.js",
+    "file": "assets/app-1bwGfUH3.js",
     "name": "app",
     "src": "src/main.ts",
     "isEntry": true,
     "dynamicImports": [
-      "src/islands/sync-age.tsx"
+      "src/islands/sync-age.tsx",
+      "src/panels/academics/AcademicsPanel.tsx",
+      "src/panels/attendance/AttendancePanel.tsx",
+      "src/panels/campus/CampusPanel.tsx",
+      "src/panels/dashboard/DashboardPanel.tsx",
+      "src/panels/fees/FeesPanel.tsx",
+      "src/panels/marks/MarksPanel.tsx",
+      "src/panels/settings/SettingsPanel.tsx",
+      "src/panels/timetable/TimetablePanel.tsx",
+      "src/panels/tools/ToolsPanel.tsx"
     ],
     "css": [
       "assets/app-Dw5KSv9_.css"
+    ]
+  },
+  "src/panels/academics/AcademicsPanel.tsx": {
+    "file": "assets/AcademicsPanel-BROMmpLG.js",
+    "name": "AcademicsPanel",
+    "src": "src/panels/academics/AcademicsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/attendance/AttendancePanel.tsx": {
+    "file": "assets/AttendancePanel-CJRufn-2.js",
+    "name": "AttendancePanel",
+    "src": "src/panels/attendance/AttendancePanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/campus/CampusPanel.tsx": {
+    "file": "assets/CampusPanel-b7J8ZsKo.js",
+    "name": "CampusPanel",
+    "src": "src/panels/campus/CampusPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/dashboard/DashboardPanel.tsx": {
+    "file": "assets/DashboardPanel-ZSiWM1-S.js",
+    "name": "DashboardPanel",
+    "src": "src/panels/dashboard/DashboardPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/fees/FeesPanel.tsx": {
+    "file": "assets/FeesPanel-_AzOJ2mq.js",
+    "name": "FeesPanel",
+    "src": "src/panels/fees/FeesPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/marks/MarksPanel.tsx": {
+    "file": "assets/MarksPanel-zjRczNFp.js",
+    "name": "MarksPanel",
+    "src": "src/panels/marks/MarksPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/settings/SettingsPanel.tsx": {
+    "file": "assets/SettingsPanel-BniUOi7b.js",
+    "name": "SettingsPanel",
+    "src": "src/panels/settings/SettingsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/timetable/TimetablePanel.tsx": {
+    "file": "assets/TimetablePanel-BX2OoRO7.js",
+    "name": "TimetablePanel",
+    "src": "src/panels/timetable/TimetablePanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_jsxRuntime.module-BjAOCrPQ.js"
+    ]
+  },
+  "src/panels/tools/ToolsPanel.tsx": {
+    "file": "assets/ToolsPanel-Dp4gp19W.js",
+    "name": "ToolsPanel",
+    "src": "src/panels/tools/ToolsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_design-m1uS3-4X.js",
+      "_jsxRuntime.module-BjAOCrPQ.js"
     ]
   }
 }

@@ -1,0 +1,1 @@
+import{t as e}from"./app-1bwGfUH3.js";var t=`Syncing…`,n=`data-hydrated`;function r({el:r,props:i}){let a=()=>{if(r.textContent===t)return;let n=i.busy??e(i.ts,Date.now()/1e3);r.textContent=n,r.classList.toggle(`hidden`,!n),r.title=i.full};return a(),r.setAttribute(n,`1`),window.setInterval(a,6e4),null}export{r as default};
