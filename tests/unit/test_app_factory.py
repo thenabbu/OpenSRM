@@ -123,9 +123,9 @@ EXPECTED = {
     "/api/attendance", "/api/fees", "/api/campus", "/api/academics",
     # P7: island-shaped feeds for the panels whose legacy endpoints carry a
     # different payload (raw JSON / the write API the user POSTs through)
-    "/api/marks/island", "/api/timetable/island", "/api/tools/island",
+    "/api/attendance/island", "/api/marks/island", "/api/timetable/island", "/api/tools/island",
     # offline shell: the PII-free markup the service worker caches
-    "/shell/", "/shell/attendance", "/shell/timetable", "/shell/marks",
+    "/shell/", "/shell/dashboard", "/shell/attendance", "/shell/timetable", "/shell/marks",
     "/shell/campus", "/shell/academics", "/shell/fees", "/shell/tools",
     "/shell/settings",
     # P3.1: nine real panel routes
@@ -173,10 +173,12 @@ EXPECTED_EP = {
     "/api/fees": {("api_fees", "api_fees")},
     "/api/campus": {("api_campus", "api_campus")},
     "/api/academics": {("api_academics", "api_academics")},
+    "/api/attendance/island": {("api_attendance_island", "api_attendance_island")},
     "/api/marks/island": {("api_marks_island", "api_marks_island")},
     "/api/timetable/island": {("api_timetable", "api_timetable")},
     "/api/tools/island": {("api_tools", "api_tools")},
     "/shell/": {("shell_dashboard", "shell_dashboard")},
+    "/shell/dashboard": {("shell_dashboard", "shell_dashboard")},
     "/shell/attendance": {("shell_attendance", "shell_attendance")},
     "/shell/timetable": {("shell_timetable", "shell_timetable")},
     "/shell/marks": {("shell_marks", "shell_marks")},

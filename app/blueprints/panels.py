@@ -19,7 +19,7 @@ Contract, identical on all four:
 from flask import jsonify
 
 from ..app import get_current_user
-from ..views import marks_island, timetable_island, tools_island
+from ..views import attendance_island, marks_island, timetable_island, tools_island
 from ..views.dashboard import panel_data
 from ..views.timetable import _day_slots, _tt_grid
 from . import FlatBlueprint
@@ -106,7 +106,26 @@ def api_tools():
                   "no tools available")
 
 
+def api_attendance_island():
+    """/api/attendance/island — exactly what the attendance ISLAND validates.
+
+    Separate from /api/attendance on purpose. That one returns the panel slice
+    with its extra fields (`monthly`, `hourwise`, `timetable`, `stop`, ...) and
+    its schema is `.strict()`, so folding this payload into it would break every
+    existing consumer. The offline cache needs the ISLAND shape (label, nudge,
+    pole, tint — computed by attendance_island.props()), and that is all this
+    route returns. One producer, no re-derivation in TypeScript.
+    """
+    # props() returns the bare course list; the island's zod schema wraps it
+    # under `courses` (attendance_island.block() wraps it the same way for the
+    # server paint), so this must wrap too — otherwise the client validates
+    # `{courses: [...]}` against an array and rejects every cached row.
+    return _panel(lambda vm: {"courses": attendance_island.props(vm["courses"])},
+                  "no attendance yet — sync first")
+
+
 bp.add_url_rule("/api/attendance", methods=["GET"], view_func=api_attendance)
+bp.add_url_rule("/api/attendance/island", methods=["GET"], view_func=api_attendance_island)
 bp.add_url_rule("/api/fees", methods=["GET"], view_func=api_fees)
 bp.add_url_rule("/api/campus", methods=["GET"], view_func=api_campus)
 bp.add_url_rule("/api/academics", methods=["GET"], view_func=api_academics)

@@ -119,10 +119,32 @@ const academicsProps = (data: unknown): AcademicsProps => {
  * `propsFromCache` still runs the island's zod schema over the result, so a
  * server-side shape change is a cache MISS rather than a broken paint.
  */
+/**
+ * Project a cached `/api/<panel>` payload onto the island's own schema.
+ *
+ * The two are NOT the same object. `/api/attendance` returns the whole panel
+ * slice (courses + monthly + hourwise + timetable + period + has_budgets); the
+ * attendance island only wants `{courses}`. Validating the api payload against
+ * the island schema therefore fails on every offline load — which read as
+ * "cache miss" and painted nothing.
+ *
+ * `pick` names the island's top-level keys, so the projection says out loud
+ * which part of the api payload the island consumes. If a key is missing it is
+ * a real shape drift and we throw, rather than passing a partial object through.
+ */
 const asIslandProps =
-  <T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T } }) =>
+  <T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T } }, pick?: readonly string[]) =>
   (data: unknown): T => {
-    const parsed = schema.safeParse(data);
+    let candidate: unknown = data;
+    if (pick) {
+      const src = (data ?? {}) as Record<string, unknown>;
+      const missing = pick.filter((k) => !(k in src));
+      if (missing.length) throw new TypeError(`cached payload is missing ${missing.join(', ')}`);
+      // Keep the KEY: the island schema is an object (`{courses: [...]}`), so
+      // picking must yield `{courses: src.courses}`, not the bare array.
+      candidate = Object.fromEntries(pick.map((k) => [k, src[k]]));
+    }
+    const parsed = schema.safeParse(candidate);
     if (!parsed.success) throw new TypeError('cache payload is not island-shaped');
     return parsed.data as T;
   };
@@ -165,7 +187,11 @@ export function propsFromCache(panel: Panel, data: unknown): Record<string, unkn
   try {
     const props = project(data);
     return schema.safeParse(props).success ? (props as Record<string, unknown>) : undefined;
-  } catch {
+  } catch (e) {
+    // Was a silent `return undefined`, which made an offline cache miss
+    // indistinguishable from "this panel has no projection". A cache that reads
+    // but cannot project is a BUG, not a normal miss — say so.
+    console.warn(`[props] projection failed for ${panel}`, e instanceof Error ? e.message : e);
     return undefined;
   }
 }

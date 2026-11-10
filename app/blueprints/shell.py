@@ -78,8 +78,21 @@ def api_shell(panel: str = "dashboard"):
         return Response('{"ok":false,"error":"not logged in"}', status=401,
                         mimetype="application/json")
 
-    resp = _shell(panel)
-    body = resp.get_data(as_text=True) if hasattr(resp, "get_data") else str(resp)
+    # A shell must NEVER 404. `presentation()` GATES a panel the student has no
+    # data for (campus with show=False, empty fees, ...) by raising abort(404) —
+    # correct for the real page, fatal here: warmShells would cache nothing and
+    # the service worker would have no shell for that panel offline. So a gated
+    # panel falls back to the dashboard shell: same chrome, correct nav, no data.
+    from werkzeug.exceptions import HTTPException  # noqa: PLC0415
+
+    try:
+        resp = _shell(panel)
+        body = resp.get_data(as_text=True) if hasattr(resp, "get_data") else str(resp)
+    except HTTPException:
+        if panel == "dashboard":
+            raise
+        resp = _shell("dashboard")
+        body = resp.get_data(as_text=True) if hasattr(resp, "get_data") else str(resp)
 
     leaked = _NETID_LIKE.search(body)
     if leaked:
@@ -136,6 +149,10 @@ def shell_settings():
 
 
 bp.add_url_rule("/shell/", view_func=shell_dashboard)
+# /shell/dashboard must exist too: the service worker asks for the panel it is
+# navigating to, and "dashboard" is a panel name like any other. Mapping it only
+# to `/shell/` meant the SW's fallback 404'd and warmShells cached nothing.
+bp.add_url_rule("/shell/dashboard", view_func=shell_dashboard)
 bp.add_url_rule("/shell/attendance", view_func=shell_attendance)
 bp.add_url_rule("/shell/timetable", view_func=shell_timetable)
 bp.add_url_rule("/shell/marks", view_func=shell_marks)

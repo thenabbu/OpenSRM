@@ -2,7 +2,7 @@ import { type z } from 'zod';
 import {
   type ParseResult,
   parseAcademicsResponse,
-  parseAttendanceResponse,
+  parseAttendanceIslandResponse,
   parseCampusResponse,
   parseFeesResponse,
   parseMarksResponse,
@@ -43,8 +43,13 @@ const schemaError = <T>(r: z.ZodSafeParseResult<T>): ParseOut<T> =>
  *  four unsound casts. */
 function parsePanel(panel: Panel, json: unknown): ParseOut<unknown> {
   switch (panel) {
+    // Attendance is the one panel whose cached payload is the ISLAND shape
+    // (`{courses}` with its derived label/nudge/pole), because /api/attendance
+    // returns a wider slice than the island schema accepts. Validating it with
+    // the panel parser failed every time, so the cache never filled — the
+    // rows were fine, the gate was pointed at the wrong schema.
     case 'attendance':
-      return normalise(parseAttendanceResponse(json));
+      return normalise(parseAttendanceIslandResponse(json));
     case 'fees':
       return normalise(parseFeesResponse(json));
     case 'campus':
@@ -59,7 +64,10 @@ function parsePanel(panel: Panel, json: unknown): ParseOut<unknown> {
 }
 
 const ENDPOINT: Record<Panel, string> = {
-  attendance: '/api/attendance',
+  // The ISLAND shape, not the panel slice: the cache stores what the island's
+  // zod schema validates, and /api/attendance carries extra strict-schema
+  // fields (monthly/hourwise/timetable) the island never reads.
+  attendance: '/api/attendance/island',
   fees: '/api/fees',
   campus: '/api/campus',
   academics: '/api/academics',

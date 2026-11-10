@@ -6,6 +6,12 @@ export default defineConfig({
   plugins: [preact(), tailwindcss()],
   // React-shaped libs resolve to preact/compat (accepted ~4 KB gzip trade)
   resolve: { alias: { react: 'preact/compat', 'react-dom': 'preact/compat' } },
+  // The bundle is served from /static/dist/ (app/views/partials/theme.html
+  // points the module at asset_dist('app')). Without this, Vite emits dynamic
+  // imports as '/assets/Chunk.js', which Flask does not serve — every island
+  // chunk 404s and the app silently renders server markup only. That is why the
+  // P6/P7 islands never hydrated in a real browser.
+  base: '/static/dist/',
   build: {
     outDir: '../app/static/dist',
     emptyOutDir: true,

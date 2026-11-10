@@ -7,7 +7,7 @@ import { loadPanel } from './data/load';
 import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
-import { bootstrapSession, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
+import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 import { warmShells } from './session/shell';
 
 /**
@@ -34,6 +34,14 @@ export const diag = {
   warn(msg: string, extra?: unknown): void {
     this.warned.push(msg);
     console.warn(`[island] ${msg}`, extra ?? '');
+    // Also on window: the offline DUT runs in a real browser and has no other
+    // way to see why an island declined to paint.
+    try {
+      const w = window as unknown as { __osrmDiag?: string[] };
+      (w.__osrmDiag ||= []).push(msg);
+    } catch {
+      // not a browser context (unit tests) — the array above is enough.
+    }
   },
 };
 const warnedUnknown = new Set<string>();
@@ -138,8 +146,8 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   // paint if it mounted, nothing otherwise. A throw inside Preact is caught by
   // mountBounded, which restores the pre-render children either way.
   const netid = currentNetid();
-  if (!netid) return;                        // no owner => cache nothing, reuse nothing
-  if (!hasIslandProjection(name)) return;    // attendance/marks/timetable: no island yet
+  if (!netid) { diag.warn(`${name}: no netid, cache skipped`); return; }
+  if (!hasIslandProjection(name)) { diag.warn(`${name}: no projection, cache skipped`); return; }
 
   const outcome = await loadPanel(name, { netid, groupKey: sessionGroupKey() });
   if (!outcome.ok) {
@@ -173,14 +181,18 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
 //
 // P7.1: adopt the netid BEFORE hydrating — every cache read and the logout wipe
 // key on it, and <body data-netid> is the only place the server publishes it.
-bootstrapSession(document);
-void hydrateAll(document, Date.now() / 1000);
+// Async boot: on a real page this resolves immediately from <body data-netid>;
+// on a SHELL (offline, or served by the service worker) that attribute is
+// deliberately absent, so it falls back to the netid remembered in Dexie.
+// Hydration MUST wait for it — an island hydrating with no netid reads the
+// cache with no key and paints nothing, which is the "offline shows an empty
+// panel" bug in miniature.
+void (async () => {
+  await bootstrapSessionOffline(document);
+  await hydrateAll(document, Date.now() / 1000);
+  void warmShells();
+})();
 
-// Offline support: cache this student's panel shells once the page is up, so a
-// later offline visit has markup to boot into. Safe to cache because the shell
-// carries no personal values; the rows live in IndexedDB keyed by netid and are
-// wiped on logout. Fire-and-forget: a failure must never affect the live page.
-void warmShells();
 
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped
 // IndexedDB wipe done first (capped, so a hung wipe cannot block the link).

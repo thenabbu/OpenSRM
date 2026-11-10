@@ -1,3 +1,4 @@
+import { attendanceProps } from '../panels/attendance/contract';
 import { z } from 'zod';
 import { makeParser } from './envelope';
 
@@ -107,3 +108,10 @@ export type Timetable = z.infer<typeof Timetable>;
 export type AttendanceData = z.infer<typeof AttendanceData>;
 
 export const parseAttendanceResponse = makeParser(AttendanceData);
+
+/** The attendance ISLAND's payload — /api/attendance/island.
+ *
+ *  Distinct from AttendanceData on purpose: that is the /api/attendance panel
+ *  slice with its `.strict()` schema. The island needs only the courses, each
+ *  carrying the derived label/nudge/pole the island paints. */
+export const parseAttendanceIslandResponse = makeParser(attendanceProps);

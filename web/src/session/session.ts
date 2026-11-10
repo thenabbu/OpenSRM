@@ -1,4 +1,4 @@
-import { wipeAll } from '../db';
+import { SCHEMA_VERSION, db, wipeAll, writeMeta } from '../db';
 import { clearShells } from './shell';
 
 /**
@@ -29,19 +29,128 @@ export const currentNetid = (): string | undefined => netid;
  *
  * Returns the netid it adopted, or undefined when the page carried none.
  */
+const NETID_RE = /^[a-z0-9]{2,20}$/;
+
+/** Remember which student this device belongs to, so an OFFLINE boot can read
+ *  their rows. The shell is deliberately PII-free — it carries no
+ *  `data-netid` — which is exactly right for the HTTP cache but leaves the app
+ *  with no cache key when the server is unreachable. So the netid is kept in
+ *  Dexie's `meta` store instead: device-local, alongside the rows it keys, and
+ *  cleared by the same logout wipe. It never leaves the device. */
+async function rememberNetid(n: string): Promise<void> {
+  try {
+    const existing = await db.meta.get(n);
+    // Two rows-invariant rules, both learned the hard way:
+    //  * `last_sync` must NOT be emptied. evictOldest() picks its victim with
+    //    Math.min(...Object.values(last_sync)); on an empty object that is
+    //    Infinity, so a row written with `last_sync: {}` becomes the permanent
+    //    eviction victim and the first quota retry wipes the cache.
+    //  * A row must still EXIST, or an offline boot has no netid to key the
+    //    cache with (that was the "(none)" above).
+    // So: seed one panel's timestamp — truthful, since this runs after the
+    // page has the student's session — and keep every other field as found.
+    const seed = existing?.last_sync && Object.keys(existing.last_sync).length
+      ? existing.last_sync
+      : { session: Date.now() };
+    await writeMeta({
+      netid: n,
+      last_sync: seed,
+      schemaVersion: existing?.schemaVersion ?? SCHEMA_VERSION,
+      flags: { ...(existing?.flags ?? {}), owner: true },
+    });
+  } catch {
+    // meta is best-effort: a failure only costs the offline cache key.
+  }
+}
+
+/** Recover the remembered netid on an offline boot. Returns it only when
+ *  exactly one student is remembered — two means a shared device, and guessing
+ *  would hand one student another's rows. */
+async function recallNetid(): Promise<string | undefined> {
+  try {
+    const metas = await db.meta.toArray();
+    const ids = metas.map((m) => m.netid).filter((n) => typeof n === 'string' && NETID_RE.test(n));
+    return ids.length === 1 ? ids[0] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function bootstrapSession(doc: Document = document): string | undefined {
   const raw = doc.body?.dataset.netid ?? '';
   const clean = raw.trim().toLowerCase();
   // Same grammar the server validates (app/app.py): lowercase alnum, 2-20.
-  setNetid(/^[a-z0-9]{2,20}$/.test(clean) ? clean : undefined);
+  if (NETID_RE.test(clean)) {
+    setNetid(clean);
+    void rememberNetid(clean);
+    return netid;
+  }
+  setNetid(undefined);
   return netid;
+}
+
+/** Async boot for the case the sync path cannot cover: a SHELL page (offline,
+ *  or served from the SW) carries no `data-netid`, so the sync bootstrap above
+ *  finds nothing and every island would read the cache with no key. This falls
+ *  back to the remembered netid. Safe by construction: it only returns when
+ *  exactly one student is remembered, and it is the same key the rows use. */
+export async function bootstrapSessionOffline(doc: Document = document): Promise<string | undefined> {
+  const sync = bootstrapSession(doc);
+  if (sync) return sync;
+  const remembered = await recallNetid();
+  console.warn(`[boot] shell page: remembered netid = ${remembered ?? '(none)'}`);
+  if (remembered) setNetid(remembered);
+  // The per-group stores need their key too; without it the cache read misses
+  // even though the rows are present (this is what made offline "work" but
+  // paint nothing).
+  recalledGroupKey = await recallGroupKey();
+  return remembered;
 }
 
 /** Group key for the per-group stores (timetable/attendance/marks). Absent in
  *  the page today, so every per-group read uses the '' bucket the server writes
  *  until a page emits one — read here, never invented by a call site. */
+/** Group key recovered from the last online boot, for a SHELL page.
+ *  Same reason as the netid: the per-group stores are keyed `[netid, groupKey]`,
+ *  so an offline read with the wrong key is a cache miss even though the rows
+ *  are sitting right there. Remembered next to the netid in `meta`. */
+let recalledGroupKey = '';
+
 export function sessionGroupKey(doc: Document = document): string {
-  return (doc.body?.dataset.groupKey ?? '').trim();
+  const live = (doc.body?.dataset.groupKey ?? '').trim();
+  if (live) {
+    if (live !== recalledGroupKey) {
+      recalledGroupKey = live;
+      void rememberGroupKey(live);
+    }
+    return live;
+  }
+  return recalledGroupKey;
+}
+
+async function rememberGroupKey(gk: string): Promise<void> {
+  try {
+    const metas = await db.meta.toArray();
+    const owner = metas.length === 1 ? metas[0] : undefined;
+    if (!owner) return;                      // ambiguous device: store nothing
+    await writeMeta({
+      ...owner,
+      flags: { ...(owner.flags ?? {}), groupKey: gk },
+    });
+  } catch {
+    // best-effort, same as the netid
+  }
+}
+
+async function recallGroupKey(): Promise<string> {
+  try {
+    const metas = await db.meta.toArray();
+    if (metas.length !== 1) return '';
+    const gk = metas[0]?.flags?.['groupKey'];
+    return typeof gk === 'string' ? gk : '';
+  } catch {
+    return '';
+  }
 }
 /** The wipe must never outlive the navigation it blocks. */
 export const WIPE_CAP_MS = 1500;
