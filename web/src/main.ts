@@ -141,8 +141,15 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   // nothing, and on a slow response a strictly worse paint than what the user
   // already had.
   if (parsed.success) {
+    // The server paint is authoritative: mount it and STOP. Falling through to
+    // the cache branch re-entered mountBounded on the same element, and because
+    // Preact renders on a microtask the two renders interleaved — the first
+    // painted 8 rows, the second reconciled against it and left 0. Measured
+    // exactly as ["children=8","children=0"] on one element.
     mountBounded(name, Comp, el, parsed.data, now);
-  } else if (!warnedProps.has(name)) {
+    return;
+  }
+  if (!warnedProps.has(name)) {
     warnedProps.add(name);
     diag.warn(`"${name}" invalid props — trying the cache`, parsed.error.issues);
   }
@@ -177,15 +184,26 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   }
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
-  // Guard on the ELEMENT, not just an in-memory Set. The module is re-evaluated
-  // on each navigation, so a WeakSet resets while the element persists — and
-  // rendering twice into one container makes Preact reconcile the new tree
-  // against the old and paint NOTHING. That was the 8-then-0 alternation.
-  // Checking `data-hydrated` alone is wrong: the SERVER paint is what gets
-  // replaced, and a fresh page's mount is not marked yet, so only the WeakSet
-  // plus the render-time claim is correct here.
-  if (claimed.has(el)) return;
-  claimed.add(el);
+  // Guard on the ELEMENT ITSELF, not on module memory. This module is evaluated
+  // more than once per page load (the worker serves the shell, then the real
+  // document boots), so a WeakSet is fresh while the mount element is the SAME
+  // node. Rendering twice into one container makes Preact reconcile the second
+  // tree against the first and paint NOTHING — measured as exactly
+  // ["children=8", "children=0"] on one element.
+  //
+  // A fingerprint of what was rendered, on the element.
+  // `data-hydrated` alone is wrong — the component stamps it on ITS first mount,
+  // so a page whose first boot ran before the data arrived then refuses the
+  // second boot that has the data. Record the SOURCE and a cheap fingerprint:
+  // same data on a re-boot is a no-op, different data still renders.
+  // An element is mounted at most once, period. The earlier fingerprint idea
+  // let a second boot re-render when the payload differed by a byte (server
+  // props vs cache are not identical), and Preact then reconciled the new tree
+  // against the old and painted nothing. Any second mount into the same
+  // container is wrong: the content on screen came from ONE of the two paths
+  // and is already correct.
+  if (el.dataset.mountedAt) return;
+  el.dataset.mountedAt = outcome.source;
   mountBounded(name, Comp, el, props, now);
   // P7.2: label a cache-served mount with its age, so "what we had earlier"
   // never reads as "live". One helper for every island (data/stale.ts).
@@ -193,6 +211,7 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
 }
 
 export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
+
   // SEQUENTIAL. Nine concurrent dynamic imports on a cold profile (and on a cold
   // service worker) race each other: the browser's connection budget is small and
   // a chunk arriving late rejects with "Failed to fetch dynamically imported
