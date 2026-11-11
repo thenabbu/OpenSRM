@@ -46,11 +46,19 @@ Current text, lines 161-174:
 | 167 | `dashboard` | composes several panels rather than one `/api` feed |
 | **168-174** | **`tools`** | **"has an endpoint but no store, and is DELIBERATELY left that way: … a permission map that can only go stale, never self-correct offline"** |
 
-That comment was itself *rewritten by this task* (commit recorded below), so it is
-the conclusion, not the premise. The **original** text at 168-171, which is what
-this decision had to argue from, read: *"`tools` has no Dexie store in
-`RECORD_SCHEMA`, so there is nowhere to write what /api/tools/island returns.
-Adding the store is a schema migration, not a projection."*
+That comment is the *conclusion*, not the premise. It was rewritten by `811e753`
+(P7.10, the offline-test card) — **not** by this task — when that commit made the
+docblock point here. The **original** text, which is what this decision had to
+argue from, read:
+
+```
+ *   - `tools` has no Dexie store in `RECORD_SCHEMA`, so there is nowhere to
+ *     write what /api/tools/island returns. Adding the store is a schema
+ *     migration, not a projection — that is why the endpoint exists but this
+ *     map does not list it. */
+```
+
+(`git show 811e753^:web/src/data/props.ts | sed -n '161,174p'`.)
 
 Note the asymmetry in the original, and it is the whole decision: `settings` is
 excluded because there is *nothing to fetch*. `tools` was excluded only because
@@ -169,7 +177,9 @@ and both are now documented here rather than left as an unexplained hole in
 | tools route 404s on empty | `tools_island.py:6` + `panels.py:103-106` | `_panel(..., "no tools available")` |
 | settings payload = identity block | `sed -n '1,10p' web/src/panels/settings/contract.ts` | "the only data is the personal details collapse … filtered and formatted server-side" |
 
-Commits: `27731b2` (this note) · `props.ts` docblock updated in the same task to
-cite it. "Argument 1" of the prior timed-out run drafted the note but left it
-quoting the *pre-decision* `props.ts` text; that quote and the line refs were
-corrected here against the tree.
+Commits: `27731b2` (this note) · `be978e9` (the expansion to the current text —
+swept in with the apple-touch-icon fix, not a P8.3 commit). `props.ts`'s docblock
+was changed by `811e753`, a *separate* card: **P8.3 changed no source file**, which
+is the point of a "no store" decision. The `version(1)`→`version(2)` guard in
+`web/src/db/db.test.ts` already exists and passes (11/11), so no store was added
+and no migration was run.
