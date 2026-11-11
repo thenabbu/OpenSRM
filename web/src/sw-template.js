@@ -82,7 +82,14 @@ registerRoute(
     try {
       return await fetch(request);
     } finally {
-      caches.delete(CACHE_NAME);
+      // Drop every cache this origin wrote, not just CACHE_NAME. The shells live
+      // in 'opensrm-shell' (web/src/session/shell.ts:30) and the precache in a
+      // workbox-precache-* key — deleting only CACHE_NAME left a logged-out
+      // device able to load the app's panels offline. The shells carry no PII
+      // (shell() renders them for every user identically, settings excluded),
+      // but 'logout leaves no trace' has to mean all of it, or it is not true.
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
       self.registration.pushManager.getSubscription()
         .then((s) => (s ? s.unsubscribe().catch(() => {}) : null))
         .catch(() => {});
