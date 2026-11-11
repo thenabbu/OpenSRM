@@ -96,7 +96,7 @@ function Budgets({ budgets }: { budgets: P['budgets'] }) {
         <span class="wlabel !mb-0">Attendance</span>
         <span class="text-[11px] text-base-content/50">to 75%</span>
       </div>
-      <div class="widget-scroll">
+      <div class="widget-scroll" tabindex={0} role="group" aria-label="Scrollable list">
         <ul>
           {budgets.map(([name, val, risk]) => (
             <li class="flex items-baseline gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
@@ -174,7 +174,7 @@ function Exams({ exams }: { exams: NonNullable<P['exams']> }) {
           )}
         </span>
       </div>
-      <div class="widget-scroll">
+      <div class="widget-scroll" tabindex={0} role="group" aria-label="Scrollable list">
         <ul>
           {exams.rows.map((e, i) => (
             <li key={i} class="flex items-start gap-3 py-2 border-t border-base-300 first:border-t-0 first:pt-0">
@@ -210,7 +210,7 @@ function Teachers({ teachers, fb_plan }: { teachers: P['teachers']; fb_plan: boo
   return (
     <div class="wbox rounded-box p-4">
       <div class="wlabel">Teachers</div>
-      <div class="widget-scroll">
+      <div class="widget-scroll" tabindex={0} role="group" aria-label="Scrollable list">
         <ul>
           {teachers.map((g, i) => (
             <li key={i} class="py-2 border-t border-base-300 first:border-t-0 first:pt-0">

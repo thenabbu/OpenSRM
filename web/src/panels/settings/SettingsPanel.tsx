@@ -29,7 +29,7 @@ function Cell({ d }: { d: Detail }) {
 function GroupBlock({ g }: { g: Group }) {
   return (
     <div class={COLLAPSE}>
-      <input type="checkbox" />
+      <input type="checkbox" aria-label={`Toggle ${g.title}`} />
       <div class={TITLE}>
         <span>{g.title}</span>
         <span class="badge badge-sm">{g.items.length}</span>
@@ -48,7 +48,7 @@ export function PersonalDetails({ props }: { props: unknown }) {
   const { personal, count } = props as SettingsProps;
   return (
     <div class={COLLAPSE} id="personal-details">
-      <input type="checkbox" />
+      <input type="checkbox" aria-label="Toggle personal details" />
       <div class={TITLE}>
         <span>Personal details</span>
         {personal ? <span class="badge badge-sm">{count}</span> : null}
