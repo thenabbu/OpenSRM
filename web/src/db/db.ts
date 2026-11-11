@@ -82,6 +82,14 @@ class OpenSRMDB extends Dexie {
       academics: 'netid, fetchedAt',
       meta: 'netid',
     });
+    this.version(2).stores({
+      attendance: '[netid+groupKey], netid, fetchedAt',
+      marks: '[netid+groupKey], netid, fetchedAt',
+      timetable: '[netid+groupKey], netid, fetchedAt',
+      campus: 'netid, fetchedAt',
+      academics: 'netid, fetchedAt',
+      meta: 'netid',
+    });
   }
 }
 

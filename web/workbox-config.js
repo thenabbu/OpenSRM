@@ -74,7 +74,11 @@ export async function bundleSw(src = 'src/sw-template.js', dest = BUNDLE) {
   // browser parses it as a CLASSIC script — top-level `import`/`export` is a
   // SyntaxError there even with every dependency inlined. IIFE yields one
   // self-contained classic script with zero bare imports.
-  const { output } = await bundle.generate({ format: 'iife', inlineDynamicImports: true, intro: header });
+  //
+  // No `intro`: rollup places intro INSIDE the IIFE wrapper, which buried the
+  // "GENERATED, do not edit" banner one level deep (and in the emitted swDest
+  // it ends up past column 0, so a `^/\*` scan misses it). Prepend it after.
+  const { output } = await bundle.generate({ format: 'iife', inlineDynamicImports: true });
   await bundle.close();
   const code = output.filter((o) => o.type === 'chunk').map((o) => o.code).join('\n');
   const bare = code.split('\n').filter((l) => /^import .*from '[a-z]/.test(l));
@@ -95,7 +99,7 @@ export async function bundleSw(src = 'src/sw-template.js', dest = BUNDLE) {
     // would silently un-gate the cache-name invariant instead of failing it.
     mangle: { reserved: ['CACHE_NAME', 'precacheAndRoute', 'offlineShell'] },
   });
-  await writeFile(dest, min);
+  await writeFile(dest, header + '\n' + min);
   return { dest, bytes: min.length };
 }
 
