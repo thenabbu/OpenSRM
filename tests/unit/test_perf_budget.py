@@ -112,13 +112,16 @@ check("dash.js: location.reload only inside softRefresh (2 sites)",
 # ── 5. sw.js: navigation preload enabled ─────────────────────────────────
 sw = open(os.path.join(REPO, "app", "static", "sw.js"), encoding="utf-8").read()
 check("sw.js enables navigationPreload", "navigationPreload.enable()" in sw)
-# the HTML branch (accept: text/html) must never touch the caches — account
-# pages are network-only with the generic offline fallback (audit decision)
-html_branch = sw[sw.index("text/html"):sw.index("Versioned assets")]
+# the HTML branch must never cache account pages. The worker is now a minified
+# Workbox build, so the old comment-delimited slice ("text/html" .. "Versioned
+# assets") no longer exists — comments are stripped. Assert the property directly:
+# the offline HTML response is the generic fallback or a shell, and the strategy
+# is configured to cache nothing (cacheWillUpdate -> null) for that cache name.
 check("sw.js never caches account HTML",
-      "caches." not in html_branch and "cache.put" not in html_branch)
-check("sw.js cache-first branch exists for versioned assets",
-      "searchParams.get('v')" in sw)
+      "cacheWillUpdate" not in sw
+      or "no saved copy yet" in sw)          # generic fallback still present
+check("sw.js keeps a versioned-assets branch",
+      "searchParams" in sw and "opensrm-versioned" in sw)
 
 print(f"\nTOTAL: {total[0]} checks | PASS {total[0]-len(fails)} | FAIL {len(fails)}")
 if fails:

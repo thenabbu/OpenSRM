@@ -149,7 +149,8 @@ Two promises shape everything:
   (5/10/15/30 min), a test button with delivery receipts.
 
 - **Installable PWA** — Add to Home Screen on Android, iOS and Windows. The
-  service worker keeps the app usable offline (`opensrm-v68` cache): panel
+  service worker keeps the app usable offline (a content-hashed cache, bumped
+  on every build): panel
   pages are network-first with navigation preload, and offline the worker
   serves a PII-free shell (`/shell/<panel>`) that boots the app so each island
   can paint its own rows from IndexedDB. Versioned and content-hashed assets are

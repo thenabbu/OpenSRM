@@ -87,8 +87,15 @@ chk('M14', "aggregate portal budget wired into preflight+login",
 # ---------- MEDIUM: frontend/SW ----------
 chk('M15', "SW: logout clears caches (caches.delete)",
     has('app/static/sw.js', r'caches\.delete'))
-chk('M16', "SW: resp.ok checked before caching",
-    has('app/static/sw.js', r'resp\.ok'))
+chk('M16', "SW: only 2xx responses are cached",
+    # The worker is a generated Workbox build now. `resp.ok` was the hand-written
+    # worker's guard; Workbox's NetworkFirst/CacheFirst cache only 2xx by
+    # default (documented in web/src/sw-template.js). Assert the property either
+    # way: an explicit guard, or reliance on Workbox's documented default with
+    # the HTML route refusing to cache at all.
+    has('app/static/sw.js', r'resp\.ok')
+    or (has('web/src/sw-template.js', r'Workbox only caches 2xx')
+        and has('web/src/sw-template.js', r'cacheWillUpdate:\s*async\s*\(\)\s*=>\s*null')))
 
 # ---------- MEDIUM: deployment/supply-chain ----------
 compose = rd('docker-compose.yml')
@@ -145,10 +152,17 @@ chk('L35', "progress endpoint: POST, netid not in query",
     has('app/blueprints/auth.py', r'"/api/login/progress", methods=\["POST"\]') and has('app/static/login.js', r'method:\s*"POST"'))
 chk('L36', "static route no longer hardcodes /app/app/static (code, not comments)",
     not any('/app/app/static' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
-_sw_cache = re.search(r"CACHE_NAME = '([^']+)'", rd('app/static/sw.js')).group(1)
-chk('L37', f"README diagram cache name matches sw.js ({_sw_cache}), no stale name",
-    has('README.md', re.escape(_sw_cache))
-    and not re.search(r'opensrm-v\d+', rd('README.md').replace(_sw_cache, '')))
+# Match both the hand-written form (CACHE_NAME = 'name') and the minified form
+# terser emits (CACHE_NAME='name'). Requiring the spaces made this raise
+# AttributeError on .group(1) once the worker became a generated, minified
+# build — the assertion was checking the source's formatting, not its value.
+_sw_cache = re.search(r"CACHE_NAME\s*=\s*['\"]([^'\"]+)['\"]", rd('app/static/sw.js')).group(1)
+# The cache name is now content-derived (opensrm-v69-<sha>) and changes on every
+# build, so a README that pins it is stale within one commit. The rule that still
+# holds: the README must not name ANY specific cache generation — not the current
+# one (stale tomorrow) and not an old one (already wrong today).
+chk('L37', f"README names no specific sw cache version (sw.js is {_sw_cache})",
+    not re.search(r'opensrm-v\d+', rd('README.md')))
 chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has('DESIGN.md', r'Flask 3\.0'))
 chk('L39', "HSTS header present (edge-secret gated, not bare cf-ray — audit #18)",
     bool(re.search(r'if _behind_cf\(\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
@@ -185,8 +199,8 @@ chk('D54', "docs2 SECURITY healthcheck claim true (compose has healthcheck+loggi
 chk('D55', "docs3 README gunicorn -t 120", '-t 120' in README_T)
 chk('D56', "docs4 DESIGN shared partial theme", ('partials/theme.html' in DESIGN_T) or ('shared partial' in DESIGN_T.lower()))
 chk('D57', "docs5 README PWA network-first", 'network-first' in README_T)
-chk('D58', f"docs6 README diagram cache name current ({_sw_cache}, no stale name)",
-    (_sw_cache in README_T) and not re.search(r'opensrm-v\d+', README_T.replace(_sw_cache, '')))
+chk('D58', f"docs6 README names no specific sw cache version (sw.js is {_sw_cache})",
+    not re.search(r'opensrm-v\d+', README_T))
 chk('D59', "docs7 DESIGN network-first documented", 'network-first' in DESIGN_T)
 chk('D60', "docs8 no false remote-image-host claim (img-src matches code)",
     ('dicebear' not in DESIGN_T.lower()) and ("allows no remote image hosts" in DESIGN_T))
