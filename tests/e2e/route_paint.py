@@ -160,6 +160,9 @@ def main():
     ap.add_argument("--token", required=True)
     ap.add_argument("--route", action="append", default=None,
                     help="only these routes (default: all 9)")
+    ap.add_argument("--browser", default="chromium",
+                    choices=["chromium", "webkit", "firefox"],
+                    help="engine to paint in (default chromium); one RESULT line per run")
     args = ap.parse_args()
 
     routes = args.route or list(ROUTES)
@@ -168,11 +171,25 @@ def main():
         # Playwright resolves its own browser build first. On a box that only
         # carries a chrome-for-testing binary (no chrome-headless-shell), fall
         # back to the executable the environment already advertises — CI installs
-        # the matching build and never takes this path.
-        browser = pw.chromium.launch(
-            headless=True,
-            executable_path=os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH") or None,
-            args=["--no-first-run", "--no-default-browser-check"])
+        # the matching build and never takes this path. Only Chromium has that
+        # override; WebKit/Firefox must come from `playwright install`.
+        if args.browser == "chromium":
+            browser = pw.chromium.launch(
+                headless=True,
+                executable_path=os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH") or None,
+                args=["--no-first-run", "--no-default-browser-check"])
+        else:
+            try:
+                browser = getattr(pw, args.browser).launch(headless=True)
+            except Exception as exc:  # missing build, broken deps, sandbox refusal
+                # NOT a skip: no browser means no proof, and an unproven route is
+                # the defect this file exists to catch.
+                print(f"\n  no {args.browser} — the 9 routes are UNPROVEN")
+                print(f"  {type(exc).__name__}: {str(exc).splitlines()[0][:300]}")
+                print(f"  install with: PLAYWRIGHT_BROWSERS_PATH="
+                      f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
+                      f".venv/bin/playwright install {args.browser}")
+                return 2
         ctx = browser.new_context()
         ctx.add_cookies([{"name": "srm_session", "value": args.token,
                           "domain": "127.0.0.1", "path": "/"}])
@@ -186,7 +203,7 @@ def main():
         ctx.close()
         browser.close()
 
-    print(f"\n  route paint: {leg.pass_n} passed, {leg.fail_n} failed"
+    print(f"\n  route paint [{args.browser}]: {leg.pass_n} passed, {leg.fail_n} failed"
           f" ({len(EMPTY_BY_DESIGN)} declared empty-by-design, asserted not skipped)")
     return 0 if leg.fail_n == 0 else 1
 
