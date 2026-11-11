@@ -31,6 +31,7 @@ asserted (a genuine 500 still fails).
 import argparse
 import os
 import sys
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -127,7 +128,16 @@ def check_route(page, leg, route, island, row_sel, row_word):
         rows = page.locator(row_sel).count()
         # The 401 excuse is only valid while the endpoint really does 401; a
         # different failure on it would otherwise vanish into the excuse list.
-        spurious = [e for e in errors if "Failed to load resource" not in e]
+        #
+        # Second excuse, same class: Playwright's own page.evaluate() runs as an
+        # inline script, so under this app's CSP (`script-src 'self'`) Firefox
+        # logs a "blocked a JavaScript eval (script-src)" console.error on every
+        # route. That is the HARNESS tripping the app's security policy, not the
+        # app failing — Chromium never surfaces it, which is why this only
+        # appeared once the audit ran cross-browser on the laptop. Verified that
+        # no built asset contains eval( or new Function( before excusing it.
+        HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval")
+        spurious = [e for e in errors if not any(n in e for n in HARNESS_NOISE)]
         clean = not spurious and not net_fail
         if route in EMPTY_BY_DESIGN:
             # Declared empty: hydrating to exactly zero rows is the CORRECT
@@ -191,8 +201,14 @@ def main():
                       f".venv/bin/playwright install {args.browser}")
                 return 2
         ctx = browser.new_context()
+        # The cookie's domain MUST match the host we actually navigate to. This
+        # was hardcoded to 127.0.0.1, so any run against a LAN address (the
+        # laptop-offload path: --base http://192.168.29.7:PORT) sent no session,
+        # every route 302'd to /login, and all 9 reported "0 islands seen" —
+        # a false failure that looks exactly like a broken migration.
+        _host = urlparse(args.base).hostname or "127.0.0.1"
         ctx.add_cookies([{"name": "srm_session", "value": args.token,
-                          "domain": "127.0.0.1", "path": "/"}])
+                          "domain": _host, "path": "/"}])
         page = ctx.new_page()
         for route in routes:
             if route not in ROUTES:
