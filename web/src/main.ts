@@ -151,6 +151,12 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     // Preact renders on a microtask the two renders interleaved — the first
     // painted 8 rows, the second reconciled against it and left 0. Measured
     // exactly as ["children=8","children=0"] on one element.
+    //
+    // P7.11: this IS the "fresh network data" case — the props came from the
+    // server on this response — so the stale caption from an earlier
+    // cache-served mount of this element dies here. Keeping the cleanup down
+    // there was the whole bug: this branch returns, so it never reached it.
+    removeStale(el);
     mountBounded(name, Comp, el, parsed.data, now);
     return;
   }
@@ -182,17 +188,23 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     return;
   }
   removeFailure(el);                         // a good load clears any earlier message
-  // Server paint already correct and fresh: only a cache hit serves offline.
-  if (parsed.success && outcome.source === 'network') {
-    removeStale(el);                         // fresh data: drop any old caption
-    return;
-  }
+  // This is where the old guard went wrong. It read
+  //   if (parsed.success && outcome.source === 'network') { removeStale(el); return; }
+  // and that can never be true: every `parsed.success` mount already returned at
+  // :155, so by here it is always false. `removeStale` therefore never ran on ANY
+  // path, and a shell that served its rows from the store fell straight past it.
   const props = propsFromCache(name, outcome.data);
   if (!props) return;                        // projection refused the shape: keep the paint
   // No per-branch guard here: `claimed` claimed this element at the top of the
   // function. The old one keyed on el.dataset.mountedAt, which the SERVER's own
   // markup can carry — and the server-paint branch above sets no marker at all,
   // so that element re-mounted on the second boot.
+  //
+  // The caption on screen is a lie the moment we paint again: either the rows
+  // just came off the wire (fresh — any age label is wrong) or they came from
+  // the store, and `showStale` below re-labels them with their true age. This
+  // runs on the SERVER-paint path too (:154) for the same reason.
+  removeStale(el);
   mountBounded(name, Comp, el, props, now);
   el.dataset.mountedAt = outcome.source;     // informational (the gate reads it)
   // P7.2: label a cache-served mount with its age, so "what we had earlier"
