@@ -198,8 +198,20 @@ const html = new NetworkFirst({
 registerRoute(
   ({ request }) => request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html'),
   async (params) => {
-    // Navigation preload: use the response started at navigation time.
-    const preloaded = params.event && params.event.preloadResponse && await params.event.preloadResponse;
+    // Navigation preload starts the request while the worker boots. With the
+    // server DEAD that promise REJECTS — and an uncaught rejection here escapes
+    // the route handler entirely: html.handle() is never reached, so
+    // handlerDidError never runs, so the offline shell is never served and the
+    // navigation dies with net::ERR_FAILED. That was the last offline failure.
+    // Treat a failed preload as "no preload" and fall through to the strategy.
+    let preloaded = null;
+    if (params.event && params.event.preloadResponse) {
+      try {
+        preloaded = await params.event.preloadResponse;
+      } catch {
+        preloaded = null;                  // server unreachable: use the ladder
+      }
+    }
     if (preloaded) return preloaded;
     return html.handle(params);
   },
