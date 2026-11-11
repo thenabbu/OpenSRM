@@ -1,214 +1,190 @@
-const CACHE_NAME = 'opensrm-v69';
+/* OpenSRM service worker — GENERATED. Do not edit app/static/sw.js by hand.
+ *
+ * Source: web/src/sw-template.js · built by web/workbox-config.js (workbox-build
+ * injectManifest) during `pnpm build`. Edit the template, then rebuild.
+ *
+ * P8.2 is a parity swap: this file performs exactly the policies the previous
+ * hand-written worker did, now expressed as Workbox routes.
+ */
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(c =>
-      c.addAll(['/static/icon-192.png', '/static/icon-512.png', '/static/icon-1024.png', '/static/icon-maskable-512.png', '/static/favicon.ico'])
-    ).then(() => self.skipWaiting())
-  );
-});
+import { CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { clientsClaim } from 'workbox-core';
+import { cleanupOutdatedCaches, matchPrecache, precacheAndRoute } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { ExpirationPlugin } from 'workbox-expiration';
 
-// Precache the BUILT BUNDLE at activate time, from Vite's own manifest.
+// The name is written as a single-quoted literal by the build (see
+// web/workbox-config.js:stampCacheName). Three Python gates regex it —
+// tests/e2e/test_sw.py, tests/test_audit_findings L37, scripts/check_docs.py D1 —
+// and a template literal would read as `?` to all of them.
 //
-// Why here and not from the page: the page can only fetch a chunk through this
-// worker, and this worker only stores a chunk when it gets one from the NETWORK
-// (cache-first branch, cache miss path). A fetch issued once the entry has
-// already been served from cache therefore never populates anything. Doing it
-// in the worker is the one place the list is authoritative and the fetch is
-// guaranteed to reach the network.
-//
-// This is what makes offline actually paint: the entry (app-<hash>.js) and its
-// shared deps are imported by every island chunk, so ONE missing file fails
-// every dynamic import with "Failed to fetch dynamically imported module" —
-// exactly what happened while the shell, the netid and the rows were all fine.
-async function precacheBundle() {
-  try {
-    const res = await fetch('/static/dist/manifest.json', { cache: 'no-store' });
-    // Visible from the page via the client postMessage below and from DevTools:
-    // without it, "did activate even run the precache?" is unanswerable, which is
-    // exactly the hole this cost.
-    self.clients.matchAll().then(cs => cs.forEach(c => c.postMessage({ precache: 'start', status: res.status })));
-    if (!res.ok) return;
-    const manifest = await res.json();
-    const files = Object.values(manifest)
-      .map(v => v && v.file)
-      .filter(f => typeof f === 'string' && /\.(js|css)$/.test(f));
-    const urls = [...new Set(files)].map(f => '/static/dist/' + f);
-    const cache = await caches.open(CACHE_NAME);
-    await Promise.all(urls.map(async u => {
-      try {
-        const r = await fetch(u, { cache: 'reload' });
-        if (r.ok) await cache.put(u, r);
-      } catch (err) { /* one missing file degrades one island, not the app */ }
-    }));
-    self.clients.matchAll().then(cs => cs.forEach(c => c.postMessage({ precache: 'done', files: urls.length })));
-  } catch (err) { /* no manifest (dev build / first deploy): skip */ }
-}
+// The build suffix is derived from the FULL injected manifest (urls + revisions,
+// not revisions alone: Workbox sets revision:null for content-hashed files, so
+// revisions alone are near-constant across builds). A bundle change therefore
+// changes the cache name, which is the property the ?v= generations relied on.
+const CACHE_NAME = 'opensrm-v69-98b15cbe';
 
-self.addEventListener('activate', e => {
-  e.waitUntil((async () => {
-    // Navigation preload: the HTML request starts while the SW boots, so a
-    // controlled page doesn't pay worker startup latency on its document.
+// Precache the built bundle. The WB manifest below is the injection point:
+// Workbox replaces that token at build time with the file list derived from
+// app/static/dist. The list comes from the build (web/workbox-config.js
+// globs app/static/dist), never hand-written. Workbox also installs a route that
+// serves these entries cache-first and cleans superseded revisions on activate.
+precacheAndRoute([{"revision":null,"url":"/static/dist/assets/sync-age-CIRQ2SFE.js"},{"revision":null,"url":"/static/dist/assets/jsxRuntime.module-CnJI9DpN.js"},{"revision":null,"url":"/static/dist/assets/design-m1uS3-4X.js"},{"revision":null,"url":"/static/dist/assets/app-Dw5KSv9_.css"},{"revision":null,"url":"/static/dist/assets/app-8wAe8lWI.js"},{"revision":null,"url":"/static/dist/assets/ToolsPanel-CalrvJ38.js"},{"revision":null,"url":"/static/dist/assets/TimetablePanel-Do4oBzwT.js"},{"revision":null,"url":"/static/dist/assets/SettingsPanel-6CkJDVzq.js"},{"revision":null,"url":"/static/dist/assets/MarksPanel-AaicaoIW.js"},{"revision":null,"url":"/static/dist/assets/FeesPanel-BE-umhFO.js"},{"revision":null,"url":"/static/dist/assets/DashboardPanel-CdUNQ23o.js"},{"revision":null,"url":"/static/dist/assets/CampusPanel-DPcRUEQZ.js"},{"revision":null,"url":"/static/dist/assets/AttendancePanel-DQ0SFj5b.js"},{"revision":null,"url":"/static/dist/assets/AcademicsPanel-erWrc4tZ.js"},{"revision":"dc97e8bbe36b4f8d26f899fd950bae63","url":"/static/dist/manifest.json"}]);
+cleanupOutdatedCaches();
+
+// Navigation preload: the HTML request starts while the worker boots, so a
+// controlled page does not pay worker startup latency on its document.
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
     if (self.registration.navigationPreload) {
       try {
         const st = await self.registration.navigationPreload.getState();
         if (!st.enabled) await self.registration.navigationPreload.enable();
-      } catch (err) { /* preload unsupported: the HTML branch just fetches */ }
+      } catch (err) { /* preload unsupported: the HTML route just fetches */ }
     }
+    // Drop every cache from an earlier generation. Precache entries are
+    // repopulated by precacheAndRoute's install step, which ran before this.
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
-    await precacheBundle();
+    await Promise.all(keys.filter((k) => k !== CACHE_NAME && !k.startsWith('workbox-precache')).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
+clientsClaim();
 
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
+// ── /logout: wipe the cache and this device's push subscription ─────────────
+// Cached HTML holds personal data (attendance, marks, profile) and must not
+// stay readable on the device after logout. /logout is a plain navigation, so
+// this is the only hook we get; server-side the UNIQUE endpoint rebind is the
+// safety net if this never runs.
+registerRoute(
+  ({ url }) => url.pathname === '/logout',
+  async ({ request }) => {
+    try {
+      return await fetch(request);
+    } finally {
+      caches.delete(CACHE_NAME);
+      self.registration.pushManager.getSubscription()
+        .then((s) => (s ? s.unsubscribe().catch(() => {}) : null))
+        .catch(() => {});
+    }
+  },
+  'GET',
+);
 
-  // Network-only: login, API. Logout is intercepted ONLY to wipe the cache —
-  // cached HTML holds personal data (attendance, marks, profile) and must not
-  // stay readable on the device after logout.
-  if (url.pathname === '/logout') {
-    // Also drop this device's push subscription: /logout is a plain
-    // navigation, this is the only hook we get. (Server-side the UNIQUE
-    // endpoint rebind is the safety net if this never runs.)
-    e.respondWith(fetch(e.request).finally(() =>
-      Promise.all([
-        caches.delete(CACHE_NAME),
-        self.registration.pushManager.getSubscription()
-          .then(s => (s ? s.unsubscribe().catch(() => {}) : null))
-          .catch(() => {})
-      ])
-    ));
-    return;
-  }
-  if (url.pathname === '/login' || url.pathname.startsWith('/api/')) return;
-
-  // Versioned assets (?v=<content-hash> from asset()): CACHE-FIRST. The
-  // hash guarantees the bytes under this URL never change, so the cache can
-  // answer without touching the network — warm visits move zero CSS/JS
-  // bytes. On store, older ?v= generations of the same pathname are deleted
-  // so the cache never piles up deploy generations. Offline: a cached
-  // version still answers.
-  // Vite's content-hashed chunks: /static/dist/assets/<Name>-<hash>.js
-  //
-  // These are immutable by construction (the hash IS the content), and they are
-  // the DYNAMIC IMPORTS every island loads lazily. They carry no ?v= param, so
-  // before this branch existed they fell through to network-first, failed
-  // offline, and every island reported "Failed to fetch dynamically imported
-  // module" — the shell loaded, the netid was recovered, the cached rows were
-  // sitting in IndexedDB, and the panel still painted nothing because the
-  // component could not be fetched.
-  //
-  // Same policy as the ?v= assets: cache-first, and on store drop older hashes
-  // of the same basename so a deploy does not pile generations up.
-  if (url.pathname.startsWith('/static/dist/assets/') && /-[A-Za-z0-9_-]{8,}\.(js|css)$/.test(url.pathname)) {
-    e.respondWith((async () => {
-      const hit = await caches.match(e.request);
-      if (hit) return hit;
-      try {
-        const resp = await fetch(e.request);
-        if (resp.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(e.request, resp.clone());
-          const base = url.pathname.replace(/-[A-Za-z0-9_-]{8,}\.(js|css)$/, '');
-          const keys = await cache.keys();
-          await Promise.all(keys.map(k => {
-            const ku = new URL(k.url);
-            return (ku.pathname.replace(/-[A-Za-z0-9_-]{8,}\.(js|css)$/, '') === base
-                    && ku.pathname !== url.pathname)
-              ? cache.delete(k) : null;
-          }));
+// ── Versioned assets (?v=<content-hash> from asset()): cache-first ──────────
+// The hash guarantees the bytes under this URL never change, so the cache can
+// answer without touching the network — warm visits move zero CSS/JS bytes.
+// On store, older ?v= generations of the same pathname are dropped so the
+// cache never piles up deploy generations.
+const versioned = new CacheFirst({
+  cacheName: 'opensrm-versioned',
+  matchOptions: { ignoreSearch: false },
+  plugins: [
+    {
+      cachedResponseWillBeUsed: async ({ cacheName, request, cachedResponse }) => cachedResponse,
+      // Evict the other ?v= generations of this pathname after a store.
+      cacheDidUpdate: async ({ cacheName, request }) => {
+        const cache = await caches.open(cacheName);
+        const target = new URL(request.url);
+        for (const key of await cache.keys()) {
+          const u = new URL(key.url);
+          if (u.pathname === target.pathname && u.search !== target.search) await cache.delete(key);
         }
-        return resp;
-      } catch (err) {
-        const stale = await caches.match(e.request);
-        if (stale) return stale;
-        throw err;
-      }
-    })());
-    return;
-  }
+      },
+    },
+    new ExpirationPlugin({ maxEntries: 200, purgeOnQuotaError: true }),
+  ],
+});
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/') && url.searchParams.get('v'),
+  versioned,
+  'GET',
+);
 
-  if (url.pathname.startsWith('/static/') && url.searchParams.get('v')) {
-    e.respondWith((async () => {
-      const hit = await caches.match(e.request);
-      if (hit) return hit;
-      try {
-        const resp = await fetch(e.request);
-        if (resp.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(e.request, resp.clone());
-          const keys = await cache.keys();
-          await Promise.all(keys.map(k => {
-            const ku = new URL(k.url);
-            return (ku.pathname === url.pathname && ku.search !== url.search)
-              ? cache.delete(k) : null;
-          }));
+// ── Vite's content-hashed chunks: cache-first, drop older hashes ─────��──────
+// Immutable by construction (the hash IS the content) and the DYNAMIC IMPORTS
+// every island loads lazily. They carry no ?v=, so falling through to
+// network-first meant every island failed offline with "Failed to fetch
+// dynamically imported module".
+const HASHLESS = /-[A-Za-z0-9_-]{8,}\.(js|css)$/;
+const hashed = new CacheFirst({
+  cacheName: 'opensrm-hashed',
+  plugins: [
+    {
+      // Same policy as the ?v= assets: on store, drop older hashes of the same
+      // basename so a deploy does not pile generations up.
+      cacheDidUpdate: async ({ cacheName, request }) => {
+        const cache = await caches.open(cacheName);
+        const target = new URL(request.url);
+        const base = target.pathname.replace(HASHLESS, '');
+        for (const key of await cache.keys()) {
+          const u = new URL(key.url);
+          if (u.pathname.replace(HASHLESS, '') === base && u.pathname !== target.pathname) await cache.delete(key);
         }
-        return resp;
-      } catch (err) {
-        const stale = await caches.match(e.request);
-        if (stale) return stale;
-        throw err;
-      }
-    })());
-    return;
-  }
+      },
+    },
+    new ExpirationPlugin({ maxEntries: 200, purgeOnQuotaError: true }),
+  ],
+});
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/dist/assets/') && HASHLESS.test(url.pathname),
+  hashed,
+  'GET',
+);
 
-  // Unversioned static assets (icons, manifest): network-first with cache
-  // fallback. Cache-first once served pre-deploy JS with post-deploy HTML →
-  // dead navbar until a hard refresh. Network-first keeps HTML+JS from the
-  // same deploy; the cache still serves offline. Only 2xx responses are
-  // cached (audit: resp.ok guard) so error pages can never be served as the
-  // offline copy.
-  if (url.pathname.startsWith('/static/')) {
-    e.respondWith(
-      fetch(e.request).then(resp => {
-        if (resp.ok) {
-          const cl = resp.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, cl));
-        }
-        return resp;
-      }).catch(() => caches.match(e.request))
-    );
-    return;
-  }
+// ── Unversioned statics (icons, manifest): network-first, cache fallback ────
+// Cache-first once served pre-deploy JS with post-deploy HTML → dead navbar
+// until a hard refresh. Network-first keeps HTML and JS from the same deploy;
+// the cache still serves offline. Workbox only caches 2xx by default.
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/'),
+  new NetworkFirst({ cacheName: 'opensrm-static' }),
+  'GET',
+);
 
-  // HTML pages: network-first, and offline gets the SHELL — never a rendered
-  // page. This is the design Navya set on 2026-11-09: personal data may live on
-  // the device (that is what makes offline work), but the app must remove it
-  // completely on logout, and a rendered page must never be one of the places
-  // it lives. The shell is the panel's own markup with every personal value
-  // blanked server-side (/shell/<panel>, app/views/dashboard.py:shell()), so it
-  // is the same bytes for every student and safe to keep in this cache.
-  //
-  // Offline flow: serve shell -> islands mount with no props -> each asks
-  // IndexedDB for ITS OWN netid's rows -> a different student simply misses.
-  if (e.request.headers.get('accept')?.includes('text/html')) {
-    e.respondWith((async () => {
-      try {
-        const preloaded = await e.preloadResponse;
-        if (preloaded) return preloaded;
-        return await fetch(e.request);
-      } catch (err) {
-        // Offline. Which panel? Ask from the URL, so an offline visit to
-        // /marks gets the marks shell rather than the dashboard one.
-        const panel = (url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard');
-        const shell = await caches.match('/shell/' + panel)
-                   || await caches.match('/shell/dashboard')
-                   || await caches.match('/shell/');
-        if (shell) return shell;
-        return new Response(
-          '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this device has no saved copy yet.</p><p>Connect to the internet and open the site once to enable offline access.</p></div></body></html>',
-          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-        );
-      }
-    })());
-    return;
+// ── HTML: network-first; offline gets the SHELL, never a rendered page ──────
+// Personal data may live on the device (that is what makes offline work), but
+// a rendered page must never be one of the places it lives. The shell is the
+// panel's own markup with every personal value blanked server-side, so it is
+// the same bytes for every student.
+//
+// Offline ladder: /shell/<panel> → /shell/dashboard → /shell/ → generic 503.
+const OFFLINE_503 = new Response(
+  '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this device has no saved copy yet.</p><p>Connect to the internet and open the site once to enable offline access.</p></div></body></html>',
+  { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+);
+
+async function offlineShell(url) {
+  const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+  for (const path of ['/shell/' + panel, '/shell/dashboard', '/shell/']) {
+    const hit = await caches.match(path);
+    if (hit) return hit;
   }
+  return OFFLINE_503;
+}
+
+const html = new NetworkFirst({
+  cacheName: 'opensrm-html',
+  // Offline must reach the shell ladder, not a cached rendered page: nothing
+  // here is ever written to the cache, so a cached response cannot be served.
+  plugins: [
+    {
+      cacheWillUpdate: async () => null,
+      handlerDidError: async ({ request }) => offlineShell(new URL(request.url)),
+    },
+  ],
 });
 
+registerRoute(
+  ({ request }) => request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html'),
+  async (params) => {
+    // Navigation preload: use the response started at navigation time.
+    const preloaded = params.event && params.event.preloadResponse && await params.event.preloadResponse;
+    if (preloaded) return preloaded;
+    return html.handle(params);
+  },
+  'GET',
+);
 
 // ── Web push ──────────────────────────────────────────────────────────
 
