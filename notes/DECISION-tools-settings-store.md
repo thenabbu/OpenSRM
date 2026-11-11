@@ -162,7 +162,8 @@ is a migration nobody has run.
 
 Six of nine islands have a cache path. `tools` and `settings` are the two without,
 and both are now documented here rather than left as an unexplained hole in
-`hasIslandProjection`. The comment at `props.ts:161-174` is updated to point here.
+`hasIslandProjection`. The comment at `props.ts:161-174` already points here (it
+was updated by `811e753`, not by this task).
 
 ## How this was verified (not taken from the prior draft)
 
