@@ -158,6 +158,23 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     // there was the whole bug: this branch returns, so it never reached it.
     removeStale(el);
     mountBounded(name, Comp, el, parsed.data, now);
+    // Persist what the server just gave us. Without this the online path never
+    // wrote anything to IndexedDB, so the NEXT visit had no cached payload to
+    // paint from — measured: after a full online load of /attendance Dexie held
+    // {academics:0, attendance:0, ..., meta:1} while the page showed 8 rows.
+    // That is why offline painted 0 rows: not a read bug, a NEVER-WRITTEN bug.
+    //
+    // Fire-and-forget on purpose: this must not delay or re-render the paint
+    // that just happened, and a failed write (private mode, quota) must not
+    // break the page. loadPanel/writePanel already log their own failures.
+    if (hasIslandProjection(name)) {
+      const owner = currentNetid();
+      if (owner) {
+        void loadPanel(name, { netid: owner, groupKey: sessionGroupKey() }).catch(() => {
+          /* cache write is best-effort; the paint already succeeded */
+        });
+      }
+    }
     return;
   }
   if (!warnedProps.has(name)) {
