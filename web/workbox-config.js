@@ -21,36 +21,82 @@ import { createHash } from 'node:crypto';
 //
 // Rollup is already in workbox-build's dependency tree (its deps include rollup
 // + @rollup/plugin-node-resolve), so the bundler is a build-time tool that is
-// ALREADY installed — no new dependency. pnpm's isolated node_modules does not
-// expose it to this file, so fall back to workbox-build's own resolution root.
+// ALREADY installed — no new dependency. pnpm's isolated node_modules hides it
+// from this file, so resolve the real workbox-build path and require from there.
 // ponytail: rollup only; a second Vite pass would drag in a second plugin graph.
-const TREES = ['./node_modules/', './node_modules/workbox-build/node_modules/'];
+// Built next to the emitted worker, not in src/: it is regenerated on every
+// build, so it must not show up as a source file anyone edits.
+const BUNDLE = '../app/static/.sw-bundled.js';
 
-async function loadFromTrees(spec) {
-  for (const base of TREES) {
-    try {
-      return await import(new URL(spec, new URL(base, import.meta.url)).href);
-    } catch (err) { /* try the next root */ }
-  }
-  throw new Error(`workbox: '${spec}' not resolvable — pnpm install web/ first`);
+async function loadFromWorkbox(spec) {
+  const { createRequire } = await import('node:module');
+  const { realpathSync } = await import('node:fs');
+  // The pnpm symlink is not the resolution root: the real dir is, because its
+  // sibling node_modules/ holds rollup and the workbox-* runtime packages.
+  const req = createRequire(new URL('workbox-build/package.json', import.meta.url));
+  const pkg = realpathSync(req.resolve('workbox-build/package.json'));
+  const fromWorkbox = createRequire(pkg);
+  return { module: await import(new URL('file://' + fromWorkbox.resolve(spec)).href), root: pkg };
 }
 
-// Single self-contained ESM file, zero bare imports. The worker is registered
-// WITHOUT {type:'module'} (app/static/dash.js:415), so the output must also be
-// valid as a classic script: `es` with every import inlined satisfies both.
-export const BUNDLE = 'src/.sw-bundled.js';
-
 export async function bundleSw(src = 'src/sw-template.js', dest = BUNDLE) {
-  const rollup = await loadFromTrees('rollup');
-  const { nodeResolve } = await loadFromTrees('@rollup/plugin-node-resolve');
-  const bundle = await rollup.rollup({ input: src, plugins: [nodeResolve()] });
-  const { output } = await bundle.generate({ format: 'es', inlineDynamicImports: true });
+  const rollup = await loadFromWorkbox('rollup');
+  const plugin = await loadFromWorkbox('@rollup/plugin-node-resolve');
+  // Minified: un-minified workbox runtime is ~184 KB here vs a 13 KB
+  // hand-written predecessor. output.intro restores the template's own header —
+  // the "GENERATED, do not edit" banner must survive into the emitted worker.
+  const header = (await readFile(src, 'utf8')).match(/^\/\*[\s\S]*?\*\//)[0];
+  const bundle = await rollup.module.rollup({
+    input: src,
+    // Resolve the worker's imports from workbox-build's tree, not from ./src —
+    // the workbox-* runtime packages are workbox-build's deps.
+    plugins: [
+      plugin.module.nodeResolve({ modulePaths: [new URL('../', 'file://' + plugin.root).pathname] }),
+      // workbox-core ships `process.env.NODE_ENV` guards. Vite replaces those in
+      // the main bundle; this hand-rolled rollup does not, so the literal
+      // `process.env.NODE_ENV` survived into the emitted worker. A service worker
+      // has no `process`, so the script threw ReferenceError the moment the
+      // browser evaluated it and the registration failed with
+      // "ServiceWorker script evaluation failed" — no worker, no cache, no
+      // offline. Strip them here; production semantics are the only semantics a
+      // shipped worker needs.
+      {
+        name: 'define-node-env',
+        transform(code) {
+          if (!code.includes('process.env.NODE_ENV')) return null;
+          return { code: code.replaceAll('process.env.NODE_ENV', '"production"'), map: null };
+        },
+      },
+    ],
+  });
+  // format:'iife', not 'es': the page registers this worker WITHOUT
+  // {type:'module'} (app/static/dash.js:415, login.js:112, push.js:62), so the
+  // browser parses it as a CLASSIC script — top-level `import`/`export` is a
+  // SyntaxError there even with every dependency inlined. IIFE yields one
+  // self-contained classic script with zero bare imports.
+  const { output } = await bundle.generate({ format: 'iife', inlineDynamicImports: true, intro: header });
   await bundle.close();
   const code = output.filter((o) => o.type === 'chunk').map((o) => o.code).join('\n');
   const bare = code.split('\n').filter((l) => /^import .*from '[a-z]/.test(l));
   if (bare.length) throw new Error('workbox: sw bundle still has bare imports: ' + bare.join(' | '));
-  await writeFile(dest, code);
-  return { dest, bytes: code.length };
+  // The bare-import count alone does NOT prove the file parses as a classic
+  // script (an `es` bundle has no bare imports but still carries `export`).
+  // Registration is classic, so any module syntax here is a dead worker.
+  const modSyntax = code.split('\n').filter((l) => /^(import|export)\b/.test(l));
+  if (modSyntax.length) throw new Error('workbox: sw bundle has module syntax (registered classic): ' + modSyntax.join(' | '));
+  const terser = (await loadFromWorkbox('terser')).module;
+  // terser is CJS: the ESM namespace puts the API under .default
+  const { code: min } = await (terser.minify ?? terser.default.minify)(code, {
+    format: { comments: /GENERATED/ },
+    // Three Python gates scrape the built worker by name:
+    //   tests/e2e/test_sw.py + scripts/check_docs.py (D1) -> `CACHE_NAME = '<name>'`
+    //   tests/test_audit_findings.py (L37)              -> `precacheAndRoute(`
+    // Terser renames both by default (`const CACHE_NAME` became `const se`), which
+    // would silently un-gate the cache-name invariant instead of failing it.
+    mangle: { reserved: ['CACHE_NAME', 'precacheAndRoute', 'offlineShell'] },
+  });
+  await writeFile(dest, min);
+  return { dest, bytes: min.length };
 }
 
 export const config = {
@@ -94,8 +140,13 @@ export async function stampCacheName(swDest = config.swDest) {
     parts.push(`${entry.url}@${entry.revision ?? ''}@${createHash('sha256').update(bytes).digest('hex')}`);
   }
   const hash = createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 8);
-  const stamped = src.replace("'__CACHE_NAME__'", `'opensrm-v69-${hash}'`);
-  if (stamped === src) throw new Error('workbox: CACHE_NAME placeholder missing in ' + swDest);
+  // terser normalises string quotes to double quotes, so the template's
+  // `'__CACHE_NAME__'` arrives here as `"__CACHE_NAME__"`. Match either form —
+  // searching only for the single-quoted literal silently never stamps and the
+  // build dies with "CACHE_NAME placeholder missing".
+  const placeholder = /(['"])__CACHE_NAME__\1/;
+  if (!placeholder.test(src)) throw new Error('workbox: CACHE_NAME placeholder missing in ' + swDest);
+  const stamped = src.replace(placeholder, `'opensrm-v69-${hash}'`);
   await writeFile(swDest, stamped);
   return `opensrm-v69-${hash}`;
 }
