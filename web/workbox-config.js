@@ -128,9 +128,23 @@ export const config = {
 export async function stampCacheName(swDest = config.swDest) {
   const src = await readFile(swDest, 'utf8');
   // Workbox injects inline, so the list sits inside precacheAndRoute([...]).
-  const m = src.match(/precacheAndRoute\((\[.*?\])\)/s);
-  if (!m) throw new Error('workbox: no injected manifest found in ' + swDest);
-  const manifest = JSON.parse(m[1]);
+  // Terser is told to reserve that identifier, but the template's call site is
+  // still renamed in practice — `precacheAndRoute(` was absent from the built
+  // worker while `CACHE_NAME` survived. Rather than depend on a name, find the
+  // injected manifest by its own shape: Workbox writes a JSON array whose
+  // entries carry "revision". That survives minification because the data does.
+  let manifest;
+  const named = src.match(/precacheAndRoute\((\[.*?\])\)/s);
+  if (named) {
+    manifest = JSON.parse(named[1]);
+  } else {
+    const arr = src.match(/\[\{[^[\]]*?"revision".*?\}\s*\]/s);
+    if (!arr) throw new Error('workbox: no injected manifest found in ' + swDest);
+    manifest = JSON.parse(arr[0]);
+  }
+  if (!Array.isArray(manifest) || manifest.length === 0) {
+    throw new Error('workbox: injected manifest is empty in ' + swDest);
+  }
 
   // Hash the URL list AND the bytes on disk. Workbox's own `revision` field is
   // null for content-hashed files (dontCacheBustURLsMatching), so trusting it

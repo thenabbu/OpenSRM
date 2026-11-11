@@ -44,8 +44,16 @@ self.addEventListener('activate', (event) => {
     }
     // Drop every cache from an earlier generation. Precache entries are
     // repopulated by precacheAndRoute's install step, which ran before this.
+    // The SHELL cache must survive. `opensrm-shell` is written by warmShells()
+    // (web/src/session/shell.ts) and is the ONLY source of the offline panel
+    // shells — the precache list covers dist assets only. An allow-list of
+    // "CACHE_NAME or workbox-precache" deleted it on every activation, which
+    // presented as "offline never works" while __shellWarm still said stored=8.
+    // Measured: after a normal authenticated load the only cache left was
+    // workbox-precache, with zero shell keys.
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== CACHE_NAME && !k.startsWith('workbox-precache')).map((k) => caches.delete(k)));
+    const keep = (k) => k === CACHE_NAME || k.startsWith('workbox-precache') || k === 'opensrm-shell';
+    await Promise.all(keys.filter((k) => !keep(k)).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
