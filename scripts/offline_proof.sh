@@ -10,9 +10,11 @@
 # What it proves, in order (each leg fails loudly):
 #   1. ONLINE   /attendance renders rows server-side AND writes an IndexedDB row
 #               whose payload validates against the island's zod schema.
-#   2. OFFLINE  with the server killed, the same page still paints rows from
+#   2. ROUTES   all 9 islands PAINT rows in a real browser after hydration, with
+#               no console exception. One line per route, each with a row count.
+#   3. OFFLINE  with the server killed, the same page still paints rows from
 #               Dexie, and shows the "as of <age>" caption.
-#   3. PII      the service worker did NOT cache the HTML response.
+#   4. PII      the service worker did NOT cache the HTML response.
 #
 # Usage:
 #   bash scripts/offline_proof.sh            # run all legs
@@ -66,7 +68,13 @@ _scope_fixture.inject(os.environ["DATA_DIR"])
 print("  seeded")
 PY
 
+# SCOPE_FEATURES: the four data-gated panels (/campus, /academics, /fees, /tools)
+# abort(404) without their feature slug, and the app's DEFAULT_FEATURES omits
+# campus/placement/library. Booting without this made /campus 404 in leg 4 — the
+# route would have been graded "broken" for a reason that is the runner's fault.
+# Same string the CI browser suites use (.github/workflows/tests.yml).
 env DATA_DIR="$DATA_DIR" LOG_LEVEL=WARNING \
+    SCOPE_FEATURES=hourwise,academics,fees,placement,library,campus,profile,attendance,marks \
     .venv/bin/python -m gunicorn -w 1 --threads 4 -b 127.0.0.1:"$PORT" app.app:app \
     >"$LOG" 2>&1 &
 # Wait for the socket, then capture the bound PID (gunicorn's master). The
@@ -130,8 +138,29 @@ body=$(curl -s --max-time 20 "http://127.0.0.1:$PORT/api/attendance" -H "Cookie:
 echo "$body" | grep -q '"ok": *true\|"ok":true' && ok "/api/attendance returns ok:true" || { bad "/api/attendance not ok"; say "$body" | head -c 300; }
 echo "$body" | grep -q '"courses"' && ok "payload carries courses (island shape)" || bad "no courses key"
 
-# ── 2. OFFLINE: browser visits online, then the server dies under it ────────
-say "== leg 2: browser online visit, then server killed, then reload =="
+# ── 2. ROUTES: all 9 islands paint ──────────────────────────────────────────
+say "== leg 2: all 9 routes paint rows after hydration =="
+# Runs while the server is still ALIVE (leg 3 kills it) and reuses the token
+# already minted above. One [PASS]/[FAIL] per route, each with its row count;
+# the script prints them itself. A route that legitimately has no rows must be
+# declared empty-by-design in tests/e2e/route_paint.py — it has no skip outcome.
+if [ -x .venv/bin/python ] && [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d "${PLAYWRIGHT_BROWSERS_PATH}" ]; then
+  .venv/bin/python tests/e2e/route_paint.py \
+      --base "http://127.0.0.1:$PORT" --token "$TOKEN"
+  if [ $? -eq 0 ]; then
+    ok "routes: all 9 islands painted rows after hydration"
+  else
+    bad "routes: at least one island did not paint (see the per-route lines above)"
+  fi
+else
+  # NOT a skip: without a browser there is no proof, and an unproven route is
+  # the exact defect this leg exists to catch. Fail loudly and say how to fix it.
+  bad "routes: no Chromium — the 9 routes are UNPROVEN. Install with:"
+  say "         PLAYWRIGHT_BROWSERS_PATH=$PW .venv/bin/playwright install chromium"
+fi
+
+# ── 3. OFFLINE: browser visits online, then the server dies under it ────────
+say "== leg 3: browser online visit, then server killed, then reload =="
 # ORDER MATTERS. The browser must load the page while the server is ALIVE (that
 # is what writes the IndexedDB row), and only then lose it. Killing first made
 # the online visit die with ERR_CONNECTION_REFUSED.
@@ -159,8 +188,8 @@ else
   ok "server is down"
 fi
 
-# ── 3. PII: service worker must not cache HTML ──────────────────────────────
-say "== leg 3: service worker does not cache panel HTML =="
+# ── 4. PII: service worker must not cache HTML ──────────────────────────────
+say "== leg 4: service worker does not cache panel HTML =="
 # The rule (sw.js:98-120, audit run-1 #12): on an offline HTML request the worker
 # returns a GENERIC 503 page, never a caches.match() of the previous response —
 # cached HTML holds attendance/marks PII and an offline worker cannot bind a

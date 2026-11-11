@@ -52,6 +52,14 @@ ROUTES = {
     "/settings":   ("settings",   "[data-island=settings] [data-copy]", "detail cells"),
 }
 
+# Routes that legitimately render NO rows. This is an ASSERTION, not a skip: the
+# route must still load, still carry its island, and still hydrate — and its row
+# count must be exactly 0. A route listed here that starts painting rows fails,
+# and a route with zero rows that is NOT listed here fails. Empty-by-design has
+# to be earned, so no route is in this set today; if one moves in, it is a
+# deliberate edit with a reason attached.
+EMPTY_BY_DESIGN = {}
+
 # The one background request the app makes and handles. Asserted, not assumed:
 # if it stops 401ing, or a different endpoint starts failing, this trips.
 EXCUSED = "/api/refresh"
@@ -120,8 +128,15 @@ def check_route(page, leg, route, island, row_sel, row_word):
         # The 401 excuse is only valid while the endpoint really does 401; a
         # different failure on it would otherwise vanish into the excuse list.
         spurious = [e for e in errors if "Failed to load resource" not in e]
-        ok = hydrated and rows > 0 and not spurious and not net_fail
-        detail = f"{rows} {row_word}"
+        clean = not spurious and not net_fail
+        if route in EMPTY_BY_DESIGN:
+            # Declared empty: hydrating to exactly zero rows is the CORRECT
+            # outcome, and painting any is a regression worth failing on.
+            ok = hydrated and rows == 0 and clean
+            detail = f"empty-by-design, {rows} {row_word} (must be 0)"
+        else:
+            ok = hydrated and rows > 0 and clean
+            detail = f"{rows} {row_word}"
         if not hydrated:
             detail += f"; island never hydrated ({st['done']}/{st['n']} islands finished)"
         if rows == 0:
@@ -171,7 +186,8 @@ def main():
         ctx.close()
         browser.close()
 
-    print(f"\n  route paint: {leg.pass_n} passed, {leg.fail_n} failed")
+    print(f"\n  route paint: {leg.pass_n} passed, {leg.fail_n} failed"
+          f" ({len(EMPTY_BY_DESIGN)} declared empty-by-design, asserted not skipped)")
     return 0 if leg.fail_n == 0 else 1
 
 
