@@ -145,7 +145,19 @@ def main():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(4)          # let the socket actually close
 
-        page.reload(wait_until="domcontentloaded")
+        # A reload with the server dead THROWS when no service worker can serve
+        # the navigation (net::ERR_CONNECTION_REFUSED). That is a real, expected
+        # outcome here — not a harness crash. Letting it propagate aborted the
+        # whole leg before it could print its own pass/fail summary, which hid
+        # two independent assertion failures behind a single top-level "1 failed"
+        # (COMPLETION_AUDIT.md, 2026-11-11). Catch it and let the assertions below
+        # report honestly.
+        try:
+            page.reload(wait_until="domcontentloaded")
+        except Exception as exc:                  # noqa: BLE001 — any failure here is data
+            print(f"    offline reload raised: {type(exc).__name__}: {str(exc).splitlines()[0][:120]}")
+            chk("offline: reload survived the dead server", False,
+                "reload threw — no worker answered the navigation")
         # Same deterministic settle as the online leg: wait for the islands to
         # announce they are done. Offline the marker is `data-mounted-at` (the
         # cache branch) — `data-hydrated` also appears, both are app-stamped.

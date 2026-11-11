@@ -165,10 +165,13 @@ const PROJECT = {
  *   - `settings` has no endpoint at all — identity data is server-rendered only,
  *     so it can never be cached offline.
  *   - `dashboard` composes several panels rather than one `/api` feed.
- *   - `tools` has no Dexie store in `RECORD_SCHEMA`, so there is nowhere to
- *     write what /api/tools/island returns. Adding the store is a schema
- *     migration, not a projection — that is why the endpoint exists but this
- *     map does not list it. */
+ *   - `tools` has an endpoint but no store, and is DELIBERATELY left that way:
+ *     the rows are a link registry gated server-side by SCOPE_FEATURES + the
+ *     cold scope blob, so caching them caches a permission map that can only go
+ *     stale, never self-correct offline — while the browser already gives an
+ *     uncached link the same reach. Both gaps are argued in full, with the
+ *     version(2) shape a future store must take, in
+ *     `notes/DECISION-tools-settings-store.md` (P8.3). */
 export const hasIslandProjection = (name: string): name is keyof typeof PROJECT =>
   Object.hasOwn(PROJECT, name);
 

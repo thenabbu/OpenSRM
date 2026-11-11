@@ -165,12 +165,23 @@ say "== leg 3: browser online visit, then server killed, then reload =="
 # is what writes the IndexedDB row), and only then lose it. Killing first made
 # the online visit die with ERR_CONNECTION_REFUSED.
 if [ -x .venv/bin/python ] && [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d "${PLAYWRIGHT_BROWSERS_PATH}" ]; then
-  if .venv/bin/python tests/e2e/offline_paint.py \
+  if LEG_OUT=$(.venv/bin/python tests/e2e/offline_paint.py \
         --base "http://127.0.0.1:$PORT" --token "$TOKEN" \
-        --kill-cmd "kill -9 $SERVER_PID \$(pgrep -P $SERVER_PID | tr '\\n' ' ') 2>/dev/null; true"; then
+        --kill-cmd "kill -9 $SERVER_PID \$(pgrep -P $SERVER_PID | tr '\\n' ' ') 2>/dev/null; true" 2>&1); then
+    printf '%s\n' "$LEG_OUT" | sed 's/^/    /'
     ok "browser: offline reload painted rows from Dexie + age caption"
   else
-    bad "browser: offline reload did not paint (see output above)"
+    printf '%s\n' "$LEG_OUT" | sed 's/^/    /'
+    bad "browser: offline reload did not paint (see above)"
+    # The browser leg prints its own 'browser leg: N passed, M failed'. Folding a
+    # whole subprocess into a single `bad` made the run say "1 failed" while the
+    # leg had 2 independent assertion failures — an undercount that hid real
+    # problems (COMPLETION_AUDIT.md, 2026-11-11). Account for the extra ones.
+    _leg_fails=$(printf '%s\n' "$LEG_OUT" | sed -n 's/.*browser leg: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+    if [ -n "$_leg_fails" ] && [ "$_leg_fails" -gt 1 ]; then
+      FAIL=$((FAIL + _leg_fails - 1))
+      say "  [note] browser leg reported $_leg_fails failed assertions; total adjusted"
+    fi
   fi
 else
   say "  [SKIP] browser leg — no Chromium. Install with:"
