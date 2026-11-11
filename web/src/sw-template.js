@@ -32,6 +32,18 @@ const CACHE_NAME = '__CACHE_NAME__';
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
+// Take over immediately. Without skipWaiting a new worker installs and then sits
+// in `waiting` until every tab of the old one closes — so on a fresh profile the
+// registration never reaches `activate` and `navigator.serviceWorker.controller`
+// stays null. Measured symptom: `__shellWarm` reported stored=8 (the page wrote
+// the shells itself) while the gate failed
+// `[FAIL] online: service worker is controlling the page`.
+//
+// skipWaiting + clientsClaim is the pair Workbox documents for this; clientsClaim
+// is already called below. Safe here because the caches are namespaced by a
+// content-derived CACHE_NAME, so an older worker cannot serve a stale bundle.
+self.addEventListener('install', () => { void self.skipWaiting(); });
+
 // Navigation preload: the HTML request starts while the worker boots, so a
 // controlled page does not pay worker startup latency on its document.
 self.addEventListener('activate', (event) => {
