@@ -97,4 +97,4 @@ html { background: oklch(20% 0 0); }
    <head> a module runs after parsing, before DOMContentLoaded, so the island
    owns the caption first and ref()'s "Syncing…" is preserved by it. #}
 <link rel="stylesheet" href="{{ asset_dist('app.css') }}">
-<script type="module" src="{{ asset_dist('app') }}"></script>
+{% if preact_islands %}<script type="module" src="{{ asset_dist('app') }}"></script>{% endif %}

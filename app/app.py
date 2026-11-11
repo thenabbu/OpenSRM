@@ -1296,6 +1296,9 @@ def create_app(config=None):
     # P4.1 build output (content-hashed by Vite): '' when dist/ is not built yet,
     # so the page falls back to the legacy scripts + app.css
     a.jinja_env.globals["asset_dist"] = asset_dist
+    # P10.1 rollback knob (PREACT_ISLANDS=0): templates skip the island
+    # module when this is False; see docs/ROLLBACK.md
+    a.jinja_env.globals["preact_islands"] = config.preact_islands
     return a
 
 
