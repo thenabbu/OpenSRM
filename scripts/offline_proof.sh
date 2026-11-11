@@ -208,9 +208,12 @@ say "== leg 4: service worker does not cache panel HTML =="
 # previous student's dashboard. Assert that shape directly.
 SW=app/static/sw.js
 if grep -q "text/html" "$SW"; then
-  # isolate the html branch and prove it returns a generic response
+  # isolate the html branch and prove it returns a generic response.
+  # Match `status: 503` AND its minified form `status:503` — the worker is built
+  # by terser, which drops the space. The old pattern required the space, so it
+  # reported FAIL on a worker that genuinely contains the generic fallback.
   html_branch=$(awk "/text\/html/,/^  }/" "$SW")
-  echo "$html_branch" | grep -q "status: 503" \
+  echo "$html_branch" | grep -qE "status: ?503" \
     && ok "offline HTML returns a generic 503, not a cached page" \
     || bad "HTML branch does not return the generic 503 page"
   echo "$html_branch" | grep -q "caches.match(e.request)" \
