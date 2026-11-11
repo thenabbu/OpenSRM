@@ -13,8 +13,48 @@ import { injectManifest } from 'workbox-build';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
+// ── Bundle the template first ────────────────────────────────────────────────
+// injectManifest only injects the precache list into swSrc; it never bundles.
+// A template with bare `workbox-*` imports therefore ships verbatim into a file
+// the browser cannot resolve under CSP script-src 'self' (no import map), the
+// module fails to evaluate, and no worker installs.
+//
+// Rollup is already in workbox-build's dependency tree (its deps include rollup
+// + @rollup/plugin-node-resolve), so the bundler is a build-time tool that is
+// ALREADY installed — no new dependency. pnpm's isolated node_modules does not
+// expose it to this file, so fall back to workbox-build's own resolution root.
+// ponytail: rollup only; a second Vite pass would drag in a second plugin graph.
+const TREES = ['./node_modules/', './node_modules/workbox-build/node_modules/'];
+
+async function loadFromTrees(spec) {
+  for (const base of TREES) {
+    try {
+      return await import(new URL(spec, new URL(base, import.meta.url)).href);
+    } catch (err) { /* try the next root */ }
+  }
+  throw new Error(`workbox: '${spec}' not resolvable — pnpm install web/ first`);
+}
+
+// Single self-contained ESM file, zero bare imports. The worker is registered
+// WITHOUT {type:'module'} (app/static/dash.js:415), so the output must also be
+// valid as a classic script: `es` with every import inlined satisfies both.
+export const BUNDLE = 'src/.sw-bundled.js';
+
+export async function bundleSw(src = 'src/sw-template.js', dest = BUNDLE) {
+  const rollup = await loadFromTrees('rollup');
+  const { nodeResolve } = await loadFromTrees('@rollup/plugin-node-resolve');
+  const bundle = await rollup.rollup({ input: src, plugins: [nodeResolve()] });
+  const { output } = await bundle.generate({ format: 'es', inlineDynamicImports: true });
+  await bundle.close();
+  const code = output.filter((o) => o.type === 'chunk').map((o) => o.code).join('\n');
+  const bare = code.split('\n').filter((l) => /^import .*from '[a-z]/.test(l));
+  if (bare.length) throw new Error('workbox: sw bundle still has bare imports: ' + bare.join(' | '));
+  await writeFile(dest, code);
+  return { dest, bytes: code.length };
+}
+
 export const config = {
-  swSrc: 'src/sw-template.js',
+  swSrc: BUNDLE,
   swDest: '../app/static/sw.js',
   globDirectory: '../app/static',
   // The Vite bundle only. Everything else under app/static keeps its existing
@@ -61,7 +101,11 @@ export async function stampCacheName(swDest = config.swDest) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  injectManifest(config)
+  bundleSw()
+    .then((b) => {
+      console.log(`workbox: bundled ${b.dest} (${b.bytes} bytes, 0 bare imports)`);
+      return injectManifest(config);
+    })
     .then(async ({ count, size, warnings }) => {
       warnings.forEach((w) => console.warn('workbox: ' + w));
       const name = await stampCacheName();

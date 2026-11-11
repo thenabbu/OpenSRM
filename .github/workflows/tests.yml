@@ -90,6 +90,10 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_fernet_rotation.py
       - name: test_official_tt (portal formId-10 parser + contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_official_tt.py
+      - name: test_assets_dist_url (dist entry must equal the URL its chunks import)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_assets_dist_url.py
+      - name: test_offline_shell (offline shell carries structure but no PII)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_offline_shell.py
       - name: test_sessions (session lifecycle contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sessions.py
       - name: test_account_delete (schema-driven account-deletion residue)
