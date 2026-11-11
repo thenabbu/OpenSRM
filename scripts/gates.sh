@@ -177,6 +177,11 @@ else
   # rather than trusting a parsed log line.
   run_step "offline proof (offline_proof.sh)" env OUT=/tmp/offline-proof-$$.md \
     bash scripts/offline_proof.sh
+  # a11y + stress: both need a seeded, LOGGED-IN server, so they share one boot
+  # in a11y_stress.sh. Wiring them here is what stops them becoming orphans —
+  # this mission has already lost 10 DUT scripts to exactly that.
+  run_step "a11y + stress (a11y_stress.sh)" PORT=18185 \
+    bash scripts/a11y_stress.sh
 fi
 
 finish
