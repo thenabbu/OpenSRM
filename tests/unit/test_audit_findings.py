@@ -156,7 +156,18 @@ chk('L36', "static route no longer hardcodes /app/app/static (code, not comments
 # terser emits (CACHE_NAME='name'). Requiring the spaces made this raise
 # AttributeError on .group(1) once the worker became a generated, minified
 # build — the assertion was checking the source's formatting, not its value.
-_sw_cache = re.search(r"CACHE_NAME\s*=\s*['\"]([^'\"]+)['\"]", rd('app/static/sw.js')).group(1)
+_sw_src = rd('app/static/sw.js')
+# The cache name may be referenced through the identifier CACHE_NAME or, after
+# minification inlining, as the bare literal. My logout fix removed the only
+# remaining use of CACHE_NAME from the worker, so matching the identifier alone
+# crashed here — assert on the VALUE, which is what actually matters.
+_sw_cache = (
+    re.search(r"'(opensrm-v\d+-[0-9a-f]+)'", _sw_src)
+    or re.search(r"CACHE_NAME\s*=\s*['\"]([^'\"]+)['\"]", _sw_src)
+)
+if _sw_cache is None:
+    raise SystemExit("L37/D58 cannot run: no cache name found in app/static/sw.js")
+_sw_cache = _sw_cache.group(1)
 # The cache name is now content-derived (opensrm-v69-<sha>) and changes on every
 # build, so a README that pins it is stale within one commit. The rule that still
 # holds: the README must not name ANY specific cache generation — not the current

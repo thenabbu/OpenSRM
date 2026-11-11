@@ -9,6 +9,7 @@ import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 import { warmShells } from './session/shell';
+import { mountBanner } from './pwa/banner';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -268,3 +269,7 @@ void warmShells();
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped
 // IndexedDB wipe done first (capped, so a hung wipe cannot block the link).
 wireLogoutLink(document);
+
+// P8.3: update + install banner. Independent of hydration on purpose — a
+// pending update matters most exactly when an island is stuck.
+mountBanner();
