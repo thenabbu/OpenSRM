@@ -29,28 +29,35 @@ const listeners = new Set<() => void>();
  * Attach the one-shot capture. Idempotent: calling it from several modules (or
  * on every route) must not stack duplicate listeners, because the first one to
  * call `preventDefault()` already consumed the event.
+ *
+ * `wired` guards the DOM listeners ONLY. Guarding the whole function with it
+ * was a real bug: the first subscriber locked the flag, so a subscriber added
+ * later (the banner mounting after another module had already subscribed)
+ * returned a no-op unsubscribe and was never notified.
  */
 let wired = false;
+function wire(): void {
+  if (wired || typeof window === 'undefined') return;
+  wired = true;
+
+  window.addEventListener(PROMPT, (e: Event) => {
+    // Without this the browser shows its own mini-infobar and `prompt()`
+    // later resolves as dismissed — the event is single-use.
+    e.preventDefault();
+    deferred = e as InstallPromptEvent;
+    listeners.forEach((fn) => fn());
+  });
+
+  window.addEventListener(INSTALLED, () => {
+    installed = true;
+    deferred = null;
+    listeners.forEach((fn) => fn());
+  });
+}
+
 export function watchForInstallAvailability(onAvailable?: () => void): () => void {
+  wire();
   if (onAvailable) listeners.add(onAvailable);
-
-  if (!wired && typeof window !== 'undefined') {
-    wired = true;
-
-    window.addEventListener(PROMPT, (e: Event) => {
-      // Without this the browser shows its own mini-infobar and `prompt()`
-      // later resolves as dismissed — the event is single-use.
-      e.preventDefault();
-      deferred = e as InstallPromptEvent;
-      listeners.forEach((fn) => fn());
-    });
-
-    window.addEventListener(INSTALLED, () => {
-      installed = true;
-      deferred = null;
-      listeners.forEach((fn) => fn());
-    });
-  }
 
   return () => {
     if (onAvailable) listeners.delete(onAvailable);
@@ -88,6 +95,10 @@ export async function promptInstall(): Promise<boolean> {
 export function __resetInstall(): void {
   deferred = null;
   installed = false;
-  wired = false;
   listeners.clear();
+  // `wired` stays TRUE on purpose. The DOM listeners attached by `wire()` are
+  // on `window` and cannot be detached from here without holding references to
+  // them; resetting the flag made the next `wire()` attach a SECOND pair, so a
+  // single `beforeinstallprompt` notified every subscriber twice. Module state
+  // and DOM state must not disagree.
 }
