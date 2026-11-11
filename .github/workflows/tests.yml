@@ -94,6 +94,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_assets_dist_url.py
       - name: test_offline_shell (offline shell carries structure but no PII)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_offline_shell.py
+      - name: test_logout_wipes_caches (logout clears every cache, not just CACHE_NAME)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_logout_wipes_caches.py
       - name: test_sessions (session lifecycle contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sessions.py
       - name: test_account_delete (schema-driven account-deletion residue)
