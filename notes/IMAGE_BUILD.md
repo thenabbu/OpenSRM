@@ -66,4 +66,9 @@ the shipped filesystem, so scan the image.
 - `opensrm-scan:20261112-0037` — `sha256:3b508f89…`, same tree as 0024.
 - `opensrm-9.4-scan:20261112-0315` — `sha256:e68c502d…`, the earliest attempt.
 
-`opensrm-scan:20261112-0644` is the newest and is built from current HEAD.
+`opensrm-scan:20261112-0644` is the **newest of these**, but it is NOT built from
+current HEAD: it was built from `418b1fd` (see the table at line 15). HEAD at the
+time of writing was `2d7588c`, three commits later, which includes the CI wiring
+(`e70aca7`) and the dist rebuild. Its digest therefore does not describe what
+ships. Card **P9.4c** rebuilds from HEAD with an `org.opensrm.commit` label so
+the digest→commit mapping is provable rather than asserted.
