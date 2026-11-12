@@ -178,6 +178,10 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_profile.py
       - name: test_readpath_netid (P7.1 offline read path — data-netid is the cache key)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_readpath_netid.py
+      # P10.1 rollback flag: PREACT_ISLANDS unset must still hydrate (default
+      # ON), and off must degrade to server-rendered panels, not a 500.
+      - name: test_rollback_flag (PREACT_ISLANDS gates only the island tag)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_rollback_flag.py
 
   docker:
     runs-on: ubuntu-latest
@@ -331,7 +335,8 @@ jobs:
             test_perf_budget_e2e \
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check \
-            test_fees_dut test_scope_profile_dut
+            test_fees_dut test_scope_profile_dut \
+            test_island_api
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)
         env:
