@@ -377,3 +377,33 @@ jobs:
             /tmp/gun-*.log
           if-no-files-found: ignore
           retention-days: 7
+
+  # web/ — the Preact islands. Nothing else in this file touches TypeScript, so
+  # before this job a type error or a broken island could merge with every
+  # workflow green. Runs the same three gates the local build does, via one
+  # script so the local repro is literally the CI line: bash scripts/ci_web.sh
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Node 22, not the lab's v26: 22 is the current Active LTS, GitHub caches
+      # it on the runner image, and package.json declares no `engines` — so the
+      # pin lives here rather than being implied by whichever image is default
+      # (ubuntu-latest currently ships 20, which is what tsc 7 and vite 8 have
+      # not been tested against). Bump together with the local pnpm.
+      - name: Set up Node 22
+        uses: actions/setup-node@48e278f8a786f0c3feb715fcbc70e2a1c7fb3ceb # v4
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+      # No secrets: pnpm install reads the public registry, tsc and vitest are
+      # both offline once node_modules exists. No portal/CF/ntfy env is touched.
+      - name: Install, typecheck, unit tests (web/)
+        run: bash scripts/ci_web.sh
