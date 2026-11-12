@@ -43,6 +43,7 @@ bash scripts/deploy_gated.sh|touches LIVE prod (snapshot, recreate, rollback) an
 uv sync --frozen --extra browser|CI runner setup, not a gate; locally the venv already exists
 .venv/bin/playwright install --only-shell chromium|CI runner setup; locally set PLAYWRIGHT_BROWSERS_PATH instead
 scope_ui_smoke (inside the CI docker job)|needs the built image
+corepack enable && corepack prepare pnpm@9.15.9 --activate|CI runner setup (installs the pinned pnpm toolchain); locally pnpm is already on PATH or the web/ step SKIPs
 CIEOF
 LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP"
 
@@ -87,6 +88,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  scripts/css_parity.py"
   echo "  bash scripts/ci_promtool.sh"
   echo "  python3 scripts/build_dashboard.py --check"
+  echo "  bash scripts/ci_web.sh"
   echo "-- unit suites"
   unit_suites | sed 's/^/  /'
   echo "-- e2e suites (via scripts/ci_e2e_http.sh)"
@@ -141,6 +143,13 @@ else
   skip "promtool (no docker)"
 fi
 run_step "dashboard JSON is current (build_dashboard.py --check)" python3 scripts/build_dashboard.py --check
+# Phase 2.4: the Preact islands. Same script CI runs, so the local repro is
+# literally the CI line. Skipped only where pnpm is absent (CI always has it).
+if command -v pnpm >/dev/null 2>&1; then
+  run_step "web/ (tsc + design tsc + vitest via ci_web.sh)" bash scripts/ci_web.sh
+else
+  skip "web/ gate (no pnpm)"
+fi
 
 [ -n "$FAST" ] && { finish; }
 
