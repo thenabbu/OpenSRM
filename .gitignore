@@ -29,3 +29,6 @@ ops/observability/proof/
 /node_modules/
 .venv/
 .venv
+
+# dev-lan.sh bind-mount
+.dev-lan-data/
