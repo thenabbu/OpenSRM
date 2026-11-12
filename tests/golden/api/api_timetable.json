@@ -1,0 +1,8 @@
+{
+  "body": "{\"group_key\":\"Computer Science and Engineering Cloud Computing_2025_3_A\",\"ok\":true,\"slots\":{\"Monday-6\":{\"code\":\"<img src=x onerror=\\\"window.__xss=1\\\"><script>window.__xss2=1</script>\",\"location\":\"Test Hall\",\"name\":\"<img src=x onerror=\\\"window.__xss=1\\\"><script>window.__xss2=1</script>\"}},\"subjects\":[]}\n",
+  "bytes": 304,
+  "content_type": "application/json",
+  "gzip_bytes": 208,
+  "path": "/api/timetable",
+  "status": 200
+}
