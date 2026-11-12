@@ -11,13 +11,17 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-PORT=${PORT:-18186}
+# 18189: 18183 offline_proof · 18185 a11y_stress · 18186/18187 run_push_duts.
+PORT=${PORT:-18189}
 DD=$(mktemp -d)
 export DATA_DIR="$DD"
 export DUT_BASE="http://127.0.0.1:$PORT"
-export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
+# Lab default, but honour an inherited value: CI installs the browser under
+# $RUNNER_TEMP/pw-browsers, and a hardcoded lab path there is an instant 10-FAIL
+# run about nothing.
+export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
 export PYTHONPATH="$PWD"
-V=.venv/bin/python
+V=${VENV:-.venv}/bin/python
 
 pkill -f "gunicorn.*$PORT" 2>/dev/null
 cleanup() {
