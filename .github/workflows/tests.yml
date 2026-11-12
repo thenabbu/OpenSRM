@@ -74,6 +74,11 @@ jobs:
       # stayed green on the exact same tree.
       - name: check_docs (docs must not contradict the code)
         run: PYTHONPATH=. .venv/bin/python scripts/check_docs.py
+      # Phase 2.3. Runs here as well as in gates.sh: the dist CSS is committed,
+      # so a rebuild that drops selectors or leaves a stale app-*.css hash
+      # behind must go red on the PR, not only on someone's laptop.
+      - name: css_parity (Vite CSS == committed app.css, one app-*.css in dist)
+        run: PYTHONPATH=. .venv/bin/python scripts/css_parity.py
       - name: test_app_factory (create_app isolation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_app_factory.py
       - name: test_exams (end-sem parser)
@@ -365,6 +370,28 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh
+
+      # dut_suite.sh (gates.sh's 10-script runner) deliberately has no step of
+      # its own here: all 10 suites below already run in this job via
+      # ci_e2e_http.sh, which is why dut_suite.sh exists for the LOCAL bar. This
+      # step asserts that coverage instead of trusting a comment — if a DUT is
+      # added to dut_suite.sh and not to the list above, CI goes red here rather
+      # than the new script being silently untested on the runner forever.
+      - name: dut_suite.sh coverage (every DUT is in this job)
+        run: |
+          set -eu
+          WANT=$(grep -oE 'SCRIPTS="[^"]*"' scripts/dut_suite.sh \
+                 | tr -d '"' | sed 's/^SCRIPTS=//')
+          MISSING=""
+          for s in $WANT; do
+            grep -qE "\\b$s\\b" .github/workflows/tests.yml || MISSING="$MISSING $s"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::dut_suite.sh runs scripts this CI job does not:$MISSING"
+            echo "Add them to the ci_e2e_http.sh step above, or CI never runs them."
+            exit 1
+          fi
+          echo "dut_suite.sh's $(echo "$WANT" | wc -w) DUT scripts all run in this job"
 
       - name: Collect failure logs
         if: failure()

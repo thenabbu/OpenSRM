@@ -36,6 +36,7 @@ classes, byte order and keyframes, never raw bytes.
 Read-only. Exits 0 on PASS, 1 on any violation.
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -321,6 +322,24 @@ def run_checks(new_css: str, old_css: str):
     return fails, n_hand
 
 
+def referenced_dist_css():
+    """Basename of the CSS the built entry actually loads, or None.
+
+    Read from dist/manifest.json (what app/assets_dist.py maps through), not
+    from disk: on disk every historical build leaves a file behind, so disk
+    order cannot tell the keeper from the orphan.
+    """
+    manifest = ROOT / "app" / "static" / "dist" / "manifest.json"
+    try:
+        entries = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for meta in entries.values():
+        for css in meta.get("css") or []:
+            return Path(css).name
+    return None
+
+
 def main():
     if not OLD.exists():
         print("css_parity: FAIL — legacy app/static/app.css missing")
@@ -335,7 +354,14 @@ def main():
     if len(dist_files) != 1 or not dist_files[0].exists():
         print(f"css_parity: FAIL — expected exactly one {DIST_GLOB} "
               f"(run scripts/build-web.sh first); found "
-              f"{[str(f) for f in dist_files]}")
+              f"{[f.name for f in dist_files]}")
+        # Name the keeper and the orphan: a Vite rebuild leaves the previous
+        # hash behind, and deleting the wrong one ships a 404'd stylesheet.
+        ref = referenced_dist_css()
+        if ref:
+            orphans = [f.name for f in dist_files if f.name != ref]
+            print(f"css_parity: manifest references {ref}; "
+                  f"orphan(s) to delete: {orphans or '(none on disk)'}")
         return 1
     new_css = dist_files[0].read_text(encoding="utf-8")
     print(f"css_parity: {OLD} ({len(old_css)}B) vs {dist_files[0]} "

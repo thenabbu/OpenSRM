@@ -84,6 +84,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "-- static gates"
   echo "  scripts/check_architecture.py"
   echo "  scripts/check_docs.py"
+  echo "  scripts/css_parity.py"
   echo "  bash scripts/ci_promtool.sh"
   echo "  python3 scripts/build_dashboard.py --check"
   echo "-- unit suites"
@@ -94,6 +95,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  tests/e2e/test_dut_official_tt.py (self-booting)"
   echo "  bash tests/e2e/run_push_duts.sh   (boots 18185-18187 itself)"
   echo "  bash scripts/offline_proof.sh     (own server on 18183, killed mid-run)"
+  echo "  bash scripts/dut_suite.sh         (own server on 18189, 10 DUT scripts)"
   echo
   echo "== CI_ONLY (CI runs it, gates.sh cannot — with the reason)"
   printf '%s\n' "$CI_ONLY" | sed 's/^/  /'
@@ -129,6 +131,10 @@ run_step() { local n=$1; shift; if "$@" >/tmp/gate-$$.log 2>&1; then ok "$n"; el
   bad "$n"; sed -n '1,40p' /tmp/gate-$$.log | sed 's/^/         /'; fi; }
 run_step "architecture DAG (check_architecture.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_architecture.py
 run_step "doc consistency (check_docs.py)"          env PYTHONPATH=. "$V/bin/python" scripts/check_docs.py
+# Phase 2.3: the Vite CSS must stay semantically equal to the committed
+# app/static/app.css, and exactly one app-*.css may exist in dist/ (a stale
+# build hash left behind is what once precached a 404 and killed offline).
+run_step "CSS parity (css_parity.py)"               env PYTHONPATH=. "$V/bin/python" scripts/css_parity.py
 if command -v docker >/dev/null 2>&1; then
   run_step "promtool (observability config + rules)" bash scripts/ci_promtool.sh
 else
@@ -182,6 +188,13 @@ else
   # this mission has already lost 10 DUT scripts to exactly that.
   run_step "a11y + stress (a11y_stress.sh)" PORT=18185 \
     bash scripts/a11y_stress.sh
+  # The 10 DUT scripts, booted by dut_suite.sh on its own port (18189).
+  # HARD GATE (option a): it exits 1 when any script fails and that is the point.
+  # Until P9.5b fixes the 6 known-red scripts this holds the bar at RED on
+  # purpose — a suite wired and honestly red beats one that is green because
+  # nothing runs it. P9.5b turning them green flips this to PASS with no edit.
+  run_step "DUT suite (dut_suite.sh — 10 scripts)" VENV="$V" \
+    bash scripts/dut_suite.sh
 fi
 
 finish
