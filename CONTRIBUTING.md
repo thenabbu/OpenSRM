@@ -39,15 +39,20 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    you push. The full matrix with per-suite commands and CI runner tags is
    in [AGENTS.md](AGENTS.md#test-matrix-all-green-before-push); the
    conventions live in [tests/README.md](tests/README.md).
-4. **Version** — for user-visible changes bump all three together:
-   `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches
-   (patch = fix, minor = feature, major = breaking/user-visible redesign;
-   docs/tests-only changes get no bump). The number renders on the login
-   page and dashboard navbar, and `tests/unit/test_audit_findings.py` plus
-   CI both enforce the trio. **Nothing else is needed for a release**: the
-   `Release` workflow tags `vX.Y.Z` on `main` and publishes a GitHub Release
-   whose notes are generated from the commits in that range. Release notes
-   are not written by hand and do not live in the app.
+4. **Version** — you normally do not touch it. If a merge to `main` carries
+   `app/` or `Dockerfile` changes without moving `VERSION`, the `Release`
+   workflow's `bump` job opens a `chore(release)` PR that moves the trio
+   (`VERSION` + `pyproject.toml` + `uv.lock`) and auto-merges it once the
+   required checks pass: `patch` by default, `minor` when the push carried a
+   `feat`, and `major` never automatically — say so in the PR body if a change
+   is breaking. The trio is also checked by `check_docs.py` D5 and
+   `test_audit_findings` M23, and the number renders on the login page and
+   dashboard navbar. The same workflow tags `vX.Y.Z`, publishes the GitHub
+   Release whose notes are generated from the commits in the range, and
+   refreshes `CHANGELOG.md`. Release notes are not written by hand and do not
+   live in the app.
+   `main` is protected by required checks, so **nothing pushes to it directly** —
+   not a human, not the bot. Everything lands through a PR.
 5. **Commit** — one logical change per commit, message = finding + evidence
    + fix + how it was verified.
 6. **Push + PR** — open a PR against `main`. PR CI runs **Lint**

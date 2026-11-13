@@ -109,6 +109,24 @@ chk('M27b', "release pipeline present (tag+Release generated on VERSION change)"
     and pathlib.Path('.github/workflows/release.yml').exists()
     and 'contents: write' in (rd('.github/workflows/release.yml')
                               if pathlib.Path('.github/workflows/release.yml').exists() else ''))
+# M28: main is protected by required status checks, so the release machinery must
+# never push to main directly (GH006 every single release), and a push that
+# carries user-facing code without a version change must bump the trio itself.
+# Both halves were broken at once: the CHANGELOG step ran
+# `git push origin HEAD:main` (red on every release, silently leaving CHANGELOG
+# stale) and no step ever bumped a version, so main sat 21 commits past its tag.
+_REL_WF = '.github/workflows/release.yml'
+# A real push to main is the failure, not the word appearing in a comment: this
+# workflow documents the GH006 error by name, so comment lines are excluded.
+_push_main = [l for l in rd(_REL_WF).splitlines()
+              if 'HEAD:main' in l and not l.lstrip().startswith('#')]
+chk('M28', "release workflow: auto-bump job, PR+auto-merge, no direct push to main",
+    has(_REL_WF, r'^  bump:$', re.M)
+    and has(_REL_WF, r'gh pr merge .*--auto')
+    and not _push_main,
+    ev=f"bump_job={has(_REL_WF, r'^  bump:$', re.M)} "
+       f"auto_merge={has(_REL_WF, r'gh pr merge .*--auto')} "
+       f"direct_push={_push_main[:2]}")
 
 # ---------- MEDIUM: docs ----------
 chk('D27', "README/SECURITY carry no CDN origin (runtime CDN removed)",

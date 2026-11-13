@@ -1,51 +1,135 @@
 name: Release
 
-# Every version that lands on main gets a tag and a GitHub Release, its body
-# generated from the commits in that range (scripts/release_notes.py). The app
-# itself carries no release-notes feed any more - GitHub Releases IS the
-# changelog, so this job is the only thing that can produce one, and a failed
-# run is loud instead of silent.
+# Two jobs, one contract: main's version can never fall behind main's code.
+#
+#   bump    - if a push to main carried user-facing changes but did NOT move
+#             VERSION, open a `chore(release)` PR that bumps the trio
+#             (VERSION + pyproject.toml + uv.lock) and auto-merge it.
+#   release - when VERSION actually moves, tag v<VERSION> and publish a GitHub
+#             Release whose body is generated from the commits in that range
+#             (scripts/release_notes.py), then refresh CHANGELOG.md from the
+#             published Releases via a PR.
+#
+# Neither job pushes to main directly: main is protected by 7 required checks,
+# so the bot goes through a PR with auto-merge enabled (repo setting
+# allow_auto_merge). A direct `git push origin HEAD:main` returns
+# GH006 "Protected branch update failed ... 7 of 7 required status checks are
+# expected" and, worse, runs after it has already rewritten the tree.
+#
+# The app carries no release-notes feed: GitHub Releases IS the changelog.
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      backfill:
-        description: "Walk history and create tags/Releases for every past VERSION change"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 # Two pushes landing together each try `gh release create` for the same tag and
-# then both push CHANGELOG.md; serialise instead of racing on non-fast-forward.
+# then both open a CHANGELOG PR; serialise instead of racing.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # push the bump branch
+      pull-requests: write   # open + auto-merge the bump PR
+    outputs:
+      bumped: ${{ steps.compute.outputs.bumped }}
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          # HEAD~1 must be the pre-push main tip: that is the baseline both the
+          # VERSION gate and the path filter compare against.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Bump the trio when user-facing code moved without a version
+        id: compute
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          before="$(git show HEAD~1:VERSION 2>/dev/null | tr -d '[:space:]' || echo '')"
+          after="$(tr -d '[:space:]' < VERSION)"
+          if [ -n "$before" ] && [ "$before" != "$after" ]; then
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "VERSION moved ($before -> $after); the release job handles this push"
+            exit 0
+          fi
+          # Only user-facing paths earn a bump; docs/tests/CI/scripts do not
+          # (CONTRIBUTING step 4).
+          if ! git diff --name-only HEAD~1 HEAD | grep -qE '^(app/|Dockerfile)'; then
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "no user-facing paths in this push - no bump"
+            exit 0
+          fi
+          # patch by default; a merged `feat` is a new capability -> minor.
+          # Major (breaking) stays a human decision, never automatic.
+          level="patch"
+          if git log --no-merges --format=%s HEAD~1..HEAD | grep -qE '^feat(\(|:|!)'; then
+            level="minor"
+          fi
+          new="$(uv version --bump "$level" --no-sync --short)"
+          printf '%s\n' "$new" > VERSION
+          uv lock >/dev/null
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "bumping $after -> $new ($level)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "chore/release-v$new"
+          git add VERSION pyproject.toml uv.lock
+          git commit -m "chore(release): v$new" \
+            -m "Automatic: main gained user-facing changes without moving VERSION, so the trio is bumped here. Level $level (minor when the push carried a feat, patch otherwise)."
+          git push -q origin "chore/release-v$new"
+          { printf 'Automatic version bump. main gained user-facing changes without moving VERSION, so this PR moves the trio (VERSION + pyproject.toml + uv.lock) to **v%s**.\n\n' "$new"
+            printf 'Level: %s (minor when the push carried a feat, patch otherwise; major is always a human decision).\n\n' "$level"
+            printf 'Auto-merge is armed: this merges itself once the 7 required checks pass, and that merge is what tags v%s and writes its release notes.\n' "$new"
+          } > /tmp/body.md
+          gh pr create --base main --head "chore/release-v$new" \
+            --title "chore(release): v$new" --body-file /tmp/body.md
+          gh pr merge "chore/release-v$new" --merge --auto
+          if [ "$(gh pr view "chore/release-v$new" --json autoMergeRequest --jq '.autoMergeRequest != null')" != "true" ]; then
+            echo "::warning::auto-merge is not armed on chore/release-v$new - merge it by hand, or VERSION falls behind main again"
+          fi
+
   release:
+    needs: bump
+    # The bump job's own push re-runs this workflow with VERSION moved, which is
+    # where the release actually happens; this run has nothing left to do.
+    if: needs.bump.outputs.bumped != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: write        # create the tag + Release, push the changelog branch
+      pull-requests: write   # open + auto-merge the changelog PR
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0   # the generator needs full history + tags
           # persist-credentials stays ON here (zizmor finding accepted): the
-          # CHANGELOG step below pushes back to main with this token. Every
-          # other workflow sets it false.
+          # CHANGELOG step below pushes a branch back to the repo with this token.
+          # Every other workflow sets it false.
 
       - name: Did this push change VERSION?
         id: gate
         run: |
           set -eu
-          # The CHANGELOG step below commits back to main, which triggers this
-          # workflow again. Without this gate that second run adds another
-          # changelog commit (two per release, polluting the next range), so we
-          # only proceed when VERSION actually moved.
+          # The CHANGELOG PR below lands on main and triggers this workflow
+          # again. Without this gate that second run would try to release the
+          # same version, so we only proceed when VERSION actually moved.
           if git rev-parse -q --verify HEAD~1 >/dev/null \
              && [ "$(git show HEAD~1:VERSION 2>/dev/null | tr -d '[:space:]')" \
                 = "$(tr -d '[:space:]' < VERSION)" ]; then
@@ -102,16 +186,23 @@ jobs:
 
       - name: Regenerate CHANGELOG.md from Releases
         if: steps.gate.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
           # Rebuild the whole file from the published Releases instead of
           # splicing. Splicing needed the preamble offset to stay in sync and
           # silently dropped the version heading when it drifted; a rebuild is
           # idempotent by construction and cannot gain duplicate sections.
-          # ponytail: paginated at 100 releases; page if the repo ever passes it.
-          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+          #
+          # GH_TOKEN is REQUIRED on this step: without it `gh` refuses to run
+          # ("set the GH_TOKEN environment variable"), the tag list comes back
+          # empty, and the rebuild writes a 2-line CHANGELOG over the real one.
+          # ponytail: one page of 500 releases; page if the repo ever passes it.
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 500 \
             --json tagName,publishedAt --jq '.[] | .tagName' \
             | sort -V -r > /tmp/tags.txt
+          test -s /tmp/tags.txt
           {
             printf '# Changelog\n\n'
             printf 'Generated from git history by scripts/release_notes.py. Every GitHub Release body is the same rendering.\n'
@@ -122,8 +213,17 @@ jobs:
             done < /tmp/tags.txt
           } > CHANGELOG.md
           if git diff --quiet CHANGELOG.md; then echo "CHANGELOG already current"; exit 0; fi
+          BR="docs/changelog-v${{ steps.v.outputs.version }}"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BR"
           git add CHANGELOG.md
           git commit -m "docs(changelog): ${{ steps.v.outputs.version }}"
-          git push origin HEAD:main
+          git push -q origin "$BR"
+          gh pr create --base main --head "$BR" \
+            --title "docs(changelog): ${{ steps.v.outputs.version }}" \
+            --body "Regenerated from the published Releases after \`v${{ steps.v.outputs.version }}\`. Auto-merged once the required checks pass; main takes no direct pushes."
+          gh pr merge "$BR" --merge --auto
+          if [ "$(gh pr view "$BR" --json autoMergeRequest --jq '.autoMergeRequest != null')" != "true" ]; then
+            echo "::warning::auto-merge is not armed on $BR - merge it by hand or CHANGELOG.md goes stale"
+          fi
