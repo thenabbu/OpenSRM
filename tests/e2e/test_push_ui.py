@@ -31,10 +31,17 @@ def b64url(b):
     return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
 
 def open_settings(page, base):
+    """Reach /settings the way a user does now that the app is an MPA: from the
+    dashboard, CLICK the real navigation link. At >=lg that is the navbar tab
+    (#tab-settings-tab); on a phone the dock no longer carries Settings, so the
+    navbar gear (#tab-settings-mobile) is the only route to it. Both are plain
+    <a href="/settings"> anchors — no client-side router intercepts them, so the
+    click is a full page load. A user action beats page.goto here: the whole
+    point of the card is that a real user can reach the notification surface.
+    """
     page.goto(f"{base}/", wait_until="networkidle")
-    # desktop tablist (hidden below lg) and mobile dock (lg:hidden) both carry
-    # data-tab; click whichever is visible at this viewport
-    page.locator('button[data-tab="settings"]:visible').first.click()
+    page.locator('a[data-tab="settings"]:visible').first.click()
+    page.wait_for_load_state("networkidle")
     page.wait_for_selector('#push-card', state='visible', timeout=5000)
 
 def new_ctx(pw, viewport, ua=None):
@@ -55,10 +62,10 @@ with sync_playwright() as p:
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
     open_settings(page, BASE_UNCONF)
     state = page.text_content('#push-state')
-    check("card renders in Settings tab", page.is_visible('#push-card'), "")
-    check("card NOT inside the Timetable tab (consolidated to one surface)",
-          page.evaluate("() => !document.getElementById('tab-timetable')"
-                        ".contains(document.getElementById('push-card'))"), "")
+    check("card renders in the Settings panel", page.is_visible('#push-card'), "")
+    check("card lives inside #tab-settings, not loose in the page",
+          page.evaluate("() => { const p = document.getElementById('tab-settings');"
+                        " return !!p && p.contains(document.getElementById('push-card')); }"), "")
     check("unconfigured state is honest", 'not set up' in (state or ''), str(state))
     check("controls hidden when unconfigured", not page.is_visible('#push-controls'), "")
     overflow = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")

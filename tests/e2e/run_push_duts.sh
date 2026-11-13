@@ -8,7 +8,16 @@
 set -u
 cd "$(dirname "$0")/../.."
 V=${VENV:-.venv}
-export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
+# Same rule as scripts/dut_suite.sh: pin the lab's browser dir only when it is
+# really there, and never pretend a missing browser is a failing test.
+if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d /opt/data/cache/scratch/pw-browsers ]; then
+  export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
+fi
+if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+  echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH does not exist — browsers are not installed there." >&2
+  echo "  install: $V/bin/python -m playwright install chromium" >&2
+  exit 2
+fi
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; }
 trap cleanup EXIT

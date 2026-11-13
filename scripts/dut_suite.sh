@@ -16,10 +16,19 @@ PORT=${PORT:-18189}
 DD=$(mktemp -d)
 export DATA_DIR="$DD"
 export DUT_BASE="http://127.0.0.1:$PORT"
-# Lab default, but honour an inherited value: CI installs the browser under
-# $RUNNER_TEMP/pw-browsers, and a hardcoded lab path there is an instant 10-FAIL
-# run about nothing.
-export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
+# Browsers: the lab keeps Chromium off its root disk, so default to that path
+# only where it really exists. Everywhere else leave the var unset and let
+# Playwright use its own default (~/.cache/ms-playwright on Linux,
+# %LOCALAPPDATA%\ms-playwright on Windows) — a blind pin made a non-lab run read
+# as 10 broken tests instead of one missing browser.
+if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d /opt/data/cache/scratch/pw-browsers ]; then
+  export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
+fi
+if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+  echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH does not exist — browsers are not installed there." >&2
+  echo "  install: ${VENV:-.venv}/bin/python -m playwright install chromium" >&2
+  exit 2
+fi
 export PYTHONPATH="$PWD"
 V=${VENV:-.venv}/bin/python
 
