@@ -8,6 +8,15 @@ import { dashboardProps } from './contract';
 // partials (today.html, week.html, attendance.html, marks.html, exams.html,
 // teachers.html) so it is a real fixture, not the island's own output.
 const PROPS = {
+  // profile.html renders unconditionally — the box hydration used to delete.
+  profile: {
+    netid: 'zz9999',
+    name: 'Test Student',
+    email: 'zz9999@srmist.edu.in',
+    reg_no: 'RA2500000000',
+    avatar:
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64"><g class="mo-root mo-always"></g></svg>',
+  },
   ticker: null as null,
   week: {
     days: 2,
@@ -96,7 +105,7 @@ describe('P6.2 dashboard island', () => {
     const el = grid();
     expect(el.getAttribute('data-hydrated')).toBe('1');
     // one widget per rendered section, in partial order
-    expect(el.querySelectorAll('.wbox')).toHaveLength(5);        // week, budgets, marks, exams, teachers
+    expect(el.querySelectorAll('.wbox')).toHaveLength(6);        // profile, week, budgets, marks, exams, teachers
     expect(text(el)).toContain('This week');
     expect(text(el)).toContain('2 days absent');
     expect(text(el)).toContain('Computer Organization And Architecture');
@@ -108,6 +117,25 @@ describe('P6.2 dashboard island', () => {
     expect(text(el)).toContain('First exam in');
     expect(text(el)).toContain('Dr. Priyanka Gupta');
     expect(text(el)).toContain('Auto-fill mid-sem feedback');
+  });
+
+  it('the profile widget survives hydration (P6.2b regression)', async () => {
+    // The bug: hydration replaced the grid's children with six widgets and the
+    // identity box vanished after first paint. These three selectors are what
+    // gaze.js, dash.js and three e2e DUTs key on, so they are the assertion.
+    document.body.innerHTML = newPage();
+    await hydrateAll(document, Date.now() / 1000);
+    const el = grid();
+    const av = el.querySelector('.avatar > div');
+    expect(av?.classList.contains('blobatar-gaze')).toBe(true);
+    expect(av?.getAttribute('data-morph')).toBe('ignore');
+    expect(av?.querySelector('.mo-root')).not.toBeNull();
+    const btn = el.querySelector('#copyEmail');
+    expect(btn?.getAttribute('data-email')).toBe('zz9999@srmist.edu.in');
+    expect(el.querySelector('[data-copy="RA2500000000"]')).not.toBeNull();
+    expect(text(el)).toContain('Test Student');
+    // the box comes FIRST: LAYOUT's day card is [profile, today, week]
+    expect(el.querySelector('.wbox')).toBe(av?.closest('.wbox'));
   });
 
   it('rendered text matches the server markup fixture (no drift)', async () => {

@@ -32,7 +32,25 @@ const examRow = z.object({
   seat: z.string().nullish(),
 });
 
+/**
+ * profile.html — the identity box, which the partial renders unconditionally
+ * (no `{% if %}`), so it is required here too.
+ *
+ * `avatar` is the `blobatar` Jinja filter's own SVG for this netid, serialised
+ * by the server. One generator, two renderings: the island paints the identical
+ * markup the partial did, so `.blobatar-gaze` / `.mo-root` (what gaze.js and the
+ * low-tier CSS key on) exist whichever path painted the box.
+ */
+const profileProps = z.object({
+  netid: z.string(),
+  name: z.string(),
+  email: z.string(),
+  reg_no: z.string(),
+  avatar: z.string(),
+});
+
 export const dashboardProps = z.object({
+  profile: profileProps,
   ticker: z
     .object({
       state: z.enum(['now', 'up', 'done']),

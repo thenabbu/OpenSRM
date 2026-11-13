@@ -11,6 +11,68 @@ export const HYDRATED_ATTR = 'data-hydrated';
 
 type P = DashboardProps;
 
+/**
+ * profile.html — the identity box (no `wlabel`: the identity is its own label).
+ *
+ * The avatar is the server's own `blobatar` SVG, serialised into the props: one
+ * generator, two renderings, so `.blobatar-gaze` / `.mo-root` (gaze.js, the
+ * low-tier pause CSS, the soft-refresh live-node key) exist on both paths.
+ * `data-morph="ignore"` keeps this node across a soft refresh — idiomorph skips
+ * the subtree and dash.js re-attaches the LIVE node by its `.blobatar-gaze` class,
+ * carrying the gaze driver's inline `--mo-*` vars with it.
+ *
+ * `#copyEmail` + `[data-copy]` stay document-delegated (dash.js), which is why
+ * this component needs no click handler of its own.
+ */
+function Profile({ p }: { p: P['profile'] }) {
+  return (
+    <div class="wbox rounded-box p-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="avatar shrink-0">
+          <div
+            class="bg-base-300 w-16 h-16 rounded-full overflow-hidden blobatar-gaze"
+            data-morph="ignore"
+            dangerouslySetInnerHTML={{ __html: p.avatar }}
+          />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold truncate">{p.name}</div>
+          <button
+            type="button"
+            id="copyEmail"
+            data-email={p.email}
+            class="btn btn-ghost btn-xs px-0 min-h-6 font-mono text-base-content/70 gap-1"
+            title="Click to copy email"
+          >
+            <span class="truncate">{p.email}</span>
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"
+              />
+            </svg>
+          </button>
+          {p.reg_no ? (
+            // tabindex/role are what dash.js setupCopyTargets stamps on the
+            // served node — the island must not hand back a keyboard-dead copy
+            // target just because it painted the node itself.
+            <div
+              class="text-xs text-base-content/50 font-mono cursor-copy"
+              data-copy={p.reg_no}
+              title="Click to copy"
+              tabindex={0}
+              role="button"
+            >
+              {p.reg_no}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** today.html:3 — `{% if ticker %}`. */
 function Today({ ticker, week }: { ticker: NonNullable<P['ticker']>; week: P['week'] }) {
   return (
@@ -256,6 +318,7 @@ export default function DashboardPanel({ el, props }: DashboardHost) {
   el.setAttribute(HYDRATED_ATTR, '1');
   return (
     <>
+      <Profile p={p.profile} />
       {p.ticker ? <Today ticker={p.ticker} week={p.week} /> : null}
       <Week week={p.week} />
       {p.budgets.length ? <Budgets budgets={p.budgets} /> : null}

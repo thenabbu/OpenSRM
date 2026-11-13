@@ -89,6 +89,12 @@ function mountBounded(name: string, Comp: ComponentType<HostProps>, el: HTMLElem
     // snapshot `saved` is still what the catch restores on a throw.
     el.replaceChildren();
     render(createElement(Comp, { el, props, now } as HostProps) as VNode<HostProps>, el);
+    // Islands paint their OWN nodes, so anything the page armed by querying the
+    // server's markup once at load is now watching a detached element: gaze.js's
+    // driver and dash.js's avatar IntersectionObserver both do exactly that, and
+    // the dashboard island replaced the avatar they were bound to. Both re-arm on
+    // this event and are idempotent, so the extra dispatch is free.
+    document.dispatchEvent(new CustomEvent('osrm:island-mounted', { detail: name }));
     return true;
   } catch (err) {
     el.replaceChildren(...saved);

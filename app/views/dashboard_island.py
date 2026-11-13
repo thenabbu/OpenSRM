@@ -14,8 +14,13 @@ import json
 from markupsafe import Markup
 
 
-def props(*, ticker, week, budgets, marks_summary, exams, teach_groups, fb_plan):
+def props(*, profile, ticker, week, budgets, marks_summary, exams, teach_groups, fb_plan):
     """The payload web/src/panels/dashboard/contract.ts validates.
+
+    `profile` is profile.html's identity box: name, institute email, register
+    number and the `blobatar` filter's OWN svg for this netid (a string). The
+    partial renders it unconditionally, so it is not nullable here — the island
+    has to paint the box the hydration used to delete.
 
     `week` is dash["week"] — `today_absent` rides along because today.html:6
     reads dash.week.today_absent, so it is part of the today widget's inputs.
@@ -23,6 +28,7 @@ def props(*, ticker, week, budgets, marks_summary, exams, teach_groups, fb_plan)
     (the partial unpacks `{% for name, val, risk in budgets %}`, teachers.py:17).
     """
     return {
+        "profile": profile,
         "ticker": ticker or None,
         "week": week,
         "budgets": [[n, v, r] for (n, v, r) in budgets or []],

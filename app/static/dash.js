@@ -400,14 +400,22 @@ window.addEventListener('online', function() {
 // Phase 6: pause the avatar's idle loops while it is offscreen. IO needs
 // no polling; paused pose is preserved (motion.css). Low-tier is paused by
 // CSS from perf.js (html[data-perf="low"]).
-(function() {
+//
+// A named function, not an IIFE: the dashboard island paints its OWN avatar
+// node, so the one armed at load is detached by hydration. main.ts fires
+// `osrm:island-mounted` after every successful mount and this re-arms on the
+// new node. Keyed on the element itself, so a no-op re-arm costs nothing.
+function armAvatarOffscreen() {
   var wrap = document.querySelector('.blobatar-gaze');
-  if (!wrap || !('IntersectionObserver' in window)) return;
+  if (!wrap || !('IntersectionObserver' in window) || wrap.dataset.offscreenObs) return;
+  wrap.dataset.offscreenObs = '1';
   var root = wrap.querySelector('.mo-root') || wrap;
   new IntersectionObserver(function(es) {
     es.forEach(function(e) { root.classList.toggle('is-offscreen', !e.isIntersecting); });
   }, {threshold: 0}).observe(wrap);
-})();
+}
+armAvatarOffscreen();
+document.addEventListener('osrm:island-mounted', armAvatarOffscreen);
 
 // audit: register here too — a valid session lands on / directly and never
 // loads /login, so login.js alone would never register the SW for those users.

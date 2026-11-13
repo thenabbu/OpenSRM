@@ -349,6 +349,9 @@
     // and the idle loops are paused by CSS; nothing to observe or animate
     if (document.documentElement.dataset.perf === "low") return;
     document.querySelectorAll(".blobatar-gaze").forEach((svg) => {
+      // Idempotent: the dashboard island replaces the grid's children, so this
+      // runs again over the freshly painted avatar (see the re-arm below).
+      if (svg._blobatarGaze) return;
       const travel = parseFloat(svg.dataset.travel) || 3;
       const settle = parseFloat(svg.dataset.settle) || SETTLE;
       const snap = parseFloat(svg.dataset.snap) || SNAP;
@@ -369,4 +372,8 @@
   } else {
     initGaze();
   }
+  // An island paints its own nodes, so the avatar this ran on at load is
+  // detached the moment the dashboard hydrates. main.ts fires this after every
+  // successful mount; initGaze is idempotent, so the extra call is free.
+  document.addEventListener("osrm:island-mounted", initGaze);
 })();

@@ -19,6 +19,7 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
+from blobatar.flask import blobatar_filter as _blobatar_svg
 from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
@@ -245,7 +246,14 @@ def presentation(vm):
         tools_props=_shell_off(vm, tools_island.block(tools_island.props(vm["tools"]))),
         # P6.2: the widgets' own inputs, serialised unchanged for the island.
         # Built from the SAME locals the partials read — see _island_props.
+        # `profile`: profile.html's identity box, which the island has to paint
+        # too — hydration replaced the grid's children and silently dropped it
+        # (P6.2b). The avatar is the filter's own svg, the same call the partial
+        # makes, so the island's inline SVG is byte-identical to the served one.
         dashboard_island_props=_island_block(_island_props(
+            profile={"netid": netid, "name": vm["student_name"] or netid,
+                     "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"],
+                     "avatar": _blobatar_svg(netid, size=64, animate="always")},
             ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
             budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
             exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
