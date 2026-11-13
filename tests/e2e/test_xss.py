@@ -11,6 +11,18 @@ TOKEN = mint_token()
 BASE = os.environ.get('DUT_BASE', 'http://127.0.0.1:18099')
 require_own_server(BASE)
 
+# Scripts whose content the browser can actually run: no type, or a JS type.
+# Anything else (application/json island props, ld+json, text/template) is data,
+# never code — counting it as "an injected script element" is a false positive.
+_EXEC_SCAN = """
+(() => {
+  const JS = new Set(['', 'text/javascript', 'application/javascript', 'module']);
+  return Array.from(document.scripts)
+    .filter(s => JS.has((s.type || '').trim().toLowerCase()))
+    .filter(s => s.textContent.includes('__xss2')).length;
+})()
+"""
+
 async def main():
     fails, dialogs, js_errors, csp = [], [], [], []
     async with async_playwright() as p:
@@ -34,7 +46,10 @@ async def main():
             "no __xss (onerror)":          await page.evaluate("window.__xss") is None,
             "no __xss2 (script tag)":      await page.evaluate("window.__xss2") is None,
             "no raw <img src=x> element":  await page.evaluate("document.querySelectorAll('img[src=x]').length") == 0,
-            "no injected script element":  await page.evaluate("Array.from(document.scripts).some(s => s.textContent.includes('__xss2'))") == 0,
+            # Only scripts that can EXECUTE count as injected. The island props ride
+            # an inert <script type="application/json"> block; safeguarding its
+            # contents is the emitter's job (island '<' -> \u003c), not this scan's.
+            "no injected script element":  await page.evaluate(_EXEC_SCAN) == 0,
             "raw payload not in HTML":     not await page.evaluate("document.body.innerHTML.includes('<img src=x onerror')"),
             "escaped payload IS rendered": await page.evaluate("document.body.innerHTML.includes('&lt;img src=x onerror')"),
             "no CSP violations":           not any("Content Security Policy" in c for c in csp),
