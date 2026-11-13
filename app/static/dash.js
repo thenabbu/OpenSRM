@@ -34,7 +34,13 @@ function renderSyncLines() {
     else if (diff < 86400) text = '(' + Math.floor(diff / 3600) + 'h ago)';
     else text = '(' + Math.floor(diff / 86400) + 'd ago)';
     el.textContent = text;
-    el.classList.toggle('hidden', !text);   // empty caption drops out of the flex gap
+    // BOTH representations: the caption drops out of the flex gap via the class,
+    // and the server marks a no-age caption with the `hidden` ATTRIBUTE (whose
+    // UA default is display:none). Toggling only the class left that attribute
+    // set forever, so a page that started without a sync could never show the
+    // caption it later gained. One writer, both spellings.
+    el.classList.toggle('hidden', !text);
+    el.toggleAttribute('hidden', !text);
     el.title = el.dataset.full;
   });
 }
@@ -186,7 +192,7 @@ function ref(quiet) {
   // is and still blocks a second click (see the handler below).
   btns.forEach(function(b) { b.setAttribute('aria-disabled', 'true'); b.dataset.busy = '1'; });
   icons.forEach(function(i) { i.classList.add('animate-spin'); });
-  document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); });
+  document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); el.removeAttribute('hidden'); });
   function restore() {
     btns.forEach(function(b) { b.removeAttribute('aria-disabled'); delete b.dataset.busy; });
     icons.forEach(function(i) { i.classList.remove('animate-spin'); });

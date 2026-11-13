@@ -113,7 +113,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
     </button>
-    <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap{% if sync_age_text %} island-fresh{% endif %}"data-island="sync-age" data-props="#island-sync-age" title="{{ last }}"{% if not sync_age_text %} hidden{% endif %}>{{ sync_age_text }}</span>
+    <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap{% if sync_age_text %} island-fresh{% endif %}"data-ts="{{ last_epoch }}" data-full="{{ last }}" data-island="sync-age" data-props="#island-sync-age" title="{{ last }}"{% if not sync_age_text %} hidden{% endif %}>{{ sync_age_text }}</span>
   </div>
 </div>
 <!-- Mobile: minimal navbar — refresh far LEFT, wordmark centred, settings far
@@ -134,7 +134,7 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.364 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
     </button>
-    <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap truncate{% if sync_age_text %} island-fresh{% endif %}"data-island="sync-age" data-props="#island-sync-age" title="{{ last }}"{% if not sync_age_text %} hidden{% endif %}>{{ sync_age_text }}</span>
+    <span class="sync-line text-[11px] text-base-content/50 leading-5 whitespace-nowrap truncate{% if sync_age_text %} island-fresh{% endif %}"data-ts="{{ last_epoch }}" data-full="{{ last }}" data-island="sync-age" data-props="#island-sync-age" title="{{ last }}"{% if not sync_age_text %} hidden{% endif %}>{{ sync_age_text }}</span>
   </div>
   <div class="navbar-center justify-center">
     <img src="/static/logo-rect.png" alt="OpenSRM" class="h-6 w-auto rounded-sm" width="120" height="32">

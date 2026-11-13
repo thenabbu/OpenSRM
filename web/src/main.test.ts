@@ -3,15 +3,16 @@ import { createElement } from 'preact';
 import { hydrateAll, mountBounded } from './main';
 
 // Exactly what the server emits (templates + app/views/sync_age.py): the same
-// two spans, the same caption/title/classes, `data-island` on each, and ONE
-// inert JSON block they both point at. The only thing absent is data-hydrated:
-// that marker can only exist after Preact mounts.
+// two spans, the same caption/title/classes/epoch attributes, `data-island` on
+// each, and ONE inert JSON block they both point at. The only thing absent is
+// data-hydrated: that marker can only exist after Preact mounts.
 const BLOCK = (ts: number, id = 'island-sync-age') =>
   `<script type="application/json" id="${id}">` +
   `{"ts":${ts},"full":"2026-11-01 10:00:00","busy":null}</script>`;
 
-const SSR = (text: string, mobile = false, id = 'island-sync-age') => `
+const SSR = (text: string, mobile = false, id = 'island-sync-age', ts = 0) => `
   <span class="sync-line ${mobile ? 'text-[11px]' : 'text-xs'} text-base-content/60"
+        data-ts="${ts}" data-full="2026-11-01 10:00:00"
         data-island="sync-age" data-props="#${id}"
         title="2026-11-01 10:00:00">${text}</span>`;
 
@@ -19,7 +20,7 @@ const SSR = (text: string, mobile = false, id = 'island-sync-age') => `
 let pageId = 0;
 const newPage = (text: string, ts: number) => {
   const id = `island-sync-age-${++pageId}`;
-  return SSR(text, false, id) + SSR(text, true, id) + BLOCK(ts, id);
+  return SSR(text, false, id, ts) + SSR(text, true, id, ts) + BLOCK(ts, id);
 };
 
 /** Every structured warning the boundary emits (console.warn is the channel).
@@ -66,6 +67,20 @@ describe('P4.1 island hydration', () => {
       expect(el.getAttribute('data-hydrated')).toBe('1');
       expect(el.textContent).toBe('');
       expect(el.classList.contains('hidden')).toBe(true);
+    }
+  });
+
+  // ISLAND-ATTRIBUTE-CONTRACT: every dive into the caption text is the DOM,
+  // not this island — dash.js's renderSyncLines(), the refresh button, the
+  // manual "pin the stale state" evaluations. The server marks a caption with
+  // NO age as `hidden`+class, so whoever writes the text must clear BOTH
+  // representations or a hydrated caption is invisible on exactly the pages
+  // that started without a sync (test_navbar's three reds).
+  it('the visibility writable carries `hidden` as an attribute, not only the class', async () => {
+    for (const el of spans()) expect(el.hasAttribute('data-ts')).toBe(true);
+    await hydrateAll(document, now());
+    for (const el of spans()) {
+      expect(el.hasAttribute('hidden')).toBe(el.classList.contains('hidden'));
     }
   });
 
