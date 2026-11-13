@@ -325,6 +325,11 @@ function setupCopyTargets(root) {
   });
 }
 setupCopyTargets(document);
+// The settings island repaints #personal-details after hydration, so the stamps
+// above land on nodes it then throws away (measured: 24 targets, 0 wired). Re-arm
+// on the event main.ts fires after every mount, like armAvatarOffscreen below;
+// setupCopyTargets is idempotent per node, so a no-op re-arm costs nothing.
+document.addEventListener('osrm:island-mounted', function() { setupCopyTargets(document); });
 document.addEventListener('click', function(ev) {
   var el = ev.target.closest ? ev.target.closest('[data-copy]') : null;
   if (el) { copyText(el.dataset.copy || el.textContent.trim(), el); return; }
@@ -373,14 +378,27 @@ document.addEventListener('keydown', function(ev) {
 //    fact-sheet scan), first group only on mobile (compact lookup).
 //    The Personal-details ROW itself stays collapsed on both — it's one
 //    settings row among several now; the group rule applies once opened.
-//    ponytail: evaluated once at load; rotating across the sm breakpoint
+//    A named function, not an IIFE: the settings island repaints the block
+//    after hydration and the fresh inputs arrive unchecked, so this re-arms on
+//    `osrm:island-mounted` exactly like armAvatarOffscreen. Keyed per input, so
+//    a re-arm never undoes a toggle the user made.
+//    ponytail: evaluated once per node; rotating across the sm breakpoint
 //    keeps whatever state the user has toggled (still fully toggleable).
-(function() {
-  var groups = document.querySelectorAll('#personal-details .collapse input');
-  if (!groups.length) return;
+function applyGroupDefaults() {
+  // .flex.flex-col, not `#personal-details .collapse input`: after hydration the
+  // island's own block is a SECOND #personal-details, and the row's toggle input
+  // would match that selector — opening the row the user has not opened.
+  var wrap = document.querySelector('#personal-details .collapse-content > .flex.flex-col');
+  if (!wrap) return;
   var wide = window.matchMedia('(min-width: 640px)').matches;
-  groups.forEach(function(g, i) { g.checked = wide || i === 0; });
-})();
+  Array.prototype.forEach.call(wrap.querySelectorAll('.collapse > input'), function(g, i) {
+    if (g.dataset.groupDefault) return;
+    g.dataset.groupDefault = '1';
+    g.checked = wide || i === 0;
+  });
+}
+applyGroupDefaults();
+document.addEventListener('osrm:island-mounted', applyGroupDefaults);
 
 // ── Auto-sync on open: show cached data instantly, refresh quietly in
 //    background when stale (>10min). Quiet failures stay silent.

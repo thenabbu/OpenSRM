@@ -76,6 +76,9 @@
 .acad-chev{transition:transform .2s var(--ease-out, ease)}
 details[open]>summary .acad-chev{transform:rotate(180deg)}
 @media (prefers-reduced-motion:reduce){.acad-chev{transition:none}}
+/* audit a11y: a copy target is a keyboard control (tabindex=0 + Enter/Space), so
+   it must show where focus is. Same ring as the timetable's focusable rows. */
+[data-copy]:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
 </style>
 </head><body class="bg-base-100 text-base-content" data-scope-sync="{{ scope_sync_state }}"{% if data_netid %} data-netid="{{ data_netid }}"{% endif %}>
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->

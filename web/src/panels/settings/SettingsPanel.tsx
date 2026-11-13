@@ -13,12 +13,31 @@ export const HYDRATED_ATTR = 'data-hydrated';
 const COLLAPSE = 'collapse collapse-arrow bg-base-200 border border-base-300';
 const TITLE = 'collapse-title text-sm font-semibold flex items-center justify-between gap-2';
 
+/**
+ * Group defaults, same rule dash.js applies to the served markup: every group
+ * open on desktop (dense fact-sheet scan), first one only on mobile (compact
+ * lookup). The island REPAINTS those nodes, so it has to reproduce the state —
+ * content alone left the accordion shut.
+ */
+const wide = (): boolean => window.matchMedia('(min-width: 640px)').matches;
+
+/**
+ * A copy target is a keyboard control (dash.js stamps role/tabindex on the
+ * served nodes and copies on Enter/Space). Repainting the node must not hand
+ * back a mouse-only div: same a11y attributes, so the delegate still finds them.
+ */
+const COPY = { title: 'Click to copy', tabindex: 0, role: 'button' } as const;
+
 /** One key/value cell (settings.html:228-232). */
 function Cell({ d }: { d: Detail }) {
   return (
     <div class={d.wide ? 'sm:col-span-2' : undefined}>
       <div class={`text-xs uppercase tracking-wide ${text('50')}`}>{d.key}</div>
-      <div class={d.mono ? 'text-sm font-mono break-words' : 'text-sm break-words'} data-copy={d.value}>
+      <div
+        class={d.mono ? 'text-sm font-mono break-words' : 'text-sm break-words'}
+        data-copy={d.value}
+        {...COPY}
+      >
         {d.value}
       </div>
     </div>
@@ -26,10 +45,10 @@ function Cell({ d }: { d: Detail }) {
 }
 
 /** One group collapse: title, count badge, then the 1/2-col grid (settings.html:217-235). */
-function GroupBlock({ g }: { g: Group }) {
+function GroupBlock({ g, open }: { g: Group; open: boolean }) {
   return (
     <div class={COLLAPSE}>
-      <input type="checkbox" aria-label={`Toggle ${g.title}`} />
+      <input type="checkbox" aria-label={`Toggle ${g.title}`} checked={open} />
       <div class={TITLE}>
         <span>{g.title}</span>
         <span class="badge badge-sm">{g.items.length}</span>
@@ -62,17 +81,25 @@ export function PersonalDetails({ props }: { props: unknown }) {
               <div class="card bg-base-200 border border-base-300">
                 <div class="card-body p-4">
                   {personal.name ? (
-                    <div class="text-lg font-semibold" data-copy={personal.name}>{personal.name}</div>
+                    <div class="text-lg font-semibold" data-copy={personal.name} {...COPY}>
+                      {personal.name}
+                    </div>
                   ) : null}
                   {personal.program ? (
-                    <div class={`text-sm font-mono ${text('60')} break-words mt-1`} data-copy={personal.program}>
+                    <div
+                      class={`text-sm font-mono ${text('60')} break-words mt-1`}
+                      data-copy={personal.program}
+                      {...COPY}
+                    >
                       {personal.program}
                     </div>
                   ) : null}
                 </div>
               </div>
             ) : null}
-            {personal.groups.map((g, i) => <GroupBlock key={`${g.title}-${i}`} g={g} />)}
+            {personal.groups.map((g, i) => (
+              <GroupBlock key={`${g.title}-${i}`} g={g} open={wide() || i === 0} />
+            ))}
           </div>
         )}
       </div>
