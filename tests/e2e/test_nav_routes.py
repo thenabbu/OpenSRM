@@ -33,15 +33,17 @@ from _seed import seed_rich, mint_token, require_own_server  # noqa: E402
 
 
 def seed_full():
+    """Rich seed + the SCOPE blob that makes the gated Tools rows render.
+
+    The blob comes from tests/_scope_fixture (fabricated, built from the repo's
+    own fixtures). It used to import an absolute lab path
+    (/opt/data/missions/opensrm-preact/scripts/capture.py): on CI, and on any
+    clean checkout, that file does not exist, so the block silently did nothing,
+    /tools rendered no rows, and this suite failed on its own precondition.
+    """
     seed_rich(with_payload=True)
-    data_dir = os.environ["DATA_DIR"]
-    cap_path = "/opt/data/missions/opensrm-preact/scripts/capture.py"
-    if os.path.exists(cap_path):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("cap", cap_path)
-        cap = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cap)
-        cap.inject_scope(data_dir)
+    import _scope_fixture
+    _scope_fixture.inject(os.environ["DATA_DIR"])
 
 
 seed_full()

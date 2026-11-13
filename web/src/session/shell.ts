@@ -93,6 +93,14 @@ async function warmChunks(): Promise<number> {
 export async function warmShells(): Promise<number> {
   const diag: string[] = [`start ctrl=${!!navigator.serviceWorker?.controller} online=${navigator.onLine}`];
   if (typeof caches === 'undefined' || !navigator.onLine) { expose(diag, 'bailed: caches or offline'); return 0; }
+  // No owner, nothing to warm. A shell is the page the SW serves for the NEXT
+  // load OF THAT PANEL; an anonymous visitor (the login page) has no panel to
+  // come back to, so on /login this fired eight /shell/<panel> GETs that every
+  // one of them answered 401 outside a session. Auth headers plus a 401 body
+  // are what Playwright's networkidle never counts as settled — measured:
+  // goto('/login') timed out at 30 s with those eight still in flight, and the
+  // same load with /shell/* aborted reached networkidle in 2.0 s.
+  if (!document.body?.dataset.netid) { expose(diag, 'bailed: no netid (signed out)'); return 0; }
   let stored = 0;
   try {
     const cache = await caches.open(SHELL_CACHE);

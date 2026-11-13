@@ -269,6 +269,8 @@ void (async () => {
 // exactly what happened: the shells were never cached because this line never
 // ran. Warming is independent of hydration in both directions (it fetches
 // /shell/<panel>, not the islands), so it starts on its own.
+// It is NOT unconditional though: warmShells bails without a netid, so the
+// signed-out pages (login) issue no /shell/* at all.
 void warmShells();
 
 
