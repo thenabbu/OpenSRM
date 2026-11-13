@@ -21,6 +21,17 @@ def region(p, start, end):
     if i < 0: return ''
     j = t.find(end, i + len(start))
     return t[i:j if j > 0 else i + 8000]
+def hsts_gated():
+    """HSTS is emitted, and emitted only behind the verified CF edge.
+
+    Scans every module in the app/ package rather than one pinned filename: the
+    header moved app/app.py -> app/edge.py (f17be19) and a file-pinned check
+    then failed on code that was still correct. What must not change is the
+    GATE — audit #18: the header hangs off _behind_cf() (edge-secret verified),
+    never a bare cf-ray test, because cf-ray is client-assertable.
+    """
+    pat = re.compile(r'if _behind_cf\(\):[^\n]*\n\s*\w+\.headers\.setdefault\(\s*["\']Strict-Transport-Security["\']')
+    return any(pat.search(p.read_text()) for p in sorted((R / 'app').rglob('*.py')))
 
 def _meters_ok(tpl):
     """Every progress bar in a template carries a real accessible name.
@@ -176,7 +187,7 @@ chk('L37', f"README names no specific sw cache version (sw.js is {_sw_cache})",
     not re.search(r'opensrm-v\d+', rd('README.md')))
 chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has('DESIGN.md', r'Flask 3\.0'))
 chk('L39', "HSTS header present (edge-secret gated, not bare cf-ray — audit #18)",
-    bool(re.search(r'if _behind_cf\(\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
+    hsts_gated())
 chk('L40', "rate dict: prune stale keys, no full clear()",
     not bool(re.search(r'\.clear\(\)', region('app/state.py', 'def check', 'def charge'))) or has('app/state.py', r'prune'))
 chk('L41', "dead code: no duplicate threading alias", miss('app/app.py', r'import threading as _tw'))
