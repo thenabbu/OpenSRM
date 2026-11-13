@@ -67,6 +67,13 @@ with sync_playwright() as p:
     check("coarse pointer detected on the mobile context",
           pg.evaluate("matchMedia('(pointer: coarse)').matches"))
 
+    # Baseline: the page refreshes ITSELF once on open (dash.js "auto-sync on
+    # open": a seeded .sync-line has no data-ts, so it counts as stale and
+    # ref(true) fires ~150ms after load). This check is about the GESTURE, so
+    # measure the delta the pull causes — an absolute count measures the
+    # auto-sync plus the pull and reads as a bogus double-fire.
+    base_hits = refresh_hits["n"]
+
     pg.evaluate(TOUCH, 100)
     pg.evaluate("window.__pullTap(300, 'touchmove')")   # raw dy=200 -> eff ~162
     tr = pg.evaluate("document.body.style.transform")
@@ -81,8 +88,9 @@ with sync_playwright() as p:
 
     pg.evaluate("window.__pullTap(300, 'touchend')")
     pg.wait_for_timeout(800)
-    check("release past 80px fires the existing refresh", refresh_hits["n"] == 1,
-          str(refresh_hits["n"]))
+    pulled = refresh_hits["n"] - base_hits
+    check("release past 80px fires the existing refresh", pulled == 1,
+          "" if pulled == 1 else f"delta {pulled} (pre-gesture baseline {base_hits})")
     check("the refresh never navigates (sentinel alive)",
           pg.evaluate("window.__alive === true"))
     check("body transform cleared after the gesture settles",
