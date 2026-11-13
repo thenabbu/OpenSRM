@@ -109,26 +109,46 @@ r = cl.get("/")
 check("authenticated GET / is 200", r.status_code == 200, str(r.status_code))
 html = r.get_data(as_text=True)
 
-for tab in ("tools", "academics", "fees", "attendance"):
-    check(f'panel id="tab-{tab}" present', f'id="tab-{tab}"' in html)
+# Each panel lives on its OWN route now (MPA, P3.1): `/` is the dashboard, and
+# /tools, /academics, /fees, /attendance each render exactly one panel. So the
+# panel assertion GETs that route, while the nav assertion stays on `/` — the
+# nav is the only thing all nine pages share. The panels ARE seeded here, so
+# each route must render its panel (a 404 would mean the gate and the nav
+# disagree — the broken-link bug). The campus self-hide case is asserted below,
+# where there deliberately is no data.
+PANEL_ROUTES = {"tools": "/tools", "academics": "/academics",
+                "fees": "/fees", "attendance": "/attendance"}
+PAGES = {}                      # tab -> its route's HTML, reused by the Tools check below
+for tab, route in PANEL_ROUTES.items():
+    # ponytail: one GET per tab on top of `/`; fold into a loop over all nine if
+    # the set grows again.
+    pr = cl.get(route)
+    page = PAGES[tab] = pr.get_data(as_text=True)
+    check(f"{route} is 200 (panel gates on the seeded data)", pr.status_code == 200,
+          str(pr.status_code))
+    check(f'panel id="tab-{tab}" present on {route}', f'id="tab-{tab}"' in page)
     check(f'nav data-tab="{tab}" present', f'data-tab="{tab}"' in html)
 # campus self-hides on empty answers BY DESIGN (no campus ops seeded here), so
 # assert the rule rather than the panel: present only when it has cards.
 check("campus hidden when it has no cards (self-hide rule)",
       ('id="tab-campus"' in html) == ("Campus" in html and 'data-tab="campus"' in html))
+check("campus route 404s when it has no cards",
+      cl.get("/campus").status_code == 404)
 
-# the Tools rows must point at panels that exist (the original broken-link bug)
-hrefs = re.findall(r'data-tool-tab="([a-z]+)"', html)
+# the Tools rows must point at panels that exist (the original broken-link bug).
+# They live on /tools — the Tools panel is the only place that renders them.
+tools_html = PAGES["tools"]
+hrefs = re.findall(r'data-tool-tab="([a-z]+)"', tools_html)
 check("Tools rows carry data-tool-tab targets", len(hrefs) >= 3, str(hrefs))
-missing = [h for h in hrefs if f'id="tab-{h}"' not in html]
+missing = [h for h in hrefs if h not in PAGES or f'id="tab-{h}"' not in PAGES[h]]
 check("every Tools target panel exists in the DOM", not missing, str(missing))
 
 # the sync-state hook the frontend polls off must be rendered
 check("body carries data-scope-sync", "data-scope-sync=" in html)
 
-# seeded content reached the browser, not just the DB
-check("seeded fee head rendered", "Tuition Fee" in html)
-check("seeded subject rendered", "Programming For Problem Solving" in html)  # view title-cases
+# seeded content reached the browser, not just the DB — on the route that owns it
+check("seeded fee head rendered", "Tuition Fee" in PAGES["fees"])
+check("seeded subject rendered", "Programming For Problem Solving" in PAGES["academics"])  # view title-cases
 
 # ── the status endpoint answers for the session user only ─────────────────
 s = A.app.test_client().get("/api/scope/status")     # a FRESH client: no cookie
