@@ -111,8 +111,14 @@ describe('P6.2 dashboard island', () => {
     expect(text(el)).toContain('Computer Organization And Architecture');
     expect(text(el)).toContain('-4');
     expect(text(el)).toContain('18/20');
-    // risk-first order IS the view (attendance widget comment, teachers.py:61)
-    const rows = Array.from(el.querySelectorAll('.widget-scroll li')).map((n) => n.querySelector('span')!.textContent);
+    // risk-first order IS the view (attendance widget comment, teachers.py:61).
+    // Scoped to the attendance widget: the unscoped `.widget-scroll li` here
+    // used to pass only because the island rendered attendance BEFORE exams —
+    // the server's LAYOUT puts exams in the `assess` card ahead of `people`,
+    // so a global query returns an exam row first. That divergence is what
+    // W2.6 fixed; the ordering claim under test is the widget's own.
+    const att = Array.from(el.querySelectorAll<HTMLElement>('.wbox')).find((w) => text(w).includes('to 75%'))!;
+    const rows = Array.from(att.querySelectorAll('.widget-scroll li')).map((n) => n.querySelector('span')!.textContent);
     expect(rows[0]).toBe('Computer Organization And Architecture');
     expect(text(el)).toContain('First exam in');
     expect(text(el)).toContain('Dr. Priyanka Gupta');
@@ -136,6 +142,55 @@ describe('P6.2 dashboard island', () => {
     expect(text(el)).toContain('Test Student');
     // the box comes FIRST: LAYOUT's day card is [profile, today, week]
     expect(el.querySelector('.wbox')).toBe(av?.closest('.wbox'));
+  });
+
+  it('every widget sits in the server\'s card > card-body tree (W2.6 regression)', async () => {
+    // home.html:234-237 wraps each card's widgets as `.card > .card-body >
+    // .wbox`, and home.html:227-232 states the hydration contract: "replaces
+    // this element's children with the same tree". It did not — the island
+    // emitted six bare wboxes, so the grid cell was gone (feedback card
+    // collapsed to 58x64), `box.closest('.card')` was null (scope-profile DUT
+    // threw) and home.html's `.card-body > .wbox` flex rules had no parent.
+    //
+    // LAYOUT is THREE cards for seven widgets — day [profile, today, week],
+    // assess [marks, exams], people [attendance, teachers] — so the counts are
+    // 3, not one per widget. Pinned against the server's own paint:
+    // tests/golden/dom/dashboard.html has 3 `card bg-base-200` divs and 3
+    // `card-body` divs (its 6 wboxes differ only because the fixture has no
+    // ticker, which the PROPS above also omit).
+    document.body.innerHTML = newPage();
+    await hydrateAll(document, Date.now() / 1000);
+    const el = grid();
+    const cards = Array.from(el.querySelectorAll<HTMLElement>('.card'));
+    expect(cards).toHaveLength(3);
+    expect(el.querySelectorAll('.card-body')).toHaveLength(3);
+    for (const c of cards) {
+      // exactly one card-body, a DIRECT child — not any descendant
+      expect(Array.from(c.children).filter((n) => n.classList.contains('card-body'))).toHaveLength(1);
+    }
+    // no widget is left outside a card-body
+    const wboxes = Array.from(el.querySelectorAll<HTMLElement>('.wbox'));
+    expect(wboxes).toHaveLength(6); // profile, week, budgets, marks, exams, teachers
+    for (const w of wboxes) expect(w.parentElement?.closest('.card-body')).not.toBeNull();
+    // and the spans are LAYOUT's, so each card keeps its grid cell
+    expect(cards[0].className).toContain('lg:col-span-4');
+    expect(cards[0].className).toContain('lg:row-span-2');
+    expect(cards[1].className).toContain('lg:col-span-8');
+    expect(cards[1].className).toContain('lg:max-h-[calc((100dvh-94px)*0.65)]');
+    // people is a `cols: 2` card: the widgets ride one inner grid
+    expect(cards[2].querySelector('.card-body > div.grid')).not.toBeNull();
+  });
+
+  it('a card whose widgets are all empty emits no orphan shell', async () => {
+    // layout.py's `when` rule, mirrored: the route drops a card when every one
+    // of its guard vars is empty, so the island must drop it too — an empty
+    // `.card` is a visible grid cell with nothing in it.
+    document.body.innerHTML = newPage({ ...PROPS, budgets: [], teachers: [], marks: [], exams: null });
+    await hydrateAll(document, Date.now() / 1000);
+    const el = grid();
+    expect(el.querySelectorAll('.card')).toHaveLength(1);  // `day` only
+    expect(el.querySelectorAll('.card-body')).toHaveLength(1);
+    expect(el.querySelectorAll('.wbox')).toHaveLength(2);  // profile + week
   });
 
   it('rendered text matches the server markup fixture (no drift)', async () => {

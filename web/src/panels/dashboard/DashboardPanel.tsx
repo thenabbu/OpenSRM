@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { badge } from '../../design';
 import type { DashboardProps } from './contract';
 
@@ -304,6 +305,30 @@ function Teachers({ teachers, fb_plan }: { teachers: P['teachers']; fb_plan: boo
 }
 
 /**
+ * One LAYOUT card: `home.html:234-237`'s `.card > .card-body`, class strings
+ * copied verbatim.
+ *
+ * The grid is the island's MOUNT POINT, and main.ts's render replaces that
+ * element's CHILDREN — so the island has to emit the cards, not just the
+ * widgets. Emitting bare `.wbox`es dropped the grid cell (feedback card
+ * collapsed to 58x64), made `closest('.card')` null (scope-profile DUT threw)
+ * and orphaned home.html's `.card-body > .wbox` flex rules.
+ *
+ * The span/row-span/cap mirror the LAYOUT registry in app/views/layout.py,
+ * which stays the single source of truth for the card tree. They are spelled
+ * out literally here because Tailwind only generates classes it can see as
+ * literal text. Change LAYOUT and this must change with it; the `card` /
+ * `card-body` counts in dashboard.test.ts are the tripwire.
+ */
+function Card({ cls, children }: { cls: string; children: ComponentChildren }) {
+  return (
+    <div class={`card bg-base-200 border border-base-300 ${cls} lg:overflow-hidden`}>
+      <div class="card-body p-4 gap-3 lg:min-h-0 lg:overflow-y-auto">{children}</div>
+    </div>
+  );
+}
+
+/**
  * The six dashboard widgets, hydrated.
  *
  * Each widget's guard mirrors its partial's `{% if %}` exactly, so the hydrated
@@ -318,13 +343,31 @@ export default function DashboardPanel({ el, props }: DashboardHost) {
   el.setAttribute(HYDRATED_ATTR, '1');
   return (
     <>
-      <Profile p={p.profile} />
-      {p.ticker ? <Today ticker={p.ticker} week={p.week} /> : null}
-      <Week week={p.week} />
-      {p.budgets.length ? <Budgets budgets={p.budgets} /> : null}
-      {p.marks.length ? <Marks marks={p.marks} /> : null}
-      {p.exams ? <Exams exams={p.exams} /> : null}
-      {p.teachers.length ? <Teachers teachers={p.teachers} fb_plan={p.fb_plan} /> : null}
+      {/* LAYOUT `day`: span 4, row-span 2, always shown (no `when`). */}
+      <Card cls="lg:col-span-4 lg:row-span-2">
+        <Profile p={p.profile} />
+        {p.ticker ? <Today ticker={p.ticker} week={p.week} /> : null}
+        <Week week={p.week} />
+      </Card>
+      {/* LAYOUT `assess`: span 8, cap 0.65 — dropped when marks AND exams are
+          both empty, exactly as the route drops a card whose `when` is all
+          falsy (layout.py, dashboard.py). */}
+      {p.marks.length || p.exams ? (
+        <Card cls="lg:col-span-8 lg:max-h-[calc((100dvh-94px)*0.65)]">
+          {p.marks.length ? <Marks marks={p.marks} /> : null}
+          {p.exams ? <Exams exams={p.exams} /> : null}
+        </Card>
+      ) : null}
+      {/* LAYOUT `people`: span 8, `cols: 2` — the template wraps every widget
+          of a cols card in one grid, and the grid itself is unconditional. */}
+      {p.budgets.length || p.teachers.length ? (
+        <Card cls="lg:col-span-8">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {p.budgets.length ? <Budgets budgets={p.budgets} /> : null}
+            {p.teachers.length ? <Teachers teachers={p.teachers} fb_plan={p.fb_plan} /> : null}
+          </div>
+        </Card>
+      ) : null}
     </>
   );
 }
