@@ -18,8 +18,13 @@ const TITLE = 'collapse-title text-sm font-semibold flex items-center justify-be
  * open on desktop (dense fact-sheet scan), first one only on mobile (compact
  * lookup). The island REPAINTS those nodes, so it has to reproduce the state —
  * content alone left the accordion shut.
+ *
+ * Guarded: jsdom has no matchMedia, so an unguarded call throws mid-render and
+ * the boundary hands back the server markup — the whole block then never
+ * hydrates. Fall back to the mobile rule; a missing API must not cost the panel.
  */
-const wide = (): boolean => window.matchMedia('(min-width: 640px)').matches;
+const wide = (): boolean =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 640px)').matches;
 
 /**
  * A copy target is a keyboard control (dash.js stamps role/tabindex on the
