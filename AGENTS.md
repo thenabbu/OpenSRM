@@ -96,11 +96,22 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
   (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>` +
   `:<short-sha>`, `needs: [lint, tests]` on `main`) · **Scans** (report-only).
   A red `unit`/`e2e` on a PR is a real failure, not a flake.
-- Release = `VERSION` + `pyproject.toml` + `uv.lock` **in one commit**. Tagging and the
-  Release itself are automatic: `.github/workflows/release.yml` tags `vX.Y.Z` and publishes
-  a GitHub Release whose body is generated from the commits (`scripts/release_notes.py`).
-  The app carries **no** release-notes feed — GitHub Releases is the changelog, and
-  `test_audit_findings` M27 fails if an in-app feed ever comes back.
+- Release = `VERSION` + `pyproject.toml` + `uv.lock` **in one commit**. You do not have
+  to remember it: if a push to `main` carries `app/` or `Dockerfile` changes and `VERSION`
+  did not move, `release.yml`'s `bump` job opens a `chore(release)` PR with the trio
+  (`patch`, or `minor` when the push carried a `feat`; major is always a human decision)
+  and auto-merges it once the 7 required checks pass. Tagging and the Release itself are
+  the same workflow's `release` job: it tags `vX.Y.Z` and publishes a GitHub Release whose
+  body is generated from the commits (`scripts/release_notes.py`), then refreshes
+  `CHANGELOG.md` through a second auto-merged PR. The app carries **no** release-notes
+  feed — GitHub Releases is the changelog, and `test_audit_findings` M27 fails if an
+  in-app feed ever comes back.
+- **`main` takes no direct pushes** (7 required checks). Both bot jobs therefore go
+  through a PR with auto-merge; a `git push origin HEAD:main` inside a workflow returns
+  GH006 and leaves its work unlanded. M28 fails if one comes back.
+- Backfilling old tags/Releases is `scripts/backfill_releases.sh` (it skips tags that
+  already exist); versions that exist as tags but not as Releases need the same treatment
+  or `CHANGELOG.md` silently misses them.
 - Deploy is manual and separate from merge approval. `scripts/post_deploy.sh` runs the
   whole verification chain (prod SHA == main, static purge, authenticated render).
   `scripts/pr_preflight.sh` is its pre-merge twin.
