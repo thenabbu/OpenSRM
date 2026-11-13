@@ -570,49 +570,24 @@ def _log_request(resp):
                     status=resp.status_code, duration_ms=duration_ms)
     return resp
 
-# ── Cross-site request guard ───────────────────────────────────────────────
-# v1.20.3: state-changing methods arriving from another site are refused
-# (403 + error= on the opensrm.http line) instead of trusting SameSite=Lax
-# alone. Sec-Fetch-Site is a forbidden header — a cross-site page can neither
-# strip nor forge it — so it leads; Origin covers older browsers. Neither
-# header present = non-browser client (curl, cron, tests) -> allowed.
-# /internal/push/tick authenticates with its own secret header -> exempt.
-_CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-# session-authenticated POSTs served through the tunnel (see above);
-# the push tick is secret-header auth, same exemption for the same reason.
-_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
-
-# Edge/proxy trust (Origin host check + X-Forwarded-Host) lives in app/edge.py.
+# ── Cross-site request guard + security headers ────────────────────
+# Both are request-trust RESPONSE policy, so they live next to the origin/host
+# guards in app/edge.py (that module already answers "is this request ours?").
+# The v1.20.3 rationale for the guard and the "HSTS only behind the verified CF
+# edge" rule are with the code, in edge.py. Re-exported here: create_app
+# registers them on the app and tests call A._cross_site_guard().
 from .edge import (  # noqa: E402,F401 — re-exported
+    _CROSS_SITE_EXEMPT,
+    _CROSS_SITE_METHODS,
+    _cross_site_guard,
     _origin_host_guard,
     _origin_matches_host,
     _origin_matches_public,
     _public_host,
+    _security_headers,
 )
 
-
-def _cross_site_guard():
-    if request.method not in _CROSS_SITE_METHODS:
-        return None
-    # exempt: POSTs that authenticate with the session cookie and are served
-    # through the Cloudflare tunnel — the tunnel rewrites the browser's
-    # same-origin fetch metadata (Sec-Fetch-Site/Origin no longer match the
-    # origin host once cloudflared fronts the POST), so a same-site user form
-    # would false-403 behind the tunnel while passing locally.
-    if request.path in _CROSS_SITE_EXEMPT:
-        return None
-    sfs = request.headers.get("Sec-Fetch-Site")
-    if sfs is not None and sfs.lower() not in ("same-origin", "none"):
-        return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
-    origin = request.headers.get("Origin")
-    if origin is not None and not (
-            _origin_matches_host(origin, _public_host())
-            or _origin_matches_public(origin)):
-        return {"error": "cross-site request refused (Origin)"}, 403
-    return None
-
-
-# ── Security headers ───────────────────────────────────────────────
+# ── Unhandled-error safety net ─────────────────────────────────────
 def _unhandled_error(e):
     """Safety net: one greppable opensrm ERROR line for anything the app
     fails to catch (audit: no handler existed — sqlite lock errors and
@@ -632,23 +607,6 @@ def _unhandled_error(e):
                 "with this path and will show up on the next sync.</p>"), 500, \
                {"Content-Type": "text/html; charset=utf-8"}
     return {"ok": False, "error": "internal server error"}, 500
-
-def _security_headers(resp):
-    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("X-Frame-Options", "DENY")
-    resp.headers.setdefault("Referrer-Policy", "no-referrer")
-    resp.headers.setdefault("Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
-        "form-action 'self'; worker-src 'self'; manifest-src 'self'")
-    resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-    # audit: HSTS only when the request came through the VERIFIED CF edge
-    # (audit run-1 #18: bare cf-ray is client-assertable) — plain-HTTP local
-    # dev and direct-origin requests must never receive it
-    if _behind_cf():
-        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-    return resp
 
 # ── HTML Templates ─────────────────────────────────────────────────
 

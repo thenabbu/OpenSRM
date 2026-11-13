@@ -8,6 +8,9 @@ serving — and both hops are things a client can lie about, which is why every
 value here is gated on the edge secret rather than trusted.
 
 Extracted from app/app.py (the facade should hold routes, not proxy policy).
+The cross-site request guard and the security response headers live here too:
+both are request-trust policy on the response/before-request path, and both
+hinge on `_behind_cf()` (HSTS only behind the verified edge).
 """
 import os
 from urllib.parse import urlparse
@@ -123,3 +126,56 @@ def _origin_host_guard():
     if _behind_cf() and (request.headers.get("X-Forwarded-Host") or "").strip():
         return None  # came through our Worker
     return {"error": "not found"}, 404
+
+
+# ── Cross-site request guard ───────────────────────────────────────────────
+# v1.20.3: state-changing methods arriving from another site are refused
+# (403 + error= on the opensrm.http line) instead of trusting SameSite=Lax
+# alone. Sec-Fetch-Site is a forbidden header — a cross-site page can neither
+# strip nor forge it — so it leads; Origin covers older browsers. Neither
+# header present = non-browser client (curl, cron, tests) -> allowed.
+# /internal/push/tick authenticates with its own secret header -> exempt.
+_CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+# session-authenticated POSTs served through the tunnel (see above);
+# the push tick is secret-header auth, same exemption for the same reason.
+_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
+
+
+def _cross_site_guard():
+    if request.method not in _CROSS_SITE_METHODS:
+        return None
+    # exempt: POSTs that authenticate with the session cookie and are served
+    # through the Cloudflare tunnel — the tunnel rewrites the browser's
+    # same-origin fetch metadata (Sec-Fetch-Site/Origin no longer match the
+    # origin host once cloudflared fronts the POST), so a same-site user form
+    # would false-403 behind the tunnel while passing locally.
+    if request.path in _CROSS_SITE_EXEMPT:
+        return None
+    sfs = request.headers.get("Sec-Fetch-Site")
+    if sfs is not None and sfs.lower() not in ("same-origin", "none"):
+        return {"error": "cross-site request refused (Sec-Fetch-Site)"}, 403
+    origin = request.headers.get("Origin")
+    if origin is not None and not (
+            _origin_matches_host(origin, _public_host())
+            or _origin_matches_public(origin)):
+        return {"error": "cross-site request refused (Origin)"}, 403
+    return None
+
+
+# ── Response headers ───────────────────────────────────────────────────────
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        "form-action 'self'; worker-src 'self'; manifest-src 'self'")
+    resp.headers.setdefault("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+    # audit: HSTS only when the request came through the VERIFIED CF edge
+    # (audit run-1 #18: bare cf-ray is client-assertable) — plain-HTTP local
+    # dev and direct-origin requests must never receive it
+    if _behind_cf():
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
