@@ -28,6 +28,10 @@ export default function SyncAge({ el, props }: SyncAgeHost) {
     const text = props.busy ?? ageCaption(props.ts, Date.now() / 1000);
     el.textContent = text;
     el.classList.toggle('hidden', !text);
+    // The server emits BOTH representations (templates: `hidden` attribute,
+    // Tailwind: the class). Writing only one leaves a hydrated caption that
+    // says hidden one way and visible the other — keep them in lockstep.
+    el.toggleAttribute('hidden', !text);
     el.title = props.full;
   };
   paint();
