@@ -6,6 +6,7 @@
 # Usage:
 #   bash scripts/wt.sh new <slug>        # branch feat/<slug> off origin/main, prints the path
 #   bash scripts/wt.sh resume <slug>     # re-attach a pruned worktree to its existing local branch
+#   bash scripts/wt.sh detach <card-id>  # DETACHED worktree at origin/feat/preact-migration (mission workers, L4)
 #   bash scripts/wt.sh list              # worktrees + MERGED-BUT-ALIVE branches
 #   bash scripts/wt.sh rm <slug>         # remove worktree + delete its local branch
 set -u
@@ -75,6 +76,21 @@ case "${1:-list}" in
       git -C "$REPO" worktree add -b "feat/$SLUG" "$wt" origin/main >/dev/null 2>&1
     fi
     [ -d "$wt" ] || { echo "failed to create $wt" >&2; exit 1; }
+    harden_worktree "$wt"
+    echo "$wt"
+    ;;
+  detach)
+    # L4: mission workers get DETACHED worktrees at origin/feat/preact-migration.
+    # No branch is created or deleted. Integrate with:
+    #   git pull --rebase origin feat/preact-migration
+    #   git push origin HEAD:feat/preact-migration      # fast-forward only
+    [ -z "$SLUG" ] && { echo "usage: $0 detach <card-id>" >&2; exit 2; }
+    wt=$(path_for "$SLUG")
+    git -C "$REPO" fetch origin --prune -q
+    if [ -e "$wt/.git" ]; then echo "$wt"; exit 0; fi
+    mkdir -p "$(dirname "$wt")"
+    git -C "$REPO" worktree add --detach "$wt" origin/feat/preact-migration >/dev/null 2>&1 \
+      || { echo "failed: worktree add --detach $wt origin/feat/preact-migration" >&2; exit 1; }
     harden_worktree "$wt"
     echo "$wt"
     ;;
