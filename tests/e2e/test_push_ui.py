@@ -60,6 +60,9 @@ with sync_playwright() as p:
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     errs = []
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+    # The console message names no request ("Failed to load resource"), so a
+    # failing run must say WHICH url/status produced it.
+    page.on("response", lambda r: print(f"  DIAG >=400: {r.status} {r.url}") if r.status >= 400 else None)
     open_settings(page, BASE_UNCONF)
     state = page.text_content('#push-state')
     check("card renders in the Settings panel", page.is_visible('#push-card'), "")

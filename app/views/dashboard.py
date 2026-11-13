@@ -24,7 +24,7 @@ from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
 from ..auto_sync import auto_sync_kick_if_stale
-from ..db import component_tags, day_slots, group_id, group_slots, group_subjects, user_dashboard, user_scope_data
+from ..db import component_tags, day_slots, group_id, group_slots, group_subjects, user_dashboard, user_password, user_scope_data
 from ..db import jload as _jload
 from ..portal.parsers.common import _class_key, _group_key
 from ..portal.parsers.feedback import _fb_plan
@@ -147,6 +147,21 @@ def _shell_off(vm, rendered):
     return "" if vm.get("is_shell") else rendered
 
 
+def _creds_usable(netid):
+    """True only when this account's stored portal password still decrypts.
+
+    /api/refresh can answer nothing but 401 in every other case (no row, or a
+    blob the current Fernet keys cannot read — a key rotation), and the browser
+    logs every 401 as a console error on the page that fired it. dash.js's
+    background auto-sync therefore needs to know BEFORE it fetches: see the
+    `can-sync` meta tag and app/static/dash.js. (E4: zero console errors on
+    every route, including the not-yet-synced account.)
+    """
+    from ..crypto import decrypt_pw
+    row = user_password(netid)
+    return bool(row and decrypt_pw(row["password"] or ""))
+
+
 def presentation(vm):
     """Render one panel from panel_data()'s view model.
 
@@ -258,7 +273,11 @@ def presentation(vm):
             budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
             exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
             fb_plan=vm["fb_plan"])),
-        scope_sync_state=_scope_sync_state(netid))
+        scope_sync_state=_scope_sync_state(netid),
+        # E4: the auto-sync must not fire /api/refresh on an account whose
+        # stored creds cannot decrypt — the 401 is unavoidable and the browser
+        # logs it. dash.js reads this before its background ref(true).
+        can_sync=_creds_usable(netid))
 
 
 def panel_data(netid, active_panel="dashboard"):

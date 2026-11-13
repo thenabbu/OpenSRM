@@ -1,5 +1,10 @@
 <script src="{{ asset('perf.js') }}"></script>
 <meta name="color-scheme" content="dark">
+{# Can this account's stored portal password still be read? If not, every
+   /api/refresh answers 401 and the browser logs it as a console error, so
+   dash.js skips the background auto-sync (E4: zero console errors on all
+   nine routes). Rendered here because every panel includes this partial. #}
+<meta name="can-sync" content="{{ '1' if can_sync else '0' }}">
 <style>
 html[data-theme="openSRM"] {
   --color-base-100: oklch(20% 0 0); --color-base-200: oklch(14% 0 0);

@@ -381,6 +381,11 @@ document.addEventListener('keydown', function(ev) {
 (function() {
   var first = document.querySelector('.sync-line');
   if (!first) return;
+  // No readable stored credentials = /api/refresh can only answer 401, and the
+  // browser logs that 401 as a console error on THIS page. Nothing to gain
+  // from firing it; the server's own auto_sync_kick_if_stale already ran.
+  var can = document.querySelector('meta[name="can-sync"]');
+  if (can && can.content === '0') return;
   var ts = parseInt(first.dataset.ts || '0', 10);
   var stale = !ts || (Math.floor(Date.now() / 1000) - ts > 600);
   if (stale && navigator.onLine !== false) ref(true);
