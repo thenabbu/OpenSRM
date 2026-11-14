@@ -494,14 +494,28 @@ def capture_logout(base: str, token: str, out: Path) -> None:
 READY_JS = """() => {
   if (document.readyState !== 'complete') return false;
   const isl = Array.from(document.querySelectorAll('[data-island]'));
-  return isl.every(e => !!(e.dataset.hydrated || e.dataset.mountedAt));
+  if (!isl.every(e => !!(e.dataset.hydrated || e.dataset.mountedAt))) return false;
+  // Second marker, same reason: gaze.js publishes --mo-track-travel on every
+  // .blobatar-gaze from an osrm:island-mounted listener, which main.ts fires
+  // AFTER stamping data-hydrated. Stopping at data-hydrated catches whichever
+  // side of that tick the host happens to be on — measured: the laptop had the
+  // attribute, a GH runner did not, 31 bytes of drift on dom/dashboard.html and
+  // nothing else. Low tier attaches no gaze driver at all, so it has nothing to
+  // wait for.
+  if (document.documentElement.dataset.perf === 'low') return true;
+  return Array.from(document.querySelectorAll('.blobatar-gaze'))
+              .every(e => e.style.getPropertyValue('--mo-track-travel') !== '');
 }"""
 
 READY_DIAG_JS = """() => {
   const isl = Array.from(document.querySelectorAll('[data-island]'));
   return {readyState: document.readyState, islands: isl.length,
           pending: isl.filter(e => !(e.dataset.hydrated || e.dataset.mountedAt))
-                      .map(e => e.dataset.island)};
+                      .map(e => e.dataset.island),
+          gaze: document.documentElement.dataset.perf === 'low' ? 'low-tier' :
+                Array.from(document.querySelectorAll('.blobatar-gaze'))
+                     .filter(e => e.style.getPropertyValue('--mo-track-travel') === '')
+                     .length};
 }"""
 
 SETTLE_TIMEOUT_MS = 30_000
@@ -884,6 +898,40 @@ def compare_tree(golden: Path, got: Path, screens: bool = True) -> list:
     return diffs
 
 
+def print_change_markers(golden: Path, got: Path, rel: str,
+                         pairs: int = 3, width: int = 240) -> int:
+    """First differing line pairs of one text file, windowed around the change.
+
+    A minified DOM row is one 16 KB line that differs at column 2535: a plain
+    unified diff truncated at column 200 shows two identical-looking lines and
+    hides the only part that matters. Each pair is printed as a window centred on
+    the first differing column, plus the line and column number.
+    """
+    try:
+        al = (golden / rel).read_text().splitlines()
+        bl = (got / rel).read_text().splitlines()
+    except (UnicodeDecodeError, FileNotFoundError):
+        return 0
+    sm = difflib.SequenceMatcher(a=al, b=bl, autojunk=False)
+    shown = 0
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        for k in range(min(i2 - i1, j2 - j1)):
+            if shown >= pairs:
+                return shown
+            a, b = al[i1 + k], bl[j1 + k]
+            col = 0
+            while col < min(len(a), len(b)) and a[col] == b[col]:
+                col += 1
+            lo = max(0, col - width // 2)
+            print(f"  --- {rel} line {i1 + k + 1} col {col} ---")
+            print(f"  - {a[lo:lo + width]}")
+            print(f"  + {b[lo:lo + width]}")
+            shown += 1
+    return shown
+
+
 # ── main ─────────────────────────────────────────────────────────────
 def git_rev(repo: Path) -> str:
     """The SHA this capture is OF. Fake when the path is not a git checkout
@@ -988,25 +1036,9 @@ def main() -> int:
                 # WHAT moved, not just which file: the first differing text files
                 # get a short unified diff. A list of names is not actionable on
                 # a CI runner you cannot log into; PNGs are named only.
-                shown = 0
-                for rel in (d.split()[-1] for d in diffs):
-                    if shown >= 3 or rel.startswith("screens/"):
-                        continue
-                    a, b = check_against / rel, out / rel
-                    if not (a.is_file() and b.is_file()):
-                        continue
-                    try:
-                        al = a.read_text().splitlines()
-                        bl = b.read_text().splitlines()
-                    except UnicodeDecodeError:
-                        continue
-                    hunk = list(difflib.unified_diff(al, bl, f"golden/{rel}", f"capture/{rel}",
-                                                     lineterm="", n=1))
-                    if hunk:
-                        shown += 1
-                        print(f"  --- {rel}: first {min(24, len(hunk))} of {len(hunk)} diff lines ---")
-                        for line in hunk[:24]:
-                            print(f"  {line[:200]}")
+                for rel in [d.split()[-1] for d in diffs
+                            if not d.split()[-1].startswith("screens/")][:3]:
+                    print_change_markers(check_against, out, rel)
                 print(f"capture kept for inspection: {out.parent}")
             else:
                 shutil.rmtree(out.parent, ignore_errors=True)
