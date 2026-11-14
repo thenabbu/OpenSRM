@@ -299,7 +299,11 @@ def build_scope_blob(now: int) -> dict:
     return blob
 
 
-def inject_scope(data_dir: str) -> None:
+def inject_scope(data_dir: str) -> int:
+    """Write the fabricated scope blob. Returns its `ts`, because the browser
+    clock is pinned relative to it (see browser_capture) — the sync caption's
+    "Ns ago" is the last thing that still moved between runs, and it moved by
+    the couple of seconds between seeding and page load."""
     now = int(time.time())
     conn = sqlite3.connect(os.path.join(data_dir, "srm.db"))
     conn.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid=?",
@@ -319,6 +323,7 @@ def inject_scope(data_dir: str) -> None:
     if missing:
         raise RuntimeError(f"scope_json missing keys: {missing}")
     print(f"      scope_json: {len(blob)} ops, key ops present: {len(need)}/{len(need)}")
+    return now
 
 
 # ── server ───────────────────────────────────────────────────────────
@@ -524,7 +529,7 @@ def freeze(page) -> None:
     page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))")
 
 
-def browser_capture(base: str, token: str, out: Path) -> dict:
+def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
     from playwright.sync_api import sync_playwright
     tabs_html = {}          # tab -> normalized outerHTML (last viewport = desktop)
     tabs_nodes = {}         # tab -> node count (desktop)
@@ -537,7 +542,12 @@ def browser_capture(base: str, token: str, out: Path) -> dict:
             ctx.add_cookies([{"name": "srm_session", "value": token, "url": base}])
             page = ctx.new_page()
             try:
-                page.clock.install()      # frozen client Date.now; virtual timers never fire
+                # Frozen client clock, pinned one second after the blob's ts so
+                # the sync caption's relative age is the SAME NUMBER on every
+                # run ("1s ago"). Left at install time (real "now") the age
+                # wobbled by the second or two between seeding and page load,
+                # and that one glyph was the last differing pixel.
+                page.clock.install(time=(blob_ts + 1) * 1000)
             except Exception:
                 pass                      # ponytail: old playwright -> rely on fresh-seed freshness
             page.route("**/*", lambda r: _pin_mo_vars(r, r.request, base))
@@ -821,7 +831,7 @@ def main() -> int:
     token = seed(DATA_DIR)
     print(f"      token minted: {token[:6]}... ({len(token)} chars)")
     print("[2/5] injecting fabricated scope blob (all 9 features, fresh ts) ...")
-    inject_scope(DATA_DIR)
+    blob_ts = inject_scope(DATA_DIR)
 
     port = free_port(args.port)
     print(f"[3/5] gunicorn on 127.0.0.1:{port} ...")
@@ -833,7 +843,7 @@ def main() -> int:
         results = api_capture(base, token, out)
         print(f"      {len(results)} endpoints captured")
         print("[5/5] browser capture (3 viewports x 9 tabs, ready-signal waits) ...")
-        browser = browser_capture(base, token, out)
+        browser = browser_capture(base, token, out, blob_ts)
         if len(browser["tabs_html"]) != len(TABS):
             missing = [t for t in TABS if t not in browser["tabs_html"]]
             raise RuntimeError(f"panels missing from DOM: {missing}")
