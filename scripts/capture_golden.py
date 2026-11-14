@@ -39,6 +39,12 @@ with no UI meaning):
      names and labels stay: those are the structural contract.
   7. Recorded byte/gzip sizes are computed on the NORMALIZED bytes, not the
      wire bytes, so they do not wobble by a few bytes run to run.
+  8. blobatar's random avatar animation phases / gaze angles (`--mo-phase:-1773ms`,
+     `--mo-look-x:-1.64`, ...). The SVG is generated per request, so the same
+     student's avatar blinks differently on every page load. Recorded bodies are
+     pinned to `:0`, and the browser is served documents with the same values
+     pinned (_pin_mo_vars) so the screenshots are byte-identical too. Cosmetic
+     only — no state is read from those vars.
 Session tokens, random netids and CSRF-ish values do not appear in the
 captured surface (verified: logout's Set-Cookie is the fixed epoch deletion
 cookie; /api/push/status carries no secret). If one ever does, mask it here and
@@ -154,6 +160,11 @@ RE_DT_ATTR = re.compile(r'\sdata-(?:ts|full)="[^"]*"')
 RE_AGOP = re.compile(r"\(\d+(?:m|h|d) ago\)")
 RE_AGOP2 = re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|m|h|d|w)\s+ago\b")
 RE_JUST_NOW = re.compile(r"\bjust now\b")
+# blobatar stamps RANDOM animation phases / gaze angles into the avatar SVG's
+# inline style (--mo-phase:-1773ms, --mo-look-x:-1.64, ...). Cosmetic, but they
+# move the rendered pixels, so they must be pinned for the recorded body AND
+# the screenshot (see _pin_mo_vars).
+RE_MO_VAR = re.compile(r"(--mo-[a-z0-9-]+)\s*:\s*-?[\d.]+(?:ms)?")
 # Vite content hash inside a dist filename: SettingsPanel-Crq-6lwG.js ->
 # SettingsPanel-HASH.js. 8 chars of [A-Za-z0-9_-] before .js/.css only, so
 # icon-192.png and apple-touch-icon.png are untouched.
@@ -173,6 +184,7 @@ def normalize(s: str) -> str:
     s = RE_AGOP.sub("()", s)                  # "(5m ago)" sync captions
     s = RE_AGOP2.sub("ago", s)                # any other relative time
     s = RE_JUST_NOW.sub("ago", s)             # sub-minute age caption
+    s = RE_MO_VAR.sub(r"\1:0", s)             # random blobatar animation phases
     s = RE_ISO.sub("1970-01-01T00:00:00", s)  # ISO timestamps
     s = RE_EPOCH_KEY.sub(lambda m: m.group(1) + "0", s)  # epoch int in known keys
     return s
@@ -193,6 +205,9 @@ def selftest() -> int:
         ('<span>5m ago</span>', '<span>ago</span>'),
         ('<span>(3d ago)</span>', '<span>()</span>'),
         ('<span>just now</span>', '<span>ago</span>'),
+        ('<svg style="--mo-phase:-1773ms;--mo-head:#e2d1e1">',
+         '<svg style="--mo-phase:0;--mo-head:#e2d1e1">'),
+        ('--mo-look-x:-1.64;', '--mo-look-x:0;'),
         ('{"ts": 1794600000, "name": "x"}', '{"ts": 0, "name": "x"}'),
         ('at 2026-11-13T21:00:00', 'at 1970-01-01T00:00:00'),
     ]
@@ -455,6 +470,25 @@ def settle(page, what: str) -> None:
         raise RuntimeError(f"{what} never became ready: {page.evaluate(READY_DIAG_JS)}")
 
 
+def _pin_mo_vars(route, request, base: str):
+    """Serve every document with the avatar's random animation phases pinned.
+
+    blobatar stamps RANDOM `--mo-*` phases and gaze angles into the avatar
+    <svg>'s inline style, so two captures of the same revision render the
+    avatar at different blink/gaze offsets: the DOM differed and
+    settings-1440x900.png was never byte-identical. Pinning at the response
+    (not in the DOM after the fact) means the islands hydrate with the same
+    values the recorded body has, so the DOM, the props JSON and the pixels
+    all agree. Cosmetic only: nothing reads these vars for state.
+    """
+    if not request.url.startswith(base):
+        return route.abort()
+    if request.resource_type != "document":
+        return route.continue_()
+    resp = route.fetch()
+    return route.fulfill(response=resp, body=RE_MO_VAR.sub(r"\1:0", resp.text()))
+
+
 def freeze(page) -> None:
     """Pause animations, then flush two frames so what is captured/screenshotted
     is the frozen paint. Two rAFs, not a sleep: the injected style applies on the
@@ -480,7 +514,7 @@ def browser_capture(base: str, token: str, out: Path) -> dict:
                 page.clock.install()      # frozen client Date.now; virtual timers never fire
             except Exception:
                 pass                      # ponytail: old playwright -> rely on fresh-seed freshness
-            page.route("**/*", lambda r: r.continue_() if r.request.url.startswith(base) else r.abort())
+            page.route("**/*", lambda r: _pin_mo_vars(r, r.request, base))
             page.goto(base + "/", wait_until="domcontentloaded")
             for idx, tab in enumerate(TABS):
                 # TABS[0] (dashboard) is the route we just loaded. Every other tab
