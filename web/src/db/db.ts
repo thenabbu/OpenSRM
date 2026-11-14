@@ -1,9 +1,11 @@
 import Dexie, { type Table } from 'dexie';
 import type { z } from 'zod';
 import {
-  AcademicsData, CampusData, FeesData, MarksData, TimetableData,
+  AcademicsData, CampusData, FeesData,
 } from '../contracts';
 import { attendanceProps } from '../panels/attendance/contract';
+import { marksProps } from '../panels/marks/contract';
+import { timetableProps } from '../panels/timetable/contract';
 
 // ── The one module that owns IndexedDB. Nothing else may touch `indexedDB` ──
 //
@@ -66,8 +68,13 @@ const RECORD_SCHEMA = {
   // readPanel must validate on the way back out. They were different schemas,
   // so every cached row read as "corrupt" and was deleted on the next visit.
   attendance: attendanceProps,
-  marks: MarksData, // the array: /api/marks stores its json as a list
-  timetable: TimetableData,
+  // marks/timetable: the ISLAND payloads, for the same reason as attendance —
+  // load.ts caches the island feeds (/api/marks/island, /api/timetable/island),
+  // so these validators must accept that shape. They used to hold the LEGACY
+  // shapes (the raw `marks` array, `{ok, slots, …}`), which rejected every
+  // cached row as corrupt: the store never kept marks or a timetable at all.
+  marks: marksProps,
+  timetable: timetableProps,
   fees: FeesData,
   campus: CampusData,
   academics: AcademicsData,

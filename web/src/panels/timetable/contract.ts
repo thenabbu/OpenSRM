@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { makeParser } from '../../contracts/envelope';
 
 // The timetable grid, as app/views/timetable_island.py:props() emits it.
 //
@@ -50,3 +51,11 @@ export type TtRow = z.infer<typeof ttRow>;
 export type TtBreak = z.infer<typeof ttBreak>;
 export type TtDay = z.infer<typeof ttDay>;
 export type TimetableProps = z.infer<typeof timetableProps>;
+
+/** `/api/timetable/island` — the panel envelope around the grid above.
+ *
+ *  Same bug class as marks: the legacy `parseTimetableResponse`
+ *  (contracts/timetable.ts) validates `/api/timetable`'s `{ok, slots, subjects,
+ *  group_key}`, which is NOT what the island feed returns, so every load failed
+ *  validation and the timetable never reached the store. */
+export const parseTimetableIslandResponse = makeParser(timetableProps);

@@ -76,7 +76,7 @@ for f in sorted(os.listdir(d)):
 PY
 
 PASS=0; FAIL=0; FAILED=""
-SCRIPTS="test_att_dut test_delete_dut test_feedback_dut test_fees_dut test_lowtier_dut test_marks_dut test_pull_dut test_scope_profile_dut test_softrefresh_dut test_touchfeel_dut"
+SCRIPTS="test_att_dut test_delete_dut test_feedback_dut test_fees_dut test_lowtier_dut test_marks_dut test_pull_dut test_scope_profile_dut test_sync_data_dut test_touchfeel_dut"
 
 for s in $SCRIPTS; do
   printf '  %-26s ' "$s"

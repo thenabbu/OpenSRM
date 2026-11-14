@@ -4,6 +4,7 @@ import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
+import { refreshProps } from './data/refresh';
 import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
@@ -117,11 +118,31 @@ export function __resetWarnOnce(): void {
   warnedProps.clear();
 }
 
-/** Mounts Preact has already rendered into. Rendering the SAME element twice is
+/**
+ * Mounts Preact has already rendered into. Rendering the SAME element twice is
  *  not idempotent: the second render goes into a container Preact already owns,
  *  and the result alternates between 0 and N children — which is exactly what a
  *  flaky "offline paints sometimes" DUT was showing. */
 const claimed = new WeakSet<HTMLElement>();
+
+/** element -> what mounted it, so a sync can repaint THAT island from its own
+ *  feed without re-deriving its component from the DOM. Only mounted islands
+ *  enter this map: an island that declined to paint (invalid props, no store,
+ *  a throw) keeps the server's markup and must not be repainted from nothing. */
+const mountedAt = new WeakMap<HTMLElement, { name: IslandName; Comp: ComponentType<HostProps> }>();
+
+/** mountBounded + remember the pairing. */
+function mountIsland(
+  name: IslandName,
+  Comp: ComponentType<HostProps>,
+  el: HTMLElement,
+  props: unknown,
+  now: number,
+): boolean {
+  const ok = mountBounded(name, Comp, el, props, now);
+  if (ok) mountedAt.set(el, { name, Comp });
+  return ok;
+}
 
 export async function hydrateIsland(el: HTMLElement, now: number): Promise<void> {
   const name = el.dataset.island ?? '';
@@ -165,7 +186,7 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
     // cache-served mount of this element dies here. Keeping the cleanup down
     // there was the whole bug: this branch returns, so it never reached it.
     removeStale(el);
-    mountBounded(name, Comp, el, parsed.data, now);
+    mountIsland(name, Comp, el, parsed.data, now);
     // Persist what the server just gave us. Without this the online path never
     // wrote anything to IndexedDB, so the NEXT visit had no cached payload to
     // paint from — measured: after a full online load of /attendance Dexie held
@@ -230,7 +251,7 @@ export async function hydrateIsland(el: HTMLElement, now: number): Promise<void>
   // the store, and `showStale` below re-labels them with their true age. This
   // runs on the SERVER-paint path too (:154) for the same reason.
   removeStale(el);
-  mountBounded(name, Comp, el, props, now);
+  mountIsland(name, Comp, el, props, now);
   el.dataset.mountedAt = outcome.source;     // informational (the gate reads it)
   // P7.2: label a cache-served mount with its age, so "what we had earlier"
   // never reads as "live". One helper for every island (data/stale.ts).
@@ -247,6 +268,43 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
   // Hydration is not latency-critical — the server paint is already on screen.
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-island]'))) {
     await hydrateIsland(el, now);
+  }
+}
+
+/**
+ * Repaint every mounted island from its live `/api` slice — the sync path
+ * (dash.js calls `window.__osrmRefreshData`, see below).
+ *
+ * THIS is what makes a sync preserve scroll, focus, open <details> and the
+ * attendance view: rendering into a container Preact already owns RECONCILES
+ * against the previous tree, so only the text/attribute nodes that actually
+ * changed are written. Every other node is the same object it was before the
+ * sync, so the browser has nothing to clamp scrollY against.
+ *
+ * Sequential on purpose (same reason hydrateAll is): the page is already
+ * painted, the feeds are small, and N concurrent fetches on a phone is how
+ * chunks start rejecting. One island failing leaves the others working and its
+ * own paint untouched — the old markup swap had no such middle ground.
+ */
+export async function refreshIslands(root: ParentNode, now: number): Promise<void> {
+  const netid = currentNetid();
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-island]'))) {
+    const at = mountedAt.get(el);
+    if (!at) continue;                       // never painted: the server's markup stands
+    const props = await refreshProps(at.name, {
+      netid: netid ?? '',
+      groupKey: sessionGroupKey(),
+    });
+    if (!props) continue;                    // no feed, or the answer failed validation
+    try {
+      render(createElement(at.Comp, { el, props, now } as HostProps), el);
+      // fresh numbers carry no age caption, and a repaint can add rows the
+      // page-level handlers stamp (copy targets), so re-arm them.
+      removeStale(el);
+      document.dispatchEvent(new CustomEvent('osrm:island-mounted', { detail: at.name }));
+    } catch (err) {
+      diag.warn(`"${at.name}" failed to repaint; previous paint kept`, err);
+    }
   }
 }
 
@@ -299,6 +357,15 @@ void (async () => {
     void startOutbox(el);
   });
 })();
+
+// W5.1b: a sync repaints DATA, not markup. dash.js is a plain <script> and
+// cannot import this bundle, so it reaches the repaint through this one hook —
+// the same shape as __osrmOutbox. Until this module runs the hook is absent and
+// a sync leaves the page alone; that degradation is deliberate, because the
+// alternative (fetching the route's HTML again to change one number) is the
+// cost this task exists to delete.
+(window as unknown as { __osrmRefreshData?: () => Promise<void> }).__osrmRefreshData =
+  () => refreshIslands(document, Date.now() / 1000);
 
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.

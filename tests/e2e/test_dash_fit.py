@@ -226,17 +226,17 @@ try:
         pg.wait_for_timeout(300)
 
         # ---- a sync must not shift the card frame (v1.31.1) ----------------
-        # softRefresh used an idiomorph innerHTML morph of <main>; on the real
-        # device that left the dashboard panel offset by one extra edge after a
-        # sync — card x and the top gutter doubled 15px -> 30px and stayed that
-        # way across tab switches. The morph also has to KEEP the open tab.
+        # The old markup swap left the dashboard panel offset by one extra edge
+        # after a sync (card x / top gutter 15px -> 30px, and it stayed that way);
+        # a data repaint cannot move the frame at all, and this check keeps it
+        # that way. It still has to KEEP the page it is on.
         tab_before = pg.evaluate("() => [...document.querySelectorAll('[data-tabpanel]')]"
                                  ".map(p => p.id + ':' + p.style.display).join('|')")
         geo_before = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');
           const c = g.querySelector(':scope > .card').getBoundingClientRect();
           return {x: Math.round(c.x), y: Math.round(c.y)}; }""")
-        pg.evaluate("async () => { await softRefresh(); }")
+        pg.evaluate("async () => { await window.__osrmRefreshData(); }")
         geo_after = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');
           const c = g.querySelector(':scope > .card').getBoundingClientRect();

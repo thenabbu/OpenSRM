@@ -181,6 +181,37 @@ describe('network failure', () => {
   });
 });
 
+const MARKS = {
+  subjects: [
+    {
+      code: '21CSS201T', title: 'Computer Organization', scored_disp: '3', max_disp: '5',
+      pct: 60, outlier: false,
+      components: [{
+        name: 'FT-I', date_disp: '09/Sep/2026', score_disp: '3', max_disp: '5',
+        derived: '', confirmed: 'none', ie: null,
+      }],
+    },
+  ],
+};
+
+describe('island feeds parse against the island schema (W5.1b)', () => {
+  // loadPanel fetches the ISLAND feeds (/api/marks/island, /api/timetable/island),
+  // but the parsers it used validated the LEGACY envelopes (/api/marks
+  // `{ok, marks}`, /api/timetable `{ok, slots, subjects, group_key}`). Every
+  // response therefore failed validation, the store never filled, and a sync
+  // had nothing to repaint from. One parser per endpoint — the endpoint wins.
+  it('marks: the island envelope is accepted and stored', async () => {
+    const out = await loadPanel('marks', { netid: A, fetcher: net(MARKS) });
+    expect(out).toMatchObject({ ok: true, source: 'network' });
+    expect(await readPanel('marks', A, '')).toEqual(MARKS);
+  });
+
+  it('marks: the legacy {ok, marks} shape is rejected (it is not what we fetch)', async () => {
+    const out = await loadPanel('marks', { netid: A, fetcher: respond(200, { ok: true, marks: [] }) });
+    expect(out).toMatchObject({ ok: false, reason: 'invalid' });
+  });
+});
+
 describe('auth and gating never cache', () => {
   it('401 is unauthenticated, cache untouched — and a 200 afterwards still works', async () => {
     await seed(ATTN, 5000);

@@ -3,15 +3,15 @@
     "file": "assets/design-m1uS3-4X.js",
     "name": "design"
   },
-  "_jsxRuntime.module-CceuNOHB.js": {
-    "file": "assets/jsxRuntime.module-CceuNOHB.js",
+  "_jsxRuntime.module-f7WRYuny.js": {
+    "file": "assets/jsxRuntime.module-f7WRYuny.js",
     "name": "jsxRuntime.module",
     "imports": [
       "src/main.ts"
     ]
   },
   "src/islands/sync-age.tsx": {
-    "file": "assets/sync-age-DHCVHXHu.js",
+    "file": "assets/sync-age-Wt12VHxL.js",
     "name": "sync-age",
     "src": "src/islands/sync-age.tsx",
     "isDynamicEntry": true,
@@ -20,7 +20,7 @@
     ]
   },
   "src/main.ts": {
-    "file": "assets/app-BnpZwDvj.js",
+    "file": "assets/app-ByZEZWye.js",
     "name": "app",
     "src": "src/main.ts",
     "isEntry": true,
@@ -41,99 +41,99 @@
     ]
   },
   "src/panels/academics/AcademicsPanel.tsx": {
-    "file": "assets/AcademicsPanel-Cy-sLij_.js",
+    "file": "assets/AcademicsPanel-CVVhc8uk.js",
     "name": "AcademicsPanel",
     "src": "src/panels/academics/AcademicsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/attendance/AttendancePanel.tsx": {
-    "file": "assets/AttendancePanel-C_1UZpcc.js",
+    "file": "assets/AttendancePanel-sB7sl7MM.js",
     "name": "AttendancePanel",
     "src": "src/panels/attendance/AttendancePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/campus/CampusPanel.tsx": {
-    "file": "assets/CampusPanel-CpUr3al_.js",
+    "file": "assets/CampusPanel-zPJf7lK5.js",
     "name": "CampusPanel",
     "src": "src/panels/campus/CampusPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/dashboard/DashboardPanel.tsx": {
-    "file": "assets/DashboardPanel-BGitQxB3.js",
+    "file": "assets/DashboardPanel-RBZfXqXh.js",
     "name": "DashboardPanel",
     "src": "src/panels/dashboard/DashboardPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/fees/FeesPanel.tsx": {
-    "file": "assets/FeesPanel-BpPWpyMD.js",
+    "file": "assets/FeesPanel-CqQFqBH7.js",
     "name": "FeesPanel",
     "src": "src/panels/fees/FeesPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/marks/MarksPanel.tsx": {
-    "file": "assets/MarksPanel-Cf29_0W4.js",
+    "file": "assets/MarksPanel-Crjq-PHv.js",
     "name": "MarksPanel",
     "src": "src/panels/marks/MarksPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/settings/SettingsPanel.tsx": {
-    "file": "assets/SettingsPanel-_wEUj7EG.js",
+    "file": "assets/SettingsPanel-BXl5xf1U.js",
     "name": "SettingsPanel",
     "src": "src/panels/settings/SettingsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/timetable/TimetablePanel.tsx": {
-    "file": "assets/TimetablePanel-CzgprNT2.js",
+    "file": "assets/TimetablePanel-DQuaThjQ.js",
     "name": "TimetablePanel",
     "src": "src/panels/timetable/TimetablePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   },
   "src/panels/tools/ToolsPanel.tsx": {
-    "file": "assets/ToolsPanel-CPuMh0j7.js",
+    "file": "assets/ToolsPanel-CZVhlVOP.js",
     "name": "ToolsPanel",
     "src": "src/panels/tools/ToolsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
       "_design-m1uS3-4X.js",
-      "_jsxRuntime.module-CceuNOHB.js"
+      "_jsxRuntime.module-f7WRYuny.js"
     ]
   }
 }
