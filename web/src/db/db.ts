@@ -50,7 +50,13 @@ const V1 = {
 // lands (notes/DECISION-tools-settings-store.md:150).
 const V2 = { ...V1 };
 
-export const SCHEMAS = [V1, V2] as const;
+// v3 adds ONE store: the write queue for deferred offline actions (P7.4).
+// `&k` is unique: enqueuing the same tag twice must REPLACE, not append, so a
+// student who changes their mind offline replays one write, not two. `netid`
+// and `at` are indexed for the per-student drain and the retry order.
+const V3 = { ...V2, outbox: '&k, netid, at' };
+
+export const SCHEMAS = [V1, V2, V3] as const;
 export const SCHEMA_VERSION = SCHEMAS.length;
 
 /** Payload schema per panel — the same contracts the read path validates with. */
@@ -89,6 +95,20 @@ export type MetaRecord = {
   flags: Record<string, unknown>;
 };
 
+/** One deferred write. `k` is the conflict grain, not a random id — see
+ *  `queueWrite` in outbox.ts for why that matters. `kind` is kept a plain
+ *  string here so the storage layer does not import the route table (that
+ *  would make db.ts depend on a panel-level module, and it is the one module
+ *  allowed to own IndexedDB). */
+export type OutboxRow = {
+  k: string;                        // unique: `${kind}|<identity>` — LWW key
+  netid: string;
+  kind: string;
+  at: number;                       // enqueue time, ms; drain order
+  attempts: number;                 // bounded retry counter
+  form: Record<string, string>;     // the exact POST body that was typed
+};
+
 export class OpenSRMDB extends Dexie {
   attendance!: Table<Row, [string, string]>;
   marks!: Table<Row, [string, string]>;
@@ -97,6 +117,7 @@ export class OpenSRMDB extends Dexie {
   campus!: Table<Row, string>;
   academics!: Table<Row, string>;
   meta!: Table<MetaRecord, string>;
+  outbox!: Table<OutboxRow, string>;
 
   /** `name` is a parameter only so a test can build an ISOLATED database that
    *  still goes through this exact class: the upgrade fixture must exercise the
@@ -292,7 +313,11 @@ export async function wipeAll(netid?: string): Promise<void> {
     // independent deletes: each one committed on its own, so a failure part-way
     // left some stores cleared and others not, with nothing recording which.
     // Named multi-table writer #2 of 2 (the other is `writePanel`).
-    const tables: string[] = [...PANELS, 'meta'];
+    //
+    // `outbox` is in this list on purpose. It holds a tag the student TYPED, so
+    // a logout that left it behind would replay that write under whoever signs
+    // in next on a shared device — the queue would become a cross-account leak.
+    const tables: string[] = [...PANELS, 'meta', 'outbox'];
     if (netid === undefined) {
       await db.transaction('rw', tables, () => Promise.all(tables.map((t) => db.table(t).clear())));
     } else {
@@ -300,6 +325,7 @@ export async function wipeAll(netid?: string): Promise<void> {
         Promise.all([
           ...PANELS.map((p) => table(p).where('netid').equals(netid).delete()),
           db.meta.delete(netid),
+          db.outbox.where('netid').equals(netid).delete(),
         ]),
       );
     }

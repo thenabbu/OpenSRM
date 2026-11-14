@@ -10,6 +10,7 @@ import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 import { warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
+import { startOutbox, queueWrite } from './data/outbox';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -277,6 +278,27 @@ void warmShells();
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped
 // IndexedDB wipe done first (capped, so a hung wipe cannot block the link).
 wireLogoutLink(document);
+
+// P7.4: replay any write the student made while offline, then keep doing it
+// every time the link returns. Independent of hydration on purpose — a queued
+// tag must go out even if an island never mounts, and it must not delay paint.
+// The caption is attached to the marks panel when that panel is on the page
+// (the only panel that can queue anything today).
+void (async () => {
+  const el = document.querySelector<HTMLElement>('[data-island="marks"]');
+  // dash.js is a plain <script> and cannot import the bundle, so it reaches the
+  // queue through this one hook (the same shape as __osrmDiag). Absent until
+  // this module runs — dash.js treats a missing hook as "queue unavailable" and
+  // keeps its existing failure toast.
+  const w = window as unknown as { __osrmOutbox?: unknown };
+  w.__osrmOutbox = { queueWrite, startOutbox: () => startOutbox(el) };
+  await startOutbox(el);
+  // `online` fires once per reconnect; drainOutbox is bounded and idempotent,
+  // so a burst of events costs at most one empty pass each.
+  window.addEventListener('online', () => {
+    void startOutbox(el);
+  });
+})();
 
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.

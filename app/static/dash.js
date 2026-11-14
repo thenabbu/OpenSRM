@@ -512,6 +512,15 @@ document.addEventListener('submit', function(ev) {
   var action = f.getAttribute('action') || '';
   if (action !== '/marks/tag') return;
   ev.preventDefault();
+  // P7.4: a tag is DATA the student typed, so a dead link must not lose it.
+  // The bundle owns the queue (web/src/data/outbox.ts) and publishes it here;
+  // until the module loads the hook is absent and this path degrades to the
+  // old toast. The fields are collected BEFORE the attempt so a failed POST
+  // still has exactly what was submitted.
+  var fields = {};
+  new FormData(f).forEach(function(v, k) { fields[k] = String(v); });
+  var queue = window.__osrmOutbox;
+  var offline = !navigator.onLine;
   fetch('/marks/tag', {method: 'POST', body: new FormData(f),
                        credentials: 'same-origin',
                        headers: {Accept: 'application/json'}})
@@ -523,7 +532,19 @@ document.addEventListener('submit', function(ev) {
       if (!j.ok) { showError(j.error || 'Tag not saved'); return; }
       softRefresh();
     })
-    .catch(function() { showError('Network error — tag not saved'); });
+    .catch(function() {
+      // Only a TRANSPORT failure is deferred: a rejected tag ({"ok":false}) is
+      // a real answer from the server and retrying it would be a lie.
+      if (!queue) { showError('Network error — tag not saved'); return; }
+      var netid = document.body.getAttribute('data-netid');
+      if (!offline && !netid) { showError('Network error — tag not saved'); return; }
+      queue.queueWrite(netid || '', 'tag', fields)
+        .then(function() { return queue.startOutbox(); })
+        .then(function() {
+          showError('Offline — tag saved and will be sent when you reconnect');
+        })
+        .catch(function() { showError('Network error — tag not saved'); });
+    });
 });
 
 // ── Delete my data (OPT-IN destructive) ──────────────────────────────
