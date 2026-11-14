@@ -105,6 +105,23 @@ $ echo $?
 69 files / 2.4 MB / 27 screenshots, byte-identical including every PNG. The
 committed tree here is `out-a` minus the generated README.
 
+## Deterministic across HOSTS, not just across runs
+
+Two same-host runs proving an empty `diff -r` is necessary, not sufficient: the
+gate runs on a GitHub runner, which is not the laptop that captured these files.
+Three host properties had to be pinned before the runner reproduced them — all
+three were found by this gate failing on its own first CI runs, which is the best
+evidence available that it bites:
+
+| pinned | what it cost before it was pinned |
+|---|---|
+| perf tier (`TIER_JS`) | `perf.js` picks low on `hardwareConcurrency <= 4`; a standard runner has exactly 4 vCPUs and the laptop 12, and the low tier attaches **no gaze driver at all**. Same revision, two different DOMs: `--mo-track-travel` present on one host only. The capture now serves `hardwareConcurrency`/`deviceMemory` = 8. |
+| the ready signal | `data-hydrated` is stamped before `main.ts` fires `osrm:island-mounted`, and gaze.js publishes `--mo-track-travel` from that listener — waiting on hydration alone caught whichever side of the tick the host was on. `READY_JS` now also waits for every `.blobatar-gaze` to have published it. |
+| pixels (`--no-screens` on CI) | the app ships no webfonts, so glyphs come from the host's font stack; a runner cannot be byte-compared with the laptop. |
+
+With the first two in place the runner reproduces `dom/`, `api/`, `routes.json`
+and `metrics.json` byte-for-byte (`golden OK` on CI, exit 0).
+
 ## What moved between v2 and v3
 
 `diff -rq v2 v3` = 52 differing entries: **all 9 `dom/` pages**, **13 `api/`
