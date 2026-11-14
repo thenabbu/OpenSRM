@@ -24,7 +24,34 @@ import { attendanceProps } from '../panels/attendance/contract';
 //   gets a NEW store name, and the old one is left for the next `wipeAll` —
 //   dead bytes nobody reads beat a half-migrated table.
 
-export const SCHEMA_VERSION = 1;
+// ── Schema version: ONE source ──────────────────────────────────────────────
+// `SCHEMAS[i]` IS `version(i + 1)`, and `SCHEMA_VERSION` is that array's
+// length. Bumping the schema is appending one entry; the version number moves
+// with it, so the two cannot drift. They had drifted: this constant said 1
+// while the database had been at version 2, and that number is stamped into
+// every row and every `meta` record.
+//
+// APPEND ONLY. Editing an entry that already shipped is invisible to Dexie —
+// it compares the declared map against what is on the device, and a changed
+// entry at the same version number never reaches existing rows.
+const V1 = {
+  attendance: '[netid+groupKey], netid, fetchedAt',
+  marks: '[netid+groupKey], netid, fetchedAt',
+  timetable: '[netid+groupKey], netid, fetchedAt',
+  fees: 'netid, fetchedAt',
+  campus: 'netid, fetchedAt',
+  academics: 'netid, fetchedAt',
+  meta: 'netid',
+} satisfies Record<string, string>;
+
+// v2 adds no store and deletes none: a store left out of a later version keeps
+// its previous shape, so `fees` is unchanged. Re-spelling the v1 map here would
+// only be a second copy that can drift — add the new store beside it when one
+// lands (notes/DECISION-tools-settings-store.md:150).
+const V2 = { ...V1 };
+
+export const SCHEMAS = [V1, V2] as const;
+export const SCHEMA_VERSION = SCHEMAS.length;
 
 /** Payload schema per panel — the same contracts the read path validates with. */
 const RECORD_SCHEMA = {
@@ -62,7 +89,7 @@ export type MetaRecord = {
   flags: Record<string, unknown>;
 };
 
-class OpenSRMDB extends Dexie {
+export class OpenSRMDB extends Dexie {
   attendance!: Table<Row, [string, string]>;
   marks!: Table<Row, [string, string]>;
   timetable!: Table<Row, [string, string]>;
@@ -71,24 +98,22 @@ class OpenSRMDB extends Dexie {
   academics!: Table<Row, string>;
   meta!: Table<MetaRecord, string>;
 
-  constructor() {
-    super('opensrm');
-    this.version(1).stores({
-      attendance: '[netid+groupKey], netid, fetchedAt',
-      marks: '[netid+groupKey], netid, fetchedAt',
-      timetable: '[netid+groupKey], netid, fetchedAt',
-      fees: 'netid, fetchedAt',
-      campus: 'netid, fetchedAt',
-      academics: 'netid, fetchedAt',
-      meta: 'netid',
-    });
-    this.version(2).stores({
-      attendance: '[netid+groupKey], netid, fetchedAt',
-      marks: '[netid+groupKey], netid, fetchedAt',
-      timetable: '[netid+groupKey], netid, fetchedAt',
-      campus: 'netid, fetchedAt',
-      academics: 'netid, fetchedAt',
-      meta: 'netid',
+  /** `name` is a parameter only so a test can build an ISOLATED database that
+   *  still goes through this exact class: the upgrade fixture must exercise the
+   *  real version list, not a hand-copied one. */
+  constructor(name = 'opensrm') {
+    super(name);
+    SCHEMAS.forEach((stores, i) => { this.version(i + 1).stores(stores); });
+    // Every record stamped before SCHEMA_VERSION was derived carries the old,
+    // wrong number (1, while the schema had been 2 for a while). Rewrite the
+    // mismatched `meta` records on open: a repair, never a wipe (see the upgrade
+    // policy above). `meta` is the record a future migration branches on; panel
+    // rows carry the same stamp but nothing reads it, and the next `writePanel`
+    // re-stamps them.
+    this.on('ready', (vipDb: Dexie) => {
+      void vipDb.table<MetaRecord, string>('meta').toCollection()
+        .modify((m) => { if (m.schemaVersion !== SCHEMA_VERSION) m.schemaVersion = SCHEMA_VERSION; })
+        .catch((e: unknown) => log('schemaVersion repair failed', e));
     });
   }
 }
@@ -151,12 +176,17 @@ export async function writePanel<P extends Panel>(
     fetchedAt: rec.fetchedAt ?? Date.now(),
     schemaVersion: SCHEMA_VERSION,
   };
-  const commit = async () => {
-    await io.put(panel, row);
-    await db.meta.update(rec.netid, (m) => {
-      if (m) m.last_sync[panel] = row.fetchedAt;
+  // ONE transaction over both stores. Named multi-table writer #1 of 2 (the
+  // other is `wipeAll`): the payload and the `last_sync` stamp that promises it
+  // arrive together or not at all — two independent writes could leave a row on
+  // disk whose timestamp the `meta` record never learned.
+  const commit = () =>
+    db.transaction('rw', [panel, 'meta'], async () => {
+      await io.put(panel, row);
+      await db.meta.update(rec.netid, (m) => {
+        if (m) m.last_sync[panel] = row.fetchedAt;
+      });
     });
-  };
   try {
     await commit();
     return true;
@@ -258,13 +288,20 @@ export async function wipeAll(netid?: string): Promise<void> {
     return;
   }
   try {
+    // ONE transaction over every store. These used to be a bare Promise.all of
+    // independent deletes: each one committed on its own, so a failure part-way
+    // left some stores cleared and others not, with nothing recording which.
+    // Named multi-table writer #2 of 2 (the other is `writePanel`).
+    const tables: string[] = [...PANELS, 'meta'];
     if (netid === undefined) {
-      await Promise.all([...PANELS, 'meta'].map((t) => db.table(t).clear()));
+      await db.transaction('rw', tables, () => Promise.all(tables.map((t) => db.table(t).clear())));
     } else {
-      await Promise.all([
-        ...PANELS.map((p) => table(p).where('netid').equals(netid).delete()),
-        db.meta.delete(netid),
-      ]);
+      await db.transaction('rw', tables, () =>
+        Promise.all([
+          ...PANELS.map((p) => table(p).where('netid').equals(netid).delete()),
+          db.meta.delete(netid),
+        ]),
+      );
     }
   } catch (e) {
     log('wipe failed', e);
