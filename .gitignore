@@ -12,6 +12,8 @@ core.*
 *.egg-info/
 dist/
 build/
+# ...except the mission's written notes: notes/build/ is documentation, not output
+!notes/build/
 # committed build output (served statically; see scripts/build-web.sh)
 !app/static/dist/
 !app/static/dist/**
