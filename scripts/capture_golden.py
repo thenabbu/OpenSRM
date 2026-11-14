@@ -542,12 +542,12 @@ def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
             ctx.add_cookies([{"name": "srm_session", "value": token, "url": base}])
             page = ctx.new_page()
             try:
-                # Frozen client clock, pinned one second after the blob's ts so
-                # the sync caption's relative age is the SAME NUMBER on every
-                # run ("1s ago"). Left at install time (real "now") the age
-                # wobbled by the second or two between seeding and page load,
-                # and that one glyph was the last differing pixel.
-                page.clock.install(time=(blob_ts + 1) * 1000)
+                # Pin the client clock to the blob's ts so every age label the
+                # page renders is the SAME on every run of this revision. (This
+                # playwright's clock takes SECONDS and keeps ticking; drift is
+                # sub-second, so the age stays in the "just now" bucket — the
+                # caption was the last thing whose glyphs moved between runs.)
+                page.clock.install(time=blob_ts)
             except Exception:
                 pass                      # ponytail: old playwright -> rely on fresh-seed freshness
             page.route("**/*", lambda r: _pin_mo_vars(r, r.request, base))
