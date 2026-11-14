@@ -529,15 +529,35 @@ def freeze(page) -> None:
     page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))")
 
 
+# Deterministic rasterisation. Without these the binary PNGs of a
+# content-identical page come back with 1-5 differing pixels between runs: the
+# compositor picks different layer tiles and re-rasterises text with LCD
+# subpixel AA at slightly different offsets. These flags pin the colour profile,
+# the scale factor and the text rasteriser, and make each screenshot wait for
+# every compositor stage. Verified by the same-SHA twice diff being empty.
+DET_ARGS = [
+    "--force-color-profile=srgb",
+    "--force-device-scale-factor=1",
+    "--disable-lcd-text",
+    "--font-render-hinting=none",
+    "--disable-gpu",
+    "--disable-partial-raster",
+    "--disable-threaded-animation",
+    "--disable-threaded-scrolling",
+    "--run-all-compositor-stages-before-draw",
+    "--hide-scrollbars",
+]
+
+
 def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
     from playwright.sync_api import sync_playwright
     tabs_html = {}          # tab -> normalized outerHTML (last viewport = desktop)
     tabs_nodes = {}         # tab -> node count (desktop)
     page_nodes = 0
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(args=DET_ARGS)
         for vpname, w, h in VIEWPORTS:
-            ctx = browser.new_context(viewport={"width": w, "height": h},
+            ctx = browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=1,
                                       service_workers="block", reduced_motion="reduce")
             ctx.add_cookies([{"name": "srm_session", "value": token, "url": base}])
             page = ctx.new_page()
