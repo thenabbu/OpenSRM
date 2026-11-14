@@ -10,7 +10,7 @@ must be byte-identical; screenshots must be ~0% pixel difference (they were
 
 ```
 bash scripts/capture_golden.sh /tmp/golden-check
-diff -r -x v2 tests/golden /tmp/golden-check   # expect: no output (-x v2: v2/ is the separate, revision-pinned baseline)
+diff -r -x v2 -x v3 tests/golden /tmp/golden-check   # expect: no output (-x: v2/ and v3/ are the separate, revision-pinned baselines)
 ```
 
 Wipes the target dir, seeds a clean

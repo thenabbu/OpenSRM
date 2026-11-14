@@ -1,0 +1,22 @@
+<div id="tab-timetable" role="tabpanel" aria-labelledby="tab-timetable-tab" data-tabpanel="" class="max-w-3xl mx-auto" style="">
+    <div id="tab-timetable-view" style=""><div class="tt-wrap"><input type="radio" name="ttday" id="day-Monday" class="tt-radio" checked=""><input type="radio" name="ttday" id="day-Tuesday" class="tt-radio"><input type="radio" name="ttday" id="day-Wednesday" class="tt-radio"><input type="radio" name="ttday" id="day-Thursday" class="tt-radio"><input type="radio" name="ttday" id="day-Friday" class="tt-radio"><div class="tt-hero"><span class="tt-hero-disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></span><div class="tt-hero-txt"><strong>Done for today</strong><div class="tt-hero-sub">No more classes</div></div><span class="tt-hero-day">Sat</span></div><div class="tt-days"><label for="day-Monday">Mon</label><label for="day-Tuesday">Tue</label><label for="day-Wednesday">Wed</label><label for="day-Thursday">Thu</label><label for="day-Friday">Fri</label></div><div class="panels" data-island="timetable" data-props="#island-timetable" data-hydrated="1"><div class="day-panel" id="panel-Monday"><div class="tt-row"><div class="tt-time"><b>15:00</b><span>15:50</span></div><div class="tt-info"><b>&amp;lt;img src=x onerror=&amp;quot;window.__xss=1&amp;quot;&amp;gt;&amp;lt;script&amp;gt;window.__xss2=1&amp;lt;/script&amp;gt;</b><span class="tt-sub"><span class="tt-code">&amp;lt;img src=x onerror=&amp;quot;window.__xss=1&amp;quot;&amp;gt;&amp;lt;script&amp;gt;window.__xss2=1&amp;lt;/script&amp;gt;</span><span class="tt-tail"><span class="tt-chip">Test Hall</span><span class="tt-tag tt-tag--none">no data</span></span></span></div></div></div><div class="day-panel" id="panel-Tuesday"><div class="tt-off">No classes</div></div><div class="day-panel" id="panel-Wednesday"><div class="tt-off">No classes</div></div><div class="day-panel" id="panel-Thursday"><div class="tt-off">No classes</div></div><div class="day-panel" id="panel-Friday"><div class="tt-off">No classes</div></div></div></div><script type="application/json" id="island-timetable">{"days":[{"day":"Monday","short":"Mon","rows":[{"kind":"class","start":"15:00","end":"15:50","code":"&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;","name":"&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;","location":"Test Hall","live":false,"sig":null}],"empty":false},{"day":"Tuesday","short":"Tue","rows":[],"empty":true},{"day":"Wednesday","short":"Wed","rows":[],"empty":true},{"day":"Thursday","short":"Thu","rows":[],"empty":true},{"day":"Friday","short":"Fri","rows":[],"empty":true}],"default_day":"Monday"}</script>
+      
+    </div>
+    <div id="tt-editor" style="display:none">
+      <div class="flex justify-between items-center flex-wrap gap-2 mb-3">
+        <h3 class="text-base font-semibold">Edit Timetable</h3>
+        <div class="flex gap-2 flex-wrap">
+          <button id="tt-save-btn" class="btn btn-accent btn-sm hidden">Save</button>
+          <button id="tt-cancel-btn" class="btn btn-ghost btn-sm hidden">Cancel</button>
+          <button id="tt-add-subject-btn" class="btn btn-outline btn-sm hidden">+ Add Subject</button>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/60 mb-3">
+        Legacy manual editor — this section's timetable is entered by hand.
+      </p>
+      <div id="tt-palette" class="flex gap-2 flex-wrap mb-4"></div>
+      <div class="overflow-x-auto tt-grid-wrap">
+        <div id="tt-grid-body"></div>
+      </div>
+    </div>
+  </div>

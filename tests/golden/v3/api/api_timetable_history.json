@@ -1,0 +1,8 @@
+{
+  "body": "{\"entries\":[],\"ok\":true}\n",
+  "bytes": 25,
+  "content_type": "application/json",
+  "gzip_bytes": 45,
+  "path": "/api/timetable/history",
+  "status": 200
+}

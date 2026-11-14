@@ -1,0 +1,8 @@
+{
+  "body": "{\"allowlisted\":true,\"configured\":false,\"dry_run\":false,\"enabled\":false,\"endpoint_hash\":null,\"lead_choices\":[5,10,15,30],\"ok\":true,\"subscription\":null,\"vapid_public_key\":\"\"}\n",
+  "bytes": 173,
+  "content_type": "application/json",
+  "gzip_bytes": 146,
+  "path": "/api/push/status",
+  "status": 200
+}

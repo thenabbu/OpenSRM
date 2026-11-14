@@ -98,6 +98,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  bash tests/e2e/run_push_duts.sh   (boots 18185-18187 itself)"
   echo "  bash scripts/offline_proof.sh     (own server on 18183, killed mid-run)"
   echo "  bash scripts/dut_suite.sh         (own server on 18189, 10 DUT scripts)"
+  echo "  bash scripts/capture_golden.sh --check --no-screens  (golden drift, ~2.5 min)"
   echo
   echo "== CI_ONLY (CI runs it, gates.sh cannot — with the reason)"
   printf '%s\n' "$CI_ONLY" | sed 's/^/  /'
@@ -204,6 +205,12 @@ else
   # nothing runs it. P9.5b turning them green flips this to PASS with no edit.
   run_step "DUT suite (dut_suite.sh — 10 scripts)" VENV="$V" \
     bash scripts/dut_suite.sh
+  # Golden drift (W3.3): re-captures the 9 routes and diffs them against the
+  # committed tests/golden/v3. --no-screens because PNG bytes encode the
+  # capture host's font stack — the same line CI runs, for the same reason.
+  # ~2.5 min: it seeds its own DATA_DIR and boots its own gunicorn.
+  run_step "golden drift (capture_golden.sh --check --no-screens)" \
+    env OPENSRM_PY="$V/bin/python" bash scripts/capture_golden.sh --check --no-screens
 fi
 
 finish
