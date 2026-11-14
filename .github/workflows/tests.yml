@@ -319,6 +319,23 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: .venv/bin/playwright install --only-shell chromium
 
+      # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
+      # committed tests/golden/v3, naming every file that moved (and for the first
+      # text artifacts, the changed line and column). It lives in THIS job and not
+      # in unit: it boots gunicorn and drives chromium, and the browsers are already
+      # installed here. --no-screens is deliberate — the goldens were captured on
+      # the laptop, and PNG bytes encode the capture host's font stack, so only
+      # dom/, api/, routes.json and metrics.json are byte-comparable across hosts.
+      #
+      # FIRST run step on purpose: it is the cheapest signal in the job and it must
+      # not be skipped because something else failed. Measured: a one-word UI change
+      # failed the browser suites first and this step never ran, turning "the gate
+      # says what drifted" into "some DUT is red".
+      - name: Golden drift (tests/golden/v3 --check)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: bash scripts/capture_golden.sh --check --no-screens
+
       # One gunicorn backs all of these; every suite asserts the listener is
       # its own server (require_own_server) before it tests anything.
       # test_route_panels seeds a fabricated SCOPE blob and asserts the four
@@ -370,18 +387,6 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh
-
-      # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
-      # committed tests/golden/v3, naming every file that moved. It lives in THIS
-      # job and not in unit, because it boots gunicorn and drives chromium — and
-      # the browsers are already installed here. --no-screens is deliberate: the
-      # goldens were captured on the laptop and PNG bytes encode the capture
-      # host's font stack, so only dom/, api/, routes.json and metrics.json are
-      # byte-comparable across hosts. Any difference exits non-zero.
-      - name: Golden drift (tests/golden/v3 --check)
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: bash scripts/capture_golden.sh --check --no-screens
 
       # dut_suite.sh (gates.sh's 10-script runner) deliberately has no step of
       # its own here: all 10 suites below already run in this job via
