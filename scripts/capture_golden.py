@@ -64,6 +64,7 @@ runner is not the machine the goldens were captured on.
 """
 import argparse
 import base64
+import difflib
 import gzip
 import json
 import os
@@ -984,6 +985,28 @@ def main() -> int:
                     print(f"  {d}")
                 if len(diffs) > 60:
                     print(f"  ... and {len(diffs) - 60} more")
+                # WHAT moved, not just which file: the first differing text files
+                # get a short unified diff. A list of names is not actionable on
+                # a CI runner you cannot log into; PNGs are named only.
+                shown = 0
+                for rel in (d.split()[-1] for d in diffs):
+                    if shown >= 3 or rel.startswith("screens/"):
+                        continue
+                    a, b = check_against / rel, out / rel
+                    if not (a.is_file() and b.is_file()):
+                        continue
+                    try:
+                        al = a.read_text().splitlines()
+                        bl = b.read_text().splitlines()
+                    except UnicodeDecodeError:
+                        continue
+                    hunk = list(difflib.unified_diff(al, bl, f"golden/{rel}", f"capture/{rel}",
+                                                     lineterm="", n=1))
+                    if hunk:
+                        shown += 1
+                        print(f"  --- {rel}: first {min(24, len(hunk))} of {len(hunk)} diff lines ---")
+                        for line in hunk[:24]:
+                            print(f"  {line[:200]}")
                 print(f"capture kept for inspection: {out.parent}")
             else:
                 shutil.rmtree(out.parent, ignore_errors=True)
