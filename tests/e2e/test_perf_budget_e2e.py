@@ -64,8 +64,9 @@ with sync_playwright() as p:
     # SCOPE CHANGE, recorded on purpose: this check used to also cover
     # softRefresh()'s markup morph, because the tab switch ran it. That path is
     # GONE (W5.1b deleted it: a sync now repaints data in place), so the budget
-    # is measured on the switch alone. The sync that replaced it is measured as
-    # a long-task window in section 2 below, on the repaint that actually runs.
+    # is measured on the switch alone. The sync that replaced it has no morph
+    # left to budget: it is one small JSON fetch plus a patch, pinned by the
+    # scroll/focus/node-identity checks in section 2 below.
     pg.goto(BASE + "/attendance", wait_until="load")
     pg.wait_for_timeout(1500)
     switches = pg.evaluate("""() => {
