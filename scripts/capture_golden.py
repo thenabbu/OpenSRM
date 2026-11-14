@@ -156,7 +156,11 @@ EMPTY_ENV = {"Status": "Success", "Message": "No data found", "Data": ""}
 # ── normalization ────────────────────────────────────────────────────
 # asset() emits ?v=<sha256[:10]> — HEX, not digits (DESIGN §10.16)
 RE_VQ = re.compile(r"\?v=[0-9a-fA-F]+")
-RE_DT_ATTR = re.compile(r'\sdata-(?:ts|full)="[^"]*"')
+# No leading \s in the pattern on purpose: home.html renders
+#   class="sync-line ..."data-ts="…"
+# with NO space before data-ts (a template slip), so anchoring on whitespace
+# silently left the epoch in the golden and the diff never came out empty.
+RE_DT_ATTR = re.compile(r'\s*data-(?:ts|full)="[^"]*"')
 RE_AGOP = re.compile(r"\(\d+(?:m|h|d) ago\)")
 RE_AGOP2 = re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|m|h|d|w)\s+ago\b")
 RE_JUST_NOW = re.compile(r"\bjust now\b")
@@ -490,11 +494,33 @@ def _pin_mo_vars(route, request, base: str):
 
 
 def freeze(page) -> None:
-    """Pause animations, then flush two frames so what is captured/screenshotted
-    is the frozen paint. Two rAFs, not a sleep: the injected style applies on the
-    next style recalc, the second frame is the one that gets painted."""
-    page.add_style_tag(content="*,*::before,*::after{animation-play-state:paused!important;transition:none!important}")
-    page.evaluate("document.querySelectorAll('svg').forEach(s=>{try{s.pauseAnimations&&s.pauseAnimations()}catch(e){}})")
+    """Stop everything that still moves, then flush a frame so what is captured
+    and screenshotted is the frozen paint.
+
+    Three sources of movement that are NOT wall-clock normalisable, because they
+    change PIXELS and the bytes of the PNG:
+      1. gaze.js drives --mo-track-* through requestAnimationFrame forever, so
+         each screenshot catches the eyes somewhere else. Its controller exposes
+         stop(), and it is per-avatar (`_blobatarGaze`).
+      2. the idle blink/bob/breathe loops are CSS keyframes: pausing leaves them
+         at an arbitrary elapsed offset, so they are switched off, not paused.
+      3. any --mo-* value the driver wrote last is pinned to 0.
+    No sleep anywhere: two rAFs is the frame flush.
+    """
+    page.evaluate("""() => {
+      document.querySelectorAll('.blobatar-gaze').forEach(s => {
+        try { if (s._blobatarGaze && s._blobatarGaze.stop) s._blobatarGaze.stop(); } catch (e) {}
+      });
+      document.querySelectorAll('[style*="--mo-"]').forEach(el => {
+        for (const name of Array.from(el.style)) {
+          if (name.startsWith('--mo-') && /^-?[\\d.]+(?:ms)?$/.test(el.style.getPropertyValue(name).trim())) {
+            el.style.setProperty(name, '0');
+          }
+        }
+      });
+      document.querySelectorAll('svg').forEach(s => { try { s.pauseAnimations && s.pauseAnimations(); } catch (e) {} });
+    }""")
+    page.add_style_tag(content="*,*::before,*::after{animation:none!important;transition:none!important}")
     page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))")
 
 
