@@ -45,10 +45,16 @@ def test_every_account_template_emits_data_netid():
 
     # Positive control: the set is not empty and includes the island pages —
     # an empty `emitted` would make the assertions below assert nothing.
-    assert "fees.html" in emitted and "home.html" in emitted, emitted
+    # home.html renders its <body> from base.html now, so it is asserted as an
+    # INHERITOR below rather than as a literal carrier - checking only the
+    # literal would silently pass if home stopped extending base.
+    assert "fees.html" in emitted and "base.html" in emitted, emitted
     assert len(emitted) >= 9, emitted
     # login.html is pre-auth: no netid exists there, so it must not claim one.
     assert missing == ["login.html"], f"pages without data-netid: {missing}"
+    # The page that lost its own <body> must still inherit it.
+    home = (TEMPLATES / "home.html").read_text()
+    assert 'extends "base.html"' in home, "home.html no longer extends base.html"
 
 
 def test_presentation_passes_the_sanitised_value():
