@@ -14,6 +14,7 @@ import json
 
 from markupsafe import Markup
 
+
 # Mirrors the template's {% if c.pct_disp is not none %} guard: a course with no
 # held classes has no meter, so it has no row — and no island prop either.
 def _rows(courses):

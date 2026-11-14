@@ -587,6 +587,7 @@ from .edge import (  # noqa: E402,F401 — re-exported
     _security_headers,
 )
 
+
 # ── Unhandled-error safety net ─────────────────────────────────────
 def _unhandled_error(e):
     """Safety net: one greppable opensrm ERROR line for anything the app

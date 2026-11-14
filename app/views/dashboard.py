@@ -45,6 +45,10 @@ from .attendance import (
     _weekly_slots,
     hourwise_view,
 )
+from .attendance_island import block as _attendance_block
+from .attendance_island import label as _att_label
+from .attendance_island import nudge as _att_nudge
+from .attendance_island import pole as _att_pole
 from .campus import campus_view
 from .dashboard_island import block as _island_block
 from .dashboard_island import props as _island_props
@@ -55,10 +59,6 @@ from .marks_island import block as _marks_block
 from .profile import merge_personal, scope_profile
 from .sync_age import caption as _sync_age_caption
 from .sync_age import island_props as _sync_age_props
-from .attendance_island import block as _attendance_block
-from .attendance_island import label as _att_label
-from .attendance_island import nudge as _att_nudge
-from .attendance_island import pole as _att_pole
 from .ticker import _today_brief, _today_ticker, _week_updates
 from .timetable import (
     _budget_rows,

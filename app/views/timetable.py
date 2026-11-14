@@ -25,6 +25,8 @@ def _now():
 
 from html import escape as _hesc
 
+from markupsafe import Markup
+
 from .. import static_data as _sd
 from ..db import (
     day_slots,
@@ -47,9 +49,8 @@ from ..db import (
 from ..portal.parsers.common import _group_key, _semester_int
 from ..portal.parsers.timetable import DAY_ORDER
 from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS, TOOLS
-from markupsafe import Markup
-from .attendance import _join_attendance, _title_case
 from . import timetable_island
+from .attendance import _join_attendance, _title_case
 from .ticker import _now_next_from_slots
 
 log = __import__("logging").getLogger("opensrm")

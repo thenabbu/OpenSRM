@@ -27,8 +27,8 @@ def props(day_slots, grid, today):
     """
     # Imported here, not at module top: timetable.py imports this module, so a
     # top-level import of that module from here is circular.
-    from .timetable import _title_case, _tt_att_sig
     from ..portal.parsers.timetable import DAY_ORDER
+    from .timetable import _title_case, _tt_att_sig
 
     days = []
     for d in DAY_ORDER:
