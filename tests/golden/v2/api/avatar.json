@@ -1,0 +1,8 @@
+{
+  "body": "Parameters: size (8-1024), background (none|square|circle|squircle), hue (0-360), tone (0-1), expression (idle|happy|sad|mad|surprised|wink|sleepy|smug|unsure|scared|love|shy|sick|thinking), title (≤128 chars), gen (1|2)\nEach parameter is optional; defaults produce a deterministic avatar for the given name.",
+  "bytes": 310,
+  "content_type": "text/plain; charset=utf-8",
+  "gzip_bytes": 245,
+  "path": "/avatar",
+  "status": 200
+}
