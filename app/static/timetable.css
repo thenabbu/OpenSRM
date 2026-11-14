@@ -166,10 +166,9 @@
 .tt-grid-header .tt-grid-time{font-weight:600;color:var(--color-accent);text-align:center}
 
 /* Tab switch: there is no client-side panel switch left (P3.1 — every panel
-   is its own URL, so a tab is a page load). The only panel motion is dash.js
-   softRefresh(), which fades the swapped <main> in via element.animate()
-   (off the main thread, interruptible, reduced-motion aware) — no CSS
-   transition here.
+   is its own URL, so a tab is a page load). A sync repaints data in place, so
+   there is no panel motion to declare here either (W5.1b deleted the markup
+   swap and the fade that went with it).
    Dock: shared phase-5 press tokens; dock-active keeps its raised state. */
 .dock button,.dock a{transition:transform var(--t-ui) var(--ease-out), color var(--t-ui) var(--ease-out)}
 .dock button.dock-active,.dock a.dock-active{transform:translateY(-4px) scale(1.06)}

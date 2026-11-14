@@ -150,7 +150,6 @@ describe('P6.2 dashboard island', () => {
     const el = grid();
     const av = el.querySelector('.avatar > div');
     expect(av?.classList.contains('blobatar-gaze')).toBe(true);
-    expect(av?.getAttribute('data-morph')).toBe('ignore');
     expect(av?.querySelector('.mo-root')).not.toBeNull();
     const btn = el.querySelector('#copyEmail');
     expect(btn?.getAttribute('data-email')).toBe('zz9999@srmist.edu.in');

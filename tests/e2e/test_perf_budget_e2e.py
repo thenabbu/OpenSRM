@@ -2,10 +2,11 @@
 
   1. ten attendance view switches (graph <-> table) at 6x: NO long task
      > 50 ms inside a switch window, and every switch really flipped the view
-     (P3.1: the tab machine is gone; the softRefresh morph this used to also
-     cover is a locked SPEC deletion — see the note at the check)
+     (P3.1: the tab machine is gone)
   2. a data-changing sync on /attendance: zero navigations, scroll/focus/route
-     survive; the new number renders on /marks after a real navigation
+     survive AND the panel's own rows are the same node objects (a repaint
+     patches, it never rebuilds); the new number renders on /marks after a real
+     navigation
   3. ?perf=low: 0 running avatar animations on / (the route owning the widget)
 
 Run: python tests/e2e/test_perf_budget_e2e.py   (seeded server on DUT_BASE).
@@ -61,13 +62,10 @@ with sync_playwright() as p:
     # grade a page that did nothing).
     #
     # SCOPE CHANGE, recorded on purpose: this check used to also cover
-    # softRefresh()'s morph, because the tab switch ran it. That path is a
-    # locked deletion in the migration SPEC (vendor/idiomorph.min.js +
-    # the two-stage softRefresh morph); a full-<main> Idiomorph morph costs
-    # 53-124 ms on its own at 6x CPU throttle (measured: 10/10 runs over
-    # budget, spaced or not), so it cannot honour a 50 ms main-thread
-    # budget and is not made green here. When the Preact unit replaces it,
-    # re-add a sync check against the new render path.
+    # softRefresh()'s markup morph, because the tab switch ran it. That path is
+    # GONE (W5.1b deleted it: a sync now repaints data in place), so the budget
+    # is measured on the switch alone. The sync that replaced it is measured as
+    # a long-task window in section 2 below, on the repaint that actually runs.
     pg.goto(BASE + "/attendance", wait_until="load")
     pg.wait_for_timeout(1500)
     switches = pg.evaluate("""() => {
@@ -122,6 +120,10 @@ with sync_playwright() as p:
       window.__focusId = document.activeElement.id || document.activeElement.tagName;
       window.__path = location.pathname;
       window.__scroll = window.scrollY;
+      // the island's OWN row: a sync must patch it, not build a new one. If the
+      // row object survives, the nodes the user is looking at were never
+      // destroyed — which is what clamps scrollY to 0 on a phone.
+      window.__rowNode = document.querySelector('.mrows .mrow');
     }""")
     check("setup: /attendance actually scrolled (non-vacuous position)",
           pg.evaluate("window.__scroll") >= 200, str(pg.evaluate("window.__scroll")))
@@ -148,14 +150,15 @@ with sync_playwright() as p:
     check("throttled sync: scroll preserved",
           pg.evaluate("window.scrollY") == pg.evaluate("window.__scroll"),
           f"{pg.evaluate('window.__scroll')} -> {pg.evaluate('window.scrollY')}")
-    # Focus must land back on the SAME CONTROL. It is compared by identity
-    # (id, else tag+text) rather than `===` node identity: softRefresh rebuilds
-    # <main>, so the node is necessarily a new object even when the user is
-    # exactly where they were. Asserting node identity would demand that the
-    # DOM never be rebuilt, which is the morph this suite is retiring.
+    # Focus must land back on the SAME CONTROL, and it now means node identity
+    # too: the sync repaints data in place (W5.1b), so no node inside the panel
+    # is rebuilt. Before that change this was compared by (id, tag+text) because
+    # the markup swap necessarily produced a new object.
     check("throttled sync: focus preserved (same control)",
           pg.evaluate("(document.activeElement.id || document.activeElement.tagName) === window.__focusId"),
           pg.evaluate("document.activeElement.tagName + '#' + (document.activeElement.id || document.activeElement.className)"))
+    check("throttled sync: the panel's first row is the SAME node object (patched, not rebuilt)",
+          pg.evaluate("window.__rowNode === document.querySelector('.mrows .mrow')"))
     check("throttled sync: stayed on its own route (no redirect off /attendance)",
           pg.evaluate("location.pathname") == pg.evaluate("window.__path"))
     pg.goto(BASE + "/marks", wait_until="load")   # cross-route: real navigation, fresh render

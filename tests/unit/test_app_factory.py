@@ -124,6 +124,9 @@ EXPECTED = {
     # P7: island-shaped feeds for the panels whose legacy endpoints carry a
     # different payload (raw JSON / the write API the user POSTs through)
     "/api/attendance/island", "/api/marks/island", "/api/timetable/island", "/api/tools/island",
+    # W5.1b: the dashboard grid's own slice, so a sync repaints it from data
+    # instead of re-fetching "/" and swapping <main> out
+    "/api/dashboard",
     # offline shell: the PII-free markup the service worker caches
     "/shell/", "/shell/dashboard", "/shell/attendance", "/shell/timetable", "/shell/marks",
     "/shell/campus", "/shell/academics", "/shell/fees", "/shell/tools",
@@ -173,6 +176,7 @@ EXPECTED_EP = {
     "/api/fees": {("api_fees", "api_fees")},
     "/api/campus": {("api_campus", "api_campus")},
     "/api/academics": {("api_academics", "api_academics")},
+    "/api/dashboard": {("api_dashboard", "api_dashboard")},
     "/api/attendance/island": {("api_attendance_island", "api_attendance_island")},
     "/api/marks/island": {("api_marks_island", "api_marks_island")},
     "/api/timetable/island": {("api_timetable", "api_timetable")},

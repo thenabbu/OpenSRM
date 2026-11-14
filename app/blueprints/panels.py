@@ -20,7 +20,7 @@ from flask import jsonify
 
 from ..app import get_current_user
 from ..views import attendance_island, marks_island, timetable_island, tools_island
-from ..views.dashboard import panel_data
+from ..views.dashboard import dashboard_island_payload, panel_data
 from ..views.timetable import _day_slots, _tt_grid
 from . import FlatBlueprint
 
@@ -124,6 +124,19 @@ def api_attendance_island():
                   "no attendance yet — sync first")
 
 
+def api_dashboard():
+    """/ as data: the dashboard grid's island payload.
+
+    The SAME dict presentation() renders `#island-dashboard` from
+    (views.dashboard.dashboard_island_payload), because a sync must be able to
+    repaint the grid without the browser re-downloading the route's HTML.
+    Never 404: / is the index and always renders.
+    """
+    return _panel(lambda vm: dashboard_island_payload(vm, get_current_user()),
+                  "no dashboard data yet — sync first")
+
+
+bp.add_url_rule("/api/dashboard", methods=["GET"], view_func=api_dashboard)
 bp.add_url_rule("/api/attendance", methods=["GET"], view_func=api_attendance)
 bp.add_url_rule("/api/attendance/island", methods=["GET"], view_func=api_attendance_island)
 bp.add_url_rule("/api/fees", methods=["GET"], view_func=api_fees)
