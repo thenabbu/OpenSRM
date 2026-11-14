@@ -600,6 +600,19 @@ DET_ARGS = [
 ]
 
 
+# perf.js (in <head>, so html[data-perf] is set before the first paint) picks the
+# low tier when navigator.hardwareConcurrency <= 4, deviceMemory <= 3 or
+# connection.saveData. Those are HOST properties, not app state: a 4-vCPU GitHub
+# runner renders the low tier (no gaze driver at all, so no --mo-track-travel on
+# the avatar) while a 12-core laptop renders the high tier — the same revision
+# captured two different DOMs. Pinned to the high tier, the one a normal phone or
+# desktop gets, through the same two props perf.js reads (see ?perf=high).
+TIER_JS = """
+Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8, configurable: true});
+Object.defineProperty(navigator, 'deviceMemory', {get: () => 8, configurable: true});
+"""
+
+
 def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
     from playwright.sync_api import sync_playwright
     tabs_html = {}          # tab -> normalized outerHTML (last viewport = desktop)
@@ -611,6 +624,7 @@ def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
             ctx = browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=1,
                                       service_workers="block", reduced_motion="reduce")
             ctx.add_cookies([{"name": "srm_session", "value": token, "url": base}])
+            ctx.add_init_script(TIER_JS)
             page = ctx.new_page()
             try:
                 # Pin the client clock to the blob's ts so every age label the
