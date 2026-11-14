@@ -93,8 +93,11 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
   by hand, pass `-c user.email=128571614+thenabbu@users.noreply.github.com`; the
   wrong one does not link the commit to the account.
 - CI jobs: **Lint** (`ruff` + `uv lock --check` + app.css freshness) · **Tests**
-  (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>` +
-  `:<short-sha>`, `needs: [lint, tests]` on `main`) · **Scans** (report-only).
+  (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>`, and
+  nothing else — published only on the push that moves `VERSION`,
+  `needs: [lint, tests]` on `main`) · **Scans** (report-only). No `:<sha>` tag:
+  GHCR names each package version after a tag it carries, so a sha tag made the
+  package list read like random words (`a9c2598`) instead of `2.12.0`.
   A red `unit`/`e2e` on a PR is a real failure, not a flake.
 - Release = `VERSION` + `pyproject.toml` + `uv.lock` **in one commit**. You do not have
   to remember it: if a push to `main` carries `app/` or `Dockerfile` changes and `VERSION`

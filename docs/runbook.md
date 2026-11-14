@@ -29,7 +29,8 @@ that exists only there arrives empty. Every knob below goes into
 CI builds every green `main` push: `lint` + `tests` (unit/docker/e2e) gate the
 publish job (`.github/workflows/build.yml`, `needs: [lint, tests]`), which
 pushes `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` (from the
-`VERSION` file) + `:<short-sha>`, with OCI `version`/`revision` labels
+`VERSION` file) — and only on the push that moved `VERSION`, so a version tag
+names one immutable artifact — with OCI `version`/`revision` labels
 (verified: `git show origin/main:.github/workflows/build.yml`; live labels on
 the running container: `docker inspect opensrm --format
 '{{json .Config.Labels}}'` → `org.opencontainers.image.version: 1.23.0`).
@@ -107,7 +108,9 @@ polls; its request lines are DEBUG at INFO level, so their absence from
 CI publishes `:<VERSION>` next to `:latest`, so any released version can be
 pinned (verified: `git show origin/main:.github/workflows/build.yml` tag
 rules; images that exist for the lab: `:1.23.0` = what ran before this
-release, `:1.24.0`, `:1.25.0`, plus `:<short-sha>`).
+release, `:1.24.0`, `:1.25.0`). There is no `:<sha>` tag — the exact commit is
+in the OCI `revision` label (`docker image inspect <img> --format
+'{{index .Config.Labels "org.opencontainers.image.revision"}}'`).
 
 ```bash
 ssh lab 'echo "OPENSRM_TAG=1.24.0" >> /docker/opensrm/.env'   # PROJECT env file

@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      republish:
+        description: "Republish :latest + :<VERSION> at the current commit (no VERSION move)"
+        type: boolean
+        default: false
 
 # audit: default token is read-only; build job opts into packages:write itself
 permissions:
@@ -34,6 +39,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # HEAD~1 is the pre-push main tip and the ONLY baseline for the
+          # VERSION gate. At the default depth of 1 that commit is absent, the
+          # comparison silently falls back to "moved", and every push then
+          # republishes :<VERSION> + :latest as a fresh digest - measured on
+          # run 43529620376: `VERSION moved (<none> -> 2.12.0)` on a push that
+          # did not change VERSION at all.
+          fetch-depth: 2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -47,36 +59,51 @@ jobs:
           set -eu
           V="$(cat VERSION)"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          # Did THIS push move VERSION? `git diff` against the pushed range,
-          # not HEAD~1: a multi-commit push would hide an earlier bump.
-          # Only a real bump may move :VERSION and :latest - re-pushing them on
-          # every docs commit makes :2.11.0 a moving target and destroys the
+          # Did THIS push move VERSION? Compare against HEAD~1, the pre-push main
+          # tip: a multi-commit push would hide an earlier bump in a diff, and
+          # github.event.before is empty on a workflow_dispatch.
+          #
+          # Only a real bump may push :<VERSION> and :latest. Re-publishing them
+          # on every docs commit makes :2.12.0 a moving target and destroys the
           # rollback point the tag exists for.
-          BEFORE="${{ github.event.before }}"
-          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE:VERSION" 2>/dev/null; then
-            MOVED=$(git show "${BEFORE}:VERSION" | tr -d '[:space:]')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # A dispatch is a build check by default; republishing a version is
+            # an explicit request, never a side effect.
+            RELEASED="${{ inputs.republish }}"
+            echo "dispatch: republish=${RELEASED} (VERSION $V)"
+          elif git rev-parse -q --verify HEAD~1 >/dev/null \
+               && [ -n "$(git show HEAD~1:VERSION 2>/dev/null | tr -d '[:space:]')" ]; then
+            MOVED="$(git show HEAD~1:VERSION | tr -d '[:space:]')"
+            if [ "$MOVED" != "$V" ]; then
+              RELEASED=true
+              echo "VERSION moved ($MOVED -> $V): :$V and :latest will move"
+            else
+              RELEASED=false
+              echo "VERSION unchanged ($V): nothing is published"
+            fi
           else
-            MOVED=""
+            # First push on a repo with no parent, or a shallow clone again:
+            # publishing is the safe side, but say so instead of guessing.
+            RELEASED=true
+            echo "::warning::no HEAD~1 to compare VERSION against - treating this push as a release"
           fi
-          if [ "$MOVED" != "$V" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "VERSION moved (${MOVED:-<none>} -> $V): :$V and :latest will move"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            echo "VERSION unchanged ($V): only the sha tag is published"
-          fi
+          echo "released=$RELEASED" >> "$GITHUB_OUTPUT"
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ghcr.io/thenabbu/opensrm
-          # :sha ALWAYS (every commit is identifiable). :VERSION and :latest
-          # only on a real VERSION bump, so they name an immutable artifact.
+          # :latest then :VERSION, and NOTHING else. A sha tag made GHCR name
+          # every package version after the commit (`a9c2598`), and because a tag
+          # is unique per digest the old entries kept only their sha - the page
+          # read like random words. GHCR names a version after a tag it carries,
+          # so :VERSION goes LAST; it is the name a human reads.
+          # The exact commit is not lost: it is the OCI revision label below and
+          # the provenance attestation, and any version is pinnable via :VERSION.
           tags: |
             type=raw,value=latest,enable=${{ steps.version.outputs.released == 'true' }}
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.released == 'true' }}
-            type=sha,prefix=
           # metadata-action derives org.opencontainers.image.version from the
           # highest-priority tag (latest) - pin the real release number and
           # the exact commit on the label instead, so `docker inspect` names
@@ -96,7 +123,10 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
-          push: true
+          # An unreleased commit publishes nothing: no sha-named package version
+          # to clutter the registry. The build still runs, so a broken
+          # Dockerfile is caught on the merge rather than at release time.
+          push: ${{ steps.version.outputs.released == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max

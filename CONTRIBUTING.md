@@ -58,8 +58,8 @@ requirements. There is no Node build: CSS is compiled ahead of time by
 6. **Push + PR** — open a PR against `main`. PR CI runs **Lint**
    (`uvx ruff check app/` + `uv lock --check`) and **Tests**
    (`unit` + `docker` + `e2e`). The Docker image is pushed to
-   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`
-   only after the merge lands on `main` and only if lint *and* tests are
+   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` — a release push
+   only, and only if the tests are
    green there; deployment itself is manual (see
    [docs/runbook.md](docs/runbook.md)). Merges use merge commits with a
    `merge: <summary>` subject — never squash — so the atomic commits stay
@@ -136,9 +136,10 @@ that catch people out first:
     7 real portal logins per run and the portal caps 10/hour per IP.
     `test_login_guide_check` **is** in CI: it mocks `/api/login` in the
     browser, so nothing reaches the portal.
-- **Build** — on push to `main`: image pushed to
-  `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`,
-  gated on `needs: [lint, tests]` so a red suite never publishes
+- **Build** — on push to `main`: the image is built every time but pushed to
+  `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` only when that push
+  moved `VERSION` (a manually dispatched run builds without publishing unless
+  `republish` is set), gated on `needs: [lint, tests]` so a red suite never publishes
   `:latest`. The shipped image omits the browser fallback; build with
   `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
   `OPENSRM_TAG` (see AGENTS.md "Prod deploy").

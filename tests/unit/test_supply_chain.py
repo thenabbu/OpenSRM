@@ -55,9 +55,14 @@ check("build.yml reads VERSION from the file",
       "the image tag must derive from the VERSION file (single source of truth)")
 check("build.yml tags raw VERSION value",
       re.search(r"type=raw,value=\$\{\{ steps\.version\.outputs\.version \}\}", build) is not None)
-check("build.yml keeps :latest and the sha tag",
-      "type=raw,value=latest" in build and "type=sha,prefix=" in build,
-      "latest keeps meaning latest; sha stays for hotfix identification")
+check("build.yml publishes :latest and :<VERSION> and no sha tag",
+      "type=raw,value=latest" in build and "type=sha" not in build,
+      "a sha tag makes GHCR name the package version after the commit "
+      "(page read 'a9c2598' instead of '2.12.0')")
+check(":VERSION is emitted last (GHCR names a version by a tag it carries)",
+      build.index("type=raw,value=latest")
+      < build.index("type=raw,value=${{ steps.version.outputs.version }}"),
+      "tag order decides the name a human reads in the package list")
 check("build.yml labels org.opencontainers.image.version from VERSION",
       re.search(r"org\.opencontainers\.image\.version=\$\{\{ steps\.version\.outputs\.version \}\}", build) is not None)
 check("build.yml labels org.opencontainers.image.revision from github.sha",
@@ -72,9 +77,15 @@ check("no hardcoded version literal in tags", _check_no_literal)
 check("version/latest tags are gated on a real VERSION change",
       "released == 'true'" in build,
       "tags must be enable=<VERSION moved>, or :2.11.0 drifts with every commit")
-check("sha tag is unconditional", "type=sha,prefix=" in build)
-check("VERSION change compares the pushed range, not HEAD~1",
-      "github.event.before" in build)
+check("an unreleased commit publishes nothing",
+      "push: ${{ steps.version.outputs.released == 'true' }}" in build,
+      "otherwise every docs commit mints a sha-named package version")
+# The gate was DEAD for weeks and printed 'moved' on every push: checkout was
+# depth-1, so the baseline commit did not exist and the comparison fell through
+# to the always-released branch. Pin both halves.
+check("VERSION gate compares HEAD~1 and the checkout fetches it",
+      "HEAD~1:VERSION" in build and "fetch-depth: 2" in build,
+      "at depth 1 the baseline commit is absent and the gate silently releases every push")
 # Provenance + SBOM make the artifact's origin and contents verifiable at
 # deploy time instead of trusting a mutable tag.
 check("build records provenance", "provenance: mode=max" in build)
