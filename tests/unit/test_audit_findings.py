@@ -197,7 +197,13 @@ chk('L43', "dead code: dataset.copyFlash gone", not grep_repo('copyFlash', 'app'
 chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
     has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
 chk('L45', "a11y: attendance progress meters carry an accessible name", *_meters_ok('attendance.html'))
-chk('L46', "manifest linked on dashboard", has('app/templates/home.html', r'rel="manifest"'))
+# L46: the dashboard must render the manifest link. It lived in home.html until
+# base.html took over the <head>; home.html now extends base, so the link is
+# asserted where it is written AND that the dashboard inherits it - moving the
+# literal without that second half would let the link vanish from every page.
+chk('L46', "manifest linked on dashboard",
+    has('app/templates/base.html', r'rel="manifest"')
+    and has('app/templates/home.html', r'extends "base\.html"'))
 chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
     has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r'jsdelivr')
