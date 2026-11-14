@@ -414,6 +414,7 @@ jobs:
             /tmp/suite-*.log
             /tmp/gunicorn-ci.log
             /tmp/gun-*.log
+            /tmp/golden-check-*
           if-no-files-found: ignore
           retention-days: 7
 
