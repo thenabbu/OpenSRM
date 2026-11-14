@@ -165,7 +165,7 @@
     "/static/sw.js": {
       "bytes": 29870,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9516,
+      "gzip_bytes": 9517,
       "status": 200
     },
     "/static/timetable.js": {
@@ -191,7 +191,7 @@
         "/static/sw.js",
         "/static/timetable.js"
       ],
-      "js_gzip_bytes": 33888,
+      "js_gzip_bytes": 33889,
       "script_tags": 9
     },
     "/login": {
@@ -205,11 +205,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 11994,
+      "js_gzip_bytes": 11995,
       "script_tags": 3
     }
   },
-  "revision": "09c96c4",
+  "revision": "7308f22",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -259,12 +259,12 @@
   },
   "totals": {
     "api_bytes": 392044,
-    "api_gzip_bytes": 105837,
+    "api_gzip_bytes": 105838,
     "dom_nodes_all_panels": 2077,
     "dom_nodes_page": 313,
     "html_bytes": 65672,
     "html_gzip_bytes": 17989,
     "js_bytes": 109219,
-    "js_gzip_bytes": 35682
+    "js_gzip_bytes": 35683
   }
 }

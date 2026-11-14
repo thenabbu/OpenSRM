@@ -45,6 +45,14 @@ with no UI meaning):
      pinned to `:0`, and the browser is served documents with the same values
      pinned (_pin_mo_vars) so the screenshots are byte-identical too. Cosmetic
      only — no state is read from those vars.
+  9. The ORDER of the workbox precache array in sw.js. Its items are emitted in
+     `__WB_MANIFEST` (dist build) order, and two builds of identical source emit
+     it differently — measured: one build listed `app-<hash>.css` before
+     `app-<hash>.js`, the next listed it after. The SET of precached URLs is the
+     contract; the order is not. Sorted at record time, and sorted AFTER
+     rule 2, so the sort key is the masked `-HASH` name and not the build hash
+     (sorting on the real hash would put the order back at the mercy of every
+     rebuild).
 Session tokens, random netids and CSRF-ish values do not appear in the
 captured surface (verified: logout's Set-Cookie is the fixed epoch deletion
 cookie; /api/push/status carries no secret). If one ever does, mask it here and
@@ -185,6 +193,25 @@ RE_MO_VAR = re.compile(r"(--mo-[a-z0-9-]+)\s*:\s*-?[\d.]+(?:ms)?")
 # icon-192.png and apple-touch-icon.png are untouched.
 RE_ASSET_HASH = re.compile(r"-([A-Za-z0-9_-]{8})(\.(?:js|css))\b")
 RE_ISO = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?")
+# The workbox precache list inside sw.js (web/src/sw-template.js: workbox injects
+# __WB_MANIFEST here as an array of {revision,url} items). Its items arrive in
+# dist-manifest order, which two builds of identical source disagree on.
+# Anchored on the ITEM shape, not on the surrounding minified call — the prefix
+# is `L().precache(e)})([…])` today and whatever the next minifier emits tomorrow.
+RE_PRECACHE_ITEM = r'\{"revision":(?:null|"[^"]*"),"url":"[^"]*"\}'
+RE_PRECACHE = re.compile(r"(" + RE_PRECACHE_ITEM + r"(?:," + RE_PRECACHE_ITEM + r")+)")
+
+
+def _sort_precache(m) -> str:
+    """Re-emit the precache array with its items in a canonical order.
+
+    Runs AFTER the -HASH mask on purpose: sorted on the real build hash the
+    order would be decided by every rebuild, which is what is being removed.
+    """
+    items = re.findall(RE_PRECACHE_ITEM, m.group(1))
+    return ",".join(sorted(items))
+
+
 RE_EPOCH_KEY = re.compile(r'("(?:ts|fetched_at|last_fetch|updated_at|last_sync|last_ok|fetched)"\s*:\s*)(\d{9,13})')
 
 
@@ -195,6 +222,7 @@ def normalize(s: str) -> str:
     """
     s = RE_VQ.sub("", s)                      # ?v=<hash> asset version queries
     s = RE_ASSET_HASH.sub(r"-HASH\2", s)      # dist build hashes in filenames
+    s = RE_PRECACHE.sub(_sort_precache, s)    # sw.js precache ORDER (after masking)
     s = RE_DT_ATTR.sub("", s)                 # sync-line data-ts/data-full epochs
     s = RE_AGOP.sub("()", s)                  # "(5m ago)" sync captions
     s = RE_AGOP2.sub("ago", s)                # any other relative time
@@ -225,6 +253,15 @@ def selftest() -> int:
         ('--mo-look-x:-1.64;', '--mo-look-x:0;'),
         ('{"ts": 1794600000, "name": "x"}', '{"ts": 0, "name": "x"}'),
         ('at 2026-11-13T21:00:00', 'at 1970-01-01T00:00:00'),
+        # sw.js precache ORDER: two builds of identical source, two orders, one body
+        ('L().precache(e)})([{"revision":null,"url":"/a-AAAAAAAA.js"},'
+         '{"revision":null,"url":"/b-BBBBBBBB.css"}])',
+         'L().precache(e)})([{"revision":null,"url":"/a-HASH.js"},'
+         '{"revision":null,"url":"/b-HASH.css"}])'),
+        ('L().precache(e)})([{"revision":null,"url":"/b-BBBBBBBB.css"},'
+         '{"revision":null,"url":"/a-AAAAAAAA.js"}])',
+         'L().precache(e)})([{"revision":null,"url":"/a-HASH.js"},'
+         '{"revision":null,"url":"/b-HASH.css"}])'),
     ]
     bad = [(a, normalize(a), b) for a, b in cases if normalize(a) != b]
     for a, got, want in bad:
@@ -502,6 +539,16 @@ READY_JS = """() => {
   // attribute, a GH runner did not, 31 bytes of drift on dom/dashboard.html and
   // nothing else. Low tier attaches no gaze driver at all, so it has nothing to
   // wait for.
+  //
+  // Third marker, and NOT an island: push.js fills #push-lead from
+  // /api/push/status on a floating promise while settings.html ships that
+  // <select> EMPTY, so a snapshot taken before it resolves is exactly four
+  // <option> nodes short. Measured on an unchanged tree: page=309 vs page=313
+  // with every panel count identical, and a rerun of one SHA disagreed with
+  // itself. Checked before the tier gate so it runs on every route; `lead` is
+  // null on the eight routes that have no push card, which is a pass.
+  const lead = document.getElementById('push-lead');
+  if (lead && !lead.options.length) return false;
   if (document.documentElement.dataset.perf === 'low') return true;
   return Array.from(document.querySelectorAll('.blobatar-gaze'))
               .every(e => e.style.getPropertyValue('--mo-track-travel') !== '');
@@ -515,7 +562,9 @@ READY_DIAG_JS = """() => {
           gaze: document.documentElement.dataset.perf === 'low' ? 'low-tier' :
                 Array.from(document.querySelectorAll('.blobatar-gaze'))
                      .filter(e => e.style.getPropertyValue('--mo-track-travel') === '')
-                     .length};
+                     .length,
+          pushLead: (() => { const l = document.getElementById('push-lead');
+                             return l ? l.options.length : 'no-card'; })()};
 }"""
 
 SETTLE_TIMEOUT_MS = 30_000
