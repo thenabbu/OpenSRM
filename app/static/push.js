@@ -92,7 +92,7 @@
     return { sub: sub, server: res.body };
   }
 
-  async function render() {
+  async function render(prefetched) {
     // Feature detection first — but iOS Safari in a normal tab is not
     // "unsupported", it's "not installed": give the install steps instead.
     const unsupported = !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window);
@@ -109,9 +109,9 @@
       return;
     }
 
-    let st;
+    let st = prefetched;
     try {
-      st = (await api('/api/push/status')).body;
+      if (!st) st = (await api('/api/push/status')).body;
     } catch (e) {
       stateEl.textContent = 'Could not load reminder settings — reload the page.';
       return;
@@ -298,8 +298,13 @@
     testBtn.disabled = false;
   });
 
-  // lead choices come from the server (single source of truth)
-  api('/api/push/status').then(r => {
+  // lead choices come from the server (single source of truth). render() sets
+  // this select to the saved lead_minutes, so the fill has to finish FIRST:
+  // the innerHTML='' below would otherwise wipe a selection made against an
+  // option-less select, leaving the default on screen while the server still
+  // holds the saved value. The body is handed straight to render() so both
+  // writes land in one task (and the status is not fetched twice).
+  const fillLeads = api('/api/push/status').then(r => {
     const choices = (r.body && r.body.lead_choices) || [5, 10, 15, 30];
     leadSel.innerHTML = '';
     choices.forEach(c => {
@@ -308,9 +313,10 @@
       o.textContent = c + ' minutes before class';
       leadSel.appendChild(o);
     });
+    return r.body;
   }).catch(() => {});
 
-  render().catch(() => {
+  fillLeads.then(st => render(st)).catch(() => {
     stateEl.textContent = 'Could not load reminder settings — reload the page.';
   });
 })();
