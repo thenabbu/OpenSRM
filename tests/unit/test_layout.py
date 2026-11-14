@@ -188,7 +188,13 @@ c.commit(); c.close()
 h3 = GET().get_data(as_text=True)
 check("all-empty cards hidden (no orphan shells)",
       'lg:col-span-4' in h3 and 'lg:col-span-8' not in h3)
-check("day card still renders its widgets", 'This week' in h3 and 'Today' in h3, h3[:400])
+# The ticker widget hides itself on a weekend / a day with no timetable slots
+# ("ticker weekend/no-timetable day -> None" above), so 'Today' is only in the
+# markup on a school day. The card's own weekend line is 'Done for today'.
+# Asserting bare 'Today' made this suite red every Saturday and Sunday - it
+# blocked PR #162's unit job on a Sunday and every auto-bump PR since.
+check("day card still renders its widgets",
+      'This week' in h3 and ('Today' in h3 or 'Done for today' in h3), h3[:400])
 
 fails = [n for n, ok in results if not ok]
 print(f"\n{len(results)-len(fails)}/{len(results)} PASS" + (f" | FAILED: {fails}" if fails else ""))
