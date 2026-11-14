@@ -148,13 +148,14 @@ def t_feature_gate_off_no_tab():
             os.environ.pop("SCOPE_FEATURES", None)
         else:
             os.environ["SCOPE_FEATURES"] = old
-    # template side: navbar item AND panel both guarded by {% if fees %}
-    tpl = (REPO / "app" / "templates" / "fees.html").read_text()
-    for needle in ("id=\"tab-fees-tab\"", "id=\"tab-fees\""):
+    # template side: the navbar item is guarded in base.html (it owns the nav)
+    # and the panel is guarded in fees.html - each asserted where it is written.
+    for path, needle in (("base.html", 'id="tab-fees-tab"'), ("fees.html", 'id="tab-fees"')):
+        tpl = (REPO / "app" / "templates" / path).read_text()
         i = tpl.index(needle)
         guard = tpl.rfind("{% if fees %}", 0, i)
         endif = tpl.rfind("{% endif %}", 0, i)
-        assert guard != -1 and guard > endif, f"{needle} not inside {{% if fees %}} guard"
+        assert guard != -1 and guard > endif, f"{needle} in {path} not inside {{% if fees %}} guard"
 
 
 def t_exam_dues_beat_the_paid_row():
