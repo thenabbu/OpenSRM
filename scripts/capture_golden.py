@@ -1,18 +1,49 @@
 #!/usr/bin/env python
-"""Deterministic golden capture of the CURRENT OpenSRM app.
+"""Deterministic golden capture of an OpenSRM revision.
+
+REVISION-INDEPENDENT: --repo <path> says which checkout/worktree to capture; it
+drives BOTH the app under test and the seed script, so a detached worktree at an
+old SHA can be captured while HEAD stays elsewhere. Precedence:
+    --repo  >  $OPENSRM_REPO  >  /opt/data/opensrm-repo
+The interpreter that imports the app comes from --python, else
+<repo>/.venv/bin/python, else $OPENSRM_REPO/.venv/bin/python (a worktree usually
+has no venv of its own). The resolved SHA is printed and recorded in
+metrics.json, so a capture can never be mistaken for a different revision.
 
 Produces under --out (default /opt/data/missions/opensrm-preact/captures):
   routes.json          9 tab ids + each visible panel's normalized outer HTML
   dom/<tab>.html       post-JS DOM of each tab panel (normalized)
   screens/<tab>-<vp>.png  full-page screenshots, 390x844 / 768x1024 / 1440x900
   api/<endpoint>.json  GET response bodies + status (static assets included)
-  metrics.json         byte sizes, gzip sizes, script/node counts, per route
+  metrics.json         byte sizes, gzip sizes, script/node counts, revision
 
 Determinism: clean DATA_DIR each run, seed_rich() + fabricated scope blob
 (all 9 features, fresh ts), frozen client clock (page.clock), paused CSS/SVG
 animations, reduced motion, service workers blocked, external requests
-aborted, normalization of volatile bits (?v=, data-ts/data-full, relative
-times, epoch/ISO timestamps). See captures/README.md.
+aborted, and a READY SIGNAL instead of a timer or networkidle (see settle()).
+
+WHAT IS DELIBERATELY NORMALISED (a future reader must not mistake these for
+app behaviour — every item below is masked at record time, on the post-JS DOM
+and on every text API body, because it changes between runs or between builds
+with no UI meaning):
+  1. `?v=<hash>` asset version queries (app.py asset()) — stripped.
+  2. Vite build hashes inside dist filenames — `SettingsPanel-Crq-6lwG.js`
+     becomes `SettingsPanel-HASH.js`. Unmasked, every `pnpm build` would fail
+     the diff on a content-identical app.
+  3. `data-ts` / `data-full` attributes on the navbar sync line — removed.
+  4. Relative ages: "(5m ago)", "3d ago", "just now" -> a fixed "ago"
+     placeholder. Rendered from wall-clock, never from app state.
+  5. Epoch ints under known JSON keys (ts, fetched_at, last_sync, ...) -> 0,
+     and ISO timestamps -> 1970-01-01T00:00:00.
+  6. `/internal/metrics` values -> 0 (histogram sums, RSS, sync ages). Metric
+     names and labels stay: those are the structural contract.
+  7. Recorded byte/gzip sizes are computed on the NORMALIZED bytes, not the
+     wire bytes, so they do not wobble by a few bytes run to run.
+Session tokens, random netids and CSRF-ish values do not appear in the
+captured surface (verified: logout's Set-Cookie is the fixed epoch deletion
+cookie; /api/push/status carries no secret). If one ever does, mask it here and
+add a line to this list — an unmasked volatile field is a golden that fails
+for no reason.
 
 Read-only on the repo. No commit. Seed user zz9999 only.
 """
@@ -31,12 +62,16 @@ import time
 import urllib.request
 from pathlib import Path
 
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/data/cache/scratch/pw-browsers"
+# Browsers: honour whatever the machine already has. The lab keeps them on the
+# big disk; the laptop (where playwright runs — L8/L9) has the default cache.
+_LAB_PW = "/opt/data/cache/scratch/pw-browsers"
+if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ and Path(_LAB_PW).exists():
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _LAB_PW
 
-REPO = Path(os.environ.get("OPENSRM_REPO", "/opt/data/opensrm-repo"))
-# The worktree has no .venv of its own; the repo venv can run its code fine.
-PY = (REPO / ".venv" / "bin" / "python") if (REPO / ".venv" / "bin" / "python").exists() \
-     else Path("/opt/data/opensrm-repo/.venv/bin/python")
+# Both are re-bound by --repo/--python in main(); these are the fallbacks.
+CANONICAL = Path(os.environ.get("OPENSRM_REPO", "/opt/data/opensrm-repo"))
+REPO = CANONICAL
+PY = Path("/opt/data/opensrm-repo/.venv/bin/python")
 DATA_DIR = "/tmp/osrm-premig"
 NETID = "zz9999"
 METRICS_SECRET = "opensrm-capture-baseline"   # fixed constant, never rotated
@@ -118,19 +153,54 @@ RE_VQ = re.compile(r"\?v=[0-9a-fA-F]+")
 RE_DT_ATTR = re.compile(r'\sdata-(?:ts|full)="[^"]*"')
 RE_AGOP = re.compile(r"\(\d+(?:m|h|d) ago\)")
 RE_AGOP2 = re.compile(r"\b\d+(?:\.\d+)?\s*(?:s|m|h|d|w)\s+ago\b")
+RE_JUST_NOW = re.compile(r"\bjust now\b")
+# Vite content hash inside a dist filename: SettingsPanel-Crq-6lwG.js ->
+# SettingsPanel-HASH.js. 8 chars of [A-Za-z0-9_-] before .js/.css only, so
+# icon-192.png and apple-touch-icon.png are untouched.
+RE_ASSET_HASH = re.compile(r"-([A-Za-z0-9_-]{8})(\.(?:js|css))\b")
 RE_ISO = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?")
 RE_EPOCH_KEY = re.compile(r'("(?:ts|fetched_at|last_fetch|updated_at|last_sync|last_ok|fetched)"\s*:\s*)(\d{9,13})')
 
 
 def normalize(s: str) -> str:
-    """Strip the bits that move between runs but mean nothing to a UI diff."""
+    """Mask the bits that move between runs/builds but mean nothing to a UI diff.
+
+    Every rule here is listed in the module docstring — keep the two in sync.
+    """
     s = RE_VQ.sub("", s)                      # ?v=<hash> asset version queries
+    s = RE_ASSET_HASH.sub(r"-HASH\2", s)      # dist build hashes in filenames
     s = RE_DT_ATTR.sub("", s)                 # sync-line data-ts/data-full epochs
     s = RE_AGOP.sub("()", s)                  # "(5m ago)" sync captions
     s = RE_AGOP2.sub("ago", s)                # any other relative time
+    s = RE_JUST_NOW.sub("ago", s)             # sub-minute age caption
     s = RE_ISO.sub("1970-01-01T00:00:00", s)  # ISO timestamps
     s = RE_EPOCH_KEY.sub(lambda m: m.group(1) + "0", s)  # epoch int in known keys
     return s
+
+
+def selftest() -> int:
+    """The normaliser is the only logic a wrong edit can silently break:
+    a rule that stops matching produces a golden that differs every run."""
+    cases = [
+        ('<script src="/static/dist/assets/SettingsPanel-Crq-6lwG.js?v=abc123">',
+         '<script src="/static/dist/assets/SettingsPanel-HASH.js">'),
+        ('<link href="/static/dist/assets/app-Dw5KSv9_.css">',
+         '<link href="/static/dist/assets/app-HASH.css">'),
+        ('<img src="/static/icon-192.png">', '<img src="/static/icon-192.png">'),
+        ('<a href="/static/apple-touch-icon.png">', '<a href="/static/apple-touch-icon.png">'),
+        ('synced <span data-ts="1794600000" data-full="2026-11-13T21:00:00Z">',
+         'synced <span>'),
+        ('<span>5m ago</span>', '<span>ago</span>'),
+        ('<span>(3d ago)</span>', '<span>()</span>'),
+        ('<span>just now</span>', '<span>ago</span>'),
+        ('{"ts": 1794600000, "name": "x"}', '{"ts": 0, "name": "x"}'),
+        ('at 2026-11-13T21:00:00', 'at 1970-01-01T00:00:00'),
+    ]
+    bad = [(a, normalize(a), b) for a, b in cases if normalize(a) != b]
+    for a, got, want in bad:
+        print(f"FAIL {a!r} -> {got!r} (want {want!r})")
+    print(f"selftest: {len(cases) - len(bad)}/{len(cases)} normalisation cases pass")
+    return 1 if bad else 0
 
 
 def gz(b: bytes) -> int:
@@ -350,10 +420,48 @@ def capture_logout(base: str, token: str, out: Path) -> None:
 
 
 # ── browser capture ──────────────────────────────────────────────────
+# THE READY SIGNAL. networkidle is unsatisfiable in this app (main.ts
+# warmShells() keeps 8 /shell/* requests pending through the service worker, so
+# the network never goes idle — decisions.md NETWORKIDLE-IS-UNSATISFIABLE-HERE),
+# and a fixed sleep is only a bet on how slow the machine is. So the wait is on
+# the app's own completion marker: every island mount carries `data-hydrated`
+# (stamped by that island's own hydrate function, HYDRATED_ATTR) or
+# `data-mounted-at` (the cache branch), and only a mounted island can produce
+# either. A revision with no `[data-island]` at all (the pre-island baseline)
+# has nothing to hydrate, so its marker set is empty and this reduces to
+# "document complete" — one predicate, both revisions, no branching.
+READY_JS = """() => {
+  if (document.readyState !== 'complete') return false;
+  const isl = Array.from(document.querySelectorAll('[data-island]'));
+  return isl.every(e => !!(e.dataset.hydrated || e.dataset.mountedAt));
+}"""
+
+READY_DIAG_JS = """() => {
+  const isl = Array.from(document.querySelectorAll('[data-island]'));
+  return {readyState: document.readyState, islands: isl.length,
+          pending: isl.filter(e => !(e.dataset.hydrated || e.dataset.mountedAt))
+                      .map(e => e.dataset.island)};
+}"""
+
+SETTLE_TIMEOUT_MS = 30_000
+
+
+def settle(page, what: str) -> None:
+    """Block until the page finished its own boot, or report what did not.
+    No fixed sleep and no networkidle anywhere in this path."""
+    try:
+        page.wait_for_function(READY_JS, timeout=SETTLE_TIMEOUT_MS)
+    except Exception:
+        raise RuntimeError(f"{what} never became ready: {page.evaluate(READY_DIAG_JS)}")
+
+
 def freeze(page) -> None:
+    """Pause animations, then flush two frames so what is captured/screenshotted
+    is the frozen paint. Two rAFs, not a sleep: the injected style applies on the
+    next style recalc, the second frame is the one that gets painted."""
     page.add_style_tag(content="*,*::before,*::after{animation-play-state:paused!important;transition:none!important}")
     page.evaluate("document.querySelectorAll('svg').forEach(s=>{try{s.pauseAnimations&&s.pauseAnimations()}catch(e){}})")
-    page.wait_for_timeout(500)
+    page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r())))")
 
 
 def browser_capture(base: str, token: str, out: Path) -> dict:
@@ -373,25 +481,31 @@ def browser_capture(base: str, token: str, out: Path) -> dict:
             except Exception:
                 pass                      # ponytail: old playwright -> rely on fresh-seed freshness
             page.route("**/*", lambda r: r.continue_() if r.request.url.startswith(base) else r.abort())
-            page.goto(base + "/", wait_until="networkidle")
-            freeze(page)
-            for tab in TABS:
-                btn = page.locator(f'[data-tab="{tab}"]:visible').first
-                try:
-                    btn.click(timeout=5000)
-                except Exception:
-                    # diagnostics: what did the browser actually get?
-                    dbg = out / "screens" / "debug-failure.png"
+            page.goto(base + "/", wait_until="domcontentloaded")
+            for idx, tab in enumerate(TABS):
+                # TABS[0] (dashboard) is the route we just loaded. Every other tab
+                # is reached by its real nav control: a client-side panel toggle on
+                # the pre-island baseline (synchronous), a real MPA navigation on
+                # HEAD. wait_for_load_state is a no-op for the former.
+                if idx:
+                    btn = page.locator(f'[data-tab="{tab}"]:visible').first
                     try:
-                        page.screenshot(path=str(dbg), full_page=False)
+                        btn.click(timeout=10000)
                     except Exception:
-                        pass
-                    print(f"      DEBUG url={page.url!r} title={page.title()!r} "
-                          f"body_len={len(page.content())} "
-                          f"datatab={page.locator('[data-tab]').count()} "
-                          f"visdatatab={page.locator('[data-tab]:visible').count()}")
-                    raise
-                page.wait_for_timeout(150)
+                        # diagnostics: what did the browser actually get?
+                        dbg = out / "screens" / "debug-failure.png"
+                        try:
+                            page.screenshot(path=str(dbg), full_page=False)
+                        except Exception:
+                            pass
+                        print(f"      DEBUG url={page.url!r} title={page.title()!r} "
+                              f"body_len={len(page.content())} "
+                              f"datatab={page.locator('[data-tab]').count()} "
+                              f"visdatatab={page.locator('[data-tab]:visible').count()}")
+                        raise
+                    page.wait_for_load_state("load")
+                settle(page, f"{tab} @ {vpname}")
+                freeze(page)
                 panel = page.query_selector(f'#tab-{tab}[data-tabpanel]')
                 if panel is None:
                     raise RuntimeError(f"panel not found for tab {tab!r}")
@@ -432,7 +546,7 @@ def js_refs(html: str, results: dict) -> list:
     return sorted(paths)
 
 
-def metrics(results: dict, browser: dict, api_dir: Path, out: Path) -> dict:
+def metrics(results: dict, browser: dict, api_dir: Path, out: Path, rev: str = "") -> dict:
     pages = {}
     js_union = set()
     for path in ("/", "/login"):
@@ -458,6 +572,9 @@ def metrics(results: dict, browser: dict, api_dir: Path, out: Path) -> dict:
         api[r["path"]] = {"bytes": r.get("bytes"), "gzip_bytes": r.get("gzip_bytes"),
                           "content_type": r.get("content_type"), "status": r["status"]}
     doc = {
+        # Which revision this baseline is. Two captures are only comparable when
+        # this matches — that is the whole point of --repo.
+        "revision": rev,
         "pages": pages, "tabs": tabs, "api": api,
         "totals": {
             "html_bytes": sum(p["html_bytes"] for p in pages.values()),
@@ -477,16 +594,21 @@ def metrics(results: dict, browser: dict, api_dir: Path, out: Path) -> dict:
 # ── README (regenerated every run so it never goes stale) ────────────
 README_TEXT = """# OpenSRM golden capture
 
-Deterministic baseline of the app at `feat/preact-migration` HEAD
-before the Preact migration landed. Regenerate with `scripts/capture_golden.sh`,
-then diff against this dir — `dom/`, `api/`, `routes.json` and `metrics.json`
-must be byte-identical; screenshots must be ~0% pixel difference (they were
-0/23,259,114 px on the two-run determinism check).
+Deterministic baseline of ONE revision of the app. `--repo` decides which
+checkout is captured, so an old SHA can be baselined from a detached worktree
+while HEAD stays on another branch; the resolved SHA is recorded in
+`metrics.json` (`revision`) and printed. Regenerate with
+`scripts/capture_golden.sh`, then diff against this dir — `dom/`, `api/`,
+`routes.json` and `metrics.json` must be byte-identical; screenshots must be
+~0% pixel difference (they were 0/23,259,114 px on the two-run determinism
+check).
 
 ## One command
 
 ```
-bash scripts/capture_golden.sh /tmp/golden-check
+bash scripts/capture_golden.sh /tmp/golden-check            # HEAD of this checkout
+python scripts/capture_golden.py --repo ../wt-v2 --out /tmp/v2 \\
+    --python /opt/data/opensrm-repo/.venv/bin/python         # an explicit worktree
 diff -r tests/golden /tmp/golden-check      # expect: no output
 ```
 
@@ -495,8 +617,12 @@ Wipes the target dir, seeds a clean
 `zz9999` only), injects the fabricated scope blob, boots gunicorn on
 127.0.0.1 (port 18185 if free, else auto-increment), captures, and
 shuts the server down. Read-only on the repo; nothing is committed.
+`--repo` (or `$OPENSRM_REPO`) sets both the app under test and the seed
+script; `--python` (or `<repo>/.venv/bin/python`, then
+`$OPENSRM_REPO/.venv/bin/python`) is the interpreter that imports it.
 Playwright chromium lives at `/opt/data/cache/scratch/pw-browsers`
-(`playwright install chromium` if missing).
+(`playwright install chromium` if missing) — or wherever
+`$PLAYWRIGHT_BROWSERS_PATH` already points.
 
 ## Contents
 
@@ -518,20 +644,41 @@ legitimately varies with wall-clock is normalized at record time:
    query string is a deployment detail, not app behaviour; stripped so
    a content-hash change alone doesn't fail the diff. (Regex is
    hex-aware: `\\?v=[0-9a-fA-F]+`.)
-2. **`data-ts` / `data-full` attributes on the sync line** — the
-   dashboard's "last synced" epoch + ISO string. Replaced with
-   `data-ts="0"` / `data-full="1970-01-01T00:00:00Z"`.
-3. **Relative-time strings** (`just now`, `Ns ago`, `Nm ago`, ...) —
-   rendered from wall-clock in `dash.js`; replaced with a fixed
-   `x ago` placeholder.
-4. **Epoch / ISO timestamps in visible text** — same reason.
-5. **`/internal/metrics` values** — Prometheus counters/timers for the
+2. **Vite build hashes inside dist filenames** — `SettingsPanel-Crq-6lwG.js`
+   is recorded as `SettingsPanel-HASH.js`, and `app-Dw5KSv9_.css` as
+   `app-HASH.css`. The hash changes on every rebuild of *identical* source, so
+   an unmasked one makes the golden fail for no behavioural reason. Only
+   `.js`/`.css` with an 8-char `[A-Za-z0-9_-]` tail is touched, so
+   `icon-192.png` is left alone.
+3. **`data-ts` / `data-full` attributes on the sync line** — the
+   dashboard's "last synced" epoch + ISO string. Removed (the values are
+   re-derived by the island at boot).
+4. **Relative-time strings** (`just now`, `Ns ago`, `Nm ago`, ...) —
+   rendered from wall-clock; replaced with a fixed `ago` placeholder.
+5. **Epoch / ISO timestamps in visible text** — same reason.
+6. **`/internal/metrics` values** — Prometheus counters/timers for the
    live process (histogram sums, RSS, sync ages) change every run by
    design; values are zeroed, metric names + labels (the structural
    contract) are kept.
-6. **Recorded sizes are computed on the normalized bytes**, not the
+7. **Recorded sizes are computed on the normalized bytes**, not the
    raw wire bytes — raw HTML contains the volatile bits above, so
    raw sizes would wobble by a few bytes between runs.
+
+## How the browser wait works (no sleeps, no networkidle)
+
+`networkidle` is unsatisfiable here: `main.ts` `warmShells()` keeps eight
+`/shell/*` requests pending through the service worker, which never emit
+Playwright `requestfinished` (`decisions.md`
+`NETWORKIDLE-IS-UNSATISFIABLE-HERE`). A capture that waits for it can only
+succeed by timing out.
+
+So the wait is an explicit ready signal: **every `[data-island]` mount must
+carry `data-hydrated`** (stamped by that island's own hydrate function) or
+`data-mounted-at` (the cache branch), and `document.readyState` must be
+`complete`. A revision with no islands at all (the pre-island baseline) has an
+empty marker set, so the same predicate reduces to "document complete" —
+one predicate covers both revisions. Animation freeze is two
+`requestAnimationFrame`s after that, not a delay.
 
 ## What is fixed to keep things stable (not normalized)
 
@@ -560,16 +707,55 @@ def write_readme(out: Path) -> None:
 
 
 # ── main ─────────────────────────────────────────────────────────────
+def git_rev(repo: Path) -> str:
+    """The SHA this capture is OF. Fake when the path is not a git checkout
+    (`--repo` accepts a plain source tree), but never silently blank."""
+    r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() or "not-a-git-checkout"
+
+
+def resolve_python(explicit) -> Path:
+    """Interpreter that can import the app. A worktree has no .venv of its own,
+    so the canonical venv is the second candidate, not a hardcoded path."""
+    cands = [Path(explicit)] if explicit else [REPO / ".venv" / "bin" / "python",
+                                               CANONICAL / ".venv" / "bin" / "python"]
+    for c in cands:
+        if c.exists():
+            return c
+    raise SystemExit(f"no python interpreter at {[str(c) for c in cands]} — pass --python")
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Deterministic golden capture of one OpenSRM revision.")
+    ap.add_argument("--repo", default=str(CANONICAL),
+                    help="checkout/worktree to capture (default: $OPENSRM_REPO, else "
+                         "/opt/data/opensrm-repo). Drives the app AND the seed script.")
+    ap.add_argument("--python", default=None,
+                    help="interpreter that imports the app (default: <repo>/.venv/bin/python, "
+                         "then $OPENSRM_REPO/.venv/bin/python)")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     ap.add_argument("--port", type=int, default=18185)
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the normalisation cases and exit (no server, no browser)")
     args = ap.parse_args()
+    if args.selftest:
+        return selftest()
+
+    global REPO, PY
+    REPO = Path(args.repo).resolve()
+    if not (REPO / "app" / "app.py").exists():
+        print(f"--repo {REPO} has no app/app.py — not an OpenSRM checkout")
+        return 2
+    PY = resolve_python(args.python)
+    rev = git_rev(REPO)
+
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
     for d in ("dom", "screens", "api"):
         (out / d).mkdir(parents=True)
+    print(f"      repo {REPO} @ {rev} — python {PY}")
 
     print(f"[1/5] seeding {DATA_DIR} (clean state) ...")
     token = seed(DATA_DIR)
@@ -586,13 +772,13 @@ def main() -> int:
         print("[4/5] API capture ...")
         results = api_capture(base, token, out)
         print(f"      {len(results)} endpoints captured")
-        print("[5/5] browser capture (3 viewports x 9 tabs) ...")
+        print("[5/5] browser capture (3 viewports x 9 tabs, ready-signal waits) ...")
         browser = browser_capture(base, token, out)
         if len(browser["tabs_html"]) != len(TABS):
             missing = [t for t in TABS if t not in browser["tabs_html"]]
             raise RuntimeError(f"panels missing from DOM: {missing}")
         capture_logout(base, token, out)
-        m = metrics(results, browser, out / "api", out)
+        m = metrics(results, browser, out / "api", out, rev)
         write_readme(out)
         t = m["totals"]
         print(f"      done. html={t['html_bytes']}B js={t['js_bytes']}B api={t['api_bytes']}B")
@@ -609,7 +795,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             server.kill()
         logf.close()
-    print(f"exit {rc} — output in {out}")
+    print(f"exit {rc} — {rev} captured to {out}")
     return rc
 
 
