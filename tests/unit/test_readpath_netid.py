@@ -35,26 +35,30 @@ def test_anything_off_grammar_is_blanked():
         assert session_netid(junk) == "", f"{junk!r} must not survive as a cache key"
 
 
+def _inherits_base(p):
+    return 'extends "base.html"' in p.read_text()
+
+
 def test_every_account_template_emits_data_netid():
-    emitted, missing = [], []
+    """Every page either carries `<body data-netid>` itself or inherits it from
+    base.html — and login.html does neither, because it is pre-auth."""
+    carriers, inherited, neither = [], [], []
     for f in sorted(TEMPLATES.glob("*.html")):
         body = re.search(r"<body[^>]*>", f.read_text())
-        if not body:
-            continue
-        (emitted if "data-netid" in body.group(0) else missing).append(f.name)
+        if body:
+            (carriers if "data-netid" in body.group(0) else neither).append(f.name)
+        elif _inherits_base(f):
+            inherited.append(f.name)
+        else:
+            neither.append(f.name)
 
-    # Positive control: the set is not empty and includes the island pages —
-    # an empty `emitted` would make the assertions below assert nothing.
-    # home.html renders its <body> from base.html now, so it is asserted as an
-    # INHERITOR below rather than as a literal carrier - checking only the
-    # literal would silently pass if home stopped extending base.
-    assert "fees.html" in emitted and "base.html" in emitted, emitted
-    assert len(emitted) >= 9, emitted
+    # Positive control: something must actually carry it, or the assertion
+    # below proves nothing.
+    assert carriers == ["base.html"], carriers
+    # The pages that dropped their own <body> must all still inherit one.
+    assert "home.html" in inherited and len(inherited) >= 8, inherited
     # login.html is pre-auth: no netid exists there, so it must not claim one.
-    assert missing == ["login.html"], f"pages without data-netid: {missing}"
-    # The page that lost its own <body> must still inherit it.
-    home = (TEMPLATES / "home.html").read_text()
-    assert 'extends "base.html"' in home, "home.html no longer extends base.html"
+    assert neither == ["login.html"], f"pages without data-netid: {neither}"
 
 
 def test_presentation_passes_the_sanitised_value():
