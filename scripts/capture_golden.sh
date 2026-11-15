@@ -6,8 +6,12 @@
 # so an old SHA can be baselined from a detached worktree.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=.venv/bin/python
-[ -x "$PY" ] || PY=python3
+# The interpreter that runs THIS script needs playwright; a worktree never has a
+# .venv, so the python3 fallback dies on ModuleNotFoundError before capturing
+# anything and the drift gate reads as red while having compared nothing.
+# OPENSRM_PY selects it (it is also handed to the capture as the server python).
+PY=${OPENSRM_PY:-.venv/bin/python}
+[ -x "$PY" ] || PY=${OPENSRM_PY:-python3}
 
 # Golden drift gate — see tests/golden/v3/README.md:
 #   bash scripts/capture_golden.sh --check [GOLDEN_DIR] [--no-screens]
