@@ -4,9 +4,9 @@ import type { TimetableProps } from './contract';
 
 // The fixture is the shape app/views/timetable_island.py:props() emits for the
 // four row states that matter: a class with an attendance tag, a break divider
-// BETWEEN classes, a class with no attendance data, and an empty day. No
-// @testing-library/preact dep — the existing harness (main.ts's hydrateAll on
-// jsdom) is the unit under test, same as main.test.ts.
+// BETWEEN classes, a class with no attendance data, and an empty day. W4.3: it
+// stays on the bespoke harness — hydrateAll over server markup is the unit under
+// test and RTL's render() cannot drive it, same as main.test.ts.
 const PROPS: TimetableProps = {
   default_day: 'Tuesday',
   days: [

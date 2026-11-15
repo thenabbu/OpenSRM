@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen } from '@testing-library/preact';
 
 // vitest runs with cwd = web/, whose parent is the repo root.
 const ROOT = resolve(process.cwd(), '..');
@@ -86,7 +87,10 @@ const REG = {
   },
 };
 
-const lead = () => document.getElementById('push-lead') as HTMLSelectElement;
+// W4.3 port: the select is found the way a user finds it — by the label they
+// read. There is no component to render here (push.js is shipped unbundled and
+// executed from disk), so the harness below stays; only the DOCUMENT READ is RTL.
+const lead = () => screen.getByLabelText('Remind me') as HTMLSelectElement;
 
 /**
  * Answer the requests in a chosen order and return the select.

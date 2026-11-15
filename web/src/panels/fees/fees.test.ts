@@ -5,8 +5,8 @@ import type { FeesProps } from './contract';
 // The fixture is the shape app/views/fees_island.py:props() emits, including
 // its three awkward cases: a penalised charge, a charge with a penalty date but
 // none applied, and a receipt with no narration head and no voucher number.
-// No @testing-library/preact dep — the existing harness (main.ts's hydrateAll on
-// jsdom) is the unit under test, same as main.test.ts.
+// W4.3: stays on the bespoke harness — hydrateAll over server markup IS the unit
+// under test (RTL's render() mounts a component, it cannot drive that), same as main.test.ts.
 const PROPS: FeesProps = {
   due_disp: '3,150.00',
   level: 'text-warning',

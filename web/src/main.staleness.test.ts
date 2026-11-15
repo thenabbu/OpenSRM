@@ -5,6 +5,10 @@ import { STALE_ATTR, showStale } from './data/stale';
 
 // P7.11 — the dead cache branch, and the staleness cleanup it starved.
 //
+// W4.3: deliberately NOT ported to @testing-library/preact — no component is
+// rendered here. It drives main.ts's hydrateIsland over a shell and asserts on
+// the caption node the boundary writes (RTL's render() has nothing to mount).
+//
 // main.ts used to read, just above the mount:
 //
 //   if (parsed.success && outcome.source === 'network') {

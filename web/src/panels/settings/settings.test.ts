@@ -1,12 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, within } from '@testing-library/preact';
 import { hydrateAll } from '../../main';
 import type { SettingsProps } from './contract';
 
 // The fixture is the shape app/views/settings_island.py:props() emits for a
 // filled portal: identity header + three groups (Academic carries the wide
 // Institution cell, Contact carries the prose Address — the two behaviours the
-// template branches on). No @testing-library/preact dep — same harness as
-// campus.test.ts / fees.test.ts.
+// template branches on).
+//
+// W4.3 port: assertions that are about CONTENT go through @testing-library/preact's
+// query layer (getByText -> the reader can see it, then assert the contract class
+// on the node it found). The hydration DRIVER stays bespoke on purpose — RTL's
+// render() mounts a component into a fresh container and cannot express "take
+// this server-painted mount plus its inert JSON block and run the production
+// hydrateAll over it", which is the unit under test here.
 const PROPS: SettingsProps = {
   personal: {
     name: 'Aarav Mehta',
@@ -57,9 +64,13 @@ beforeEach(async () => {
   vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { LOG.push(String(m)); });
 });
 
+afterEach(cleanup);
+
 const mount = () => document.querySelector<HTMLElement>('[data-island="settings"]')!;
 const NOW = Date.parse('2026-11-09T10:20:00Z') / 1000;
 const hydrate = async () => { document.body.innerHTML = page(); return hydrateAll(document.body, NOW); };
+/** Queries scoped to the island mount, never the whole page. */
+const q = () => within(mount());
 
 describe('settings island', () => {
   it('hydrates: sets data-hydrated on the mount and keeps the id', async () => {
@@ -75,10 +86,13 @@ describe('settings island', () => {
 
   it('paints the identity header and the count badge the server counted', async () => {
     await hydrate();
-    expect(mount().querySelector('.text-lg.font-semibold')!.textContent).toBe('Aarav Mehta');
+    // the name is queryable (a reader can find it) AND sits in the header class
+    expect(q().getByText('Aarav Mehta').className).toBe('text-lg font-semibold');
     expect(mount().textContent).toContain('B.Tech CSE (Cloud Computing)');
-    expect(mount().querySelector('.collapse-title .badge')!.textContent).toBe('7');
-    expect(mount().querySelector('.collapse-title')!.textContent).toContain('Personal details');
+    // the count badge is found BY ITS TEXT, then its placement is the assertion
+    const title = q().getByText('7').closest('.collapse-title')!;
+    expect(title.textContent).toContain('Personal details');
+    expect(title.textContent).toContain('7');
   });
 
   it('group order follows props order, each with its own item count', async () => {
@@ -106,9 +120,8 @@ describe('settings island', () => {
   it('empty personal renders the same "No personal details available." alert, no badge', async () => {
     document.body.innerHTML = page({ personal: null, count: 0 });
     await hydrateAll(document.body, NOW);
-    expect(mount().querySelector('.alert.alert-info')!.textContent).toBe(
-      'No personal details available.',
-    );
+    const alert = q().getByText('No personal details available.');
+    expect(alert.className).toContain('alert-info');
     expect(mount().querySelector('.badge')).toBeNull();
     expect(mount().hasAttribute('data-hydrated')).toBe(true);
   });

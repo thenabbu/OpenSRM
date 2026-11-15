@@ -5,8 +5,8 @@ import type { MarksProps } from './contract';
 // The fixture is the shape app/views/marks_island.py:props() emits for the
 // three states that matter on this page: a normal subject, the single weakest
 // subject (outlier -> the page's one accent), and a component with a nested
-// IE row. No @testing-library/preact dep — the existing harness (main.ts's
-// hydrateAll on jsdom) is the unit under test, same as main.test.ts.
+// IE row. W4.3: stays on the bespoke harness — hydrateAll over server markup is
+// the unit under test; RTL's render() cannot drive it, same as main.test.ts.
 const PROPS: MarksProps = {
   subjects: [
     {

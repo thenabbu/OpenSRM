@@ -1,6 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, within } from '@testing-library/preact';
 import { hydrateAll } from '../../main';
 import { dashboardProps } from './contract';
+
+// W4.3 port: the reader-facing assertions go through @testing-library/preact's
+// query layer (getByText proves the text is a discrete, findable thing; queryByText
+// is how "the reader cannot see this" is expressed). The hydration DRIVER stays
+// bespoke — RTL's render() mounts a component into a fresh container and cannot
+// take a server-painted mount plus its inert JSON block through the production
+// hydrateAll, which is the unit under test. Structural claims (card/card-body/wbox
+// counts, grid spans, widget order) also stay on querySelector: they are what the
+// server's LAYOUT emits and no role/name query expresses them.
 
 // Exactly what app/templates/home.html renders into the card grid for one
 // student: the six widgets with their guards satisfied — EXCEPT `ticker`, whose
@@ -77,6 +87,8 @@ const newPage = (p = PROPS) => {
 };
 
 const grid = () => document.querySelector<HTMLElement>('[data-island="dashboard"]')!;
+/** Queries scoped to the island mount — never the whole page. */
+const q = () => within(grid());
 
 const LOG: string[] = [];
 beforeEach(async () => {
@@ -84,6 +96,10 @@ beforeEach(async () => {
   (await import('../../main')).__resetWarnOnce();
   vi.spyOn(console, 'warn').mockImplementation((msg: unknown) => { LOG.push(String(msg)); });
 });
+
+// RTL owns teardown: each test starts from an empty page because the previous
+// one was unmounted, not because every test remembered to reset innerHTML.
+afterEach(cleanup);
 
 /** Visible text of the whole grid, whitespace-collapsed: what a reader sees. */
 const text = (el: HTMLElement) => el.textContent?.replace(/\s+/g, ' ').trim() ?? '';
@@ -106,8 +122,8 @@ describe('P6.2 dashboard island', () => {
     expect(el.getAttribute('data-hydrated')).toBe('1');
     // one widget per rendered section, in partial order
     expect(el.querySelectorAll('.wbox')).toHaveLength(6);        // profile, week, budgets, marks, exams, teachers
-    expect(text(el)).toContain('This week');
-    expect(text(el)).toContain('2 days absent');
+    expect(q().getByText('This week').className).toContain('wlabel');
+    expect(q().getByText(/days absent/)).toBeTruthy();
     expect(text(el)).toContain('Computer Organization And Architecture');
     expect(text(el)).toContain('-4');
     expect(text(el)).toContain('18/20');
@@ -120,9 +136,9 @@ describe('P6.2 dashboard island', () => {
     const att = Array.from(el.querySelectorAll<HTMLElement>('.wbox')).find((w) => text(w).includes('to 75%'))!;
     const rows = Array.from(att.querySelectorAll('.widget-scroll li')).map((n) => n.querySelector('span')!.textContent);
     expect(rows[0]).toBe('Computer Organization And Architecture');
-    expect(text(el)).toContain('First exam in');
-    expect(text(el)).toContain('Dr. Priyanka Gupta');
-    expect(text(el)).toContain('Auto-fill mid-sem feedback');
+    expect(q().getByText(/First exam in/)).toBeTruthy();
+    expect(q().getByText('Dr. Priyanka Gupta')).toBeTruthy();
+    expect(q().getByText('Auto-fill mid-sem feedback')).toBeTruthy();
   });
 
   it('the profile widget survives hydration (P6.2b regression)', async () => {
@@ -139,7 +155,7 @@ describe('P6.2 dashboard island', () => {
     const btn = el.querySelector('#copyEmail');
     expect(btn?.getAttribute('data-email')).toBe('zz9999@srmist.edu.in');
     expect(el.querySelector('[data-copy="RA2500000000"]')).not.toBeNull();
-    expect(text(el)).toContain('Test Student');
+    expect(q().getByText('Test Student')).toBeTruthy();
     // the box comes FIRST: LAYOUT's day card is [profile, today, week]
     expect(el.querySelector('.wbox')).toBe(av?.closest('.wbox'));
   });
@@ -199,8 +215,8 @@ describe('P6.2 dashboard island', () => {
     // must all still be present, so nothing is silently dropped.
     document.body.innerHTML = newPage();
     await hydrateAll(document, Date.now() / 1000);
-    expect(text(grid())).toContain('days absent');
-    expect(text(grid())).toContain('3 hrs lost');
+    expect(q().getByText(/days absent/)).toBeTruthy();
+    expect(q().getByText(/3 hrs lost/)).toBeTruthy();
     // the week chips keep their token mapping (BADGE_VARIANTS.warning, week.html:8)
     const chip = grid().querySelector('.badge-warning');
     expect(chip).not.toBeNull();
@@ -211,16 +227,15 @@ describe('P6.2 dashboard island', () => {
     // ticker:null (no classes) + no budgets + no exams => those three are gone
     document.body.innerHTML = newPage({ ...PROPS, budgets: [], exams: null });
     await hydrateAll(document, Date.now() / 1000);
-    const t = text(grid());
-    expect(t).not.toContain('to 75%');       // attendance widget absent
-    expect(t).not.toContain('End sem exams'); // exams widget absent
-    expect(t).toContain('This week');         // week is unconditional in its partial
+    expect(q().queryByText(/to 75%/)).toBeNull();       // attendance widget absent
+    expect(q().queryByText(/End sem exams/)).toBeNull(); // exams widget absent
+    expect(q().getByText('This week')).toBeTruthy();     // week is unconditional in its partial
   });
 
   it('the CTA is absent when there is no feedback plan', async () => {
     document.body.innerHTML = newPage({ ...PROPS, fb_plan: false });
     await hydrateAll(document, Date.now() / 1000);
-    expect(text(grid())).not.toContain('Auto-fill mid-sem feedback');
+    expect(q().queryByText('Auto-fill mid-sem feedback')).toBeNull();
   });
 
   it('invalid props leave the server markup untouched', async () => {

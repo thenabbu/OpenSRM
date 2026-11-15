@@ -6,8 +6,8 @@ import type { AcademicsProps } from './contract';
 // down to what the assertions need: two semesters (newest first) and two
 // categories, one of them empty (the "No subjects listed" branch) and one
 // finished (done = the success fill + ", complete" in the aria-label).
-// No @testing-library/preact dep — the existing harness (main.ts's hydrateAll
-// on jsdom) is the unit under test, same as fees.test.ts.
+// W4.3: stays on the bespoke harness — hydrateAll over server markup IS the unit
+// under test (RTL's render() mounts a component, it cannot drive that), same as fees.test.ts.
 const PROPS: AcademicsProps = {
   cgpa: {
     value: '9.40',

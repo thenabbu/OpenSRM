@@ -20,6 +20,7 @@
   "devDependencies": {
     "@preact/preset-vite": "^2",
     "@tailwindcss/vite": "4.3.3",
+    "@testing-library/preact": "^3.2.6",
     "daisyui": "5.7.46",
     "fake-indexeddb": "^6",
     "jsdom": "^26",

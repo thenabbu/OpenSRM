@@ -5,7 +5,7 @@ import type { ToolsProps } from './contract';
 // The fixture is the shape app/views/tools_island.py:props() emits for
 // app/views/timetable.py:_tools_entries rows. Two rows so order is provable;
 // hints are long enough to exercise the single-line clip class.
-// No @testing-library/preact dep — same harness as campus.test.ts.
+// W4.3: stays on the bespoke harness (see campus.test.ts) — RTL cannot drive hydrateAll.
 const PROPS: ToolsProps = {
   rows: [
     { slug: 'academics', label: 'Academics', hint: 'Grades, credits and semester GPA', tab: 'academics' },

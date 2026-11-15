@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'preact';
 import { hydrateAll, mountBounded } from './main';
 
+// W4.3: deliberately NOT ported to @testing-library/preact. The unit under test
+// is main.ts's hydration boundary itself (readProps -> mountBounded -> restore),
+// not a component: there is no UI for render() to mount, and the assertions are
+// about which children survive, which is DOM-node identity.
+
 // Exactly what the server emits (templates + app/views/sync_age.py): the same
 // two spans, the same caption/title/classes/epoch attributes, `data-island` on
 // each, and ONE inert JSON block they both point at. The only thing absent is

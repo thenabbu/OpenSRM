@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { render } from 'preact';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render } from '@testing-library/preact';
 import AttendancePanel, { HYDRATED_ATTR } from './AttendancePanel';
 import type { AttendanceProps } from './contract';
 
 /**
- * P6.1 attendance island tests.
+ * P6.1 attendance island tests — ported to @testing-library/preact (W4.3).
+ *
+ * This is the ONE island test that renders a component rather than hydrating
+ * server markup, so it is the one full RTL port. `render(ui, { container: el })`
+ * keeps `el` as BOTH the mount point the component marks and the render target,
+ * which is exactly what main.ts does in production — the a11y assertions then
+ * become getByRole('img', {name}) instead of `.meter` + two getAttribute calls.
+ *
+ * Everything about geometry (class names, inline style, child counts) stays on
+ * querySelector: those ARE the assertion (they are what CSS keys on) and no
+ * query expresses "this span is 25% wide".
  *
  * Non-vacuity rule (this project has been bitten four times by assertions that
  * pass for the wrong reason): every "did not" assertion sits beside a positive
@@ -31,43 +41,47 @@ const course = (over: Partial<AttendanceProps['courses'][number]> = {}) => ({
 
 const props = (courses = [course()]): AttendanceProps => ({ courses });
 
+/** RTL port: `el` is the mount point AND the render target, as in main.ts. */
 function mount(p: unknown) {
   const el = document.createElement('div');
   document.body.appendChild(el);
-  render(<AttendancePanel el={el} props={p} />, el);
-  return el;
+  return { el, ...render(<AttendancePanel el={el} props={p} />, { container: el }) };
 }
+
+afterEach(cleanup);
 
 describe('attendance island', () => {
   it('sets the hydration marker (positive control for every "not hydrated" check)', () => {
-    const el = mount(props());
+    const { el, container } = mount(props());
+    // the port must still mark the MOUNT, not an RTL-made wrapper
+    expect(container).toBe(el);
     expect(el.hasAttribute(HYDRATED_ATTR)).toBe(true);
   });
 
   it('renders one row per course, in the order given', () => {
-    const el = mount(props([
+    const { getAllByText } = mount(props([
       course({ code: 'A', description: 'Alpha' }),
       course({ code: 'B', description: 'Beta' }),
     ]));
-    const names = [...el.querySelectorAll('.mname')].map((n) => n.textContent);
+    const names = getAllByText(/^(Alpha|Beta)$/).map((n) => n.textContent);
     expect(names).toEqual(['Alpha', 'Beta']);
   });
 
   it('carries the a11y label onto the meter (attendance.html:243 role=img)', () => {
-    const el = mount(props([course({ label: 'Custom label text' })]));
-    const meter = el.querySelector('.meter');
-    expect(meter?.getAttribute('role')).toBe('img');
-    expect(meter?.getAttribute('aria-label')).toBe('Custom label text');
+    const { getByRole } = mount(props([course({ label: 'Custom label text' })]));
+    // getByRole throws unless BOTH role=img and the accessible name hold
+    const meter = getByRole('img', { name: 'Custom label text' });
+    expect(meter.classList.contains('meter')).toBe(true);
   });
 
   it('maps the server tint names to the legacy classes (red/warn/gray, not amber)', () => {
-    const el = mount(props([
+    const { container } = mount(props([
       course({ code: 'R', tint: 'red' }),
       course({ code: 'W', tint: 'warn' }),
       course({ code: 'G', tint: 'gray' }),
     ]));
     // First <i> inside each meter is the tint fill; hatches/ticks follow.
-    const tints = [...el.querySelectorAll('.meter')].map(
+    const tints = [...container.querySelectorAll('.meter')].map(
       (m) => m.querySelector('i')?.className ?? '',
     );
     expect(tints[0]).toContain('mz--red');
@@ -79,37 +93,37 @@ describe('attendance island', () => {
 
   it('derives the hatch band from fill the way the template does', () => {
     // fill 50 -> hatch spans 50..75 (left 50, width 25)
-    const el = mount(props([course({ fill: 50 })]));
-    const hatch = el.querySelector('.mhatch') as HTMLElement;
+    const { container } = mount(props([course({ fill: 50 })]));
+    const hatch = container.querySelector('.mhatch') as HTMLElement;
     expect(hatch.style.left).toBe('50%');
     expect(hatch.style.width).toBe('25%');
     // positive control: a different fill must produce different geometry
-    const el2 = mount(props([course({ fill: 80 })]));
-    const hatch2 = el2.querySelector('.mhatch') as HTMLElement;
+    const { container: second } = mount(props([course({ fill: 80 })]));
+    const hatch2 = second.querySelector('.mhatch') as HTMLElement;
     expect(hatch2.style.width).not.toBe('25%');
   });
 
   it('shows the connector only when attend_now/skip_now is set', () => {
     const withConn = mount(props([course({ attend_now: 4 })]));
-    expect(withConn.querySelector('.pconn')).not.toBeNull();
+    expect(withConn.container.querySelector('.pconn')).not.toBeNull();
     const noConn = mount(props([course({ attend_now: null, skip_now: null })]));
-    expect(noConn.querySelector('.pconn')).toBeNull();
+    expect(noConn.container.querySelector('.pconn')).toBeNull();
   });
 
   it('uses the pole layout when pole is set, and the default layout otherwise', () => {
     const pole = mount(props([course({ pole: true })]));
-    const poleSpans = pole.querySelectorAll('.pnums .pn').length;
+    const poleSpans = pole.container.querySelectorAll('.pnums .pn').length;
     const plain = mount(props([course({ pole: false })]));
-    const plainSpans = plain.querySelectorAll('.pnums .pn').length;
+    const plainSpans = plain.container.querySelectorAll('.pnums .pn').length;
     expect(poleSpans).not.toBe(plainSpans);
   });
 
   it('renders an empty grid for zero courses without throwing', () => {
-    const el = mount(props([]));
-    expect(el.querySelectorAll('.mrow').length).toBe(0);
+    const { container } = mount(props([]));
+    expect(container.querySelectorAll('.mrow').length).toBe(0);
     // positive control: the same mount DOES render rows for one course
-    const el2 = mount(props());
-    expect(el2.querySelectorAll('.mrow').length).toBe(1);
+    const second = mount(props());
+    expect(second.container.querySelectorAll('.mrow').length).toBe(1);
   });
 });
 
@@ -125,11 +139,12 @@ describe('the REAL server payload renders rows', () => {
   };
 
   it('paints one .mrow per course with the server value shape', () => {
-    const el = mount({ courses: [serverCourse, { ...serverCourse, code: 'X' }] });
-    const rows = el.querySelectorAll('.mrow');
-    expect(rows.length).toBe(2);
-    // positive control: the text really landed, not just an empty shell
-    expect(rows[0]?.textContent).toContain('Class In Charge');
+    const { el, container, getAllByText } = mount({
+      courses: [serverCourse, { ...serverCourse, code: 'X' }],
+    });
+    expect(container.querySelectorAll('.mrow')).toHaveLength(2);
+    // positive control: both rows' text really landed, not just an empty shell
+    expect(getAllByText('Class In Charge')).toHaveLength(2);
     expect(el.getAttribute(HYDRATED_ATTR)).toBe('1');
   });
 });

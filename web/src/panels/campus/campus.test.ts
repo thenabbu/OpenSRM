@@ -6,7 +6,7 @@ import type { CampusProps } from './contract';
 // card shapes the union allows: the kv card (hostel + transport, two groups so
 // the first-vs-rest border rule is exercised) and a rows card carrying a badge,
 // a meta line and extras (the "Details" disclosure).
-// No @testing-library/preact dep — same harness as fees.test.ts / academics.test.ts.
+// W4.3: stays on the bespoke harness (see fees.test.ts) — RTL cannot drive hydrateAll.
 const PROPS: CampusProps = {
   cards: [
     {
