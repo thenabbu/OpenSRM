@@ -18,7 +18,9 @@ Produces under --out (default /opt/data/missions/opensrm-preact/captures):
   metrics.json         byte sizes, gzip sizes, script/node counts, revision
 
 Determinism: clean DATA_DIR each run, seed_rich() + fabricated scope blob
-(all 9 features, fresh ts), frozen client clock (page.clock), paused CSS/SVG
+(all 9 features, ts = PINNED_NOW), a frozen SERVER clock (PINNED_NOW, injected
+through PYTHONPATH -> sitecustomize so every worker starts already pinned), a
+frozen client clock (page.clock) at that same instant, paused CSS/SVG
 animations, reduced motion, service workers blocked, external requests
 aborted, and a READY SIGNAL instead of a timer or networkidle (see settle()).
 
@@ -72,6 +74,7 @@ runner is not the machine the goldens were captured on.
 """
 import argparse
 import base64
+import datetime
 import difflib
 import gzip
 import json
@@ -304,6 +307,70 @@ def jdump(obj) -> str:
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
 
 
+# ── the pinned clock ─────────────────────────────────────────────────
+# The captured surface carries strings the SERVER renders from
+# datetime.now(): the exam countdown ("First exam in 11 days"), the timetable
+# hero (five states, app/views/timetable.py:389-409) and its weekday label
+# ("Sat"). Freezing only the browser clock left those on the real clock, so the
+# gate went red at midnight with no code change: measured 2026-11-15, three of
+# the seven drifting files (dom/dashboard.html, dom/timetable.html,
+# api/root.json) had moved by exactly one day and by nothing else. Masking the
+# text would not have been enough either — a weekday and a weekend are a
+# different hero SHAPE, not a different label.
+#
+# PINNED_NOW is the single instant this capture is taken at: the server clock,
+# the fixture ts and the browser clock all derive from it, so they cannot
+# disagree, and being a constant it reproduces on any host on any date.
+# 2026-11-14 21:00 is the instant the committed set was captured (Saturday
+# evening, after the last class), so pinning there keeps every clock-derived
+# byte identical to it and leaves only real code drift in the diff. 21:00 is
+# also far from midnight, so a UTC CI runner and an IST lab render the same day.
+PINNED_NOW = (2026, 11, 14, 21, 0, 0)
+PINNED_EPOCH = int(datetime.datetime(*PINNED_NOW).timestamp())
+
+# sitecustomize is imported by every interpreter that starts with this dir on
+# PYTHONPATH, i.e. before gunicorn imports the app, so the freeze lands globally
+# and no view has to be patched one at a time (a per-module list rots the first
+# time someone adds a view that imports datetime itself).
+_FROZEN_SITE = '''\
+import datetime as _d
+
+_PIN = %r
+_real = _d.datetime
+
+
+class _FrozenDateTime(_real):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(*_PIN)
+
+    @classmethod
+    def utcnow(cls):
+        return cls(*_PIN)
+
+    @classmethod
+    def today(cls):
+        return cls(*_PIN)
+
+
+class _FrozenDate(_d.date):
+    @classmethod
+    def today(cls):
+        return cls(*_PIN[:3])
+
+
+_d.datetime = _FrozenDateTime
+_d.date = _FrozenDate
+''' % (PINNED_NOW,)
+
+
+def write_frozen_clock() -> str:
+    """Materialise sitecustomize.py; return the dir to put on PYTHONPATH."""
+    d = tempfile.mkdtemp(prefix="golden-clock-")
+    Path(d, "sitecustomize.py").write_text(_FROZEN_SITE)
+    return d
+
+
 # ── setup: seed + scope injection ────────────────────────────────────
 def seed(data_dir: str) -> str:
     shutil.rmtree(data_dir, ignore_errors=True)
@@ -378,7 +445,7 @@ def inject_scope(data_dir: str) -> int:
     clock is pinned relative to it (see browser_capture) — the sync caption's
     "Ns ago" is the last thing that still moved between runs, and it moved by
     the couple of seconds between seeding and page load."""
-    now = int(time.time())
+    now = PINNED_EPOCH          # NOT time.time(): see PINNED_NOW
     conn = sqlite3.connect(os.path.join(data_dir, "srm.db"))
     conn.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid=?",
                  (json.dumps(build_scope_blob(now)), now, NETID))
@@ -412,9 +479,12 @@ def free_port(start: int) -> int:
     raise RuntimeError(f"no free port in {start}-{start + 31}")
 
 
-def start_server(data_dir: str, port: int):
+def start_server(data_dir: str, port: int, clock_dir: str):
     env = dict(os.environ, DATA_DIR=data_dir, LOG_LEVEL="WARNING",
                SCOPE_FEATURES=FEATURES, METRICS_SECRET=METRICS_SECRET, OCR_PREWARM="0")
+    # the frozen clock rides in on PYTHONPATH -> sitecustomize (see PINNED_NOW)
+    env["PYTHONPATH"] = clock_dir + (
+        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     logf = open(f"/tmp/osrm-capture-{port}.log", "w")
     proc = subprocess.Popen(
         [PY, "-m", "gunicorn", "-w", "1", "--threads", "4",
@@ -881,6 +951,13 @@ legitimately varies with wall-clock is normalized at record time:
    raw wire bytes — raw HTML contains the volatile bits above, so
    raw sizes would wobble by a few bytes between runs.
 
+And one thing is not normalized but *pinned*: the capture runs at a single fixed
+instant (`PINNED_NOW`) instead of at whatever today happens to be. The server
+clock is frozen for every worker, so server-rendered clock output — the exam
+countdown, the timetable hero and its weekday label — is a constant. Those used
+to read the real clock, which turned the gate red at midnight with no code
+change behind it.
+
 ## How the browser wait works (no sleeps, no networkidle)
 
 `networkidle` is unsatisfiable here: `main.ts` `warmShells()` keeps eight
@@ -1068,8 +1145,9 @@ def main() -> int:
     blob_ts = inject_scope(DATA_DIR)
 
     port = free_port(args.port)
-    print(f"[3/5] gunicorn on 127.0.0.1:{port} ...")
-    server, logf = start_server(DATA_DIR, port)
+    clock_dir = write_frozen_clock()
+    print(f"[3/5] gunicorn on 127.0.0.1:{port} — server clock pinned to {PINNED_NOW} ...")
+    server, logf = start_server(DATA_DIR, port, clock_dir)
     base = f"http://127.0.0.1:{port}"
     rc = 0
     try:

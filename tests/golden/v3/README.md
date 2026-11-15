@@ -91,6 +91,13 @@ Vite build hashes, `data-ts`/`data-full`, relative ages, epoch/ISO timestamps,
 phases). Everything else is real: text, classes, attributes, DOM order, script
 lists, API bodies, pixel content.
 
+One thing is not normalised but *pinned*: the capture runs at a single fixed
+instant (`PINNED_NOW`) rather than at whatever today is, with the server clock
+frozen for every worker. Server-rendered clock output — the exam countdown, the
+timetable hero and its weekday label — is therefore a constant. Before that pin
+those moved by one day at every midnight and red-ed this gate with no code
+change behind them.
+
 ## Determinism proof
 
 Two independent captures of `6ebdeae` into separate dirs (ports 18185 and 18186,
