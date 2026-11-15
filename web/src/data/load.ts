@@ -9,6 +9,7 @@ import {
   parseTimetableResponse,
 } from '../contracts';
 import { type Panel, type PanelData, db, keyPath, readPanel, writePanel } from '../db';
+import { warn as logWarn } from '../log';
 
 // ── The one read path every island calls ─────────────────────────────────
 //
@@ -108,7 +109,7 @@ export type LoadOpts = {
 };
 
 const log = (what: string, err?: unknown) =>
-  console.warn(`[load] ${what}`, err instanceof Error ? err.message : (err ?? ''));
+  logWarn('load', what, err instanceof Error ? err.message : (err ?? ''));
 
 export async function loadPanel<P extends Panel>(
   panel: P,

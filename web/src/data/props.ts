@@ -6,6 +6,7 @@ import type { FeesProps } from '../panels/fees/contract';
 import type { CampusProps } from '../panels/campus/contract';
 import type { AcademicsProps } from '../panels/academics/contract';
 import { schemas } from '../islands/contract';
+import { warn as logWarn } from '../log';
 
 // ── Cache payload → island props ─────────────────────────────────────────
 //
@@ -194,7 +195,7 @@ export function propsFromCache(panel: Panel, data: unknown): Record<string, unkn
       // Say WHY. A silent undefined here cost an entire debugging session: the
       // cache row was present and valid-looking, the netid was right, and the
       // only symptom was an empty panel.
-      console.warn(`[props] ${panel} rejected by island schema`,
+      logWarn('props', `${panel} rejected by island schema`,
         JSON.stringify((check as { error?: { issues?: unknown } }).error?.issues ?? []).slice(0, 400));
       return undefined;
     }
@@ -203,7 +204,7 @@ export function propsFromCache(panel: Panel, data: unknown): Record<string, unkn
     // Was a silent `return undefined`, which made an offline cache miss
     // indistinguishable from "this panel has no projection". A cache that reads
     // but cannot project is a BUG, not a normal miss — say so.
-    console.warn(`[props] projection failed for ${panel}`, e instanceof Error ? e.message : e);
+    logWarn('props', `projection failed for ${panel}`, e instanceof Error ? e.message : e);
     return undefined;
   }
 }

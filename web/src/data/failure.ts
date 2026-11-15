@@ -1,4 +1,5 @@
 import type { LoadFailure } from './load';
+import { warn as logWarn } from '../log';
 
 /**
  * P7.3 — typed failures, rendered.
@@ -82,7 +83,7 @@ export function showFailure(el: HTMLElement, f: LoadFailure): HTMLElement | null
   const key = `${el.dataset.island ?? '?'}:${f.reason}`;
   if (!warned.has(key)) {
     warned.add(key);
-    console.warn(`[island] ${key} — ${f.message}`);
+    logWarn('island', `${key} — ${f.message}`);
   }
 
   const copy = failureCopy(f);

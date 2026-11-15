@@ -21,7 +21,11 @@ Per route, four assertions, in this order:
               in the DOM. A route that is legitimately empty must say so here in
               ROW_SELECTOR as `empty_by_design` — a silently skipped route is a
               fake pass and this file has no `skip` outcome on purpose;
-  4. CLEAN    no uncaught exception and no console error on the page.
+  4. CLEAN    no uncaught exception, and NO console output of any type. Not
+              just console.error: a `console.warn` on a student's phone is
+              noise nobody reads, so the prod build talks to the console not at
+              all. web/src/log.ts is the single switch that decides, and this
+              assertion is what pins it shut.
 
 `/api/refresh` returning 401 is NOT an error here: the page fires it in the
 background before the session cookie is read, and the app handles it (see
@@ -87,15 +91,16 @@ class Leg:
 
 def check_route(page, leg, route, island, row_sel, row_word):
     """Returns True when this route painted. Prints its own [PASS]/[FAIL] line."""
-    errors, net_fail = [], []
+    errors, console, net_fail = [], [], []
 
     def on_error(exc):
         errors.append(f"exception: {exc}")
 
     def on_console(msg):
-        if msg.type == "error":
-            # "Failed to load resource" carries no URL; correlate with net_fail.
-            errors.append(f"console.error: {msg.text}")
+        # W4.2: EVERY type counts now (warn/info/log/debug/error), not just
+        # error. "Failed to load resource" carries no URL; correlate with
+        # net_fail, which is why it is filtered by HARNESS_NOISE below.
+        console.append(f"console.{msg.type}: {msg.text}")
 
     def on_response(resp):
         if resp.status >= 400 and EXCUSED not in resp.url:
@@ -138,7 +143,8 @@ def check_route(page, leg, route, island, row_sel, row_word):
         # no built asset contains eval( or new Function( before excusing it.
         HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval")
         spurious = [e for e in errors if not any(n in e for n in HARNESS_NOISE)]
-        clean = not spurious and not net_fail
+        noisy = [c for c in console if not any(n in c for n in HARNESS_NOISE)]
+        clean = not spurious and not noisy and not net_fail
         if route in EMPTY_BY_DESIGN:
             # Declared empty: hydrating to exactly zero rows is the CORRECT
             # outcome, and painting any is a regression worth failing on.
@@ -155,6 +161,8 @@ def check_route(page, leg, route, island, row_sel, row_word):
             detail += f"; http failures {net_fail[:3]}"
         if spurious:
             detail += f"; console {spurious[:2]}"
+        if noisy:
+            detail += f"; {len(noisy)} console line(s), first {noisy[:2]}"
         leg.chk(route, ok, detail)
         return ok
     finally:

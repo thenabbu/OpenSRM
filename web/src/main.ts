@@ -11,6 +11,7 @@ import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink 
 import { warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
+import { warn as logWarn } from './log';
 
 /**
  * Lazy component per island name (contract §Mount rules 1). Add one line here
@@ -35,7 +36,7 @@ export const diag = {
   warned: [] as string[],
   warn(msg: string, extra?: unknown): void {
     this.warned.push(msg);
-    console.warn(`[island] ${msg}`, extra ?? '');
+    logWarn('island', msg, extra ?? '');
     // Also on window: the offline DUT runs in a real browser and has no other
     // way to see why an island declined to paint.
     try {

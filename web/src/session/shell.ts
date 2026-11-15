@@ -12,6 +12,7 @@
  * student. Rows never go in this cache — they live in IndexedDB keyed by netid,
  * and logout clears both.
  */
+import { warn as logWarn } from '../log';
 
 /** Panels worth a shell. `settings` is excluded on purpose: it is identity data
  *  with no cached rows behind it, so an offline settings page would show an
@@ -30,7 +31,7 @@ const SHELL_PANELS = [
 const SHELL_CACHE = 'opensrm-shell';
 
 const log = (msg: string, e?: unknown): void =>
-  console.warn(`[shell] ${msg}`, e instanceof Error ? e.message : (e ?? ''));
+  logWarn('shell', msg, e instanceof Error ? e.message : (e ?? ''));
 
 /**
  * Fetch each panel shell and put it in the shell cache, one at a time.

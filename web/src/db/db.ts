@@ -4,6 +4,7 @@ import {
   AcademicsData, CampusData, FeesData, MarksData, TimetableData,
 } from '../contracts';
 import { attendanceProps } from '../panels/attendance/contract';
+import { warn as logWarn } from '../log';
 
 // ── The one module that owns IndexedDB. Nothing else may touch `indexedDB` ──
 //
@@ -145,7 +146,7 @@ export const PANELS = Object.keys(RECORD_SCHEMA) as Panel[];
 
 const table = (p: Panel) => db.table<Row>(p);
 const log = (what: string, err?: unknown) =>
-  console.warn(`[db] ${what}`, err instanceof Error ? err.message : (err ?? ''));
+  logWarn('db', what, err instanceof Error ? err.message : (err ?? ''));
 
 const isQuotaError = (e: unknown) =>
   e instanceof DOMException

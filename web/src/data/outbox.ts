@@ -1,5 +1,6 @@
 import { db } from '../db/db';
 import type { OutboxRow } from '../db/db';
+import { warn as logWarn } from '../log';
 
 /**
  * P7.4 — the write queue for deferred offline actions.
@@ -108,7 +109,7 @@ export async function drainOutbox(): Promise<DrainResult> {
   try {
     rows = (await pendingWrites()).slice(0, BATCH);
   } catch (e) {
-    console.warn('[outbox] could not read the queue', e instanceof Error ? e.message : e);
+    logWarn('outbox', 'could not read the queue', e instanceof Error ? e.message : e);
     return result;
   }
   for (const row of rows) {
@@ -133,7 +134,7 @@ export async function drainOutbox(): Promise<DrainResult> {
     if (verdict === 'session' || attempts >= MAX_ATTEMPTS) {
       await db.outbox.delete(row.k);
       result.dropped++;
-      console.warn(`[outbox] dropped ${row.k} after ${attempts} attempt(s) — ${verdict}`);
+      logWarn('outbox', `dropped ${row.k} after ${attempts} attempt(s) — ${verdict}`);
     } else {
       await db.outbox.put({ ...row, attempts });
     }
