@@ -22,7 +22,14 @@ if ! _pw_ok "${PLAYWRIGHT_BROWSERS_PATH:-}"; then
   export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
 fi
 export PYTHONPATH="$PWD"
-V=.venv/bin/python
+# Interpreter: prefer the caller's VENV (gates.sh exports the repo's), then this
+# tree's own .venv — which a worktree, or a bare `gates.sh` bootstrap, may have
+# created WITHOUT the browser deps — and only then the system python3. Without
+# this the two browser legs die on ModuleNotFoundError: playwright and the step
+# reads as an a11y/stress failure while testing nothing.
+if [ -n "${VENV:-}" ] && [ -x "$VENV/bin/python" ]; then V="$VENV/bin/python"
+elif [ -x .venv/bin/python ] && .venv/bin/python -c 'import playwright' 2>/dev/null; then V=.venv/bin/python
+else V=python3; fi
 FAIL=0
 
 say() { printf '%s\n' "$*"; }
