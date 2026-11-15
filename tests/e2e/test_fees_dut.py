@@ -33,6 +33,7 @@ from _seed import require_own_server  # noqa: E402
 require_own_server(BASE)
 
 import _fees_seed  # noqa: E402
+from playwright.sync_api import TimeoutError as PWTimeout  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from app.app import make_session_token  # noqa: E402
@@ -129,6 +130,7 @@ LAW_JS = """
     const rd = r(d), rv = r(v), rn = r(n), ra = r(a);
     out.rows.push({left: +rd.left.toFixed(2), rule: +rv.left.toFixed(2),
                    ruleW: +rv.width.toFixed(2), ruleH: +rv.height.toFixed(2),
+                   ruleBorder: parseFloat(getComputedStyle(v).borderLeftWidth) || 0,
                    name: +rn.left.toFixed(2), amtRight: +ra.right.toFixed(2),
                    top: +rd.top.toFixed(2), h: +rd.height.toFixed(2),
                    nameClipped: n.scrollWidth > n.clientWidth + 1});
@@ -217,6 +219,34 @@ DUES_JS = """
 """
 
 
+def settle(page, tag):
+    """Wait for the fees document to be PAINTED, not for a guessed delay.
+
+    `#tab-fees-tab` is an <a href="/fees">, so the click is a real navigation.
+    The old `wait_for_timeout(250)` raced the stylesheet: when it landed first
+    the law was measured on a parsed-but-unstyled document (rows display:block,
+    0px rule, three ragged right edges, zero gaps) and this test reported four
+    red assertions that no CSS could fix — 10/10 in the DUT suite, then red
+    inside it, purely on timing. A row only stops being display:block when
+    Tailwind's `.grid` rule has applied, so gate on the computed style.
+    """
+    page.wait_for_selector("#tab-fees", state="attached", timeout=15000)
+    try:
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('#tab-fees section > div.flex > div')]"
+            ".some(e => getComputedStyle(e).display === 'grid')",
+            timeout=15000)
+    except PWTimeout:
+        check(f"{tag}: fees stylesheet applied (rows are grid, not display:block)",
+              False, "no grid row after 15s — app.css/dist never applied")
+        return False
+    n = page.evaluate("() => document.querySelectorAll("
+                      "'#tab-fees section > div.flex > div').length")
+    check(f"{tag}: fees stylesheet applied ({n} rows are grid, not display:block)",
+          n >= 3, f"{n} laid-out rows")
+    return True
+
+
 def overflow_js():
     return ("() => ({sw: document.documentElement.scrollWidth, "
             "cw: document.documentElement.clientWidth, "
@@ -230,9 +260,14 @@ def run(browser, w, h, arm):
     ctx.add_cookies([{"name": "srm_session", "value": make_session_token("zz9999"), "url": BASE}])
     page = ctx.new_page()
     page.goto(BASE + "/", wait_until="networkidle")
-    page.evaluate("() => document.querySelector('#tab-fees-tab').click()")
-    page.wait_for_timeout(250)
     tag = f"{arm} {w}x{h}"
+    # The tab click navigates to /fees; wait for the navigation AND the styles,
+    # then read geometry. A sleep here measured an unstyled document under load.
+    with page.expect_navigation():
+        page.evaluate("() => document.querySelector('#tab-fees-tab').click()")
+    if not settle(page, tag):
+        ctx.close()
+        return
 
     if arm == "clear":
         c = page.evaluate(CLEAR_JS)
@@ -252,6 +287,13 @@ def run(browser, w, h, arm):
               r0["left"] < r0["rule"] and r0["rule"] + r0["ruleW"] <= r0["name"]
               and r0["name"] < r0["amtRight"], str(r0))
         check(f"{tag}: vertical rule is 1px", abs(r0["ruleW"] - 1) < 0.01, str(r0["ruleW"]))
+        # The 1px grid TRACK already measures 1px wide with an invisible border:
+        # the track, not the hairline, was the only thing asserted here, so the
+        # rule could stop painting outright and this stayed green (R-115).
+        # Assert the painted border too, or the law is not under test.
+        check(f"{tag}: vertical rule is painted, not just a 1px empty track",
+              r0["ruleBorder"] >= 1,
+              f"border-left {r0['ruleBorder']}px on a {r0['ruleW']}px track")
         check(f"{tag}: vertical rule spans the row height", r0["ruleH"] >= r0["h"], f"{r0['ruleH']} vs {r0['h']}")
         check(f"{tag}: every date on one x", len({r["left"] for r in law["rows"]}) == 1,
               str({r["left"] for r in law["rows"]}))
