@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# dut_suite.sh — run the 10 DUT scripts that nothing was running.
+# dut_suite.sh — run the 11 DUT scripts that nothing was running.
 #
 # Why they were orphans: every one of them needs DUT_BASE (a live seeded server)
 # and DATA_DIR. Invoked bare they exit 1 immediately, so nobody ever wired them
-# into the gate — 10 tests covering 10 real behaviours, silently dead.
+# into the gate — 11 tests covering 11 real behaviours, silently dead.
 #
 # This boots ONE seeded server and passes both env vars to each script.
 # Exit 0 = all passed. A script that genuinely fails is reported as FAIL, never
@@ -76,7 +76,7 @@ for f in sorted(os.listdir(d)):
 PY
 
 PASS=0; FAIL=0; FAILED=""
-SCRIPTS="test_att_dut test_delete_dut test_feedback_dut test_fees_dut test_lowtier_dut test_marks_dut test_pull_dut test_scope_profile_dut test_sync_data_dut test_touchfeel_dut"
+SCRIPTS="test_att_dut test_delete_dut test_feedback_dut test_fees_dut test_lowtier_dut test_marks_dut test_pull_dut test_scope_profile_dut test_sync_data_dut test_touchfeel_dut test_widget_parity_dut"
 
 for s in $SCRIPTS; do
   printf '  %-26s ' "$s"

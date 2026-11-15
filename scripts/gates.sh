@@ -97,7 +97,7 @@ if [ "${1:-}" = "--list" ]; then
   echo "  tests/e2e/test_dut_official_tt.py (self-booting)"
   echo "  bash tests/e2e/run_push_duts.sh   (boots 18185-18187 itself)"
   echo "  bash scripts/offline_proof.sh     (own server on 18183, killed mid-run)"
-  echo "  bash scripts/dut_suite.sh         (own server on 18189, 10 DUT scripts)"
+  echo "  bash scripts/dut_suite.sh         (own server on 18189, 11 DUT scripts)"
   echo "  bash scripts/capture_golden.sh --check --no-screens  (golden drift, ~2.5 min)"
   echo
   echo "== CI_ONLY (CI runs it, gates.sh cannot — with the reason)"
@@ -198,12 +198,12 @@ else
   # this mission has already lost 10 DUT scripts to exactly that.
   run_step "a11y + stress (a11y_stress.sh)" PORT=18185 \
     bash scripts/a11y_stress.sh
-  # The 10 DUT scripts, booted by dut_suite.sh on its own port (18189).
+  # The 11 DUT scripts, booted by dut_suite.sh on its own port (18189).
   # HARD GATE (option a): it exits 1 when any script fails and that is the point.
   # Until P9.5b fixes the 6 known-red scripts this holds the bar at RED on
   # purpose — a suite wired and honestly red beats one that is green because
   # nothing runs it. P9.5b turning them green flips this to PASS with no edit.
-  run_step "DUT suite (dut_suite.sh — 10 scripts)" VENV="$V" \
+  run_step "DUT suite (dut_suite.sh — 11 scripts)" VENV="$V" \
     bash scripts/dut_suite.sh
   # Golden drift (W3.3): re-captures the 9 routes and diffs them against the
   # committed tests/golden/v3. --no-screens because PNG bytes encode the

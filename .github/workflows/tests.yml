@@ -358,6 +358,7 @@ jobs:
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check \
             test_fees_dut test_scope_profile_dut \
+            test_widget_parity_dut \
             test_island_api
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)
@@ -388,8 +389,8 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh
 
-      # dut_suite.sh (gates.sh's 10-script runner) deliberately has no step of
-      # its own here: all 10 suites below already run in this job via
+      # dut_suite.sh (gates.sh's 11-script runner) deliberately has no step of
+      # its own here: all 11 suites below already run in this job via
       # ci_e2e_http.sh, which is why dut_suite.sh exists for the LOCAL bar. This
       # step asserts that coverage instead of trusting a comment — if a DUT is
       # added to dut_suite.sh and not to the list above, CI goes red here rather
