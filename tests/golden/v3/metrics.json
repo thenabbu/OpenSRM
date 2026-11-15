@@ -85,9 +85,9 @@
       "status": 200
     },
     "/static/dash.js": {
-      "bytes": 26370,
+      "bytes": 24461,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 8986,
+      "gzip_bytes": 8458,
       "status": 200
     },
     "/static/dist/assets/app-HASH.css": {
@@ -151,9 +151,9 @@
       "status": 200
     },
     "/static/pull.js": {
-      "bytes": 5214,
+      "bytes": 5504,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 1955,
+      "gzip_bytes": 2073,
       "status": 200
     },
     "/static/push.js": {
@@ -165,13 +165,13 @@
     "/static/sw.js": {
       "bytes": 29870,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9516,
+      "gzip_bytes": 9514,
       "status": 200
     },
     "/static/timetable.js": {
-      "bytes": 16013,
+      "bytes": 16894,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 4234,
+      "gzip_bytes": 4619,
       "status": 200
     }
   },
@@ -180,7 +180,7 @@
       "dom_nodes": 313,
       "html_bytes": 52057,
       "html_gzip_bytes": 13243,
-      "js_bytes": 104826,
+      "js_bytes": 104088,
       "js_files": [
         "/static/dash.js",
         "/static/dist/assets/app-HASH.js",
@@ -191,7 +191,7 @@
         "/static/sw.js",
         "/static/timetable.js"
       ],
-      "js_gzip_bytes": 34102,
+      "js_gzip_bytes": 34075,
       "script_tags": 9
     },
     "/login": {
@@ -205,11 +205,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 11994,
+      "js_gzip_bytes": 11992,
       "script_tags": 3
     }
   },
-  "revision": "463c7e8",
+  "revision": "364ca92",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -258,13 +258,13 @@
     }
   },
   "totals": {
-    "api_bytes": 392528,
-    "api_gzip_bytes": 106051,
+    "api_bytes": 391790,
+    "api_gzip_bytes": 106024,
     "dom_nodes_all_panels": 2077,
     "dom_nodes_page": 313,
     "html_bytes": 65672,
     "html_gzip_bytes": 17989,
-    "js_bytes": 109703,
-    "js_gzip_bytes": 35896
+    "js_bytes": 108965,
+    "js_gzip_bytes": 35869
   }
 }

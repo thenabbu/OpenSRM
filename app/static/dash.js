@@ -1,5 +1,11 @@
-// Error toast helper (global — used by timetable.js too)
+// Error toast (W5.2a): the implementation lives in web/src/data/errorToast.ts.
+// This is a plain <script> and cannot import the bundle, so it calls the bridge.
+// The body below is the PREACT_ISLANDS=0 rollback path (no bundle => no bridge),
+// where a toast is still better than a swallowed save failure. timetable.js no
+// longer borrows this name — it calls the bridge itself.
 function showError(msg) {
+  var bridge = window.__osrmShowError;
+  if (bridge) { bridge(msg); return; }
   var t = document.getElementById('error-toast');
   if (!t) return;
   t.textContent = msg;
@@ -68,65 +74,22 @@ function syncData() {
 }
 
 // ── Refresh (all data-refresh buttons) ────────────────────────────
+// W5.2a: the whole primitive — POST /api/refresh, busy state, focus restore,
+// repaint, 401 -> /login — lives in web/src/data/refresh.ts now, and so does
+// the [data-refresh] click binding. This forwarder is what remains here: the
+// PREACT_ISLANDS=0 (no bundle) path, this file's own background auto-sync, and
+// pull.js before it learned to call the bridge itself.
 function ref(quiet) {
-  var btns = Array.prototype.slice.call(document.querySelectorAll('[data-refresh]'));
-  var icons = document.querySelectorAll('.refresh-icon');
-  // Disabling any button blurs the focused element to <body>. Remember
-  // WHATEVER had focus (not just a refresh button): a user parked on the
-  // graph/table toggle was being dropped onto the dock after every sync.
-  var hadFocus = document.activeElement && document.activeElement !== document.body
-    ? document.activeElement : null;
-  // aria-disabled, not the disabled attribute: `disabled` on the focused
-  // element forces the browser to blur it to <body> immediately, which is what
-  // dropped the user onto the dock mid-sync. aria-disabled keeps focus where it
-  // is and still blocks a second click (see the handler below).
-  btns.forEach(function(b) { b.setAttribute('aria-disabled', 'true'); b.dataset.busy = '1'; });
-  icons.forEach(function(i) { i.classList.add('animate-spin'); });
-  document.querySelectorAll('.sync-line').forEach(function(el) { el.textContent = 'Syncing…'; el.classList.remove('hidden'); el.removeAttribute('hidden'); });
-  function restore() {
-    btns.forEach(function(b) { b.removeAttribute('aria-disabled'); delete b.dataset.busy; });
-    icons.forEach(function(i) { i.classList.remove('animate-spin'); });
-    // only pull focus back if it went nowhere; never steal it from a user who
-    // moved on during the round trip, and never onto a node that was replaced
-    if (hadFocus && hadFocus.isConnected && document.activeElement === document.body) {
-      hadFocus.focus();
-    }
-    renderSyncLines();
-  }
-  fetch('/api/refresh', {method: 'POST'})
-    .then(function (r) {
-      // dead session: server 302s API calls to /login; fetch() followed it
-      // and r.json() would throw — go to the login page, not "network error".
-      if (r.redirected) { location.href = '/login'; return new Promise(function() {}); }
-      return r.json();
-    })
-    .then(function (d) {
-      // cached answer (SYNC_MIN_INTERVAL_S): the server's stored data did
-      // not change, so restore the UI in place — no reload flash, and the
-      // sync-line keeps showing the honest age of the last real sync
-      if (d.ok && !d.cached) {
-        // This sync DID land, so the caption's age resets to now (the server
-        // stored exactly this data a moment ago) and every island repaints
-        // from its own feed. No markup is fetched, no node is replaced.
-        var nowS = Math.floor(Date.now() / 1000);
-        document.querySelectorAll('.sync-line').forEach(function (el) {
-          el.dataset.ts = String(nowS);
-          el.dataset.full = new Date(nowS * 1000).toLocaleString();
-        });
-        syncData().then(restore);
-        return;
-      }
-      restore();
-      if (d.ok) return;
-      if (!quiet) showError(d.error || 'Refresh failed');
-      else console.debug('background sync failed:', d.error);
-    }).catch(function () {
-      restore();
-      if (!quiet) showError('Network error \u2014 is the server reachable?');
-    });
+  var bridge = window.__osrmRevalidate;
+  if (bridge) return bridge(quiet);
+  return Promise.resolve();
 }
 document.querySelectorAll('[data-refresh]').forEach(function(b) {
   b.addEventListener('click', function() {
+    // With the bundle present, refresh.ts bound every one of these buttons
+    // itself (W5.2a). This listener is then the PREACT_ISLANDS=0 fallback and
+    // must stand down, or one click starts two syncs.
+    if (window.__osrmRevalidate) return;
     // aria-disabled replaces the `disabled` attribute so focus is never
     // dropped mid-sync; honour it here or a double-click starts two syncs.
     if (b.getAttribute('aria-disabled') === 'true') return;

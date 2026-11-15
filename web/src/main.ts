@@ -4,7 +4,8 @@ import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
-import { refreshProps } from './data/refresh';
+import { refreshProps, triggerRefresh, bindRefreshButtons } from './data/refresh';
+import { showError } from './data/errorToast';
 import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
@@ -367,6 +368,22 @@ void (async () => {
 // cost this task exists to delete.
 (window as unknown as { __osrmRefreshData?: () => Promise<void> }).__osrmRefreshData =
   () => refreshIslands(document, Date.now() / 1000);
+
+// W5.2a: the refresh primitive and the error toast live in web/src/data now
+// (refresh.ts, errorToast.ts) instead of dash.js, which three files used to
+// reach into. They are classic <script>s, so they come through these two
+// bridges — same seam as __osrmOutbox above. dash.js keeps a PREACT_ISLANDS=0
+// fallback (no bundle = no bridge) and stands down when the bridge is here.
+//
+// The [data-refresh] buttons are bound HERE, not in dash.js: one binder, or a
+// single click starts two syncs.
+const bridge = window as unknown as {
+  __osrmShowError?: (msg: string) => void;
+  __osrmRevalidate?: (quiet?: boolean) => Promise<void>;
+};
+bridge.__osrmShowError = showError;
+bridge.__osrmRevalidate = triggerRefresh;
+bindRefreshButtons();
 
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.

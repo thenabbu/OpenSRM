@@ -12,6 +12,24 @@
 
     function esc(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
 
+    // W5.2a: the toast and the repaint live in web/src/data now (errorToast.ts,
+    // refresh.ts). This is a classic <script>, so it reaches them through the
+    // bundle's bridges; the local names keep the four call sites below readable.
+    // With no bundle (PREACT_ISLANDS=0) the toast falls back to the console and
+    // syncData() returns null, so a save still reloads — exactly the old path.
+    // These used to be dash.js globals: if that file was not on the page, a
+    // failed save toasted NOWHERE and a successful one left stale numbers up.
+    function showError(msg) {
+        var bridge = window.__osrmShowError;
+        if (bridge) { bridge(msg); return; }
+        if (window.console) console.error(msg);
+    }
+
+    function syncData() {
+        var bridge = window.__osrmRefreshData;
+        return bridge ? bridge() : null;
+    }
+
     var SLOTS = [
         {period:1, start:'09:30', end:'10:20', type:'class'},
         {period:2, start:'10:20', end:'11:10', type:'class'},
@@ -337,9 +355,10 @@
             if (data.ok) {
                 closeEditor();
                 // archived editor: same contract as the main refresh — the
-                // islands repaint their data in place (W5.1b: no markup swap),
-                // reload only as the fallback if that hook is unavailable
-                if (typeof syncData === 'function') { syncData(); } else { location.reload(); }
+                // islands repaint their data in place (W5.1b: no markup swap).
+                // syncData() returns null only when the bundle never ran, which
+                // is the one case that still needs a reload.
+                if (!syncData()) location.reload();
             } else {
                 showError('Save failed: ' + (data.error || 'unknown error'));
             }
