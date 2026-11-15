@@ -351,6 +351,7 @@ jobs:
             test_sw test_xss test_navbar test_route_panels test_panel_api test_marks_dut test_personal \
             test_nav_routes \
             test_sync_data_dut \
+            test_refresh_wiring \
             test_touchfeel_dut \
             test_lowtier_dut \
             test_pull_dut \
