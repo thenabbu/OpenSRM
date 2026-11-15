@@ -13,6 +13,7 @@ import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink 
 import { warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
+import { bindCopyTargets } from './data/copy';
 import { warn as logWarn } from './log';
 
 /**
@@ -384,6 +385,19 @@ const bridge = window as unknown as {
 bridge.__osrmShowError = showError;
 bridge.__osrmRevalidate = triggerRefresh;
 bindRefreshButtons();
+
+// W5.2b: the copy cluster. Bound BEFORE hydration on purpose — it registers the
+// `osrm:island-mounted` listener that re-stamps copy targets, and listening
+// late would miss the first mount, which is the one that repaints them.
+bindCopyTargets(document);
+
+// The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
+// has to be able to make an island repaint a page that is already hydrated, and
+// "wait for a sync to change some data" is not a reliable trigger (an unchanged
+// payload patches nothing, so Preact writes no nodes). This is refreshIslands
+// itself — the exact function a sync calls — not a test double.
+(window as unknown as { __osrmHydrate?: typeof hydrateAll }).__osrmHydrate = hydrateAll;
+(window as unknown as { __osrmRepaint?: typeof refreshIslands }).__osrmRepaint = refreshIslands;
 
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.

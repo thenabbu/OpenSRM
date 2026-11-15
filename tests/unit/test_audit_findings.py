@@ -194,8 +194,21 @@ chk('L41', "dead code: no duplicate threading alias", miss('app/app.py', r'impor
 chk('L42', "dead code: photo_b64 gone from users SQL (comments excepted)",
     not any('photo_b64' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
 chk('L43', "dead code: dataset.copyFlash gone", not grep_repo('copyFlash', 'app'))
-chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
-    has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
+# L44: the copy cluster is the page's keyboard path (role/tabindex, Enter/Space).
+# W5.2b moved it out of dash.js into web/src/data/copy.ts, which now owns the
+# attribute contract too (the islands only EMIT data-copy). Both halves are
+# asserted: the module must carry the a11y attributes and the keyboard handler,
+# AND main.ts must bind it — an unbound module is dead code that reads green —
+# AND dash.js must no longer implement it, or the page has two copy paths.
+# Positive control for that absence: the module checks above it.
+_COPY = 'web/src/data/copy.ts'
+chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown), bound by the bundle",
+    has(_COPY, r"role:\s*'button'") and has(_COPY, r'tabindex:\s*0')
+    and has(_COPY, r"setAttribute\('role'") and has(_COPY, r"setAttribute\('tabindex'")
+    and has(_COPY, r"addEventListener\('keydown'")
+    and has('web/src/main.ts', r'bindCopyTargets\(')
+    and miss('app/static/dash.js', r"closest\('\[data-copy\]'\)")
+    and miss('app/static/dash.js', r'function setupCopyTargets'))
 chk('L45', "a11y: attendance progress meters carry an accessible name", *_meters_ok('attendance.html'))
 # L46: the dashboard must render the manifest link. It lived in home.html until
 # base.html took over the <head>; home.html now extends base, so the link is

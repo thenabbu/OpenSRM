@@ -352,6 +352,7 @@ jobs:
             test_nav_routes \
             test_sync_data_dut \
             test_refresh_wiring \
+            test_copy_rearm \
             test_touchfeel_dut \
             test_lowtier_dut \
             test_pull_dut \
