@@ -130,8 +130,22 @@ fi
 
 # --- 2. Static gates -------------------------------------------------------
 step "static gates"
-run_step() { local n=$1; shift; if "$@" >/tmp/gate-$$.log 2>&1; then ok "$n"; else
-  bad "$n"; sed -n '1,40p' /tmp/gate-$$.log | sed 's/^/         /'; fi; }
+# run_step NAME [KEY=VALUE ... COMMAND ARGS...]
+# Leading KEY=VALUE words are the step's OWN environment, in the step's own
+# `env` — anything already set in the runner's environment (VENV, PLAYWRIGHT_*,
+# PORT, PATH) is inherited. DO NOT go back to a bare `run_step "x" PORT=18185
+# bash ...`: that form runs a program literally named `PORT=18185`, so the step
+# fails in ~0ms with "PORT=18185: command not found" / "No such file or
+# directory" and reads as a red gate while nothing was tested. And never wrap a
+# command in `env` instead: it resets the environment (an exported PATH drops
+# node/pnpm off the box).
+run_step() {
+  local n=$1; shift
+  local -a vars=()
+  while [ $# -gt 0 ] && [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do vars+=("$1"); shift; done
+  if env "${vars[@]}" "$@" >/tmp/gate-$$.log 2>&1; then ok "$n"; else
+    bad "$n"; sed -n '1,40p' /tmp/gate-$$.log | sed 's/^/         /'; fi
+}
 run_step "architecture DAG (check_architecture.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_architecture.py
 run_step "doc consistency (check_docs.py)"          env PYTHONPATH=. "$V/bin/python" scripts/check_docs.py
 # Phase 2.3: the Vite CSS must stay semantically equal to the committed
@@ -143,7 +157,7 @@ if command -v docker >/dev/null 2>&1; then
 else
   skip "promtool (no docker)"
 fi
-run_step "dashboard JSON is current (build_dashboard.py --check)" python3 scripts/build_dashboard.py --check
+run_step "dashboard JSON is current (build_dashboard.py --check)" "$V/bin/python" scripts/build_dashboard.py --check
 # Phase 2.4: the Preact islands. Same script CI runs, so the local repro is
 # literally the CI line. Skipped only where pnpm is absent (CI always has it).
 if command -v pnpm >/dev/null 2>&1; then
@@ -209,7 +223,10 @@ else
   # committed tests/golden/v3. --no-screens because PNG bytes encode the
   # capture host's font stack — the same line CI runs, for the same reason.
   # ~2.5 min: it seeds its own DATA_DIR and boots its own gunicorn.
-  run_step "golden drift (capture_golden.sh --check --no-screens)" \
+  # OPENSRM_PY: capture_golden.sh falls back to a bare `python3` when the tree has
+  # no .venv (worktrees never do), and the system python3 has no playwright — the
+  # check then "fails" on ModuleNotFoundError before comparing anything.
+  run_step "golden drift (capture_golden.sh --check --no-screens)" OPENSRM_PY="$V/bin/python" \
     env OPENSRM_PY="$V/bin/python" bash scripts/capture_golden.sh --check --no-screens
 fi
 
