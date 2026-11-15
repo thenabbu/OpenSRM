@@ -1,137 +1,127 @@
-# Golden baseline — v3 (the UI *after* the Preact islands)
+# OpenSRM golden capture
 
-**What this is FOR:** the "current product", frozen. Every file here is the app
-as it actually rendered at the branch tip, so the next change is diffed against a
-real artifact instead of someone's memory of the UI. A restyle, a route split or
-an island that silently drops a card, a number, a class or a `<script>` tag shows
-up here as a removed line:
+Deterministic baseline of ONE revision of the app. `--repo` decides which
+checkout is captured, so an old SHA can be baselined from a detached worktree
+while HEAD stays on another branch; the resolved SHA is recorded in
+`metrics.json` (`revision`) and printed. Regenerate with
+`scripts/capture_golden.sh`, then diff against this dir — `dom/`, `api/`,
+`routes.json` and `metrics.json` must be byte-identical; screenshots must be
+~0% pixel difference (they were 0/23,259,114 px on the two-run determinism
+check).
 
-```bash
-diff -r tests/golden/v2 tests/golden/v3        # before / after the islands
-diff -u tests/golden/v3/dom/dashboard.html <(curl -s ...)   # one route, one change
+## One command
+
+```
+bash scripts/capture_golden.sh /tmp/golden-check            # HEAD of this checkout
+python scripts/capture_golden.py --repo ../wt-v2 --out /tmp/v2 \
+    --python /opt/data/opensrm-repo/.venv/bin/python         # an explicit worktree
+diff -r tests/golden /tmp/golden-check      # expect: no output
 ```
 
-`tests/golden/v2` is **before** (pre-islands, `1fcbfe6`). This dir is **after**
-(post-islands). Both record the SHA they were captured at in `metrics.json`, so
-both are reproducible; the parent `tests/golden/` dir is an older capture that
-never recorded its revision and cannot be.
+Wipes the target dir, seeds a clean
+`DATA_DIR=/tmp/osrm-premig` (`tests/_seed.py` `seed_rich()`, user
+`zz9999` only), injects the fabricated scope blob, boots gunicorn on
+127.0.0.1 (port 18185 if free, else auto-increment), captures, and
+shuts the server down. Read-only on the repo; nothing is committed.
+`--repo` (or `$OPENSRM_REPO`) sets both the app under test and the seed
+script; `--python` (or `<repo>/.venv/bin/python`, then
+`$OPENSRM_REPO/.venv/bin/python`) is the interpreter that imports it.
+Playwright chromium lives at `/opt/data/cache/scratch/pw-browsers`
+(`playwright install chromium` if missing) — or wherever
+`$PLAYWRIGHT_BROWSERS_PATH` already points.
 
-## The exact revision
+## Drift gate (`--check`)
 
-| | |
+```
+bash scripts/capture_golden.sh --check                # exit 0 == this tree matches the golden
+bash scripts/capture_golden.sh --check --no-screens   # cross-host (CI): PNGs follow the font stack
+```
+
+Captures into a throwaway dir and diffs it against `tests/golden/v3`, printing
+every file that differs and exiting non-zero. Two exemptions: this README (the
+tool regenerates it) and `metrics.json`'s `revision` (provenance — it names the
+SHA the golden was captured at, which is always older than the HEAD being
+checked).
+
+## Contents
+
+| path | what |
 |---|---|
-| SHA | `6ebdeae` — *feat(golden): --check mode — capture and diff against a committed baseline* |
-| recorded in | `metrics.json` → `"revision": "6ebdeae"` (written by the capture, not by hand) |
-| why this SHA | the `feat/preact-migration` tip when the capture ran. Every commit between it and the last app change touches `tests/` or `scripts/` only, so the rendered UI is the same — and `metrics.json`'s `revision` is exempt in the gate for exactly that reason |
-| shape | **post-islands**: all 9 panels carry `data-island` + `data-props` + `data-hydrated="1"` |
-| tool SHA | the same commit — `--check` landed here, so tool and app are one checkout |
+| `routes.json` | the 9 tab ids, `panels_present` (asserted == 9 in-harness), and each panel's normalized outer HTML |
+| `dom/<tab>.html` | post-JS-load DOM of each panel, normalized (see below) |
+| `screens/<tab>-{390x844,768x1024,1440x900}.png` | full-page screenshots, 9 tabs x 3 viewports |
+| `api/<endpoint>.json` | status, content-type, byte + gzip sizes, and body (or b64 for binary) of every GET endpoint, including static assets and `/login`; `logout.json` captured last |
+| `metrics.json` | per page: html bytes, gzip bytes, `<script>` count, JS file list + total bytes; per api endpoint sizes; DOM node counts |
 
-Contents: 68 files, 2.4 MB — `routes.json` (9 tab ids + `panels_present`, all 9),
-`dom/<tab>.html` × 9, `screens/<tab>-<viewport>.png` × 27 (3 viewports),
-`api/<endpoint>.json` × 30, `metrics.json`.
+## What is normalized (and why)
 
-## The gate: `--check`
+Captured output must be identical across runs, so anything that
+legitimately varies with wall-clock is normalized at record time:
 
-This is the point of the dir. CI re-captures and diffs, so drift is a red build
-instead of a user noticing:
+1. **`?v=<hash>` asset query strings** — `app/app.py asset()` appends
+   `?v=sha256(file)[:10]`. Hash is stable for unchanged files, but the
+   query string is a deployment detail, not app behaviour; stripped so
+   a content-hash change alone doesn't fail the diff. (Regex is
+   hex-aware: `\?v=[0-9a-fA-F]+`.)
+2. **Vite build hashes inside dist filenames** — `SettingsPanel-Crq-6lwG.js`
+   is recorded as `SettingsPanel-HASH.js`, and `app-Dw5KSv9_.css` as
+   `app-HASH.css`. The hash changes on every rebuild of *identical* source, so
+   an unmasked one makes the golden fail for no behavioural reason. Only
+   `.js`/`.css` with an 8-char `[A-Za-z0-9_-]` tail is touched, so
+   `icon-192.png` is left alone.
+3. **`data-ts` / `data-full` attributes on the sync line** — the
+   dashboard's "last synced" epoch + ISO string. Removed (the values are
+   re-derived by the island at boot).
+4. **Relative-time strings** (`just now`, `Ns ago`, `Nm ago`, ...) —
+   rendered from wall-clock; replaced with a fixed `ago` placeholder.
+5. **Epoch / ISO timestamps in visible text** — same reason.
+6. **`/internal/metrics` values** — Prometheus counters/timers for the
+   live process (histogram sums, RSS, sync ages) change every run by
+   design; values are zeroed, metric names + labels (the structural
+   contract) are kept.
+7. **Recorded sizes are computed on the normalized bytes**, not the
+   raw wire bytes — raw HTML contains the volatile bits above, so
+   raw sizes would wobble by a few bytes between runs.
 
-```bash
-bash scripts/capture_golden.sh --check                 # ~2.5 min, exit 0 == matches
-bash scripts/capture_golden.sh --check --no-screens    # what CI runs (see below)
-```
+And one thing is not normalized but *pinned*: the capture runs at a single fixed
+instant (`PINNED_NOW`) instead of at whatever today happens to be. The server
+clock is frozen for every worker, so server-rendered clock output — the exam
+countdown, the timetable hero and its weekday label — is a constant. Those used
+to read the real clock, which turned the gate red at midnight with no code
+change behind it.
 
-It captures into a throwaway dir, compares byte-for-byte, and prints **every**
-differing file by name (`differs: dom/dashboard.html`, `only in golden: …`,
-`only in capture: …`), exiting 1 on any difference. Two exemptions, both
-deliberate:
+## How the browser wait works (no sleeps, no networkidle)
 
-| exempt | why |
-|---|---|
-| `README.md` | the tool regenerates it, so this hand-written file would always differ |
-| `metrics.json` → `revision` | provenance, not behaviour: it names the SHA the golden was *captured* at, which is by definition older than the HEAD being checked. Comparing it would leave the gate permanently red one commit after every capture |
+`networkidle` is unsatisfiable here: `main.ts` `warmShells()` keeps eight
+`/shell/*` requests pending through the service worker, which never emit
+Playwright `requestfinished` (`decisions.md`
+`NETWORKIDLE-IS-UNSATISFIABLE-HERE`). A capture that waits for it can only
+succeed by timing out.
 
-`--no-screens` is not a weakening, it is honesty about physics: the PNGs encode
-the capture host's font stack (the app ships no webfonts — it asks for
-`-apple-system, "Segoe UI", Roboto, "Noto Sans", Arial` and the host decides),
-so a GitHub runner cannot be byte-compared with a laptop capture. On CI the gate
-therefore covers `dom/`, `api/`, `routes.json` and `metrics.json`; a same-host run
-compares the pixels too. CI job: **e2e** (`Golden drift (tests/golden/v3
---check)`), not unit — the step boots gunicorn and drives chromium, and the
-browsers are installed there.
+So the wait is an explicit ready signal: **every `[data-island]` mount must
+carry `data-hydrated`** (stamped by that island's own hydrate function) or
+`data-mounted-at` (the cache branch), and `document.readyState` must be
+`complete`. A revision with no islands at all (the pre-island baseline) has an
+empty marker set, so the same predicate reduces to "document complete" —
+one predicate covers both revisions. Animation freeze is two
+`requestAnimationFrame`s after that, not a delay.
 
-## How to regenerate (verbatim)
+## What is fixed to keep things stable (not normalized)
 
-Playwright does not run on the lab, so the capture runs on the laptop from a
-checkout of the recorded SHA:
+- Clean `DATA_DIR` + `seed_rich()` + fabricated scope blob every run:
+  the repo's campus fixtures are alive-empty ("No data found")
+  envelopes, and `campus_view` hides the tab when every card is empty
+  (`show = bool(cards)`), so the harness fabricates minimal rows for
+  jobs/resume/library/hostel/transport/notifications.
+- `SCOPE_FEATURES` = all 9 feature slugs on the server env.
+- Client clock frozen (`page.clock.setFixedTime`), CSS/SVG animations
+  paused, `prefers-reduced-motion: reduce`, service workers blocked,
+  external (non-127.0.0.1) requests aborted.
+- `gzip` recorded with `mtime=0`.
 
-```bash
-# laptop
-cd ~/w33/repo && git fetch origin && git checkout --detach 6ebdeae
-.venv/bin/python scripts/capture_golden.py \
-    --repo "$PWD" --python "$PWD/.venv/bin/python" \
-    --out ~/w33/out-check --port 18185
-```
+## Panel parity
 
-Then, on the host holding the goldens:
-
-```bash
-diff -r -x README.md tests/golden/v3 ~/w33/out-check     # expect: no output
-```
-
-`-x README.md`: the tool regenerates `README.md` in every output dir from its own
-constant, so this hand-written file is the single thing a regen replaces. Every
-other file must come back byte-identical — screenshots included, on this host.
-
-## What is normalised, and why
-
-Authoritative list: the module docstring of `scripts/capture_golden.py`. Restated
-in `tests/golden/v2/README.md`; the eight rules are unchanged (asset `?v=` hashes,
-Vite build hashes, `data-ts`/`data-full`, relative ages, epoch/ISO timestamps,
-`/internal/metrics` values, sizes computed on normalised bytes, blobatar avatar
-phases). Everything else is real: text, classes, attributes, DOM order, script
-lists, API bodies, pixel content.
-
-One thing is not normalised but *pinned*: the capture runs at a single fixed
-instant (`PINNED_NOW`) rather than at whatever today is, with the server clock
-frozen for every worker. Server-rendered clock output — the exam countdown, the
-timetable hero and its weekday label — is therefore a constant. Before that pin
-those moved by one day at every midnight and red-ed this gate with no code
-change behind them.
-
-## Determinism proof
-
-Two independent captures of `6ebdeae` into separate dirs (ports 18185 and 18186,
-separate processes, 145 s and 143 s):
-
-```
-$ diff -r ~/w33/out-a ~/w33/out-b
-$ echo $?
-0
-```
-
-69 files / 2.4 MB / 27 screenshots, byte-identical including every PNG. The
-committed tree here is `out-a` minus the generated README.
-
-## Deterministic across HOSTS, not just across runs
-
-Two same-host runs proving an empty `diff -r` is necessary, not sufficient: the
-gate runs on a GitHub runner, which is not the laptop that captured these files.
-Three host properties had to be pinned before the runner reproduced them — all
-three were found by this gate failing on its own first CI runs, which is the best
-evidence available that it bites:
-
-| pinned | what it cost before it was pinned |
-|---|---|
-| perf tier (`TIER_JS`) | `perf.js` picks low on `hardwareConcurrency <= 4`; a standard runner has exactly 4 vCPUs and the laptop 12, and the low tier attaches **no gaze driver at all**. Same revision, two different DOMs: `--mo-track-travel` present on one host only. The capture now serves `hardwareConcurrency`/`deviceMemory` = 8. |
-| the ready signal | `data-hydrated` is stamped before `main.ts` fires `osrm:island-mounted`, and gaze.js publishes `--mo-track-travel` from that listener — waiting on hydration alone caught whichever side of the tick the host was on. `READY_JS` now also waits for every `.blobatar-gaze` to have published it. |
-| pixels (`--no-screens` on CI) | the app ships no webfonts, so glyphs come from the host's font stack; a runner cannot be byte-compared with the laptop. |
-
-With the first two in place the runner reproduces `dom/`, `api/`, `routes.json`
-and `metrics.json` byte-for-byte (`golden OK` on CI, exit 0).
-
-## What moved between v2 and v3
-
-`diff -rq v2 v3` = 52 differing entries: **all 9 `dom/` pages**, **13 `api/`
-bodies**, **all 27 screenshots**, plus two new endpoints
-(`api/static_dist_assets_app-HASH.css.json`, `…js.json` — the island bundles,
-pre-v3 there were none). That is the migration's blast radius, on the record.
+`routes.json` records `panels_present`; the harness hard-fails
+(`panels missing from DOM: [...]`) if fewer than the 9 known tabs are
+in the DOM — a capture that silently baselines 5 of 9 is rejected,
+not accepted.

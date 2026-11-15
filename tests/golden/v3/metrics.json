@@ -1,9 +1,9 @@
 {
   "api": {
     "/": {
-      "bytes": 52138,
+      "bytes": 52057,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13272,
+      "gzip_bytes": 13243,
       "status": 200
     },
     "/api/marks": {
@@ -85,9 +85,9 @@
       "status": 200
     },
     "/static/dash.js": {
-      "bytes": 32100,
+      "bytes": 26370,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 10753,
+      "gzip_bytes": 8986,
       "status": 200
     },
     "/static/dist/assets/app-HASH.css": {
@@ -165,28 +165,22 @@
     "/static/sw.js": {
       "bytes": 29870,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9515,
+      "gzip_bytes": 9516,
       "status": 200
     },
     "/static/timetable.js": {
-      "bytes": 15954,
+      "bytes": 16013,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 4196,
-      "status": 200
-    },
-    "/static/vendor/idiomorph.min.js": {
-      "bytes": 10587,
-      "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 3772,
+      "gzip_bytes": 4234,
       "status": 200
     }
   },
   "pages": {
     "/": {
-      "dom_nodes": 314,
-      "html_bytes": 52138,
-      "html_gzip_bytes": 13272,
-      "js_bytes": 121084,
+      "dom_nodes": 313,
+      "html_bytes": 52057,
+      "html_gzip_bytes": 13243,
+      "js_bytes": 104826,
       "js_files": [
         "/static/dash.js",
         "/static/dist/assets/app-HASH.js",
@@ -195,11 +189,10 @@
         "/static/pull.js",
         "/static/push.js",
         "/static/sw.js",
-        "/static/timetable.js",
-        "/static/vendor/idiomorph.min.js"
+        "/static/timetable.js"
       ],
-      "js_gzip_bytes": 39602,
-      "script_tags": 10
+      "js_gzip_bytes": 34102,
+      "script_tags": 9
     },
     "/login": {
       "dom_nodes": null,
@@ -212,11 +205,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 11993,
+      "js_gzip_bytes": 11994,
       "script_tags": 3
     }
   },
-  "revision": "7849d55",
+  "revision": "463c7e8",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -235,8 +228,8 @@
     },
     "dashboard": {
       "panel_dom_nodes": 172,
-      "panel_html_bytes": 16250,
-      "panel_html_gzip_bytes": 3724
+      "panel_html_bytes": 16230,
+      "panel_html_gzip_bytes": 3716
     },
     "fees": {
       "panel_dom_nodes": 72,
@@ -250,8 +243,8 @@
     },
     "settings": {
       "panel_dom_nodes": 117,
-      "panel_html_bytes": 11275,
-      "panel_html_gzip_bytes": 2489
+      "panel_html_bytes": 11255,
+      "panel_html_gzip_bytes": 2479
     },
     "timetable": {
       "panel_dom_nodes": 54,
@@ -265,13 +258,13 @@
     }
   },
   "totals": {
-    "api_bytes": 408867,
-    "api_gzip_bytes": 111580,
+    "api_bytes": 392528,
+    "api_gzip_bytes": 106051,
     "dom_nodes_all_panels": 2077,
-    "dom_nodes_page": 314,
-    "html_bytes": 65753,
-    "html_gzip_bytes": 18018,
-    "js_bytes": 125961,
-    "js_gzip_bytes": 41396
+    "dom_nodes_page": 313,
+    "html_bytes": 65672,
+    "html_gzip_bytes": 17989,
+    "js_bytes": 109703,
+    "js_gzip_bytes": 35896
   }
 }
