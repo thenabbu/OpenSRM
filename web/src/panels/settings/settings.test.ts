@@ -86,8 +86,17 @@ describe('settings island', () => {
 
   it('paints the identity header and the count badge the server counted', async () => {
     await hydrate();
-    // the name is queryable (a reader can find it) AND sits in the header class
-    expect(q().getByText('Aarav Mehta').className).toBe('text-lg font-semibold');
+    // the name is queryable (a reader can find it) AND sits in the header class.
+    // The trailing classes come from COPY_ATTRS (data/copy.ts) and from the
+    // copy re-arm stamping `cursor-copy`; this test is about the LAYOUT, so it
+    // asserts the layout half rather than freezing the affordance too.
+    const name = q().getByText('Aarav Mehta');
+    expect(name.className.split(' ').slice(0, 2).join(' ')).toBe('text-lg font-semibold');
+    // ...and it really is a keyboard copy target, from its first frame — the
+    // half a className equality used to hide.
+    expect(name.getAttribute('role')).toBe('button');
+    expect(name.getAttribute('tabindex')).toBe('0');
+    expect(name.classList.contains('cursor-copy')).toBe(true);
     expect(mount().textContent).toContain('B.Tech CSE (Cloud Computing)');
     // the count badge is found BY ITS TEXT, then its placement is the assertion
     const title = q().getByText('7').closest('.collapse-title')!;
@@ -112,9 +121,13 @@ describe('settings island', () => {
     expect(cells[1].className).toBe('sm:col-span-2');
     const contact = groups[3];
     const addr = contact.querySelector('[data-copy="Flat 4, Sector 62"]')!;
-    expect(addr.className).toBe('text-sm break-words');
+    // Layout classes only: `cursor-copy` is the copy affordance, asserted on
+    // its own below so a change to either half fails on its own terms.
+    expect(addr.className).toBe('text-sm break-words cursor-copy');
+    expect(addr.getAttribute('role')).toBe('button');
     const pin = contact.querySelector('[data-copy="201309"]')!;
-    expect(pin.className).toBe('text-sm font-mono break-words');
+    expect(pin.className).toBe('text-sm font-mono break-words cursor-copy');
+    expect(pin.getAttribute('tabindex')).toBe('0');
   });
 
   it('empty personal renders the same "No personal details available." alert, no badge', async () => {

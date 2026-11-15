@@ -155,65 +155,12 @@ document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
   a.addEventListener('click', function(e) { e.preventDefault(); });
 });
 
-// ── Click-to-copy: any element with data-copy gets copied on click (task 10).
-//    Values only — keys/labels never carry data-copy.
-function flash(el) {
-  if (el.dataset.origText === undefined) el.dataset.origText = el.textContent;
-  el.textContent = 'Copied!';
-  el.classList.add('text-success');
-  clearTimeout(el._copyTimer);
-  el._copyTimer = setTimeout(function() {
-    el.textContent = el.dataset.origText;
-    el.classList.remove('text-success');
-  }, 1200);
-}
-function copyText(t, el) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(t).then(function() { flash(el); }).catch(function() {});
-  }
-}
-
-// Click-to-copy: an island repaint can add rows (no ids to key on), so the
-// handlers live at document level and setupCopyTargets() just re-stamps the
-// a11y/cursor attrs on any fresh nodes — idempotent, safe to re-run per repaint.
-function setupCopyTargets(root) {
-  (root || document).querySelectorAll('[data-copy]').forEach(function(el) {
-    if (el.dataset.copyReady) return;
-    el.dataset.copyReady = '1';
-    el.title = el.title || 'Click to copy';
-    el.classList.add('cursor-copy');
-    // audit a11y: div/span copy targets must be keyboard-operable
-    el.setAttribute('tabindex', '0');
-    el.setAttribute('role', 'button');
-  });
-}
-setupCopyTargets(document);
-// The settings island repaints #personal-details after hydration, so the stamps
-// above land on nodes it then throws away (measured: 24 targets, 0 wired). Re-arm
-// on the event main.ts fires after every mount, like armAvatarOffscreen below;
-// setupCopyTargets is idempotent per node, so a no-op re-arm costs nothing.
-document.addEventListener('osrm:island-mounted', function() { setupCopyTargets(document); });
-document.addEventListener('click', function(ev) {
-  var el = ev.target.closest ? ev.target.closest('[data-copy]') : null;
-  if (el) { copyText(el.dataset.copy || el.textContent.trim(), el); return; }
-  var copyBtn = ev.target.closest ? ev.target.closest('#copyEmail') : null;
-  if (!copyBtn) return;
-  var email = copyBtn.dataset.email || '';
-  function done() {
-    var span = copyBtn.querySelector('span');
-    var old = span.textContent;
-    span.textContent = 'Copied!';
-    setTimeout(function() { span.textContent = old; }, 1200);
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(email).then(done).catch(function() { showError('Copy failed'); });
-  } else { showError('Clipboard unavailable'); }
-});
-document.addEventListener('keydown', function(ev) {
-  if (ev.key !== 'Enter' && ev.key !== ' ') return;
-  var el = ev.target.closest ? ev.target.closest('[data-copy]') : null;
-  if (el) { ev.preventDefault(); copyText(el.dataset.copy || el.textContent.trim(), el); }
-});
+// ── Click-to-copy (W5.2b): the whole cluster — the [data-copy] handler, the
+//    #copyEmail branch, the a11y stamps and the re-arm after an island repaint
+//    — lives in web/src/data/copy.ts and is bound by main.ts. It moved because
+//    the islands OWN the attributes: SettingsPanel/DashboardPanel/FeesPanel emit
+//    `data-copy` and nothing here could see a repaint before it happened. One
+//    copy implementation, in the bundle, so an island edit has one contract.
 
 // ── Attendance view toggle (graph ↔ table). Persisted in localStorage;
 //    visibility via the `hidden` attribute ONLY (never a Tailwind class).

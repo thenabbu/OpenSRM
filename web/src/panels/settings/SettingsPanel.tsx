@@ -1,5 +1,6 @@
 import type { Detail, Group, SettingsProps } from './contract';
 import { text } from '../../design';
+import { COPY_ATTRS } from '../../data/copy';
 
 export interface SettingsHost {
   el: HTMLElement;
@@ -27,11 +28,12 @@ const wide = (): boolean =>
   typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 640px)').matches;
 
 /**
- * A copy target is a keyboard control (dash.js stamps role/tabindex on the
- * served nodes and copies on Enter/Space). Repainting the node must not hand
- * back a mouse-only div: same a11y attributes, so the delegate still finds them.
+ * A copy target is a keyboard control (web/src/data/copy.ts owns the contract:
+ * role/tabindex/title, applied at load, on every island re-arm, and — via this
+ * spread — on the first frame of a repainted node). Repainting must not hand
+ * back a mouse-only div, so the island uses the SAME object the handler stamps.
  */
-const COPY = { title: 'Click to copy', tabindex: 0, role: 'button' } as const;
+const COPY = COPY_ATTRS;
 
 /** One key/value cell (settings.html:228-232). */
 function Cell({ d }: { d: Detail }) {
