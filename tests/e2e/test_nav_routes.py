@@ -2,10 +2,8 @@
 
 Four regressions, each red on the pre-split tab machine:
 
-  F1  a refresh re-fetched a page and swapped <main> out. It once fetched '/'
-      on every route (dashboard content under a /marks URL); the markup swap it
-      used is now deleted (W5.1b — a sync carries data), so this check pins the
-      stronger property: a sync fetches NO page markup at all.
+  F1  softRefresh() fetched '/' and morphed the DASHBOARD into <main> on every
+      route — a refresh on /marks left dashboard content under a /marks URL.
   F2  a [data-tab] click handler called switchTab() with no preventDefault:
       the JS switch AND the navigation both ran, then replaceState wrote a
       stale '#dashboard' onto the new URL.
@@ -65,9 +63,8 @@ src = open(os.path.join(REPO, "app", "static", "dash.js"), encoding="utf-8").rea
 check("dash.js: no tab-switching engine left (switchTab/replaceState)",
       "switchTab" not in src and "replaceState" not in src
       and "b.tabIndex" not in src)
-check("dash.js: a sync fetches no page markup at all (F1 cannot recur)",
-      "location.pathname + location.search" not in src
-      and "text/html" not in src)
+check("dash.js: softRefresh fetches this route, not '/'",
+      "fetch(location.pathname + location.search" in src)
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
@@ -91,7 +88,7 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={"width": 1280, "height": 900})
     ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])
 
-    # ── F1: a sync carries data, never the route's markup ───────────────
+    # ── F1: a refresh on /marks re-renders /marks ────────────────────────
     pg = ctx.new_page()
     seen = []
     pg.on("request", lambda r: seen.append(r.url) if r.resource_type == "fetch" else None)
@@ -101,17 +98,17 @@ with sync_playwright() as p:
     pg.goto(BASE + "/marks", wait_until="load")
     pg.wait_for_timeout(2500)          # let the boot auto-sync settle
     seen.clear()
-    pg.evaluate("ref(true)")           # the quiet sync the auto-sync runs
-    pg.wait_for_timeout(1500)
+    pg.evaluate("async () => { await softRefresh(); }")
+    pg.wait_for_timeout(300)
     f1 = pg.evaluate("""() => ({
         path: location.pathname,
         marks: !!document.getElementById('tab-marks'),
         dash: !!document.getElementById('tab-dashboard'),
         mainHeading: (document.querySelector('main h1, main h2') || {}).textContent || ''})""")
-    page_hits = [u for u in seen if "/api/" not in u]
-    check("F1: a sync fetches no page markup at all (only /api slices)",
-          bool(seen) and not page_hits, str(seen[:6]))
-    check("F1: after the sync the page still shows the marks panel (no dashboard swap)",
+    check("F1: softRefresh on /marks fetched /marks, not /",
+          any(u.rstrip("/").endswith("/marks") for u in seen) and not any(
+              u.replace(BASE, "").rstrip("/") == "" for u in seen), str(seen))
+    check("F1: after the refresh the page still shows the marks panel (no dashboard swap)",
           f1["marks"] and not f1["dash"] and f1["path"] == "/marks", json.dumps(f1))
     pg.close()
 

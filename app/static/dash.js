@@ -47,24 +47,134 @@ function renderSyncLines() {
 renderSyncLines();
 setInterval(renderSyncLines, 60000);   // "(15m ago)" must keep ageing, and reappear once fresh
 
-// ── A data-changing sync updates DATA, not markup (DESIGN §10.16 rule 3) ──
-// The bundle owns the repaint: every mounted island refetches its own
-// /api/<panel> slice and Preact patches the text nodes that changed. Nothing is
-// torn down, so scroll position, focus, open <details> and the attendance view
-// survive BY CONSTRUCTION — the three compensations this file used to carry
-// (re-focus the old id, re-open the open panels, re-show the table view) only
-// existed to survive the markup swap that is now gone.
-//
-// dash.js is a plain <script> and cannot import the bundle, so it reaches the
-// repaint through one hook (the same shape as __osrmOutbox). No hook yet (the
-// module has not run) means a sync changes nothing on screen — strictly better
-// than downloading this route's HTML again on a phone to change one number.
-function syncData() {
-  var hook = window.__osrmRefreshData;
-  if (!hook) return Promise.resolve();
-  return Promise.resolve(hook()).catch(function (err) {
-    console.error('sync refresh failed:', err);
-  });
+// ── Soft refresh: update the page in place (DESIGN §10.16 rule 3) ──
+// A data-changing sync morphs <main> from a freshly fetched render of THIS
+// route with idiomorph: nodes with the same id are kept (their listeners
+// survive), client state listed in PRESERVE_ATTR survives, and
+// [data-morph="ignore"] subtrees (avatar wrapper, push card) are skipped
+// wholesale. A full location.reload() remains only as the catch net.
+function PRESERVE_ATTR(attr, el) {
+  // visible-tab display state lives on the panel's inline style
+  if (attr === 'style' && el.closest('[data-tabpanel]')) return true;
+  // attendance graph/table choice
+  if (attr === 'hidden' && (el.id === 'att-graph' || el.id === 'att-table')) return true;
+  // personal-details collapse groups (user-toggled at load)
+  if (attr === 'checked' && el.matches('.collapse input[type="checkbox"]')) return true;
+  // open marks-tag panels
+  if (attr === 'open' && el.tagName === 'DETAILS') return true;
+  return false;
+}
+
+var MORPH_OPTS = {
+  morphStyle: 'innerHTML',
+  ignoreActiveValue: true,
+  // no restoreFocus: it blurs elements without an id; nodes outside <main>
+  // (tab buttons etc.) are never morphed, so their focus survives untouched.
+  callbacks: {
+    beforeNodeMorphed: function (oldNode) {
+      return !(oldNode.nodeType === 1 && oldNode.closest('[data-morph="ignore"]'));
+    },
+    beforeAttributeUpdated: function (attr, el) { return !PRESERVE_ATTR(attr, el); }
+  }
+};
+
+function softRefresh() {
+  // P3.1: one panel per route — re-render THIS page, never the dashboard.
+  // ('/' would morph the dashboard's <main> into /marks and leave the URL
+  // saying /marks over dashboard content.)
+  return fetch(location.pathname + location.search,
+               {credentials: 'same-origin', headers: {Accept: 'text/html'}})
+    .then(function (r) {
+      // dead session: server 302s to /login — go there, not "network error".
+      if (r.redirected && new URL(r.url).pathname === '/login') { location.href = '/login'; return null; }
+      return r.text();
+    })
+    .then(function (html) {
+      if (html == null) return;                      // already leaving for /login
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      try {
+        Idiomorph.morph(document.querySelector('main'), doc.querySelector('main'), MORPH_OPTS);
+        // the opt-in feedback plan can change with the learned fb_open state:
+        // morph the modal too, but only while closed (an open modal is
+        // mid-conversation — never swap it under the user). outerHTML style:
+        // idiomorph 0.8.0's innerHTML path throws HierarchyRequestError when
+        // the target is a top-level <dialog> sliced from the fetched document;
+        // outerHTML morphs the dialog node in place instead (verified: same
+        // node kept, so the delegated submit listener survives).
+        var fbm = document.getElementById('fb-modal');
+        var fbmSrc = doc.getElementById('fb-modal');
+        if (fbm && fbmSrc && !fbm.open) {
+          Idiomorph.morph(fbm, fbmSrc, Object.assign({}, MORPH_OPTS, {morphStyle: 'outerHTML'}));
+        }
+      } catch (err) { console.error('softRefresh morph failed:', err); location.reload(); return; }   // safety net only
+      // navbar is outside <main>: update the sync captions by hand
+      var src = doc.querySelector('.sync-line');
+      if (src) document.querySelectorAll('.sync-line').forEach(function (el) {
+        el.dataset.ts = src.dataset.ts;
+        el.dataset.full = src.dataset.full;
+      });
+      renderSyncLines();
+      // Swap <main>'s markup for the freshly rendered one. idiomorph left the
+      // panel offset by one extra edge after a sync (card x / top gutter 15px
+      // -> 30px on a real device); a plain markup swap lands the panel AND the
+      // shells on the template's classes with nothing restored. What the morph
+      // callbacks used to protect is kept by hand: [data-morph="ignore"]
+      // subtrees stay the LIVE nodes, open <details> ride along, and the
+      // attendance view choice is re-shown after the swap. (The fetched
+      // document is THIS route, so its only panel is the visible one — there
+      // is no tab to carry.)
+      (function () {
+        var mainEl = document.querySelector('main');
+        // [data-morph="ignore"] subtrees stay the LIVE nodes. Key on the id
+        // when there is one; the avatar wrapper carries none but holds the
+        // gaze driver's inline vars, so it is keyed by its class instead.
+        var live = {};
+        var keyOf = function (el) {
+          if (el.id) return '#' + el.id;
+          return el.classList.contains('blobatar-gaze') ? '.blobatar-gaze' : null;
+        };
+        mainEl.querySelectorAll('[data-morph="ignore"]').forEach(function (el) {
+          var k = keyOf(el);
+          if (k) live[k] = el;
+        });
+        // live open panels stay the LIVE nodes: the tag form's submit listener
+        // and the user's focus ride on them (the old morph kept the node too)
+        var openDets = Array.prototype.slice.call(mainEl.querySelectorAll('details[open]'));
+        // The swap below DESTROYS every node in <main>, so whatever had focus
+        // goes with it and the browser drops focus to <body>. Carry the focused
+        // node across the rebuild the same way details[open] is carried: a user
+        // who was parked on the graph/table toggle must still be on it after a
+        // sync. Keyed by id; a control with no id can't be re-found, so it gets
+        // its focus restored by matching selector+position instead.
+        var focusEl = document.activeElement;
+        var focusKey = (focusEl && focusEl !== document.body && mainEl.contains(focusEl))
+          ? (focusEl.id ? '#' + focusEl.id : null) : null;
+        var attTable = !!(mainEl.querySelector('#att-table') && !mainEl.querySelector('#att-table').hidden);
+        while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
+        mainEl.append.apply(mainEl, Array.prototype.slice.call(doc.querySelector('main').childNodes));
+        Object.keys(live).forEach(function (k) {
+          var fresh = mainEl.querySelector(k);
+          if (fresh && fresh !== live[k]) fresh.parentNode.replaceChild(live[k], fresh);
+        });
+        if (focusKey) {
+          var again = mainEl.querySelector(focusKey);
+          if (again && document.activeElement === document.body) again.focus();
+        }
+        openDets.forEach(function (old) {
+          var fresh = old.id ? document.getElementById(old.id) : null;
+          if (!fresh || fresh === old) return;
+          var keepHost = fresh.parentNode;
+          keepHost.replaceChild(old, fresh);
+          old.open = true;
+        });
+        if (attTable) {
+          var g = mainEl.querySelector('#att-graph'), t = mainEl.querySelector('#att-table');
+          if (g && t) { g.hidden = true; t.hidden = false; }
+        }
+      })();
+      setupCopyTargets(document.querySelector('main'));
+    })
+    .catch(function (err) { console.error('softRefresh fetch failed:', err); location.reload(); });   // safety net only
 }
 
 // ── Refresh (all data-refresh buttons) ────────────────────────────
@@ -104,18 +214,7 @@ function ref(quiet) {
       // cached answer (SYNC_MIN_INTERVAL_S): the server's stored data did
       // not change, so restore the UI in place — no reload flash, and the
       // sync-line keeps showing the honest age of the last real sync
-      if (d.ok && !d.cached) {
-        // This sync DID land, so the caption's age resets to now (the server
-        // stored exactly this data a moment ago) and every island repaints
-        // from its own feed. No markup is fetched, no node is replaced.
-        var nowS = Math.floor(Date.now() / 1000);
-        document.querySelectorAll('.sync-line').forEach(function (el) {
-          el.dataset.ts = String(nowS);
-          el.dataset.full = new Date(nowS * 1000).toLocaleString();
-        });
-        syncData().then(restore);
-        return;
-      }
+      if (d.ok && !d.cached) { softRefresh().then(restore); return; }
       restore();
       if (d.ok) return;
       if (!quiet) showError(d.error || 'Refresh failed');
@@ -210,9 +309,10 @@ function copyText(t, el) {
   }
 }
 
-// Click-to-copy: an island repaint can add rows (no ids to key on), so the
-// handlers live at document level and setupCopyTargets() just re-stamps the
-// a11y/cursor attrs on any fresh nodes — idempotent, safe to re-run per repaint.
+// Click-to-copy after a soft refresh: copy nodes inside <main> can be
+// replaced by the morph (no ids to key on), so the handlers live at
+// document level and setupCopyTargets() just re-stamps the a11y/cursor
+// attrs on any fresh nodes — idempotent, safe to re-run per morph.
 function setupCopyTargets(root) {
   (root || document).querySelectorAll('[data-copy]').forEach(function(el) {
     if (el.dataset.copyReady) return;
@@ -357,8 +457,8 @@ if ("serviceWorker" in navigator && location.pathname !== "/login") {
 // writes to the portal (sync harvests read-only). Same builder rendered the
 // modal list, so what the student saw IS what gets sent.
 // #fb-cta only renders when a plan exists and #fb-submit sits inside
-// #fb-modal — both are delegated at document level, so they work whatever
-// painted them.
+// #fb-modal, which softRefresh morphs while it is closed — both are
+// delegated at document level so post-morph nodes keep working.
 document.addEventListener('click', function(ev) {
   if (!ev.target.closest) return;
   if (ev.target.closest('#fb-cta')) {
@@ -402,9 +502,9 @@ document.addEventListener('click', function(ev) {
     .finally(function() { fbSubmit.disabled = false; });
 });
 
-// ── Marks tag save: fetch + data repaint (no-JS fallback = plain POST) ──
-// The tag forms are repainted in place on save (island repaint), so the submit
-// is delegated. The server returns JSON when the request asks for it and keeps
+// ── Marks tag save: fetch + soft refresh (no-JS fallback = plain POST) ──
+// The tag forms sit inside <main> and morph on refresh, so the submit is
+// delegated. The server returns JSON when the request asks for it and keeps
 // the POST/redirect for the no-JS path.
 document.addEventListener('submit', function(ev) {
   var f = ev.target;
@@ -430,7 +530,7 @@ document.addEventListener('submit', function(ev) {
     })
     .then(function(j) {
       if (!j.ok) { showError(j.error || 'Tag not saved'); return; }
-      syncData();
+      softRefresh();
     })
     .catch(function() {
       // Only a TRANSPORT failure is deferred: a rejected tag ({"ok":false}) is
@@ -499,10 +599,11 @@ document.addEventListener('click', function(e) {
 
 // ── SCOPE: the SCOPE surfaces fill in after a BACKGROUND sync (each SOAP op
 //    is 4-8s upstream), so the page they were rendered on can be missing them.
-//    Poll the status endpoint — bounded, backed off — and repaint the page's
-//    islands exactly ONCE when the sync completes (no reload, no tab change:
-//    the repaint only rewrites the numbers). The template renders the state as
-//    'complete' on the next load, so the loop cannot restart: one repaint per
+//    Poll the status endpoint — bounded, backed off — and soft-refresh the
+//    dashboard exactly ONCE when the sync completes (no hard reload: the
+//    perf contract keeps location.reload to softRefresh's catch net, and a
+//    morph keeps the active tab). The server renders the state as 'complete'
+//    after that refresh, so the loop cannot restart: one refresh per
 //    completed run, never a poll storm, never an endless loop.
 (function () {
   var body = document.body;
@@ -514,8 +615,8 @@ document.addEventListener('click', function(e) {
   // the old cap (45 tries) then stopped polling SILENTLY while the server was
   // still syncing, leaving the page on the pre-sync render forever. Widen to
   // ~20 min and re-check the body state each tick: the marker JS can't update
-  // (it is server-rendered), so this poll is the only way to learn a background
-  // run finished while this page was open.
+  // (it is server-rendered), but a morph from softRefresh re-renders it, so a
+  // stale/pending attribute with a completed sync means "done" is behind us.
   var tries = 0, MAX_TRIES = 150, delay = 4000, done = false;
   function poll() {
     if (done || tries++ > MAX_TRIES) return;
@@ -523,7 +624,7 @@ document.addEventListener('click', function(e) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || !d.ok) { setTimeout(poll, delay); return; }
-        if (d.state === 'complete') { done = true; syncData(); return; }
+        if (d.state === 'complete') { done = true; softRefresh(); return; }
         if (d.state === 'off') { done = true; return; }
         if (tries > 10) delay = 8000;   // back off once the wait gets long
         setTimeout(poll, delay);

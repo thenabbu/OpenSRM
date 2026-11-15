@@ -336,10 +336,9 @@
         .then(function(data) {
             if (data.ok) {
                 closeEditor();
-                // archived editor: same contract as the main refresh — the
-                // islands repaint their data in place (W5.1b: no markup swap),
-                // reload only as the fallback if that hook is unavailable
-                if (typeof syncData === 'function') { syncData(); } else { location.reload(); }
+                // archived editor: same contract as the main refresh — update in
+                // place, reload only as the fallback if softRefresh is unavailable
+                if (typeof softRefresh === 'function') { softRefresh(); } else { location.reload(); }
             } else {
                 showError('Save failed: ' + (data.error || 'unknown error'));
             }

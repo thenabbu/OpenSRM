@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { makeParser } from '../../contracts/envelope';
 
 /**
  * Marks panel props — the JSON app/views/marks_island.py builds from the SAME
@@ -43,12 +42,3 @@ export const marksProps = z.object({
 export type MarksProps = z.infer<typeof marksProps>;
 export type MarksSubject = MarksProps['subjects'][number];
 export type MarksComponent = MarksSubject['components'][number];
-
-/** `/api/marks/island` — the panel envelope around the payload above.
- *
- *  The legacy `parseMarksResponse` (contracts/marks.ts) validates `{ok, marks}`,
- *  the raw stored list `/api/marks` serves. `loadPanel('marks')` fetches the
- *  ISLAND feed, so validating it with that parser rejected every response
- *  ("unrecognized key data") — the store never filled and a sync had nothing to
- *  repaint from. One parser per endpoint, and the endpoint is the island one. */
-export const parseMarksIslandResponse = makeParser(marksProps);

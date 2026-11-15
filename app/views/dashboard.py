@@ -162,26 +162,6 @@ def _creds_usable(netid):
     return bool(row and decrypt_pw(row["password"] or ""))
 
 
-def dashboard_island_payload(vm, netid):
-    """The dashboard grid's island props — ONE computation, two consumers.
-
-    presentation() renders the inert `#island-dashboard` block from this, and
-    /api/dashboard (app/blueprints/panels.py) serves the identical JSON. That is
-    what lets a sync repaint the grid from DATA: the island refetches this
-    payload and Preact patches the numbers, instead of the browser downloading
-    the route's markup again and swapping <main> out (which is what destroyed
-    the user's scroll position).
-    """
-    return _island_props(
-        profile={"netid": netid, "name": vm["student_name"] or netid,
-                 "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"],
-                 "avatar": _blobatar_svg(netid, size=64, animate="always")},
-        ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
-        budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
-        exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
-        fb_plan=vm["fb_plan"])
-
-
 def presentation(vm):
     """Render one panel from panel_data()'s view model.
 
@@ -280,9 +260,19 @@ def presentation(vm):
         # non-empty here; the card and footnote stay template markup.
         tools_props=_shell_off(vm, tools_island.block(tools_island.props(vm["tools"]))),
         # P6.2: the widgets' own inputs, serialised unchanged for the island.
-        # Built from the SAME locals the partials read — see
-        # dashboard_island_payload(), which /api/dashboard also serves.
-        dashboard_island_props=_island_block(dashboard_island_payload(vm, netid)),
+        # Built from the SAME locals the partials read — see _island_props.
+        # `profile`: profile.html's identity box, which the island has to paint
+        # too — hydration replaced the grid's children and silently dropped it
+        # (P6.2b). The avatar is the filter's own svg, the same call the partial
+        # makes, so the island's inline SVG is byte-identical to the served one.
+        dashboard_island_props=_island_block(_island_props(
+            profile={"netid": netid, "name": vm["student_name"] or netid,
+                     "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"],
+                     "avatar": _blobatar_svg(netid, size=64, animate="always")},
+            ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
+            budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
+            exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
+            fb_plan=vm["fb_plan"])),
         scope_sync_state=_scope_sync_state(netid),
         # E4: the auto-sync must not fire /api/refresh on an account whose
         # stored creds cannot decrypt — the 401 is unavoidable and the browser

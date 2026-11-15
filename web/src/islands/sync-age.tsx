@@ -25,21 +25,14 @@ export default function SyncAge({ el, props }: SyncAgeHost) {
   // still restores them. Do not rely on Preact emptying anything for you.
   const paint = (): void => {
     if (el.textContent === SYNCING) return;   // a refresh is in flight: not ours
-    // The span carries the SAME two values as props (base.html renders data-ts /
-    // data-full from the same locals), and they are the live copy: dash.js bumps
-    // `data-ts` when a sync lands, without repainting this island (a repaint
-    // would arm a second 60 s timer). Read the DOM first, fall back to props for
-    // a mount with no data attributes (fixtures, tests).
-    const ts = el.dataset.ts ? Number(el.dataset.ts) : props.ts;
-    const full = el.dataset.full ?? props.full;
-    const text = props.busy ?? ageCaption(ts, Date.now() / 1000);
+    const text = props.busy ?? ageCaption(props.ts, Date.now() / 1000);
     el.textContent = text;
     el.classList.toggle('hidden', !text);
     // The server emits BOTH representations (templates: `hidden` attribute,
     // Tailwind: the class). Writing only one leaves a hydrated caption that
     // says hidden one way and visible the other — keep them in lockstep.
     el.toggleAttribute('hidden', !text);
-    el.title = full;
+    el.title = props.full;
   };
   paint();
   el.setAttribute(HYDRATED_ATTR, '1');

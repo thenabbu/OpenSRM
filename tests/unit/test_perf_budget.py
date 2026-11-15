@@ -5,8 +5,7 @@ Static contracts that keep the earlier phases fixed:
   2. app.css gzipped <= 35 KB.
   3. versioned static = immutable; sw.js = no-cache + Service-Worker-Allowed;
      HTML = no-store.
-  4. dash.js: a sync carries DATA, not markup (no route fetch, no reload,
-     no DOM morph library) — see the note at the check.
+  4. dash.js: location.reload() only inside the softRefresh catch net.
   5. sw.js calls navigationPreload.enable().
 
 Run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
@@ -99,41 +98,16 @@ check("HTML stays no-store",
       "no-store" in r.headers.get("Cache-Control", ""),
       r.headers.get("Cache-Control", ""))
 
-# ── 4. dash.js: a sync carries DATA, not markup (W5.1b) ──────────────────
-# The regression this guards is the one that was measured: a sync that fetched
-# the route's HTML again and swapped <main> out. That destroyed the nodes the
-# user was looking at (browser clamps scrollY, 250 -> 0 on a phone) and cost
-# ~60 KB of re-downloaded, re-parsed markup to change one number.
+# ── 4. dash.js: location.reload only inside softRefresh ──────────────────
 src = open(os.path.join(REPO, "app", "static", "dash.js"), encoding="utf-8").read()
 code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("//"))
-check("dash.js: the sync never re-fetches the route's own markup",
-      "location.pathname + location.search" not in code)
-check("dash.js: no hard reload left on the sync path",
-      "location.reload(" not in code)
-check("dash.js: the repaint goes through the bundle's data hook",
-      "__osrmRefreshData" in code)
-check("dash.js: no DOM morphing / markup swap left",
-      not any(t in code for t in ("Idiomorph", "DOMParser", "outerHTML", "replaceChild", "removeChild")))
-# The vendored morph library is deleted, and nothing in the SHIPPED tree may
-# even mention it (the goldens are dated captures of the OLD build; the tests
-# that assert its absence obviously name it, so they are not scanned).
-hits = []
-for sub in ("app", os.path.join("web", "src"), "scripts", "docs", "notes"):
-    for root, dirs, files in os.walk(os.path.join(REPO, sub)):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "golden", "screens", "dist")]
-        for f in files:
-            if not f.endswith((".py", ".html", ".js", ".ts", ".tsx", ".md", ".yml", ".yaml", ".json", ".sh", ".css")):
-                continue
-            p = os.path.join(root, f)
-            try:
-                with open(p, encoding="utf-8", errors="ignore") as fh:
-                    if "idiomorph" in fh.read().lower():
-                        hits.append(os.path.relpath(p, REPO))
-            except OSError:
-                continue
-check("grep -c idiomorph is 0 in the shipped tree", not hits, str(hits[:5]))
-check("app/static/vendor/idiomorph.min.js is gone",
-      not os.path.exists(os.path.join(REPO, "app", "static", "vendor", "idiomorph.min.js")))
+start = code.index("function softRefresh")
+end = code.index("function ref(quiet)", start)
+reloads = [m for m in range(len(code)) if code.startswith("location.reload()", m)]
+inside = [m for m in reloads if start < m < end]
+check("dash.js: location.reload only inside softRefresh (2 sites)",
+      len(reloads) == 2 and len(inside) == 2,
+      f"{len(reloads)} total, {len(inside)} inside")
 
 # ── 5. sw.js: navigation preload enabled ─────────────────────────────────
 sw = open(os.path.join(REPO, "app", "static", "sw.js"), encoding="utf-8").read()

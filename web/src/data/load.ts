@@ -5,9 +5,9 @@ import {
   parseAttendanceIslandResponse,
   parseCampusResponse,
   parseFeesResponse,
+  parseMarksResponse,
+  parseTimetableResponse,
 } from '../contracts';
-import { parseMarksIslandResponse } from '../panels/marks/contract';
-import { parseTimetableIslandResponse } from '../panels/timetable/contract';
 import { type Panel, type PanelData, db, keyPath, readPanel, writePanel } from '../db';
 
 // ── The one read path every island calls ─────────────────────────────────
@@ -27,12 +27,15 @@ import { type Panel, type PanelData, db, keyPath, readPanel, writePanel } from '
 export const STALE_MS = 6 * 60 * 60 * 1000;
 
 /** Normalises the three response shapes (envelope, `marks`, bare grid) to one
- *  `{ok, data}`. Not every endpoint speaks the panel envelope — the four
- *  panel slices do, the island feeds do, and `parseResult` covers both. */
+ *  `{ok, data}`. Two parsers speak `.ok`/`.reason`, two speak zod's
+ *  `.success`/`.error` — hence the switch rather than one indexed call. */
 type ParseOut<T> = { ok: true; data: T } | { ok: false; message: string };
 
 const normalise = <T>(r: ParseResult<T>): ParseOut<T> =>
   r.ok ? r : { ok: false, message: r.reason };
+
+const schemaError = <T>(r: z.ZodSafeParseResult<T>): ParseOut<T> =>
+  r.success ? { ok: true, data: r.data } : { ok: false, message: r.error.message };
 
 /** Returns the per-panel union; `loadPanel` casts once, at the one call site
  *  where `panel: P` is already in scope. Narrowing a generic `P` inside the
@@ -54,15 +57,9 @@ function parsePanel(panel: Panel, json: unknown): ParseOut<unknown> {
     case 'academics':
       return normalise(parseAcademicsResponse(json));
     case 'marks':
-      // The ISLAND feed, like attendance above. The legacy `{ok, marks}` parser
-      // rejected every /api/marks/island response ("unrecognized key data"),
-      // so this panel's store never filled — and a sync had nothing to repaint
-      // from (W5.1b measured it: the marks row kept its old number).
-      return normalise(parseMarksIslandResponse(json));
+      return schemaError(parseMarksResponse(json));
     case 'timetable':
-      // Same: /api/timetable/island is the island payload, not the
-      // `{ok, slots, subjects, group_key}` write-back shape of /api/timetable.
-      return normalise(parseTimetableIslandResponse(json));
+      return schemaError(parseTimetableResponse(json));
   }
 }
 
@@ -108,10 +105,6 @@ export type LoadOpts = {
   groupKey?: string;
   /** Injected by tests; defaults to the ambient `fetch`. */
   fetcher?: typeof fetch;
-  /** Skip the cache read and go straight to the network. The sync path sets
-   *  this: /api/refresh just reported NEW data, so serving the row we already
-   *  had would repaint the same numbers and look like the sync did nothing. */
-  fresh?: boolean;
 };
 
 const log = (what: string, err?: unknown) =>
@@ -121,9 +114,9 @@ export async function loadPanel<P extends Panel>(
   panel: P,
   opts: LoadOpts,
 ): Promise<LoadOutcome<P>> {
-  const { netid, groupKey = '', fetcher = fetch, fresh = false } = opts;
+  const { netid, groupKey = '', fetcher = fetch } = opts;
 
-  const cached = fresh ? undefined : await readPanel(panel, netid, groupKey);
+  const cached = await readPanel(panel, netid, groupKey);
   // `readPanel` validates but returns only the payload, so the stamp comes from
   // the row — read AFTER the validation, so a corrupt row is already deleted.
   const stamp = cached === undefined ? undefined : await fetchedAtOf(panel, netid, groupKey);

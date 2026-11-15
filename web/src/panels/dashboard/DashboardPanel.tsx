@@ -17,9 +17,10 @@ type P = DashboardProps;
  *
  * The avatar is the server's own `blobatar` SVG, serialised into the props: one
  * generator, two renderings, so `.blobatar-gaze` / `.mo-root` (gaze.js, the
- * low-tier pause CSS) exist on both paths. Nothing has to carry this node
- * across a sync any more: a repaint only rewrites the numbers, so the gaze
- * driver's inline `--mo-*` vars stay on the node they were written to.
+ * low-tier pause CSS, the soft-refresh live-node key) exist on both paths.
+ * `data-morph="ignore"` keeps this node across a soft refresh — idiomorph skips
+ * the subtree and dash.js re-attaches the LIVE node by its `.blobatar-gaze` class,
+ * carrying the gaze driver's inline `--mo-*` vars with it.
  *
  * `#copyEmail` + `[data-copy]` stay document-delegated (dash.js), which is why
  * this component needs no click handler of its own.
@@ -31,6 +32,7 @@ function Profile({ p }: { p: P['profile'] }) {
         <div class="avatar shrink-0">
           <div
             class="bg-base-300 w-16 h-16 rounded-full overflow-hidden blobatar-gaze"
+            data-morph="ignore"
             dangerouslySetInnerHTML={{ __html: p.avatar }}
           />
         </div>

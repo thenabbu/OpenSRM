@@ -57,8 +57,7 @@ def json_of(body):
         return None
 
 
-ISLAND_PATHS = ["/api/marks/island", "/api/timetable/island", "/api/tools/island",
-                "/api/dashboard"]
+ISLAND_PATHS = ["/api/marks/island", "/api/timetable/island", "/api/tools/island"]
 
 
 def check_anonymous():
@@ -79,8 +78,6 @@ def check_authenticated(token, label):
         "/api/marks/island": ("subjects",),
         "/api/timetable/island": ("days",),
         "/api/tools/island": ("rows",),
-        # W5.1b: the dashboard grid repaints from this instead of re-fetching /.
-        "/api/dashboard": ("profile",),
     }
     for p, (key,) in expectations.items():
         st, body, hdr = get(p, token)
