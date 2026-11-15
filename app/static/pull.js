@@ -7,7 +7,7 @@
  *    start inside .widget-scroll / #tt-editor / [draggable=true]
  *  - 1:1 finger tracking with rubber-band resistance:
  *    pull = 1 - exp(-dy / 120); content + indicator move via transform
- *  - release past ~80px effective -> the existing refresh path ref(false);
+ *  - release past ~80px effective -> window.__osrmRevalidate (refresh.ts);
  *    otherwise spring back with --ease-spring
  *  - ignored while a refresh is already running
  *  - passive listeners only (native PTR is already disabled by
@@ -27,7 +27,8 @@
     var icon = document.querySelector(".refresh-icon.animate-spin");
     if (icon) return true;
     var btn = document.querySelector("[data-refresh]");
-    return !!btn && btn.disabled;
+    // aria-disabled is the busy marker (W5.2a); `disabled` is the old one.
+    return !!btn && (btn.disabled || btn.getAttribute("aria-disabled") === "true");
   }
 
   function dialogOpen() {
@@ -117,7 +118,9 @@
     var fired = pulling && dy >= THRESHOLD;
     if (fired) {
       settle(false);            // snap content away; the nav spinner is the state
-      if (typeof ref === "function") ref(false);
+      // W5.2a: refresh.ts owns the primitive; `ref` is the no-bundle fallback.
+      var revalidate = window.__osrmRevalidate || (typeof ref === "function" ? ref : null);
+      if (revalidate) revalidate(false);
     } else if (pulling) {
       settle(true);             // spring back (instant under reduced motion)
     } else {

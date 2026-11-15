@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import attendanceIsland from '../contracts/fixtures/attendance_island.json';
 import { attendanceProps } from '../panels/attendance/contract';
 import { wipeAll } from '../db';
-import { refreshProps } from './refresh';
+import { bindRefreshButtons, refreshProps, syncData, triggerRefresh } from './refresh';
 
 // The sync path: a repaint is only allowed to touch the DOM when the server
 // answered something the island's OWN schema accepts. Everything else keeps the
@@ -87,5 +87,101 @@ describe('store-backed panels', () => {
   it('an unparseable answer leaves the paint alone', async () => {
     const props = await refreshProps('marks', { netid: A, fetcher: ok({ nope: true }) });
     expect(props).toBeUndefined();
+  });
+});
+
+// ── The refresh primitive (W5.2a) ────────────────────────────────────────
+// Ported out of dash.js. The behaviour that has to survive the move is the
+// busy state (a second click must not start a second sync), the caption's
+// honesty (a cached answer is not a fresh sync) and the fact that a failure
+// never leaves a button stuck or a promise unhandled.
+describe('the refresh primitive (W5.2a)', () => {
+  const page = (): HTMLElement => {
+    document.body.innerHTML =
+      '<div id="error-toast" class="hidden"></div>' +
+      '<button data-refresh aria-label="Refresh"><svg class="refresh-icon"></svg></button>' +
+      '<span class="sync-line" data-ts="0"></span>';
+    return document.querySelector('[data-refresh]') as HTMLElement;
+  };
+  const reply = (body: unknown) =>
+    vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+  const caption = (): HTMLElement => document.querySelector('.sync-line') as HTMLElement;
+  const toast = (): HTMLElement => document.getElementById('error-toast') as HTMLElement;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (window as unknown as { __osrmRefreshData?: unknown }).__osrmRefreshData;
+    document.body.innerHTML = '';
+  });
+
+  it('POSTs /api/refresh once and drops the busy state again', async () => {
+    const b = page();
+    const fetcher = reply({ ok: true, cached: true });
+    vi.stubGlobal('fetch', fetcher);
+    await triggerRefresh(false);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((fetcher.mock.calls[0] as unknown[])[0]).toBe('/api/refresh');
+    expect((fetcher.mock.calls[0] as unknown[])[1]).toMatchObject({ method: 'POST' });
+    expect(b.hasAttribute('aria-disabled')).toBe(false);
+    expect(document.querySelector('.refresh-icon')!.classList.contains('animate-spin')).toBe(false);
+  });
+
+  it('stamps the sync age when the sync landed, and leaves it alone when cached', async () => {
+    page();
+    vi.stubGlobal('fetch', reply({ ok: true, cached: false }));
+    await triggerRefresh(false);
+    const stamped = Number(caption().dataset.ts);
+    expect(stamped).toBeGreaterThan(0);
+
+    caption().dataset.ts = '42';
+    vi.stubGlobal('fetch', reply({ ok: true, cached: true }));
+    await triggerRefresh(false);
+    expect(caption().dataset.ts).toBe('42');   // a cached answer claims nothing
+  });
+
+  it('reports the server error, and stays silent on the background path', async () => {
+    page();
+    vi.stubGlobal('fetch', reply({ ok: false, error: 'SCOPE down' }));
+    await triggerRefresh(false);
+    expect(toast().textContent).toBe('SCOPE down');
+    expect(toast().classList.contains('hidden')).toBe(false);
+
+    toast().classList.add('hidden');
+    await triggerRefresh(true);
+    expect(toast().classList.contains('hidden')).toBe(true);
+  });
+
+  it('never rejects on a transport failure, and never leaves the button busy', async () => {
+    const b = page();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    await expect(triggerRefresh(false)).resolves.toBeUndefined();
+    expect(b.hasAttribute('aria-disabled')).toBe(false);
+    expect(toast().textContent).toContain('Network error');
+  });
+
+  it('syncData repaints through the bundle hook and swallows a failed repaint', async () => {
+    const okHook = vi.fn(async () => undefined);
+    (window as unknown as { __osrmRefreshData?: unknown }).__osrmRefreshData = okHook;
+    await syncData();
+    expect(okHook).toHaveBeenCalledTimes(1);
+
+    (window as unknown as { __osrmRefreshData?: unknown }).__osrmRefreshData = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    await expect(syncData()).resolves.toBeUndefined();
+
+    delete (window as unknown as { __osrmRefreshData?: unknown }).__osrmRefreshData;
+    await expect(syncData()).resolves.toBeUndefined();   // no bundle: nothing to do
+  });
+
+  it('binds the buttons, and a second click while busy starts no second sync', async () => {
+    const b = page();
+    const fetcher = reply({ ok: true, cached: true });
+    vi.stubGlobal('fetch', fetcher);
+    bindRefreshButtons();
+    b.click();
+    b.click();                     // aria-disabled is set synchronously by the first click
+    await vi.waitFor(() => expect(b.hasAttribute('aria-disabled')).toBe(false));
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
