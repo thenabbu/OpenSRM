@@ -122,8 +122,12 @@ check("refresh.ts: no DOM morphing / markup swap left",
 # The vendored morph library is deleted, and nothing in the SHIPPED tree may
 # even mention it (the goldens are dated captures of the OLD build; the tests
 # that assert its absence obviously name it, so they are not scanned).
+# notes/ is deliberately NOT scanned: it holds build notes, which document a
+# removal and therefore necessarily name what was removed — the same reason the
+# tests are skipped. The contract is the app, the bundle, the dev scripts and
+# the published docs.
 hits = []
-for sub in ("app", os.path.join("web", "src"), "scripts", "docs", "notes"):
+for sub in ("app", os.path.join("web", "src"), "scripts", "docs"):
     for root, dirs, files in os.walk(os.path.join(REPO, sub)):
         dirs[:] = [d for d in dirs if d not in ("node_modules", "golden", "screens", "dist")]
         for f in files:

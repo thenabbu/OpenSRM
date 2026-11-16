@@ -1079,8 +1079,8 @@ def dead_urls(golden: Path, results: dict) -> list:
     compare_tree answers "did a captured URL drift"; this answers "is the
     captured set still a set the app serves". Without it a golden for a deleted
     asset matches forever — green, and asserting nothing about the app (measured:
-    tests/golden/api/static_vendor_idiomorph.min.js.json outlived the asset by
-    weeks, and so did dash.js/pull.js/timetable.js).
+    the deleted morph library's golden outlived the asset by weeks, and so did
+    the three legacy scripts' goldens, dash/pull/timetable).
 
     ALIVE means "the app answered this URL", not "it answered 200": /logout
     deliberately 302s to /login, and a 3xx is a live route. Only 404/410 — the
