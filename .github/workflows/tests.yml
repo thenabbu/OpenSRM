@@ -131,6 +131,12 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_css_safelist.py
       - name: test_perf_budget (third-party-free pages, cache headers, reload sites)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
+      # W5.5's grep gate: the hybrid is GONE from the served tree and from the
+      # workbox precache, not merely unreferenced by the templates. Comments in
+      # web/src and tests/ that name the deleted files are the record of the
+      # deletion and are deliberately out of scope (see the suite's docstring).
+      - name: test_legacy_gone (no live reference to the deleted legacy scripts)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_legacy_gone.py
       - name: test_attendance_view (attendance view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_attendance_view.py
       - name: test_att_firstpaint (no stale Absences card during a scope sync)
