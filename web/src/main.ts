@@ -17,6 +17,12 @@ import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
 import { bindTimetableEditor } from './data/timetableEditor';
 import {
+  bindDeleteAccount,
+  bindDetailsDismiss,
+  bindTagSave,
+  startScopePoll,
+} from './data/userActions';
+import {
   applyGroupDefaults,
   bindItemBeacon,
   bindOfflineBanner,
@@ -360,6 +366,11 @@ void (async () => {
   // queue through this one hook (the same shape as __osrmDiag). Absent until
   // this module runs — dash.js treats a missing hook as "queue unavailable" and
   // keeps its existing failure toast.
+  //
+  // W5.4c: bindTagSave defers a transport failure into the same hook, and it
+  // may run BEFORE this assignment (the binders are bound synchronously below,
+  // this is inside an async IIFE). The hook is published first, then the
+  // outbox is started, so neither path can see a half-built object.
   const w = window as unknown as { __osrmOutbox?: unknown };
   w.__osrmOutbox = { queueWrite, startOutbox: () => startOutbox(el) };
   await startOutbox(el);
@@ -458,6 +469,33 @@ if (!chrome.__osrmSwRegister) {
   chrome.__osrmSwRegister = registerServiceWorker;
   registerServiceWorker();
 }
+
+// W5.4c: user actions — the four dash.js rows that are something the user DID
+// (tag save, delete account, tap-away dismiss, the scope poll). Same seam as
+// pageChrome above: each marker is the stand-down for its legacy block, so
+// until W5.4 deletes dash.js neither copy runs twice. For the delete row that
+// is not cosmetic — two binders means one confirm DELETES TWICE.
+//
+// Bound unconditionally, no `if (!__osrmX)` guard: main.ts is the only binder
+// for these rows in the bundle, and the guard pattern pageChrome uses exists
+// only because those five also have a PREACT_ISLANDS=0 copy that must win on
+// the rollback path. Here the legacy copy checks the marker; it never races.
+const actions = window as unknown as {
+  __osrmTagSave?: typeof bindTagSave;
+  __osrmDeleteAccount?: typeof bindDeleteAccount;
+  __osrmDetailsDismiss?: typeof bindDetailsDismiss;
+  __osrmScopePoll?: typeof startScopePoll;
+};
+actions.__osrmTagSave = bindTagSave;
+bindTagSave();
+actions.__osrmDeleteAccount = bindDeleteAccount;
+bindDeleteAccount();
+actions.__osrmDetailsDismiss = bindDetailsDismiss;
+bindDetailsDismiss();
+actions.__osrmScopePoll = startScopePoll;
+// The only poll in the app: 1.5 s first, 4 s then 8 s, 150 tries max, one
+// repaint on 'complete'. No-ops unless <body data-scope-sync> is stale/running.
+startScopePoll();
 
 // The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
 // has to be able to make an island repaint a page that is already hydrated, and
