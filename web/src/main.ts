@@ -16,6 +16,7 @@ import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
 import { bindTimetableEditor } from './data/timetableEditor';
+import { autoRefreshIfStale, bindAvatarOffscreen, bindFeedbackModal } from './data/background';
 import {
   bindDeleteAccount,
   bindDetailsDismiss,
@@ -496,6 +497,36 @@ actions.__osrmScopePoll = startScopePoll;
 // The only poll in the app: 1.5 s first, 4 s then 8 s, 150 tries max, one
 // repaint on 'complete'. No-ops unless <body data-scope-sync> is stale/running.
 startScopePoll();
+
+// W5.4d: background — the three dash.js rows that run with no click: the avatar
+// IO deferral, the feedback dialog's open/submit pair, and the load-time stale
+// check. Same seam as above: each marker is the stand-down for its legacy block,
+// so until W5.4 deletes dash.js neither copy runs twice. For the dialog that is
+// not cosmetic — two document-level click handlers means one confirm POSTs
+// /api/feedback/fill twice, i.e. two fills per teacher.
+//
+// Ordering: this block is module top-level, so it runs before the boot IIFE's
+// hydrateAll() resolves (the await yields, module evaluation finishes first).
+// That matters for autoRefreshIfStale: it reads the SERVER's data-ts off the
+// first .sync-line, and an island repaint may rewrite it afterwards.
+// dash.js read it after hydration, so this is the stricter of the two timings,
+// and it is the one the DUT pins (stale rewrite -> exactly one POST).
+const background = window as unknown as {
+  __osrmAvatarOffscreen?: typeof bindAvatarOffscreen;
+  __osrmFbModal?: typeof bindFeedbackModal;
+  __osrmAutoRefresh?: typeof autoRefreshIfStale;
+};
+background.__osrmAvatarOffscreen = bindAvatarOffscreen;
+// Arms the current avatar AND re-arms on `osrm:island-mounted`: the dashboard
+// island paints its own avatar node, so an observer left on the server-rendered
+// one would report on a node nobody can see.
+bindAvatarOffscreen();
+background.__osrmFbModal = bindFeedbackModal;
+bindFeedbackModal();
+background.__osrmAutoRefresh = autoRefreshIfStale;
+// ONE check at load. Stale = no data-ts, or older than 10 min; skipped when the
+// page has no credentials (meta can-sync=0) or the browser is offline.
+autoRefreshIfStale();
 
 // The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
 // has to be able to make an island repaint a page that is already hydrated, and

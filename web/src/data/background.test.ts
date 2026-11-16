@@ -1,0 +1,225 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  AVATAR_SELECTOR,
+  FB_FILL_URL,
+  OFFSCREEN_CLASS,
+  STALE_AFTER_S,
+  autoRefreshIfStale,
+  bindAvatarOffscreen,
+  bindFeedbackModal,
+} from './background';
+
+// W5.4d ported the three dash.js background rows. One describe block per matrix
+// row, named the way the matrix names it: each block is the check that fails if
+// that row's port is removed.
+
+const fresh = (html = ''): Document => {
+  const doc = document.implementation.createHTMLDocument('bg');
+  doc.body.innerHTML = html;
+  return doc;
+};
+
+const click = (el: Element): void => {
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+};
+
+const json = (body: unknown): Response =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+/** jsdom has no IntersectionObserver; this is the whole deferral contract. */
+class FakeIO {
+  static all: FakeIO[] = [];
+  readonly observed: Element[] = [];
+  constructor(private readonly cb: IntersectionObserverCallback) {
+    FakeIO.all.push(this);
+  }
+  observe(el: Element): void {
+    this.observed.push(el);
+  }
+  unobserve(): void {}
+  disconnect(): void {}
+  trigger(el: Element, isIntersecting: boolean): void {
+    this.cb(
+      [{ target: el, isIntersecting } as unknown as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+beforeEach(() => {
+  FakeIO.all = [];
+  (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver = FakeIO;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  delete (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+  document.body.innerHTML = '';
+});
+
+// ── dash-avatar-offscreen ─────────────────────────────────────────────────
+describe('dash-avatar-offscreen', () => {
+  const page = (): Document =>
+    fresh(`<div class="${AVATAR_SELECTOR.slice(1)}"><div class="mo-root"></div></div>`);
+
+  it('observes the avatar at threshold 0 and pauses it while it is out of view', () => {
+    const doc = page();
+    bindAvatarOffscreen(doc, window);
+
+    expect(FakeIO.all.length).toBe(1);
+    const io = FakeIO.all[0];
+    const wrap = doc.querySelector(AVATAR_SELECTOR) as HTMLElement;
+    const root = doc.querySelector('.mo-root') as HTMLElement;
+    expect(io.observed).toEqual([wrap]);
+
+    // in view first (a fresh page is intersecting) — no paused class
+    io.trigger(wrap, true);
+    expect(root.classList.contains(OFFSCREEN_CLASS)).toBe(false);
+
+    io.trigger(wrap, false);
+    expect(root.classList.contains(OFFSCREEN_CLASS)).toBe(true);
+
+    io.trigger(wrap, true);
+    expect(root.classList.contains(OFFSCREEN_CLASS)).toBe(false);
+  });
+
+  it('re-arms on osrm:island-mounted for the avatar the island just painted', () => {
+    const doc = page();
+    bindAvatarOffscreen(doc, window);
+    // hydration replaces the server-rendered avatar with the island's own node
+    doc.body.innerHTML = `<div class="${AVATAR_SELECTOR.slice(1)}"><div class="mo-root"></div></div>`;
+    doc.dispatchEvent(new Event('osrm:island-mounted'));
+
+    expect(FakeIO.all.length).toBe(2);
+    const fresh_Wrap = doc.querySelector(AVATAR_SELECTOR) as Element;
+    expect(FakeIO.all[1].observed).toEqual([fresh_Wrap]);
+    FakeIO.all[1].trigger(fresh_Wrap, false);
+    expect(doc.querySelector('.mo-root')!.classList.contains(OFFSCREEN_CLASS)).toBe(true);
+  });
+
+  it('does not stack a second observer on the same node', () => {
+    const doc = page();
+    bindAvatarOffscreen(doc, window);
+    doc.dispatchEvent(new Event('osrm:island-mounted'));
+    doc.dispatchEvent(new Event('osrm:island-mounted'));
+    expect(FakeIO.all.length).toBe(1);
+  });
+
+  it('degrades to an animating avatar when the engine has no IntersectionObserver', () => {
+    delete (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+    expect(() => bindAvatarOffscreen(page(), window)).not.toThrow();
+    expect(FakeIO.all.length).toBe(0);
+  });
+});
+
+// ── dash-fb-modal ─────────────────────────────────────────────────────────
+describe('dash-fb-modal', () => {
+  // A FRESH document per test: bindFeedbackModal delegates on the document, so a
+  // shared one would carry the previous test's listener and count two POSTs.
+  // showError() still writes to the real document — that is where the toast
+  // lives — so its node is parked there.
+  let doc: Document;
+  beforeEach(() => {
+    doc = fresh(`
+      <button id="fb-cta">Auto-fill</button>
+      <dialog id="fb-modal"><button id="fb-submit">Fill</button>
+        <div id="fb-status"></div></dialog>`);
+    document.body.innerHTML = '<div id="error-toast" class="hidden"></div>';
+  });
+  const status = (): HTMLElement => doc.getElementById('fb-status') as HTMLElement;
+  const submit = (): HTMLButtonElement => doc.getElementById('fb-submit') as HTMLButtonElement;
+
+  it('opens the explainer dialog on a CTA click and posts nothing', () => {
+    const show = vi.fn();
+    (doc.getElementById('fb-modal') as HTMLDialogElement).showModal = show;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    bindFeedbackModal(doc, window);
+
+    click(doc.getElementById('fb-cta')!);
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('posts once on confirm, reports the counts, and re-enables the button', async () => {
+    const fetchSpy = vi.fn(async () => json({ ok: true, filled: [1, 2], already: [3] }));
+    vi.stubGlobal('fetch', fetchSpy);
+    bindFeedbackModal(doc, window);
+
+    click(submit());
+    expect(submit().disabled).toBe(true);
+
+    await vi.waitFor(() => expect(status().textContent).toBe('2 submitted · 1 already filled'));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(FB_FILL_URL);
+    expect(fetchSpy.mock.calls[0][1]).toEqual({ method: 'POST' });
+    expect(status().className).toContain('text-success');
+    expect(submit().disabled).toBe(false);
+  });
+
+  it('shows the failure inline AND through the toast, and still re-enables', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ok: false, error: 'portal closed' })));
+    bindFeedbackModal(doc, window);
+
+    click(submit());
+    await vi.waitFor(() => expect(status().textContent).toBe('portal closed'));
+    expect(status().className).toContain('text-error');
+    const toast = document.getElementById('error-toast')!;
+    expect(toast.classList.contains('hidden')).toBe(false);
+    expect(toast.textContent).toContain('Feedback autofill failed: portal closed');
+    expect(submit().disabled).toBe(false);
+  });
+});
+
+// ── dash-auto-refresh ─────────────────────────────────────────────────────
+describe('dash-auto-refresh', () => {
+  const nowS = (): number => Math.floor(Date.now() / 1000);
+  const page = (ts: number | null, canSync = '1'): Document =>
+    fresh(`
+      <meta name="can-sync" content="${canSync}">
+      <span class="sync-line" data-ts="${ts ?? 0}"></span>`);
+
+  it('fires ONE quiet refresh when the last sync is older than 10 minutes', () => {
+    const refresh = vi.fn(async () => {});
+    const fired = autoRefreshIfStale(page(nowS() - (STALE_AFTER_S + 1)), window, refresh);
+    expect(fired).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    // quiet=true — a background sync never toasts
+    expect(refresh).toHaveBeenCalledWith(true);
+  });
+
+  it('is a threshold, not a timer: 599 s is fresh, 601 s is stale', () => {
+    const refresh = vi.fn(async () => {});
+    expect(autoRefreshIfStale(page(nowS() - 599), window, refresh)).toBe(false);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(autoRefreshIfStale(page(nowS() - 601), window, refresh)).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats "never synced" as stale', () => {
+    const refresh = vi.fn(async () => {});
+    expect(autoRefreshIfStale(page(null), window, refresh)).toBe(true);
+  });
+
+  it('does not fire without credentials, offline, or without a caption', () => {
+    const refresh = vi.fn(async () => {});
+    expect(autoRefreshIfStale(page(1, '0'), window, refresh)).toBe(false);
+    expect(autoRefreshIfStale(fresh('<span class="sync-line" data-ts="1"></span>'), window, refresh)).toBe(true);
+    vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    expect(autoRefreshIfStale(page(1), window, refresh)).toBe(false);
+    expect(autoRefreshIfStale(fresh(''), window, refresh)).toBe(false);
+  });
+
+  it('runs ONCE per call and never re-arms itself (no interval)', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => {});
+    autoRefreshIfStale(page(1), window, refresh);
+    vi.advanceTimersByTime(60_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});

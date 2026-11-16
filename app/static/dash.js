@@ -234,6 +234,10 @@ document.addEventListener('osrm:island-mounted', applyGroupDefaults);
 // ── Auto-sync on open: show cached data instantly, refresh quietly in
 //    background when stale (>10min). Quiet failures stay silent.
 (function() {
+  // W5.4d: web/src/data/background.ts autoRefreshIfStale() owns this now
+  // (main.ts sets __osrmAutoRefresh). Two copies would each POST /api/refresh
+  // on the same stale page load.
+  if (window.__osrmAutoRefresh) return;
   var first = document.querySelector('.sync-line');
   if (!first) return;
   // No readable stored credentials = /api/refresh can only answer 401, and the
@@ -270,6 +274,11 @@ window.addEventListener('online', function() {
 // `osrm:island-mounted` after every successful mount and this re-arms on the
 // new node. Keyed on the element itself, so a no-op re-arm costs nothing.
 function armAvatarOffscreen() {
+  // W5.4d: web/src/data/background.ts bindAvatarOffscreen() owns this now
+  // (main.ts sets __osrmAvatarOffscreen) and re-arms itself on
+  // osrm:island-mounted. Two observers would toggle the same class twice and
+  // leak one observer per hydration.
+  if (window.__osrmAvatarOffscreen) return;
   var wrap = document.querySelector('.blobatar-gaze');
   if (!wrap || !('IntersectionObserver' in window) || wrap.dataset.offscreenObs) return;
   wrap.dataset.offscreenObs = '1';
@@ -297,6 +306,10 @@ if (!window.__osrmSwRegister && "serviceWorker" in navigator && location.pathnam
 // #fb-modal — both are delegated at document level, so they work whatever
 // painted them.
 document.addEventListener('click', function(ev) {
+  // W5.4d: web/src/data/background.ts bindFeedbackModal() owns both halves now
+  // (main.ts sets __osrmFbModal). Two handlers would each POST
+  // /api/feedback/fill — two fills per teacher.
+  if (window.__osrmFbModal) return;
   if (!ev.target.closest) return;
   if (ev.target.closest('#fb-cta')) {
     var m = document.getElementById('fb-modal');
