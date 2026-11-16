@@ -195,12 +195,15 @@ else
   # test_route_panels goes red 2/35 on a tree CI passes — a local-only false
   # failure that reads exactly like a broken deployment. gates.sh passing this
   # inline is the point: the local bar must not be a different environment.
-  DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" \
-    SCOPE_FEATURES=hourwise,academics,fees,placement,library,campus,profile,attendance,marks \
+  # Derived from app.scope.ops.FEATURES, the registry the server gates on —
+  # tests.yml derives the same way. A hand-copied literal here is how a new slug
+  # ends up enabled in CI and 404ing locally.
+  SCOPE_FEATURES=$(PYTHONPATH=. "$V/bin/python" -c 'from app.scope.ops import FEATURES; print(",".join(FEATURES))')
+  DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" SCOPE_FEATURES="$SCOPE_FEATURES" \
     bash scripts/ci_e2e_http.sh $(e2e_suites) \
     >/tmp/e2e-$$.log 2>&1 && ok "ci_e2e_http.sh ($(e2e_suites | wc -l) suites)" || {
     bad "ci_e2e_http.sh"; tail -25 /tmp/e2e-$$.log | sed 's/^/         /'; }
-  for s in test_dash_fit test_dut_official_tt; do
+  for s in test_dash_fit test_dut_official_tt test_offline_routes; do
     env DATA_DIR="$(mktemp -d)" "$V/bin/python" "tests/e2e/$s.py" >/tmp/e-$$.log 2>&1 \
       && ok "$s" || { bad "$s"; tail -12 /tmp/e-$$.log | sed 's/^/         /'; }
   done

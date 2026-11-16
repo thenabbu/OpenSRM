@@ -72,20 +72,23 @@ describe('logout wipe is netid-scoped', () => {
     expect(navigated[0]).toMatch(/\/login$/);
   });
 
-  it("does NOT wipe another student's records on the same device", async () => {
+  it("does NOT leave another student's records on the same device", async () => {
     setNetid(A);
     await seedBoth();
-    // POSITIVE CONTROL for the "did not happen" half below: B really was
-    // cached. Without this, "B survived" would also hold on an empty DB.
+    // POSITIVE CONTROL: B really was cached before the logout. Without this,
+    // "B is gone too" would also hold on an empty DB.
     expect(await rowsFor(B)).toEqual(oneEach);
 
     await onLogout('/login', { navigate: () => {} });
 
-    // POSITIVE CONTROL the wipe actually ran against the current netid:
+    // A7 ratified "logout removes everything without a trace", and on a shared
+    // device a previous student's rows are part of "everything". This test used
+    // to assert the OPPOSITE because `wipeCapped(undefined)` was silently
+    // replaced by its `= netid` default, so the all-students branch was dead
+    // code — the test pinned the bug. Null is the sentinel now.
     expect(await rowsFor(A)).toBeNull();
-    // Same device, same stores, B still whole — the assertion the row owns.
-    expect(await rowsFor(B)).toEqual(oneEach);
-    expect(await db.attendance.get([B, 'g1'])).toBeDefined();
+    expect(await rowsFor(B)).toBeNull();
+    expect(await db.attendance.get([B, 'g1'])).toBeUndefined();
     expect(await db.attendance.get([A, 'g1'])).toBeUndefined();
   });
 
@@ -103,7 +106,7 @@ describe('logout wipe is netid-scoped', () => {
     );
     expect(navigated).toHaveLength(1); // still navigates, second time through
     expect(await rowsFor(A)).toBeNull();
-    expect(await rowsFor(B)).toEqual(oneEach); // and still did not touch B
+    expect(await rowsFor(B)).toBeNull(); // and the second pass still leaves nothing
   });
 });
 
@@ -144,8 +147,10 @@ describe('logout survives a hostile storage stack', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     // The wipe itself hangs forever: the cap, not the wipe, must be what
     // unblocks logout.
-    const never = vi.spyOn(db.table('attendance'), 'where').mockImplementation(
-      () => ({ equals: () => ({ delete: () => new Promise<void>(() => {}) }) }) as never,
+    // Logout wipes EVERY store (all-students branch), so the hang is planted on
+    // `clear` — one hung clear inside the shared transaction is enough.
+    const never = vi.spyOn(db.table('attendance'), 'clear').mockImplementation(
+      () => new Promise<void>(() => {}),
     );
 
     const navigated: string[] = [];
@@ -202,5 +207,51 @@ describe('the logout link', () => {
 
     unbind();
     link.remove();
+  });
+});
+
+describe('logout clears Web Storage', () => {
+  /** A real Storage-shaped object: the vitest DOM shim has no localStorage. */
+  function fakeStorage(): Storage {
+    const m = new Map<string, string>();
+    return {
+      get length() { return m.size; },
+      clear: () => m.clear(),
+      getItem: (k: string) => m.get(k) ?? null,
+      key: (i: number) => [...m.keys()][i] ?? null,
+      removeItem: (k: string) => void m.delete(k),
+      setItem: (k: string, v: string) => void m.set(k, v),
+    } as unknown as Storage;
+  }
+
+  it('drops local AND session keys, not just the Dexie rows', async () => {
+    const local = fakeStorage();
+    const session = fakeStorage();
+    vi.stubGlobal('localStorage', local);
+    vi.stubGlobal('sessionStorage', session);
+    // The app's own keys, not invented ones: attView is written by the
+    // attendance view toggle (data/attView.ts) and the banner dismissal by
+    // pwa/banner.ts.
+    local.setItem('attView', 'table');
+    session.setItem('pwa-banner-dismissed', '1');
+    // POSITIVE CONTROL: both stores held a key BEFORE the logout, so
+    // "empty afterwards" is proof of a wipe and not of a store that was
+    // always empty.
+    expect(local.length).toBe(1);
+    expect(session.length).toBe(1);
+
+    await onLogout('/login', { navigate: () => {} });
+
+    expect(local.length).toBe(0);
+    expect(session.length).toBe(0);
+  });
+
+  it('still navigates when the storage property throws on access', async () => {
+    // Safari private mode throws from the property read, not from the method.
+    vi.stubGlobal('localStorage', undefined);
+    const navigated: string[] = [];
+    await expect(onLogout('/logout', { navigate: (u) => void navigated.push(u) }))
+      .resolves.toMatch(/\/logout$/);
+    expect(navigated).toHaveLength(1);
   });
 });

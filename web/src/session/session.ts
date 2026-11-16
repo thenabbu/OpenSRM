@@ -168,17 +168,44 @@ const sanitize = (u: string): string | null => {
  * `indexedDB.open`, and Dexie turns that into a rejected ready promise — which
  * `wipeAll` resolves around), or a missing `indexedDB` entirely.
  */
-export async function wipeCapped(netidArg = netid, capMs = WIPE_CAP_MS): Promise<void> {
+export async function wipeCapped(
+  netidArg: string | null | undefined = netid,
+  capMs = WIPE_CAP_MS,
+): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const cap = new Promise<void>((resolve) => {
     timer = setTimeout(resolve, capMs);
   });
   try {
-    await Promise.race([wipeAll(netidArg), cap]);
+    // `null` = every student, `undefined` = the current one. This parameter used
+    // to be `netidArg = netid` and onLogout passed `undefined` to mean "every
+    // store" — which JS turns into the default, so logout silently wiped only the
+    // signed-in student and left a previous student's rows on a shared device.
+    // Measured 2026-11-17 in tests/e2e/test_offline_routes.py: one row per store
+    // survived logout. `null` cannot be swallowed by a default, so it is the
+    // sentinel for the all-students branch.
+    await Promise.race([wipeAll(netidArg ?? undefined), cap]);
   } catch {
     // wipeAll is already try/catch'd; this is the belt for a non-Dexie throw.
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Drop every Web Storage key. Not PII today (a view toggle, a banner dismissal),
+ *  but "logout leaves no trace" is about the STORES, not about which values
+ *  happen to be in them right now — the next preference anyone persists inherits
+ *  this guarantee without a new call site. Access is guarded: Safari private mode
+ *  throws on the property read itself.
+ *  ponytail: `clear()` on both stores, not a key allow-list — an allow-list is a
+ *  second copy of every key name and it silently misses the third one. */
+function clearWebStorage(): void {
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    try {
+      (globalThis as unknown as Record<string, Storage | undefined>)[name]?.clear();
+    } catch {
+      // storage disabled: nothing readable is left behind either way
+    }
   }
 }
 
@@ -199,11 +226,16 @@ export async function onLogout(
   // the device while a student is logged in — that is what makes offline work —
   // but logout must leave no trace, and on a shared device "no trace" includes
   // a previous student's rows, which a netid-scoped delete would happily keep.
-  // Passing undefined is wipeAll's documented "clear every store" branch.
-  await wipeCapped(undefined);
+  // `null` (not `undefined`) selects wipeAll's "clear every store" branch: an
+  // `undefined` argument is replaced by the parameter's default, which is how
+  // this call used to wipe only the signed-in student.
+  await wipeCapped(null);
   // And the shell cache: offline markup with no PII in it, but a logged-out
   // device should have no trace of the app's cached surfaces either.
   await clearShells();
+  // Web storage last, and unconditional: the wipe above can be capped at
+  // WIPE_CAP_MS, so anything that must not survive logout cannot live behind it.
+  clearWebStorage();
   const target = sanitize(href);
   if (!target) return null;
   (opts.navigate ?? ((u: string) => location.assign(u)))(target);

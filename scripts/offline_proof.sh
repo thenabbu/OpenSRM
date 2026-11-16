@@ -81,9 +81,11 @@ PY
 # abort(404) without their feature slug, and the app's DEFAULT_FEATURES omits
 # campus/placement/library. Booting without this made /campus 404 in leg 4 — the
 # route would have been graded "broken" for a reason that is the runner's fault.
-# Same string the CI browser suites use (.github/workflows/tests.yml).
-env DATA_DIR="$DATA_DIR" LOG_LEVEL=WARNING \
-    SCOPE_FEATURES=hourwise,academics,fees,placement,library,campus,profile,attendance,marks \
+# DERIVED from app.scope.ops.FEATURES (the registry the server gates on), not
+# hand-copied: tests.yml and gates.sh derive the same way, so a new slug cannot
+# be enabled in one place and missing here.
+SCOPE_FEATURES=$(PYTHONPATH=. .venv/bin/python -c 'from app.scope.ops import FEATURES; print(",".join(FEATURES))')
+env DATA_DIR="$DATA_DIR" LOG_LEVEL=WARNING SCOPE_FEATURES="$SCOPE_FEATURES" \
     .venv/bin/python -m gunicorn -w 1 --threads 4 -b 127.0.0.1:"$PORT" app.app:app \
     >"$LOG" 2>&1 &
 # Wait for the socket, then capture the bound PID (gunicorn's master). The
