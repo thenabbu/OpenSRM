@@ -16,6 +16,12 @@
  */
 (function () {
   "use strict";
+  // W5.4e: web/src/data/pullToRefresh.ts owns this gesture now. main.ts binds it
+  // and publishes window.__osrmPull, so this file stands down when the bundle is
+  // present — two binders would fire two POST /api/refresh per pull (the
+  // double-fire test_pull_dut guards against). Everything below is still the whole
+  // implementation on the PREACT_ISLANDS=0 path, where no bundle publishes a marker.
+  if (window.__osrmPull) return;
   if (!matchMedia("(pointer: coarse)").matches) return;
 
   var THRESHOLD = 80;
@@ -91,6 +97,9 @@
   }
 
   function onTouchStart(e) {
+    // W5.4e: re-checked at HANDLER time, not only around the binding — it costs
+    // nothing and it does not depend on which tag base.html parses first (W5.4c).
+    if (window.__osrmPull) { startY = -1; return; }
     if (springing || refreshRunning() || dialogOpen()) { startY = -1; return; }
     if (window.scrollY !== 0) { startY = -1; return; }
     if (excluded(e.target)) { startY = -1; return; }

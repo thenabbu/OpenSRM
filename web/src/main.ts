@@ -30,6 +30,7 @@ import {
   bindScrollIndicator,
   registerServiceWorker,
 } from './data/pageChrome';
+import { bindPullToRefresh } from './data/pullToRefresh';
 import { warn as logWarn } from './log';
 
 /**
@@ -539,3 +540,18 @@ autoRefreshIfStale();
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.
 mountBanner();
+
+// W5.4e: pull-to-refresh — the four pull.js rows (gesture, excluded regions,
+// dialog guard, refresh-running guard). Same seam as every block above: the
+// marker below IS the stand-down, and pull.js returns before binding when it
+// sees it. Two binders would fire TWO POST /api/refresh per gesture, which is
+// the double-fire t_d051895a chased; test_pull_dut's delta==1 check catches it.
+//
+// This is also what finally cuts pull.js's last tie to dash.js: the old file
+// called the GLOBAL `ref()` behind `typeof ref === "function"`, so deleting
+// dash.js first made the gesture a silent no-op. The port calls triggerRefresh
+// straight from refresh.ts, so either deletion order is now safe.
+const pull = window as unknown as { __osrmPull?: typeof bindPullToRefresh };
+pull.__osrmPull = bindPullToRefresh;
+// No-ops on a fine pointer (desktop mouse), so nothing to feature-detect here.
+bindPullToRefresh();
