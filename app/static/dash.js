@@ -344,6 +344,10 @@ document.addEventListener('click', function(ev) {
 // is delegated. The server returns JSON when the request asks for it and keeps
 // the POST/redirect for the no-JS path.
 document.addEventListener('submit', function(ev) {
+  // W5.4c: web/src/data/userActions.ts owns the interception now (main.ts binds
+  // it and sets __osrmTagSave). Two listeners would each preventDefault and
+  // POST the same tag twice.
+  if (window.__osrmTagSave) return;
   var f = ev.target;
   if (!(f instanceof HTMLFormElement)) return;
   var action = f.getAttribute('action') || '';
@@ -389,8 +393,11 @@ document.addEventListener('submit', function(ev) {
 // modal; ONLY the confirm button inside the modal POSTs. Status shows in
 // the modal (+ the global toast on failure); success lands on /login
 // (the server also clears the session cookie).
-var delBtn = document.getElementById('delete-account-btn');
-var delConfirm = document.getElementById('del-confirm');
+// W5.4c: web/src/data/userActions.ts owns the delete flow now (main.ts binds it
+// and sets __osrmDeleteAccount). Two binders here would mean one confirm POSTs
+// /api/account/delete TWICE — a deleted account reporting a network error.
+var delBtn = window.__osrmDeleteAccount ? null : document.getElementById('delete-account-btn');
+var delConfirm = window.__osrmDeleteAccount ? null : document.getElementById('del-confirm');
 if (delBtn) {
   delBtn.addEventListener('click', function() { document.getElementById('delete-account-modal').showModal(); });
 }
@@ -430,6 +437,9 @@ if (delConfirm) {
 // only way out of a panel the user opened by accident. Clicks inside the
 // details (summary included) are ignored, so the pencil toggle still works.
 document.addEventListener('click', function(e) {
+  // W5.4c: web/src/data/userActions.ts owns the dismiss now (main.ts binds it
+  // and sets __osrmDetailsDismiss). Two listeners is harmless but redundant.
+  if (window.__osrmDetailsDismiss) return;
   var open = document.querySelector('details[open]');
   if (open && !open.contains(e.target)) open.open = false;
 });
@@ -442,6 +452,10 @@ document.addEventListener('click', function(e) {
 //    'complete' on the next load, so the loop cannot restart: one repaint per
 //    completed run, never a poll storm, never an endless loop.
 (function () {
+  // W5.4c: web/src/data/userActions.ts owns the poll now (main.ts binds it and
+  // sets __osrmScopePoll). Two polls would double the request rate against the
+  // same endpoint and repaint twice on completion.
+  if (window.__osrmScopePoll) return;
   var body = document.body;
   if (!body) return;
   var state = body.getAttribute('data-scope-sync') || '';
