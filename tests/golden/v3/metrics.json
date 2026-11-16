@@ -151,9 +151,9 @@
       "status": 200
     },
     "/static/pull.js": {
-      "bytes": 5504,
+      "bytes": 6165,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 2073,
+      "gzip_bytes": 2390,
       "status": 200
     },
     "/static/push.js": {
@@ -180,7 +180,7 @@
       "dom_nodes": 313,
       "html_bytes": 52057,
       "html_gzip_bytes": 13243,
-      "js_bytes": 105913,
+      "js_bytes": 106574,
       "js_files": [
         "/static/dash.js",
         "/static/dist/assets/app-HASH.js",
@@ -191,7 +191,7 @@
         "/static/sw.js",
         "/static/timetable.js"
       ],
-      "js_gzip_bytes": 34746,
+      "js_gzip_bytes": 35063,
       "script_tags": 9
     },
     "/login": {
@@ -209,7 +209,7 @@
       "script_tags": 3
     }
   },
-  "revision": "d2d2de6",
+  "revision": "63552ab",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -258,13 +258,13 @@
     }
   },
   "totals": {
-    "api_bytes": 393615,
-    "api_gzip_bytes": 106695,
+    "api_bytes": 394276,
+    "api_gzip_bytes": 107012,
     "dom_nodes_all_panels": 2077,
     "dom_nodes_page": 313,
     "html_bytes": 65672,
     "html_gzip_bytes": 17989,
-    "js_bytes": 110790,
-    "js_gzip_bytes": 36540
+    "js_bytes": 111451,
+    "js_gzip_bytes": 36857
   }
 }
