@@ -1,13 +1,8 @@
 import { tint } from '../../design';
 import type { AttendanceCourse, AttendanceProps } from './contract';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface AttendanceHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type AttendanceHost = HostProps;
 
 /** Two-decimal string the server also rounds to (attendance.html:244 `|round(2)`). */
 const r2 = (n: number): string => String(Math.round(n * 100) / 100);
@@ -79,7 +74,7 @@ function Row({ c }: { c: AttendanceCourse }) {
  * throws the boundary cannot see.
  */
 export default function AttendancePanel({ el, props }: AttendanceHost) {
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   const { courses } = props as AttendanceProps;
   return (
     <>

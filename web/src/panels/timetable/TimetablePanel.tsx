@@ -1,12 +1,7 @@
 import type { TtBreak, TtDay, TtRow, TtSig, TimetableProps } from './contract';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface TimetableHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type TimetableHost = HostProps;
 
 /** The attendance tag's words (timetable.py:451-459) — number and word
  *  space-separated and contiguous so the phrase reads as one. */
@@ -75,7 +70,7 @@ function Panel({ d }: { d: TtDay }) {
  * the server's markup is restored — nothing may defer work to useEffect.
  */
 export default function TimetablePanel({ el, props }: TimetableHost) {
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   const { days } = props as TimetableProps;
   return (
     <>

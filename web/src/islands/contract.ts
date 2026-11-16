@@ -26,6 +26,24 @@ export interface HostProps {
   now?: number;
 }
 
+/**
+ * Client-only marker: only a mounted island can set it.
+ *
+ * Ten islands wrote this same string as their own local const before it moved
+ * here — one exported constant is what stops the marker and the thing reading
+ * it from drifting apart.
+ */
+export const HYDRATED_ATTR = 'data-hydrated';
+
+/**
+ * Stamp the mount as client-owned. Every island's default export opens with
+ * this, and it must run INSIDE the boundary's try: a throw before it leaves
+ * the server's children restored and un-marked.
+ */
+export function markHydrated(el: HTMLElement): void {
+  el.setAttribute(HYDRATED_ATTR, '1');
+}
+
 export type IslandComponent = ComponentType<HostProps>;
 
 /** Every island's props schema — one entry, one island (YAGNI otherwise). */

@@ -1,13 +1,8 @@
 import type { FeeDue, FeeReceipt, FeeYear, FeesProps } from './contract';
 import { text } from '../../design';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface FeesHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type FeesHost = HostProps;
 
 /** Hero + every card shares the group card chrome (fees.html:207,216). */
 const CARD = 'bg-base-200 border border-base-300 rounded-box p-4';
@@ -112,7 +107,7 @@ function Receipt({ e, first }: { e: FeeReceipt; first: boolean }) {
  * and the server's markup is restored — nothing may defer work to useEffect.
  */
 export default function FeesPanel({ el, props }: FeesHost) {
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   const p = props as FeesProps;
   return (
     <>

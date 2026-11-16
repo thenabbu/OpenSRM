@@ -1,13 +1,8 @@
 import type { CampusCard, CampusProps, KvGroup, LineRow } from './contract';
 import { text } from '../../design';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface CampusHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type CampusHost = HostProps;
 
 /** The card chrome (campus.html:209-210). */
 const CARD = 'card bg-base-200 border border-base-300';
@@ -108,6 +103,6 @@ export function CampusCards({ props }: { props: unknown }) {
 export default function CampusPanel({ el, props }: CampusHost) {
   // Marks the node as client-owned BEFORE returning, inside the boundary's try:
   // a throw here still leaves the server's children restored and un-marked.
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   return <CampusCards props={props} />;
 }
