@@ -123,26 +123,27 @@ with sync_playwright() as p:
     check('desktop: fresh sync shows no caption', d['syncText'] == '' and d['syncDisplay'] == 'none',
           f"text={d['syncText']!r} display={d['syncDisplay']}")
 
-    # caption formatting across every age bucket (drives renderSyncLines directly)
+    # caption formatting across every age bucket. W5.4: renderSyncLines() died with
+    # dash.js; a quiet revalidate is what re-writes the caption now (refresh.ts).
     ages = [(900, '(15m ago)'), (7200, '(2h ago)'), (200000, '(2d ago)'), (0, 'Never synced'), (120, '')]
     got = []
     for age, want in ages:
         ts = 0 if age == 0 else int(__import__('time').time()) - age
-        got.append(page.evaluate("""(ts) => {
+        got.append(page.evaluate("""async (ts) => {
           const el = document.querySelector('.navbar.hidden .sync-line');
           el.dataset.ts = String(ts);
-          renderSyncLines();
+          window.__osrmSyncCaption();
           return {text: el.textContent, display: getComputedStyle(el).display, title: el.title !== ''};
         }""", ts) | {'want': want})
     check('desktop: caption format per age bucket',
           all(g['text'] == g['want'] for g in got) and got[-1]['display'] == 'none' and all(g['title'] for g in got),
           json.dumps([(g['want'], g['text']) for g in got]))
 
-    geo = page.evaluate("""() => {
+    geo = page.evaluate("""async () => {
       const nav = document.querySelector('.navbar.hidden');
       const sync = nav.querySelector('.sync-line'), refresh = nav.querySelector('[data-refresh]');
       sync.dataset.ts = String(Math.floor(Date.now() / 1000) - 900);
-      renderSyncLines();
+      window.__osrmSyncCaption();
       const sr = sync.getBoundingClientRect(), rr = refresh.getBoundingClientRect();
       return {visible: getComputedStyle(sync).display !== 'none',
               gap: sr.x - rr.right, within: sr.right <= nav.getBoundingClientRect().right};
@@ -337,11 +338,11 @@ with sync_playwright() as p:
     # A visible caption grows the left cell; it must not push the wordmark off
     # centre or the settings gear off the right edge (the widest caption is
     # '(3d ago)' — pin the stale state, not just the fresh one).
-    stale = page.evaluate("""() => {
+    stale = page.evaluate("""async () => {
         const nav = document.querySelector('.navbar.lg\\\\:hidden');
         const el = nav.querySelector('.sync-line');
         el.dataset.ts = String(Math.floor(Date.now() / 1000) - 86400 * 3);
-        renderSyncLines();
+        window.__osrmSyncCaption();
         const lg = nav.querySelector('img').getBoundingClientRect();
         const n = nav.getBoundingClientRect();
         const gear = nav.querySelector('.navbar-end [data-tab=settings]').getBoundingClientRect();
