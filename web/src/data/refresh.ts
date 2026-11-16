@@ -4,6 +4,7 @@ import type { Panel } from '../db';
 import { loadPanel } from './load';
 import { propsFromCache } from './props';
 import { showError } from './errorToast';
+import { ageCaption } from '../lib/syncAge';
 import { warn } from '../log';
 
 // ── A sync carries DATA, not markup (W5.1b) ──────────────────────────────
@@ -26,9 +27,9 @@ import { warn } from '../log';
 // Absent on purpose:
 //   * `settings` — identity is server-rendered only; there is no endpoint, so
 //     its data cannot change without a navigation;
-//   * `sync-age` — a clock, not a feed. Its caption is written in place by
-//     dash.js/sync-age from `data-ts`, so re-rendering it would only arm a
-//     second 60 s timer.
+//   * `sync-age` — a clock, not a feed. Its caption is written in place by the
+//     sync-age island (and by rerenderCaptions below after a sync) from
+//     `data-ts`, so re-rendering it would only arm a second 60 s timer.
 const PANEL_FEED: Partial<Record<IslandName, Panel>> = {
   attendance: 'attendance',
   academics: 'academics',
@@ -141,20 +142,23 @@ export function syncData(): Promise<void> {
 /**
  * Put the caption back to the honest age of the last real sync.
  *
- * `renderSyncLines` is still owned by dash.js (formatting the age buckets is
- * that file's own card), so this is one guarded call rather than a second copy
- * that could drift. A page with no dash.js clears the caption instead of
- * leaving "Syncing…" up forever.
+ * One formatter: `ageCaption` is the client mirror of app/views/sync_age.py and
+ * the same function the sync-age island paints with, so a refreshed caption and
+ * an island-painted one can never disagree. (W5.4: dash.js used to own this and
+ * exposed `renderSyncLines` for us to call; that file is gone and the loop it
+ * ran is the island's 60 s timer now.)
  */
 function rerenderCaptions(): void {
-  const legacy = (window as unknown as { renderSyncLines?: () => void }).renderSyncLines;
-  if (legacy) {
-    legacy();
-    return;
-  }
+  const nowS = Math.floor(Date.now() / 1000);
   syncLines().forEach((el) => {
-    el.textContent = '';
-    el.classList.add('hidden');
+    const ts = Number(el.dataset.ts || 0);
+    const text = ageCaption(ts, nowS);
+    el.textContent = text;
+    // BOTH spellings: the class for the flex gap, the attribute for the UA
+    // default that the server may have set (see the templates).
+    el.classList.toggle('hidden', !text);
+    el.toggleAttribute('hidden', !text);
+    el.title = el.dataset.full || '';
   });
 }
 

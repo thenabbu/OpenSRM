@@ -54,6 +54,7 @@ button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; u
 /* ── Phase 6: avatar idle loops pause on weak devices and offscreen ──
    Pausing preserves the resolved pose (motion.css explains why). The tier
    is set by perf.js before first paint; .is-offscreen is toggled by the
-   IntersectionObserver in dash.js. */
+   IntersectionObserver in web/src/data/background.ts (W5.4: this comment
+   used to name dash.js, which no longer exists). */
 html[data-perf="low"] .mo-root, html[data-perf="low"] .mo-root *,
 .mo-root.is-offscreen, .mo-root.is-offscreen * { animation-play-state: paused; }

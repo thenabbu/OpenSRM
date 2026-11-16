@@ -55,13 +55,21 @@ def check(name, ok, detail=""):
 
 # ── static contract (the deletion actually happened) ─────────────────
 here = os.path.dirname(os.path.abspath(__file__))
-src = open(os.path.join(here, "..", "..", "app", "static", "dash.js"), encoding="utf-8").read()
+REPO = os.path.abspath(os.path.join(here, "..", ".."))
+# W5.4: this block used to read app/static/dash.js. That file is deleted, so the
+# contract is asserted where the code now lives (web/src/data/refresh.ts) AND
+# the absence is asserted explicitly — otherwise a missing file would make the
+# whole block pass vacuously.
+for legacy in ("dash.js", "timetable.js", "pull.js", "drag-drop-touch.js"):
+    check(f"app/static/{legacy} is deleted",
+          not os.path.exists(os.path.join(REPO, "app", "static", legacy)))
+src = open(os.path.join(REPO, "web", "src", "data", "refresh.ts"), encoding="utf-8").read()
 code = "\n".join(ln for ln in src.splitlines() if not ln.lstrip().startswith("//"))
-check("dash.js: the sync never re-fetches the route's markup",
+check("refresh.ts: the sync never re-fetches the route's markup",
       "location.pathname + location.search" not in code)
-check("dash.js: no morph library / markup swap left",
+check("refresh.ts: no morph library / markup swap left",
       not any(t in code for t in ("Idiomorph", "DOMParser", "outerHTML", "replaceChild")))
-check("dash.js: no hard reload on the sync path", "location.reload(" not in code)
+check("refresh.ts: no hard reload on the sync path", "location.reload(" not in code)
 check("vendored morph library is deleted",
       not os.path.exists(os.path.join(here, "..", "..", "app", "static", "vendor",
                                       "idiomorph.min.js")))
@@ -116,7 +124,9 @@ with sync_playwright() as p:
     seen = []
     pg.on("request", lambda r: seen.append(r.url))
     # quiet sync — exactly what the 10-minute auto-sync runs; no click, no dismiss
-    pg.evaluate("ref(true)")
+    # W5.4: `ref()` was dash.js's global. It is gone; the bundle's bridge is the
+    # only entry point now, and it is what the buttons/gesture/editor all call.
+    pg.evaluate("window.__osrmRevalidate(true)")
     pg.wait_for_timeout(2500)
 
     check("quiet sync caused NO navigation (still /marks, dashboard never swapped in)",

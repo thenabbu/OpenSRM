@@ -25,7 +25,6 @@
              color:color-mix(in oklab, var(--color-base-content) 50%, transparent)}
 .tt-hero strong{display:block;font-size:16px;font-weight:600;line-height:1.5}
 .tt-hero-sub{font-size:12px;line-height:1.5;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
-.tt-hero-sig{margin-top:3px;font-size:12px;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
 
 /* ── day selector: pills, the checked one inverts to a solid fill ────────── */
 .tt-radio{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
@@ -142,10 +141,7 @@
   .tt-brk{font-size:11px}
 }
 
-/* ── editor (archived behind TIMETABLE_EDITOR; styling kept intact) ─────── */
-.tt-editor-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.tt-editor-actions{display:flex;gap:8px;flex-wrap:wrap}
-.tt-palette-wrap{overflow-x:auto;padding:8px 0;margin-bottom:16px}
+/* ── editor (ported to web/src/data/timetableEditor.ts, W5.4a) ─────────── */
 .tt-palette{display:flex;gap:8px;flex-wrap:wrap}
 .tt-subject-block{display:flex;flex-direction:column;padding:8px 12px;background:var(--color-base-300);border:1px solid var(--color-base-300);border-radius:6px;cursor:grab;user-select:none;min-width:120px;transition:opacity .15s}
 .tt-subject-block:active{cursor:grabbing;opacity:.8}

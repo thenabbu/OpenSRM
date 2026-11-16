@@ -85,6 +85,17 @@ check(f"all {len(tokens)} dynamic tokens exist in app.css", not missing, f"missi
 check("safelist file committed", os.path.isfile(
     os.path.join(REPO, "app", "static", "safelist", "classes.html")))
 
+# ── W5.4: classes the BUNDLE writes at runtime ────────────────────────────
+# These used to reach app.css only because app/static/dash.js and timetable.js
+# spelled the same literals; both files are deleted and the scanner does not
+# read web/src, so they are safelisted and pinned here. Each is written by a
+# named module — dropping one from the safelist is a silent skin regression.
+RUNTIME = ("alert-warning", "rounded-none", "text-success", "animate-spin",
+           "ml-1", "last:border-b-0", "space-y-0.5")
+rt_missing = [t for t in RUNTIME if t not in css_flat]
+check(f"all {len(RUNTIME)} runtime-written classes exist in app.css",
+      not rt_missing, f"missing={rt_missing}")
+
 print(f"\n{total[0] - len(fails)}/{total[0]} passed")
 if fails:
     print("FAILED:", ", ".join(fails))
