@@ -71,6 +71,14 @@ names the SHA the golden was captured at, which is by definition older than the
 HEAD being checked — comparing it would leave the gate permanently red).
 --no-screens exists because PNG bytes encode the host's font stack: a GitHub
 runner is not the machine the goldens were captured on.
+
+--check also fails on a DEAD GOLDEN URL: any `api/*.json` under DIR whose
+recorded `path` is not in the live capture (or does not answer 2xx). Comparing
+bytes only proves "the URLs I have did not drift"; it cannot notice that a
+golden's URL stopped being served, so a deleted asset's golden would match
+forever while asserting nothing. Frozen baselines (v2/) are SUPPOSED to name
+deleted files — that is what a historical capture is — and this check is only
+ever run against the current-state set, so never point --check at v2.
 """
 import argparse
 import base64
@@ -296,6 +304,29 @@ def selftest() -> int:
         for n, got, want in bad2:
             print(f"FAIL {n}: got {got!r} want {want!r}")
         print(f"selftest: {len(gate_cases) - len(bad2)}/{len(gate_cases)} drift-gate cases pass")
+
+        # dead_urls: a golden whose path the capture never resolved is dead, and
+        # so is one the app answers 404/410. A 302 is a LIVE route (/logout), and
+        # a masked `-HASH` name is a golden-side artifact, not a URL to fetch.
+        ga = g / "api"
+        ga.mkdir()
+        (ga / "root.json").write_text(jdump({"path": "/", "status": 200}))
+        (ga / "gone.json").write_text(jdump({"path": "/static/gone.js", "status": 200}))
+        (ga / "err.json").write_text(jdump({"path": "/healthz", "status": 200}))
+        (ga / "logout.json").write_text(jdump({"path": "/logout", "status": 302}))
+        (ga / "hash.json").write_text(jdump({"path": "/static/dist/assets/app-HASH.css",
+                                            "status": 200}))
+        live = {"/": {"status": 200}, "/healthz": {"status": 404},
+                "/logout": {"status": 302}}
+        want = ["api/err.json: /healthz answers 404",
+                "api/gone.json: /static/gone.js is not served any more"]
+        got = dead_urls(g, live)
+        if got != want:
+            print(f"FAIL dead urls: got {got!r} want {want!r}")
+            bad2.append(("dead urls", got, want))
+        else:
+            print("selftest: 1/1 dead-url cases pass")
+
     return 1 if bad or bad2 else 0
 
 
@@ -574,7 +605,7 @@ def api_capture(base: str, token: str, out: Path) -> dict:
     return results
 
 
-def capture_logout(base: str, token: str, out: Path) -> None:
+def capture_logout(base: str, token: str, out: Path) -> dict:
     import requests
     s = requests.Session()
     s.cookies.set("srm_session", token, domain="127.0.0.1", path="/")
@@ -585,6 +616,10 @@ def capture_logout(base: str, token: str, out: Path) -> None:
            "set_cookie": r.headers.get("Set-Cookie", ""),
            "location": r.headers.get("Location", "")}
     (out / "api" / "logout.json").write_text(jdump(rec) + "\n")
+    # Returned so the caller can fold it into the capture results: it is a GET
+    # this run resolved, and dead_urls() must not read its absence as a dead URL.
+    return rec
+
 
 
 # ── browser capture ──────────────────────────────────────────────────
@@ -1038,6 +1073,46 @@ def compare_tree(golden: Path, got: Path, screens: bool = True) -> list:
     return diffs
 
 
+def dead_urls(golden: Path, results: dict) -> list:
+    """Goldens whose path no longer resolves on the app being captured.
+
+    compare_tree answers "did a captured URL drift"; this answers "is the
+    captured set still a set the app serves". Without it a golden for a deleted
+    asset matches forever — green, and asserting nothing about the app (measured:
+    tests/golden/api/static_vendor_idiomorph.min.js.json outlived the asset by
+    weeks, and so did dash.js/pull.js/timetable.js).
+
+    ALIVE means "the app answered this URL", not "it answered 200": /logout
+    deliberately 302s to /login, and a 3xx is a live route. Only 404/410 — the
+    app saying the thing is not there — count as dead, plus a URL the capture
+    never requested at all.
+
+    Two recorded paths are skipped because they are not URLs on the wire:
+    `api_name()` masks Vite build hashes at record time (app-HASH.css), so the
+    masked name can never be fetched back; it is validated by its unmasked
+    sibling having been captured (api/root.json listing the real asset).
+    """
+    dead = []
+    for f in sorted((golden / "api").glob("*.json")):
+        try:
+            path = json.loads(f.read_text()).get("path")
+        except (ValueError, OSError):
+            dead.append(f"api/{f.name}: unreadable")
+            continue
+        if not path:
+            dead.append(f"api/{f.name}: no `path` field")
+            continue
+        if "-HASH." in path:      # normalised name, never a real request path
+            continue
+        live = results.get(path)
+        if live is None:
+            dead.append(f"api/{f.name}: {path} is not served any more")
+        elif int(live.get("status", 0)) in (404, 410):
+            dead.append(f"api/{f.name}: {path} answers {live.get('status')}")
+    return dead
+
+
+
 def print_change_markers(golden: Path, got: Path, rel: str,
                          pairs: int = 3, width: int = 240) -> int:
     """First differing line pairs of one text file, windowed around the change.
@@ -1159,13 +1234,24 @@ def main() -> int:
         if len(browser["tabs_html"]) != len(TABS):
             missing = [t for t in TABS if t not in browser["tabs_html"]]
             raise RuntimeError(f"panels missing from DOM: {missing}")
-        capture_logout(base, token, out)
+        results["/logout"] = capture_logout(base, token, out)
+
         m = metrics(results, browser, out / "api", out, rev)
         write_readme(out)
         t = m["totals"]
         print(f"      done. html={t['html_bytes']}B js={t['js_bytes']}B api={t['api_bytes']}B")
         print(f"      dom nodes: page={t['dom_nodes_page']} panels={t['dom_nodes_all_panels']}")
         if check_against is not None:
+            # Dead-URL first: a golden whose path the app no longer serves is a
+            # finding even when its bytes are irrelevant, and it must not be
+            # reported as "drift" (nothing drifted — the URL went away).
+            dead = dead_urls(check_against, results)
+            if dead:
+                rc = 1
+                print(f"DEAD GOLDEN URL: {len(dead)} golden(s) point at a URL the "
+                      f"app no longer serves — delete them from {check_against}/api:")
+                for d in dead:
+                    print(f"  {d}")
             diffs = compare_tree(check_against, out, screens=not args.no_screens)
             if diffs:
                 rc = 1
@@ -1181,9 +1267,11 @@ def main() -> int:
                             if not d.split()[-1].startswith("screens/")][:3]:
                     print_change_markers(check_against, out, rel)
                 print(f"capture kept for inspection: {out.parent}")
-            else:
+            elif not dead:
                 shutil.rmtree(out.parent, ignore_errors=True)
                 print(f"golden OK: {rev} matches {check_against}")
+            else:
+                print(f"capture kept for inspection: {out.parent}")
     except Exception as e:
         rc = 1
         print(f"FAILED: {type(e).__name__}: {e}")
