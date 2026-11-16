@@ -8,13 +8,17 @@
 #   bash scripts/dut_server.sh stop  [port]
 #   bash scripts/dut_server.sh status [port]
 #
-# Env overrides: VENV, PLAYWRIGHT_BROWSERS_PATH, LOG_LEVEL.
+# Env overrides: VENV, PLAYWRIGHT_BROWSERS_PATH, LOG_LEVEL, SCOPE_FEATURES.
 # Port default: first free in 18177..18188 (18447 is foreign — never used).
 set -u
 
 VENV=${VENV:-/opt/data/opensrm-repo/.venv}
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
 LOG_LEVEL=${LOG_LEVEL:-WARNING}
+# Same list as scripts/dut_suite.sh boots with: the app's own DEFAULT_FEATURES
+# plus `campus`. Without it a bare dut_server boot hides /campus and the route
+# suites read 404 on a tree CI calls green. A caller-supplied value still wins.
+SCOPE_FEATURES=${SCOPE_FEATURES:-hourwise,academics,fees,profile,attendance,marks,campus}
 
 cmd=${1:-status}
 port=${2:-}
@@ -57,7 +61,7 @@ case "$cmd" in
     mkdir -p "$data"
     log=/tmp/dut-$slug-$port.log
     ( cd "$(git rev-parse --show-toplevel)" && \
-      env DATA_DIR="$data" LOG_LEVEL="$LOG_LEVEL" \
+      env DATA_DIR="$data" LOG_LEVEL="$LOG_LEVEL" SCOPE_FEATURES="$SCOPE_FEATURES" \
       "$VENV/bin/python" -m gunicorn -w 1 --threads 4 -b 127.0.0.1:"$port" app.app:app \
       >"$log" 2>&1 & echo $! > /tmp/dut-$slug-$port.pid )
     printf 'DUT_BASE=http://127.0.0.1:%s\nDATA_DIR=%s\nLOG=%s\nPID=%s\n' \
