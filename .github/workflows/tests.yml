@@ -231,8 +231,22 @@ jobs:
           # in GHCR. Older releases predate image publishing (v1.3.0 exists as a
           # tag with no image), so "the previous release" has to mean "the
           # previous release we can actually boot", not releases[0] blindly.
-          TAGS=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" \
-            | python3 -c "import json,sys;[print(r['tag_name'].lstrip('v')) for r in json.load(sys.stdin)]")
+          # Authenticated on purpose: runners share IPs, so the anonymous 60/hr
+          # limit makes this endpoint answer 403 with a JSON OBJECT body, not a
+          # list. Iterating that object yields its KEYS, so the old one-liner died
+          # on `r['tag_name']` -> "string indices must be integers" - a red that
+          # named neither the API nor the rate limit. The shape check below prints
+          # the real body instead of a bare traceback.
+          TAGS=$(curl -sfS -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100" \
+            | python3 -c '
+              import json, sys
+              data = json.load(sys.stdin)
+              if not isinstance(data, list):
+                  sys.exit("releases API did not return a list: %r" % (data,))
+              for r in data:
+                  print(r["tag_name"].lstrip("v"))
+              ')
           [ -n "$TAGS" ] || { echo "::error::no releases found"; exit 1; }
           CUR=$(cat VERSION)
           OLD=""
