@@ -81,7 +81,7 @@ gz = len(gzip.compress(raw, 9))
 check("app.css gzipped <= 35 KB", gz <= 35 * 1024, f"{gz} bytes")
 
 # ── 3. cache headers ─────────────────────────────────────────────────────
-r = client.get("/static/dash.js?v=deadbeef11")
+r = client.get("/static/gaze.js?v=deadbeef11")
 check("versioned static is immutable",
       "max-age=31536000" in r.headers.get("Cache-Control", "") and
       "immutable" in r.headers.get("Cache-Control", ""),
@@ -99,20 +99,25 @@ check("HTML stays no-store",
       "no-store" in r.headers.get("Cache-Control", ""),
       r.headers.get("Cache-Control", ""))
 
-# ── 4. dash.js: a sync carries DATA, not markup (W5.1b) ──────────────────
+# ── 4. a sync carries DATA, not markup (W5.1b; owner moved in W5.4) ──────
 # The regression this guards is the one that was measured: a sync that fetched
 # the route's HTML again and swapped <main> out. That destroyed the nodes the
 # user was looking at (browser clamps scrollY, 250 -> 0 on a phone) and cost
 # ~60 KB of re-downloaded, re-parsed markup to change one number.
-src = open(os.path.join(REPO, "app", "static", "dash.js"), encoding="utf-8").read()
+# W5.4: dash.js is deleted, so the same four claims are asserted against
+# web/src/data/refresh.ts (the module that owns the sync) plus the deletion.
+for legacy in ("dash.js", "timetable.js", "pull.js"):
+    check(f"app/static/{legacy} is deleted",
+          not os.path.exists(os.path.join(REPO, "app", "static", legacy)))
+src = open(os.path.join(REPO, "web", "src", "data", "refresh.ts"), encoding="utf-8").read()
 code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("//"))
-check("dash.js: the sync never re-fetches the route's own markup",
+check("refresh.ts: the sync never re-fetches the route's own markup",
       "location.pathname + location.search" not in code)
-check("dash.js: no hard reload left on the sync path",
+check("refresh.ts: no hard reload left on the sync path",
       "location.reload(" not in code)
-check("dash.js: the repaint goes through the bundle's data hook",
+check("refresh.ts: the repaint goes through the bundle's data hook",
       "__osrmRefreshData" in code)
-check("dash.js: no DOM morphing / markup swap left",
+check("refresh.ts: no DOM morphing / markup swap left",
       not any(t in code for t in ("Idiomorph", "DOMParser", "outerHTML", "replaceChild", "removeChild")))
 # The vendored morph library is deleted, and nothing in the SHIPPED tree may
 # even mention it (the goldens are dated captures of the OLD build; the tests

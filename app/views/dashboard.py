@@ -152,10 +152,11 @@ def _creds_usable(netid):
 
     /api/refresh can answer nothing but 401 in every other case (no row, or a
     blob the current Fernet keys cannot read — a key rotation), and the browser
-    logs every 401 as a console error on the page that fired it. dash.js's
-    background auto-sync therefore needs to know BEFORE it fetches: see the
-    `can-sync` meta tag and app/static/dash.js. (E4: zero console errors on
-    every route, including the not-yet-synced account.)
+    logs every 401 as a console error on the page that fired it. The background
+    auto-sync therefore needs to know BEFORE it fetches: see the `can-sync` meta
+    tag and web/src/data/background.ts (W5.4: it used to be app/static/dash.js).
+    (E4: zero console errors on every route, including the not-yet-synced
+    account.)
     """
     from ..crypto import decrypt_pw
     row = user_password(netid)
@@ -286,7 +287,8 @@ def presentation(vm):
         scope_sync_state=_scope_sync_state(netid),
         # E4: the auto-sync must not fire /api/refresh on an account whose
         # stored creds cannot decrypt — the 401 is unavoidable and the browser
-        # logs it. dash.js reads this before its background ref(true).
+        # logs it. web/src/data/background.ts reads this before its background
+        # autoRefreshIfStale().
         can_sync=_creds_usable(netid))
 
 

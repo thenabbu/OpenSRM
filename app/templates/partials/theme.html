@@ -2,8 +2,9 @@
 <meta name="color-scheme" content="dark">
 {# Can this account's stored portal password still be read? If not, every
    /api/refresh answers 401 and the browser logs it as a console error, so
-   dash.js skips the background auto-sync (E4: zero console errors on all
-   nine routes). Rendered here because every panel includes this partial. #}
+   web/src/data/background.ts skips the background auto-sync (E4: zero console
+   errors on all nine routes). Rendered here because every panel includes this
+   partial. #}
 <meta name="can-sync" content="{{ '1' if can_sync else '0' }}">
 <style>
 html[data-theme="openSRM"] {
@@ -39,10 +40,12 @@ html[data-theme="openSRM"] {
 .navbar [role="tab"][aria-selected="true"]::after {
   content: "";
   position: absolute;
-  width: auto;          /* daisyUI .dock-active:after sets width:2.5rem and dash.js
-                           toggles that class on every [data-tab] — without this the
-                           bar renders 40px (left 8 / right 41) instead of the
-                           left/right-derived width. Measured: 73px in, 40px leaked. */
+  width: auto;          /* daisyUI .dock-active:after sets width:2.5rem. The
+                           class is SERVER-rendered per route now (P3.1: a real
+                           <a aria-current="page">), so nothing toggles it from
+                           JS — but without this override the bar renders 40px
+                           (left 8 / right 41) instead of the left/right-derived
+                           width. Measured: 73px in, 40px leaked. */
   left: 0.5rem;
   right: 0.5rem;
   bottom: 2px;
@@ -97,9 +100,10 @@ html { background: oklch(20% 0 0); }
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 {# P4.1 build output: one CSS + one module entry (both content-hashed by Vite;
    asset_dist() maps the import name through app/static/dist/.vite/manifest.json).
-   NOT deferred: a defer'd module runs after the legacy dash.js, whose auto-sync
-   ref() would blank/mark-busy the island's span before the island mounts. In
-   <head> a module runs after parsing, before DOMContentLoaded, so the island
-   owns the caption first and ref()'s "Syncing…" is preserved by it. #}
+   NOT deferred: the module must own the sync caption before anything else can
+   write it. W5.4 deleted the legacy dash.js that this ordering used to protect
+   against, but the module still runs in <head> (after parsing, before
+   DOMContentLoaded) so the island mounts first and a refresh's "Syncing…" is
+   preserved by it. #}
 <link rel="stylesheet" href="{{ asset_dist('app.css') }}">
 {% if preact_islands %}<script type="module" src="{{ asset_dist('app') }}"></script>{% endif %}

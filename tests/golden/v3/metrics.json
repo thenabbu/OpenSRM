@@ -1,9 +1,9 @@
 {
   "api": {
     "/": {
-      "bytes": 52057,
+      "bytes": 52075,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13243,
+      "gzip_bytes": 13282,
       "status": 200
     },
     "/api/marks": {
@@ -61,9 +61,9 @@
       "status": 200
     },
     "/login": {
-      "bytes": 13615,
+      "bytes": 13745,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 4746,
+      "gzip_bytes": 4782,
       "status": 200
     },
     "/logout": {
@@ -73,21 +73,15 @@
       "status": 302
     },
     "/static/app.css": {
-      "bytes": 159112,
+      "bytes": 155310,
       "content_type": "text/css; charset=utf-8",
-      "gzip_bytes": 25703,
+      "gzip_bytes": 25183,
       "status": 200
     },
     "/static/apple-touch-icon.png": {
       "bytes": 5010,
       "content_type": "image/png",
       "gzip_bytes": 5007,
-      "status": 200
-    },
-    "/static/dash.js": {
-      "bytes": 25860,
-      "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 8970,
       "status": 200
     },
     "/static/dist/assets/app-HASH.css": {
@@ -145,15 +139,9 @@
       "status": 200
     },
     "/static/perf.js": {
-      "bytes": 844,
+      "bytes": 1281,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 511,
-      "status": 200
-    },
-    "/static/pull.js": {
-      "bytes": 6165,
-      "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 2390,
+      "gzip_bytes": 749,
       "status": 200
     },
     "/static/push.js": {
@@ -165,51 +153,42 @@
     "/static/sw.js": {
       "bytes": 29870,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9519,
-      "status": 200
-    },
-    "/static/timetable.js": {
-      "bytes": 17320,
-      "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 4773,
+      "gzip_bytes": 9517,
       "status": 200
     }
   },
   "pages": {
     "/": {
-      "dom_nodes": 313,
-      "html_bytes": 52057,
-      "html_gzip_bytes": 13243,
-      "js_bytes": 106574,
+      "dom_nodes": 310,
+      "html_bytes": 52075,
+      "html_gzip_bytes": 13282,
+      "js_bytes": 57666,
       "js_files": [
-        "/static/dash.js",
         "/static/dist/assets/app-HASH.js",
         "/static/gaze.js",
         "/static/perf.js",
-        "/static/pull.js",
         "/static/push.js",
-        "/static/sw.js",
-        "/static/timetable.js"
+        "/static/sw.js"
       ],
-      "js_gzip_bytes": 35063,
-      "script_tags": 9
+      "js_gzip_bytes": 19166,
+      "script_tags": 6
     },
     "/login": {
       "dom_nodes": null,
-      "html_bytes": 13615,
-      "html_gzip_bytes": 4746,
-      "js_bytes": 35798,
+      "html_bytes": 13745,
+      "html_gzip_bytes": 4782,
+      "js_bytes": 36235,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/login.js",
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 11997,
+      "js_gzip_bytes": 12233,
       "script_tags": 3
     }
   },
-  "revision": "63552ab",
+  "revision": "294ecd7",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -218,8 +197,8 @@
     },
     "attendance": {
       "panel_dom_nodes": 825,
-      "panel_html_bytes": 109107,
-      "panel_html_gzip_bytes": 6008
+      "panel_html_bytes": 109062,
+      "panel_html_gzip_bytes": 5987
     },
     "campus": {
       "panel_dom_nodes": 92,
@@ -258,13 +237,13 @@
     }
   },
   "totals": {
-    "api_bytes": 394276,
-    "api_gzip_bytes": 107012,
+    "api_bytes": 341714,
+    "api_gzip_bytes": 90670,
     "dom_nodes_all_panels": 2077,
-    "dom_nodes_page": 313,
-    "html_bytes": 65672,
-    "html_gzip_bytes": 17989,
-    "js_bytes": 111451,
-    "js_gzip_bytes": 36857
+    "dom_nodes_page": 310,
+    "html_bytes": 65820,
+    "html_gzip_bytes": 18064,
+    "js_bytes": 62543,
+    "js_gzip_bytes": 20960
   }
 }

@@ -827,8 +827,9 @@ def static_no_cache(filename):
         # audit 2026-09-27: without this header a scope of "/" is rejected
         # (default max scope = the script's directory, /static/) and
         # registration fails — swallowed by .catch(), so the PWA silently
-        # never worked. Registration now lives in login.js/dash.js (external
-        # files pass script-src 'self').
+        # never worked. Registration lives in login.js (the /login route) and
+        # web/src/data/pageChrome.ts (every other route, W5.4); both are
+        # external files, so script-src 'self' still holds.
         resp.headers["Service-Worker-Allowed"] = "/"
     elif request.args.get("v"):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
@@ -912,8 +913,9 @@ def marks_tag():
     netid = get_current_user()
     if not netid:
         return redirect("/login")
-    # fetch callers (dash.js soft refresh) ask for JSON and morph in place;
-    # a plain form POST keeps the redirect round-trip as the no-JS fallback
+    # fetch callers (the bundle's marks tag save) ask for JSON and repaint in
+    # place; a plain form POST keeps the redirect round-trip as the no-JS
+    # fallback
     wants_json = request.accept_mimetypes.best == "application/json"
     def _back(err=None):
         if wants_json:
@@ -1009,8 +1011,9 @@ from .routes_push import (  # noqa: E402,F401 — re-exported
 # ── Tab interaction beacon ───────────────────────────────────────────
 # Tabs are a client-side switch (no page load), so the server cannot see
 # which one a student actually reads — every dashboard load records
-# target="dashboard" and stops there. dash.js posts the tab name here on
-# switch so page-level usage is measurable at all.
+# target="dashboard" and stops there. The page posts the tab name here on
+# switch (web/src/data/pageChrome.ts bindItemBeacon, W5.4) so page-level usage
+# is measurable at all.
 #
 # Deliberately tiny: the response is a bare 204 with no body, the caller
 # ignores it, and every failure path still returns 204 — a dropped click

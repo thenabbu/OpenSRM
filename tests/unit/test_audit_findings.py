@@ -207,8 +207,10 @@ chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown), boun
     and has(_COPY, r"setAttribute\('role'") and has(_COPY, r"setAttribute\('tabindex'")
     and has(_COPY, r"addEventListener\('keydown'")
     and has('web/src/main.ts', r'bindCopyTargets\(')
-    and miss('app/static/dash.js', r"closest\('\[data-copy\]'\)")
-    and miss('app/static/dash.js', r'function setupCopyTargets'))
+    # W5.4: "dash.js must no longer implement it" is now "dash.js is gone".
+    # miss() on a deleted file returns False (rd raises -> has() returns None),
+    # so the absence has to be asserted as a file fact, not a regex miss.
+    and not (R / 'app/static/dash.js').exists())
 chk('L45', "a11y: attendance progress meters carry an accessible name", *_meters_ok('attendance.html'))
 # L46: the dashboard must render the manifest link. It lived in home.html until
 # base.html took over the <head>; home.html now extends base, so the link is

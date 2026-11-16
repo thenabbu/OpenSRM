@@ -10,3 +10,16 @@
   sm:grid-cols-1 sm:grid-cols-2 sm:grid-cols-3
   progress-success progress-warning progress-error
   lg:max-h-[calc((100dvh-94px)*0.65)]"></div>
+
+<!-- W5.4: classes the BUNDLE writes at runtime (web/src/**), which the scanner
+     cannot see either — until now they were emitted only by accident, because
+     app/static/dash.js and timetable.js contained the same literals. Those two
+     files are deleted, so the tokens are safelisted here and
+     tests/unit/test_css_safelist.py asserts each one is actually emitted.
+       pageChrome.ts offline banner : alert alert-soft alert-warning fixed
+                                      bottom-0 left-0 right-0 z-50 rounded-none
+       copy.ts flash                : text-success
+       refresh.ts busy icon         : animate-spin
+       timetableEditor.ts history   : ml-1 last:border-b-0 space-y-0.5 -->
+<div class="alert-warning rounded-none text-success animate-spin ml-1
+  last:border-b-0 space-y-0.5"></div>

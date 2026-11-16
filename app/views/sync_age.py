@@ -1,11 +1,11 @@
 """The navbar sync caption — server-side render + island props (P4.1).
 
-The caption used to be client-only: dash.js filled every `.sync-line` span at
-load and re-ran a 60s setInterval. P4.1 makes it progressive enhancement: the
-server paints the same text/classes into the span, marks it as a `sync-age`
-island, and the Preact island re-ages it after hydration. dash.js is untouched;
-its explicit renders (start of a refresh, end of one) still win, because the
-island's tick preserves the legacy text it finds in the span.
+The caption used to be client-only: app/static/dash.js filled every `.sync-line`
+span at load and re-ran a 60s setInterval. P4.1 makes it progressive enhancement:
+the server paints the same text/classes into the span, marks it as a `sync-age`
+island, and the Preact island re-ages it after hydration. W5.4 deleted dash.js
+and the 60s loop with it: the island owns the timer now, and refresh.ts writes
+the caption in place (ageCaption, the same formatter) when a sync lands.
 
 Props travel exactly as notes/ISLAND_CONTRACT.md specifies:
 

@@ -42,8 +42,9 @@ TIMETABLE_SOURCE = "official"
 TOOLS = [
     # (slug, label, hint, gate op, tab). The tab is where the row sends you: a
     # surface with its own panel names it, one that lives inside an existing
-    # tab points there. dash.js marks a row inert when that panel is absent, so
-    # a not-yet-mounted surface degrades to a disabled row, never a dead link.
+    # tab points there. The server renders the real route as the row's href
+    # (P3.1); ToolsPanel keeps a not-yet-mounted surface inert instead of a
+    # dead link.
     ("fees", "Fees", "Dues, payments and receipts", "getFeeDetails", "fees"),
     # gates on the RELEASED-results op: the provisional/revaluation endpoints
     # are empty outside their window, so keying the entry on them left Academics

@@ -61,11 +61,17 @@ def check(name, ok, detail=""):
 
 
 # ── static contract: the tab machine and the stale-hash write are gone ──
-src = open(os.path.join(REPO, "app", "static", "dash.js"), encoding="utf-8").read()
-check("dash.js: no tab-switching engine left (switchTab/replaceState)",
+# W5.4: this read app/static/dash.js, which is deleted. Assert the absence
+# explicitly (so the block cannot pass vacuously) and keep the two behavioural
+# claims against the module that owns the sync now.
+for legacy in ("dash.js", "timetable.js", "pull.js"):
+    check(f"app/static/{legacy} is deleted",
+          not os.path.exists(os.path.join(REPO, "app", "static", legacy)))
+src = open(os.path.join(REPO, "web", "src", "data", "refresh.ts"), encoding="utf-8").read()
+check("refresh.ts: no tab-switching engine left (switchTab/replaceState)",
       "switchTab" not in src and "replaceState" not in src
       and "b.tabIndex" not in src)
-check("dash.js: a sync fetches no page markup at all (F1 cannot recur)",
+check("refresh.ts: a sync fetches no page markup at all (F1 cannot recur)",
       "location.pathname + location.search" not in src
       and "text/html" not in src)
 

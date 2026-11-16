@@ -118,7 +118,17 @@ rows = html_off.count('class="att-subj"')
 check("flag OFF: 2 server-rendered course rows in HTML", rows == 2, f"{rows} att-subj cells")
 check("flag OFF: seeded course names title-cased in the rows",
       "Data Structures" in html_off and "Dbms" in html_off)
-check("flag OFF: legacy dash.js still shipped", "dash.js" in html_off)
+# W5.4 inverted this one on purpose. It used to read "legacy dash.js still
+# shipped" — the flag switched between two client implementations. dash.js,
+# timetable.js, pull.js and drag-drop-touch.js are deleted, so OFF now means
+# NO client layer: the assertion is that the deleted files stay deleted on
+# every route (a resurrected <script> tag here would mean the rollback path
+# silently kept a second implementation alive).
+check("flag OFF: no legacy script tags (dash/timetable/pull/drag-drop-touch)",
+      not any(n in html_off for n in ("dash.js", "timetable.js", "pull.js",
+                                      "drag-drop-touch.js")))
+check("flag OFF: the surviving KEEP scripts still load (gaze, push)",
+      "gaze.js" in html_off and "push.js" in html_off)
 check("flag OFF: page still an HTML document", "<html" in html_off.lower() and "</html>" in html_off.lower())
 
 # 4) structure: differ by the island tag only-ish — ON must be a superset
