@@ -21,13 +21,18 @@ export DUT_BASE="http://127.0.0.1:$PORT"
 # Playwright use its own default (~/.cache/ms-playwright on Linux,
 # %LOCALAPPDATA%\ms-playwright on Windows) — a blind pin made a non-lab run read
 # as 10 broken tests instead of one missing browser.
-if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d /opt/data/cache/scratch/pw-browsers ]; then
-  export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
-fi
-if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
-  echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH does not exist — browsers are not installed there." >&2
-  echo "  install: ${VENV:-.venv}/bin/python -m playwright install chromium" >&2
-  exit 2
+pw_ok() { ls "${1:-}"/*/chrome-headless-shell*/chrome-headless-shell >/dev/null 2>&1 \
+        || ls "${1:-}"/*/chrome-linux/chrome >/dev/null 2>&1; }
+# Test for the BROWSER, not the directory: the environment's
+# PLAYWRIGHT_BROWSERS_PATH exists but holds no browsers (see a11y_stress.sh).
+if ! pw_ok "${PLAYWRIGHT_BROWSERS_PATH:-}"; then
+  if pw_ok /opt/data/cache/scratch/pw-browsers; then
+    export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
+  else
+    unset PLAYWRIGHT_BROWSERS_PATH
+    echo "no Chromium found — the DUTs cannot run. install: ${VENV:-.venv}/bin/python -m playwright install chromium" >&2
+    exit 2
+  fi
 fi
 export PYTHONPATH="$PWD"
 V=${VENV:-.venv}/bin/python

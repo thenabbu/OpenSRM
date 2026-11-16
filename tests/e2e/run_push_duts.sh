@@ -10,13 +10,18 @@ cd "$(dirname "$0")/../.."
 V=${VENV:-.venv}
 # Same rule as scripts/dut_suite.sh: pin the lab's browser dir only when it is
 # really there, and never pretend a missing browser is a failing test.
-if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d /opt/data/cache/scratch/pw-browsers ]; then
-  export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
-fi
-if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ ! -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
-  echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH does not exist — browsers are not installed there." >&2
-  echo "  install: $V/bin/python -m playwright install chromium" >&2
-  exit 2
+pw_ok() { ls "${1:-}"/*/chrome-headless-shell*/chrome-headless-shell >/dev/null 2>&1 \
+        || ls "${1:-}"/*/chrome-linux/chrome >/dev/null 2>&1; }
+# Test for the BROWSER, not the directory: the environment's
+# PLAYWRIGHT_BROWSERS_PATH exists but holds no browsers (see a11y_stress.sh).
+if ! pw_ok "${PLAYWRIGHT_BROWSERS_PATH:-}"; then
+  if pw_ok /opt/data/cache/scratch/pw-browsers; then
+    export PLAYWRIGHT_BROWSERS_PATH=/opt/data/cache/scratch/pw-browsers
+  else
+    unset PLAYWRIGHT_BROWSERS_PATH
+    echo "no Chromium found — the push DUTs cannot run. install: $V/bin/python -m playwright install chromium" >&2
+    exit 2
+  fi
 fi
 PIDS=()
 cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; }
