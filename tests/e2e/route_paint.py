@@ -100,6 +100,7 @@ CSP_READ = "() => (window.__csp || [])"
 class Leg:
     def __init__(self):
         self.pass_n = self.fail_n = 0
+        self.csp_n = 0   # counted, not inferred: the summary line states it
 
     def chk(self, name, ok, detail=""):
         if ok:
@@ -172,6 +173,7 @@ def check_route(page, leg, route, island, row_sel, row_word):
         # tripping the app's policy, never the app. Only that exact case is
         # excused: a blocked script, style, font, connect or frame counts.
         csp = [v for v in page.evaluate(CSP_READ) if v.get("b") != "eval"]
+        leg.csp_n += len(csp)
         clean = not spurious and not noisy and not net_fail and not csp
         if route in EMPTY_BY_DESIGN:
             # Declared empty: hydrating to exactly zero rows is the CORRECT
@@ -264,7 +266,8 @@ def main():
         browser.close()
 
     print(f"\n  route paint [{args.browser}]: {leg.pass_n} passed, {leg.fail_n} failed"
-          f" ({len(EMPTY_BY_DESIGN)} declared empty-by-design, asserted not skipped)")
+          f" ({len(EMPTY_BY_DESIGN)} declared empty-by-design, asserted not skipped)"
+          f" | {leg.csp_n} CSP violation(s) across {leg.pass_n + leg.fail_n} route(s)")
     return 0 if leg.fail_n == 0 else 1
 
 
