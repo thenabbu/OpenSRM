@@ -373,6 +373,16 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_dut_official_tt.py
 
+      # The timetable EDITOR, which nothing else covers: the suite boots its OWN
+      # two servers with TIMETABLE_EDITOR pinned enabled then archived, so it
+      # cannot ride the shared server above (ci_e2e_http.sh pins no such env and
+      # the suite sets DATA_DIR at import). After W5.4 deletes timetable.js this
+      # step is the only thing between us and a silent editor break.
+      - name: test_timetable_edit_dut (timetable editor DUT, self-booting)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_timetable_edit_dut.py
+
       # The offline read path: online visit writes the cache, then the SAME
       # server is killed and the page must still paint. Boots its own server on
       # 18183 (nothing above holds that port), so it needs no fixture here.
