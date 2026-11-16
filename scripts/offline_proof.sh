@@ -30,6 +30,15 @@ KEEP=${1:-}
 PORT=${PORT:-18183}
 SLUG=offlineproof
 PW=${PLAYWRIGHT_BROWSERS_PATH:-/opt/data/cache/scratch/pw-browsers}
+# The environment sets PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/tools, which EXISTS
+# but holds no browsers — so a `-d` test passes, the browser legs are allowed to
+# run, and they die with "Executable doesn't exist at
+# /opt/hermes/tools/chromium_headless_shell-*". Test for the BROWSER, not the
+# directory (same probe as scripts/a11y_stress.sh). Exported before the `-d`
+# gates below, so both browser legs get the corrected path from one place.
+_pw_ok() { ls "${1:-}"/*/chrome-headless-shell*/chrome-headless-shell >/dev/null 2>&1 \
+        || ls "${1:-}"/*/chrome-linux/chrome >/dev/null 2>&1; }
+if ! _pw_ok "$PW"; then PW=/opt/data/cache/scratch/pw-browsers; fi
 export PLAYWRIGHT_BROWSERS_PATH=$PW
 OUT=${OUT:-/opt/data/missions/opensrm-preact/notes/verify/P7-offline.md}
 PASS=0
