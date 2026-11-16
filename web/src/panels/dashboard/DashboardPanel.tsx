@@ -1,14 +1,9 @@
 import type { ComponentChildren } from 'preact';
 import { badge } from '../../design';
 import type { DashboardProps } from './contract';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface DashboardHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type DashboardHost = HostProps;
 
 type P = DashboardProps;
 
@@ -338,7 +333,7 @@ function Card({ cls, children }: { cls: string; children: ComponentChildren }) {
  */
 export default function DashboardPanel({ el, props }: DashboardHost) {
   const p = props as DashboardProps;
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   return (
     <>
       {/* LAYOUT `day`: span 4, row-span 2, always shown (no `when`). */}

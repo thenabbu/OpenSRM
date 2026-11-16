@@ -1,12 +1,7 @@
 import type { MarksComponent, MarksProps, MarksSubject } from './contract';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface MarksHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type MarksHost = HostProps;
 
 const CHIP = 'inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs';
 
@@ -112,7 +107,7 @@ function Subject({ s }: { s: MarksSubject }) {
  * may defer work to useEffect/useState, whose throws the boundary cannot see.
  */
 export default function MarksPanel({ el, props }: MarksHost) {
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   const { subjects } = props as MarksProps;
   // No wrapper div: the mount point IS the `grid` (marks.html), so the island
   // returns the cards as siblings. Wrapping them nested a second grid inside

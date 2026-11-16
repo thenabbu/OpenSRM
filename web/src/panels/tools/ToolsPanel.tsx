@@ -1,13 +1,8 @@
 import type { ToolRow, ToolsProps } from './contract';
 import { text } from '../../design';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface ToolsHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type ToolsHost = HostProps;
 
 /** The list item + link chrome (tools.html:257-273). */
 const LINK = 'pressable flex items-center justify-between gap-3 bg-base-300/50 border border-base-300 rounded-box px-4 py-3.5 hover:bg-base-300 transition-colors';
@@ -34,7 +29,7 @@ export default function ToolsPanel({ el, props }: ToolsHost) {
   const { rows } = props as ToolsProps;
   // Marker goes on the mount (the <ul> itself), the way every other island
   // does it - the island's own root is a fragment, so it has no element.
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   // No wrapper <ul>: tools.html:211 puts data-island="tools" ON the <ul> and
   // its children are the <li> rows. Returning a <ul> here nests a second list
   // inside the first (the P6.3/P6.6/P6.7 bug, now caught by island-verify).

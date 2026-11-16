@@ -1,13 +1,8 @@
 import type { AcadRow, AcademicsProps, Cat, CourseRow, Sem } from './contract';
 import { text } from '../../design';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface AcademicsHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type AcademicsHost = HostProps;
 
 /** Both cards share this chrome (academics.html:207, 253). */
 const CARD = 'bg-base-200 border border-base-300 rounded-box';
@@ -185,7 +180,7 @@ function Courses({ c }: { c: NonNullable<AcademicsProps['courses']> }) {
  * prop throws there and the server's markup is restored.
  */
 export default function AcademicsPanel({ el, props }: AcademicsHost) {
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   const p = props as AcademicsProps;
   if (!p.cgpa && !p.courses) return null;
   // No wrapper div: academics.html:204 already provides the

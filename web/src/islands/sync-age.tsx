@@ -1,5 +1,5 @@
-import type { HostProps } from './contract';
-import type { SyncAgeProps } from './contract';
+import type { HostProps, SyncAgeProps } from './contract';
+import { markHydrated } from './contract';
 import { ageCaption } from '../lib/syncAge';
 
 export interface SyncAgeHost extends HostProps {
@@ -8,8 +8,6 @@ export interface SyncAgeHost extends HostProps {
 
 /** The in-flight caption dash.js writes (ref()); live state, not an age. */
 const SYNCING = 'Syncing…';
-/** Client-only marker: tests and CSS key off it, the server never writes it. */
-export const HYDRATED_ATTR = 'data-hydrated';
 
 /**
  * The navbar sync caption, hydrated. The server painted identical text and
@@ -42,7 +40,7 @@ export default function SyncAge({ el, props }: SyncAgeHost) {
     el.title = full;
   };
   paint();
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   // one timer per mount; lives as long as the page (re-mounts are guarded by
   // data-hydrated in main.ts)
   window.setInterval(paint, 60_000);

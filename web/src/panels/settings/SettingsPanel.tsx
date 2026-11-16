@@ -1,14 +1,9 @@
 import type { Detail, Group, SettingsProps } from './contract';
 import { text } from '../../design';
 import { COPY_ATTRS } from '../../data/copy';
+import { markHydrated, type HostProps } from '../../islands/contract';
 
-export interface SettingsHost {
-  el: HTMLElement;
-  props: unknown;
-}
-
-/** Client-only marker: only a mounted island can set it. Mirrors sync-age. */
-export const HYDRATED_ATTR = 'data-hydrated';
+export type SettingsHost = HostProps;
 
 /** settings.html:189 — one collapse, and the groups nested inside it. */
 const COLLAPSE = 'collapse collapse-arrow bg-base-200 border border-base-300';
@@ -122,7 +117,7 @@ export function PersonalDetails({ props }: { props: unknown }) {
 export default function SettingsPanel({ el, props }: SettingsHost) {
   // Marks the node as client-owned BEFORE returning, inside the boundary's try:
   // a throw here still leaves the server's children restored and un-marked.
-  el.setAttribute(HYDRATED_ATTR, '1');
+  markHydrated(el);
   // The mount IS #personal-details (settings.html:189), so the block returned
   // here carries that same id — the server's node is replaced, not nested.
   return <PersonalDetails props={props} />;

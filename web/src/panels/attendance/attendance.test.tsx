@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/preact';
-import AttendancePanel, { HYDRATED_ATTR } from './AttendancePanel';
+import AttendancePanel from './AttendancePanel';
+import { HYDRATED_ATTR } from '../../islands/contract';
 import type { AttendanceProps } from './contract';
 
 /**
