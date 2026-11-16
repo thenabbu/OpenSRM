@@ -54,9 +54,14 @@ const V1 = {
 const V2 = { ...V1 };
 
 // v3 adds ONE store: the write queue for deferred offline actions (P7.4).
-// `&k` is unique: enqueuing the same tag twice must REPLACE, not append, so a
-// student who changes their mind offline replays one write, not two. `netid`
-// and `at` are indexed for the per-student drain and the retry order.
+// `k` is the PRIMARY KEY and that is what makes re-enqueuing the same tag
+// REPLACE rather than append — so a student who changes their mind offline
+// replays one write, not two. Measured, not assumed: `db.outbox.schema.primKey`
+// reads `{name:'k', auto:false, unique:true}` and the `&` prefix below compiles
+// to that SAME primary key — Dexie creates no separate unique index here, so the
+// `&` is belt-and-braces and the key path is the real guarantee. Never move `k`
+// off the front of this spec and never prefix it with `++`.
+// `netid` and `at` are indexed for the per-student drain and the retry order.
 const V3 = { ...V2, outbox: '&k, netid, at' };
 
 export const SCHEMAS = [V1, V2, V3] as const;

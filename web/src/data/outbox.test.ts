@@ -1,4 +1,6 @@
 import 'fake-indexeddb/auto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, wipeAll } from '../db/db';
 import {
@@ -137,6 +139,20 @@ describe('P7.4 write queue survives being offline', () => {
 describe('the queue may never carry auth or lifecycle routes', () => {
   it('declares /marks/tag and nothing else', () => {
     expect(Object.values(OUTBOX_ROUTES)).toEqual(['/marks/tag']);
+  });
+
+  // The plan asks for `grep -c 'track/tab|account/delete'` in this module to be
+  // 0. As a test, not a paste: the route-table assertion above only reads
+  // `OUTBOX_ROUTES`, so a URL typed anywhere else in the module — a stray
+  // beacon, a hand-rolled `fetch` — would pass it. A source scan sees the whole
+  // file. Kept to the two tokens the plan names: "the server 302s to /login" is
+  // prose explaining why a redirect means a dead session, not a route.
+  it("grep 'track/tab|account/delete' -> 0 matches in outbox.ts", () => {
+    // cwd, not `import.meta.url`: under the jsdom environment the module URL is
+    // an http one, so it is not a file to read. vitest's cwd is the package root
+    // (`web/`) both locally via `pnpm test` and in CI via scripts/ci_web.sh.
+    const src = readFileSync(resolve(process.cwd(), 'src/data/outbox.ts'), 'utf8');
+    expect(src.match(/track\/tab|account\/delete/g) ?? [], 'forbidden endpoint named in outbox.ts').toEqual([]);
   });
 });
 
