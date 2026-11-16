@@ -162,14 +162,25 @@ document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
 //    `data-copy` and nothing here could see a repaint before it happened. One
 //    copy implementation, in the bundle, so an island edit has one contract.
 
-// ── Attendance view toggle (graph ↔ table). Persisted in localStorage;
-//    visibility via the `hidden` attribute ONLY (never a Tailwind class).
-(function() {
+// ── Attendance view toggle (W5.2c): the state — load-time restore, the two
+//    click handlers, the localStorage read/write — lives in
+//    web/src/data/attView.ts and is bound by main.ts. The buttons and both
+//    toggled nodes sit OUTSIDE the attendance island, so the island could not
+//    own this state without a template change; the bundle owns it instead and
+//    the markup stays exactly as the server renders it.
+//
+//    Below is the PREACT_ISLANDS=0 rollback path (docs/ROLLBACK.md: no bundle,
+//    so no bridge), same shape as `ref()` above. It flips the view for the page
+//    load and persists NOTHING — the saved value stays the bundle's alone, so a
+//    rollback never records a choice the user made while islands were off.
+(function () {
   var graph = document.getElementById('att-graph');
   var table = document.getElementById('att-table');
   var bg = document.getElementById('att-view-graph');
   var bt = document.getElementById('att-view-table');
-  if (!graph || !table || !bg || !bt) return;
+  // main.ts sets __osrmAttView; when it has, that binder owns both buttons and
+  // a listener here would write localStorage from the fallback.
+  if (!graph || !table || !bg || !bt || window.__osrmAttView) return;
   function apply(view) {
     var isTable = view === 'table';
     table.hidden = !isTable;
@@ -179,9 +190,9 @@ document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
     bt.classList.toggle('btn-active', isTable);
     bg.classList.toggle('btn-active', !isTable);
   }
-  try { apply(localStorage.getItem('attView') || 'graph'); } catch (e) { apply('graph'); }
-  bg.addEventListener('click', function() { apply('graph'); try { localStorage.setItem('attView', 'graph'); } catch (e) {} });
-  bt.addEventListener('click', function() { apply('table'); try { localStorage.setItem('attView', 'table'); } catch (e) {} });
+  apply('graph');
+  bg.addEventListener('click', function () { apply('graph'); });
+  bt.addEventListener('click', function () { apply('table'); });
 })();
 
 // ── Personal-details groups (Settings tab): all open on desktop (dense
