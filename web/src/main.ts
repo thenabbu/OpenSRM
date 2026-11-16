@@ -14,6 +14,7 @@ import { warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
+import { bindAttView } from './data/attView';
 import { warn as logWarn } from './log';
 
 /**
@@ -390,6 +391,16 @@ bindRefreshButtons();
 // `osrm:island-mounted` listener that re-stamps copy targets, and listening
 // late would miss the first mount, which is the one that repaints them.
 bindCopyTargets(document);
+
+// W5.2c: the attendance view toggle. Bound once, here, like the copy cluster —
+// the two buttons are server-rendered and never repainted, so no re-arm is
+// needed; the restore-on-load happens inside the binder.
+//
+// The bridge is what tells dash.js to stand down: it keeps a PREACT_ISLANDS=0
+// toggle that flips the nodes but persists nothing, and without this marker
+// both binders would answer the same click.
+(window as unknown as { __osrmAttView?: typeof bindAttView }).__osrmAttView = bindAttView;
+bindAttView();
 
 // The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
 // has to be able to make an island repaint a page that is already hydrated, and
