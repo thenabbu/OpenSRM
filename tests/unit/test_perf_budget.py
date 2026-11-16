@@ -120,26 +120,31 @@ check("refresh.ts: the repaint goes through the bundle's data hook",
 check("refresh.ts: no DOM morphing / markup swap left",
       not any(t in code for t in ("Idiomorph", "DOMParser", "outerHTML", "replaceChild", "removeChild")))
 # The vendored morph library is deleted, and nothing in the SHIPPED tree may
-# even mention it (the goldens are dated captures of the OLD build; the tests
-# that assert its absence obviously name it, so they are not scanned).
-# notes/ is deliberately NOT scanned: it holds build notes, which document a
-# removal and therefore necessarily name what was removed — the same reason the
-# tests are skipped. The contract is the app, the bundle, the dev scripts and
-# the published docs.
+# even mention it. "Shipped" = what Flask serves: app/templates/ plus
+# app/static/ — including the committed, executed bundle under app/static/dist
+# (which is why "dist" is NOT excluded from this walk). That is the whole
+# claim, so it is the whole scan.
+#
+# Everything else is scoped out BY PATH, so a new doc cannot rot the check into
+# a filename allowlist: scripts/, notes/, docs/ and web/src/ all document this
+# removal in prose or comments and therefore must name what was removed — the
+# same reason tests/ (which asserts the absence) and tests/golden/ (dated
+# captures of the OLD build) are not scanned. Prose is not a shipped dependency;
+# the bundle is, and if the name ever reaches app/static/dist or app/templates
+# this still fails loudly and names the file.
 hits = []
-for sub in ("app", os.path.join("web", "src"), "scripts", "docs"):
-    for root, dirs, files in os.walk(os.path.join(REPO, sub)):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "golden", "screens", "dist")]
-        for f in files:
-            if not f.endswith((".py", ".html", ".js", ".ts", ".tsx", ".md", ".yml", ".yaml", ".json", ".sh", ".css")):
-                continue
-            p = os.path.join(root, f)
-            try:
-                with open(p, encoding="utf-8", errors="ignore") as fh:
-                    if "idiomorph" in fh.read().lower():
-                        hits.append(os.path.relpath(p, REPO))
-            except OSError:
-                continue
+for root, dirs, files in os.walk(os.path.join(REPO, "app")):
+    dirs[:] = [d for d in dirs if d not in ("node_modules", "golden", "screens")]
+    for f in files:
+        if not f.endswith((".py", ".html", ".js", ".ts", ".tsx", ".md", ".yml", ".yaml", ".json", ".sh", ".css")):
+            continue
+        p = os.path.join(root, f)
+        try:
+            with open(p, encoding="utf-8", errors="ignore") as fh:
+                if "idiomorph" in fh.read().lower():
+                    hits.append(os.path.relpath(p, REPO))
+        except OSError:
+            continue
 check("grep -c idiomorph is 0 in the shipped tree", not hits, str(hits[:5]))
 check("app/static/vendor/idiomorph.min.js is gone",
       not os.path.exists(os.path.join(REPO, "app", "static", "vendor", "idiomorph.min.js")))
