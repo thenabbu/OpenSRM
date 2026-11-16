@@ -2,7 +2,11 @@
 {% set active_tab = "marks" %}
 {% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   <div id="tab-marks" role="tabpanel" aria-labelledby="tab-marks-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
-    {% if marks %}
+    {# The mount point must be OUTSIDE `{% if marks %}`: the offline shell
+       renders this template with every list emptied, and a mount that
+       disappears with the data leaves the island nothing to hydrate into —
+       measured as /marks painting zero rows offline while attendance,
+       timetable, campus, academics and fees all painted from Dexie. #}
     {{ marks_props|safe }}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3" data-island="marks" data-props="#island-marks">
       {% for s in marks %}
@@ -66,7 +70,7 @@
       </div>
       {% endfor %}
     </div>
-    {% else %}
+    {% if not marks %}
     <div class="flex flex-col items-center justify-center py-12 text-center">
       <h3 class="text-base font-semibold text-base-content/60">No internal marks published yet</h3>
       <p class="text-sm text-base-content/50 mt-1 max-w-sm">They appear here once your faculty publishes FT/CT marks on the portal.</p>

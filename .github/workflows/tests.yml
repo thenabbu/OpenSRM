@@ -356,6 +356,18 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: bash scripts/capture_golden.sh --check --no-screens
 
+      # SCOPE_FEATURES is DERIVED from the app's own registry, never hand-copied.
+      # The feature list and the env that enables it used to be two literals that
+      # had to agree by hand; a new slug in app/scope/ops.py:FEATURES would leave
+      # four panels 404ing while the suites that seed them went red for no
+      # visible reason. One source of truth, exported to the rest of the job.
+      - name: SCOPE_FEATURES from app.scope.ops.FEATURES
+        run: |
+          set -eu
+          SCOPE=$(PYTHONPATH=. .venv/bin/python -c 'from app.scope.ops import FEATURES; print(",".join(FEATURES))')
+          echo "SCOPE_FEATURES=$SCOPE" >> "$GITHUB_ENV"
+          echo "SCOPE_FEATURES=$SCOPE"
+
       # One gunicorn backs all of these; every suite asserts the listener is
       # its own server (require_own_server) before it tests anything.
       # test_route_panels seeds a fabricated SCOPE blob and asserts the four
@@ -365,7 +377,6 @@ jobs:
       - name: Browser suites that need a server
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-          SCOPE_FEATURES: hourwise,academics,fees,placement,library,campus,profile,attendance,marks
         run: |
           bash scripts/ci_e2e_http.sh \
             test_sw test_xss test_navbar test_route_panels test_panel_api test_marks_dut test_personal \
@@ -414,6 +425,18 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: bash scripts/offline_proof.sh
+
+      # W6.3: the network-cut suite. All nine routes with the network cut
+      # against the BUILT dist, two-student isolation on one device, and FOUR
+      # separately named logout wipe assertions (IndexedDB rows, Cache API
+      # shell/PII, push subscription, Web Storage). Self-booting: own DATA_DIR,
+      # own gunicorn on a free port, and it derives SCOPE_FEATURES itself instead
+      # of inheriting this job's copy, so a drift in the env cannot make it pass
+      # on four 404s.
+      - name: Network-cut suite, nine routes (test_offline_routes.py)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: .venv/bin/python tests/e2e/test_offline_routes.py
 
       # Boots its own three gunicorn instances (18185 unconfigured /
       # 18186 push-enabled / 18187 same DB with push env stripped) and runs
