@@ -28,7 +28,7 @@ import { warn } from '../log';
 //   * `settings` — identity is server-rendered only; there is no endpoint, so
 //     its data cannot change without a navigation;
 //   * `sync-age` — a clock, not a feed. Its caption is written in place by the
-//     sync-age island (and by rerenderCaptions below after a sync) from
+//     sync-age island (and by renderSyncCaptions below after a sync) from
 //     `data-ts`, so re-rendering it would only arm a second 60 s timer.
 const PANEL_FEED: Partial<Record<IslandName, Panel>> = {
   attendance: 'attendance',
@@ -148,7 +148,7 @@ export function syncData(): Promise<void> {
  * exposed `renderSyncLines` for us to call; that file is gone and the loop it
  * ran is the island's 60 s timer now.)
  */
-function rerenderCaptions(): void {
+export function renderSyncCaptions(): void {
   const nowS = Math.floor(Date.now() / 1000);
   syncLines().forEach((el) => {
     const ts = Number(el.dataset.ts || 0);
@@ -206,7 +206,7 @@ export async function triggerRefresh(quiet = false): Promise<void> {
     if (hadFocus && hadFocus.isConnected && document.activeElement === document.body) {
       (hadFocus as HTMLElement).focus();
     }
-    rerenderCaptions();
+    renderSyncCaptions();
   };
 
   try {

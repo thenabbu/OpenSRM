@@ -4,7 +4,7 @@ import type { ComponentType, VNode } from 'preact';
 import { isIslandName, schemas } from './islands/contract';
 import type { HostProps, IslandName } from './islands/contract';
 import { loadPanel } from './data/load';
-import { refreshProps, triggerRefresh, bindRefreshButtons } from './data/refresh';
+import { refreshProps, triggerRefresh, bindRefreshButtons, renderSyncCaptions } from './data/refresh';
 import { showError } from './data/errorToast';
 import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
@@ -394,18 +394,26 @@ void (async () => {
 
 // W5.2a: the refresh primitive and the error toast live in web/src/data now
 // (refresh.ts, errorToast.ts) instead of dash.js, which three files used to
-// reach into. They are classic <script>s, so they come through these two
-// bridges — same seam as __osrmOutbox above. dash.js keeps a PREACT_ISLANDS=0
-// fallback (no bundle = no bridge) and stands down when the bridge is here.
+// reach into. They are classic <script>s, so they come through these bridges —
+// same seam as __osrmOutbox above. (W5.4: dash.js is deleted, so the
+// PREACT_ISLANDS=0 duplicate binder those paragraphs described no longer
+// exists; the markers and their `if (!…)` guards stay because they make each
+// binder idempotent, which is what a double-injected entrypoint would need.)
 //
-// The [data-refresh] buttons are bound HERE, not in dash.js: one binder, or a
-// single click starts two syncs.
+// The [data-refresh] buttons are bound HERE: one binder, or a single click
+// starts two syncs.
+//
+// __osrmSyncCaption is the caption painter (the replacement for the deleted
+// dash.js `renderSyncLines` global): it re-formats every `.sync-line` from its
+// own `data-ts`, which the e2e bar needs to drive the age buckets it asserts.
 const bridge = window as unknown as {
   __osrmShowError?: (msg: string) => void;
   __osrmRevalidate?: (quiet?: boolean) => Promise<void>;
+  __osrmSyncCaption?: () => void;
 };
 bridge.__osrmShowError = showError;
 bridge.__osrmRevalidate = triggerRefresh;
+bridge.__osrmSyncCaption = renderSyncCaptions;
 bindRefreshButtons();
 
 // W5.2b: the copy cluster. Bound BEFORE hydration on purpose — it registers the

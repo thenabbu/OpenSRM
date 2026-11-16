@@ -107,7 +107,9 @@ with sync_playwright() as p:
     pg.goto(BASE + "/marks", wait_until="load")
     pg.wait_for_timeout(2500)          # let the boot auto-sync settle
     seen.clear()
-    pg.evaluate("ref(true)")           # the quiet sync the auto-sync runs
+    # W5.4: `ref()` was dash.js's global and is deleted; the bundle's bridge is
+    # the only entry point now (it is what the buttons, gesture and editor call).
+    pg.evaluate("window.__osrmRevalidate(true)")           # the quiet sync the auto-sync runs
     pg.wait_for_timeout(1500)
     f1 = pg.evaluate("""() => ({
         path: location.pathname,
