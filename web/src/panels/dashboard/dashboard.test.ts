@@ -170,7 +170,7 @@ describe('P6.2 dashboard island', () => {
     // LAYOUT is THREE cards for seven widgets — day [profile, today, week],
     // assess [marks, exams], people [attendance, teachers] — so the counts are
     // 3, not one per widget. Pinned against the server's own paint:
-    // tests/golden/dom/dashboard.html has 3 `card bg-base-200` divs and 3
+    // tests/golden/v3/dom/dashboard.html has 3 `card bg-base-200` divs and 3
     // `card-body` divs (its 6 wboxes differ only because the fixture has no
     // ticker, which the PROPS above also omit).
     document.body.innerHTML = newPage();

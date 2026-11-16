@@ -15,7 +15,7 @@ check).
 bash scripts/capture_golden.sh /tmp/golden-check            # HEAD of this checkout
 python scripts/capture_golden.py --repo ../wt-v2 --out /tmp/v2 \
     --python /opt/data/opensrm-repo/.venv/bin/python         # an explicit worktree
-diff -r tests/golden /tmp/golden-check      # expect: no output
+diff -r tests/golden/v3 /tmp/golden-check      # expect: no output but metrics revision
 ```
 
 Wipes the target dir, seeds a clean

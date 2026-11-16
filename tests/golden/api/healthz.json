@@ -1,8 +1,0 @@
-{
-  "body": "{\"status\":\"ok\"}\n",
-  "bytes": 16,
-  "content_type": "application/json",
-  "gzip_bytes": 36,
-  "path": "/healthz",
-  "status": 200
-}
