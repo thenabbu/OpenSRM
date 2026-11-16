@@ -49,6 +49,13 @@
     var groupKey = null;
 
     function init() {
+        // W5.4a: the bundle owns the editor now (web/src/data/timetableEditor.ts).
+        // Same stand-down shape dash.js uses for __osrmAttView — without it both
+        // binders answer the same Save click and the timetable POSTs twice.
+        // Absent with PREACT_ISLANDS=0, which is the only path that still needs
+        // this file, and the path W5.4 deletes.
+        if (window.__osrmTimetableEditor) return;
+
         var btn = document.getElementById('tt-edit-btn');
         if (btn) btn.addEventListener('click', openEditor);
 
