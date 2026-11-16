@@ -15,6 +15,7 @@ import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
+import { bindTimetableEditor } from './data/timetableEditor';
 import { warn as logWarn } from './log';
 
 /**
@@ -401,6 +402,18 @@ bindCopyTargets(document);
 // both binders would answer the same click.
 (window as unknown as { __osrmAttView?: typeof bindAttView }).__osrmAttView = bindAttView;
 bindAttView();
+
+// W5.4a: the timetable editor. Same shape as the toggle above — but this one
+// is the reason timetable.js cannot be deleted yet, so main.ts is now the only
+// place that wires editing. It no-ops on every route without #tt-edit-btn
+// (which includes /timetable itself under the archived default), and no bridge
+// is needed: timetable.js keeps its own copy until W5.4 deletes it, and the
+// two must never both bound. The bridge below is the stand-down: timetable.js
+// checks it at init and skips its own listeners when the bundle is here, the
+// same seam __osrmAttView gives dash.js.
+(window as unknown as { __osrmTimetableEditor?: typeof bindTimetableEditor }).__osrmTimetableEditor =
+  bindTimetableEditor;
+bindTimetableEditor();
 
 // The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
 // has to be able to make an island repaint a page that is already hydrated, and
