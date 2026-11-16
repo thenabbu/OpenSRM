@@ -394,15 +394,21 @@ document.addEventListener('submit', function(ev) {
 // the modal (+ the global toast on failure); success lands on /login
 // (the server also clears the session cookie).
 // W5.4c: web/src/data/userActions.ts owns the delete flow now (main.ts binds it
-// and sets __osrmDeleteAccount). Two binders here would mean one confirm POSTs
-// /api/account/delete TWICE — a deleted account reporting a network error.
-var delBtn = window.__osrmDeleteAccount ? null : document.getElementById('delete-account-btn');
-var delConfirm = window.__osrmDeleteAccount ? null : document.getElementById('del-confirm');
+// and sets __osrmDeleteAccount). The guard sits INSIDE each handler rather than
+// around the binding: it costs nothing and it cannot depend on which script
+// parsed first, so a re-ordering of base.html's tags can never resurrect a
+// second binding.
+var delBtn = document.getElementById('delete-account-btn');
+var delConfirm = document.getElementById('del-confirm');
 if (delBtn) {
-  delBtn.addEventListener('click', function() { document.getElementById('delete-account-modal').showModal(); });
+  delBtn.addEventListener('click', function() {
+    if (window.__osrmDeleteAccount) return;
+    document.getElementById('delete-account-modal').showModal();
+  });
 }
 if (delConfirm) {
   delConfirm.addEventListener('click', function() {
+    if (window.__osrmDeleteAccount) return;
     var status = document.getElementById('del-status');
     delConfirm.disabled = true;
     status.textContent = 'Erasing your data…';
@@ -453,8 +459,10 @@ document.addEventListener('click', function(e) {
 //    completed run, never a poll storm, never an endless loop.
 (function () {
   // W5.4c: web/src/data/userActions.ts owns the poll now (main.ts binds it and
-  // sets __osrmScopePoll). Two polls would double the request rate against the
-  // same endpoint and repaint twice on completion.
+  // sets __osrmScopePoll). Checked at PARSE time (skip the whole IIFE when the
+  // bundle is already up) AND on every tick: a tick that was scheduled before
+  // the bundle appeared must not keep polling alongside it, which would double
+  // the request rate and repaint twice on completion.
   if (window.__osrmScopePoll) return;
   var body = document.body;
   if (!body) return;
@@ -469,6 +477,7 @@ document.addEventListener('click', function(e) {
   // run finished while this page was open.
   var tries = 0, MAX_TRIES = 150, delay = 4000, done = false;
   function poll() {
+    if (window.__osrmScopePoll) return;   // the bundle took over mid-wait
     if (done || tries++ > MAX_TRIES) return;
     fetch('/api/scope/status', { headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
