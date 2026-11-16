@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Regenerate the committed golden captures (see tests/golden/README.md).
+# Regenerate the committed golden captures (see tests/golden/v3/README.md).
 #   bash scripts/capture_golden.sh [OUT_DIR] [PORT] [REPO]
-# Default OUT_DIR is tests/golden; any other dir is safe to diff against it.
+# Default OUT_DIR is tests/golden/v3, the baseline CI checks; v2 is frozen and
+# only ever an explicit target.
 # REPO selects the checkout/worktree to capture (default: this script's repo),
 # so an old SHA can be baselined from a detached worktree.
 set -euo pipefail
@@ -25,5 +26,5 @@ if [ "${1:-}" = "--check" ]; then
     ${OPENSRM_PY:+--python "$OPENSRM_PY"}
 fi
 
-exec "$PY" scripts/capture_golden.py --out "${1:-tests/golden}" --port "${2:-18185}" \
+exec "$PY" scripts/capture_golden.py --out "${1:-tests/golden/v3}" --port "${2:-18185}" \
   ${3:+--repo "$3"} ${OPENSRM_PY:+--python "$OPENSRM_PY"}

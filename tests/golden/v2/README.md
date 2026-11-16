@@ -11,11 +11,10 @@ diff -r tests/golden/v2 tests/golden/v3          # before / after the islands
 diff -u tests/golden/v2/dom/dashboard.html <(curl -s ...)   # one route, one change
 ```
 
-`tests/golden/v2` is **before**. `tests/golden/v3` (W3.3) is **after**. The
-parent `tests/golden/` dir is an older committed capture that never recorded
-which revision it came from (its `metrics.json` has no `revision` key), so it
-cannot serve as a reproducible baseline — this dir can, because the capture
-writes the SHA it captured into `metrics.json`.
+`tests/golden/v2` is **before**. `tests/golden/v3` (W3.3) is **after**. Both
+are reproducible baselines because the capture writes the SHA it captured into
+`metrics.json`; a capture that records no `revision` is not a baseline, which is
+why the old flat `tests/golden/` parent dir was deleted.
 
 ## The exact revision
 
