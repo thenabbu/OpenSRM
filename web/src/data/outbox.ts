@@ -17,7 +17,8 @@ import { warn as logWarn } from '../log';
  * and two accounts on one device never share a row.
  *
  * The form fields are the SAME names `marks_tag` reads (app/app.py:922-927), so
- * a replay is byte-identical to the fetch dash.js would have made.
+ * a replay is byte-identical to the POST the marks island made before the
+ * migration.
  */
 
 /** The only two routes that may ever be deferred. Anything else is a bug. */

@@ -6,6 +6,7 @@ import { FeesData } from '../contracts';
 import { attendanceProps } from '../panels/attendance/contract';
 import Dexie from 'dexie';
 import { db, io, OpenSRMDB, PANELS, SCHEMAS, SCHEMA_VERSION, readMeta, readPanel, wipeAll, writeMeta, writePanel } from './db';
+import type { OutboxRow } from './db';
 
 const A = 'zz1111';
 const B = 'zz2222';
@@ -144,6 +145,26 @@ describe('upgrade path', () => {
         expect(rows, `${store} survived v${v} -> v${SCHEMA_VERSION}`).toHaveLength(1);
         expect(rows[0]?.payload).toEqual({ store, v }); // same row, not a re-created empty store
       }
+
+      // `outbox` must be ABSENT before v3, so the assertions below measure what
+      // the upgrade created rather than a store that was already on the device.
+      if (v < 3) {
+        expect(storesAt(v), `outbox must not exist at v${v}`).not.toContain('outbox');
+      }
+
+      // `&k` has to be UNIQUE on the UPGRADED database, not only on a fresh one.
+      // Dexie applies the declared spec when it creates or migrates the store, so
+      // an upgrade that spelled the index `k` (no `&`) would still create the
+      // table, still pass every assertion above, and silently lose last-write-
+      // wins for every user who has an older database — the exact population the
+      // migration exists for. Two puts on one key must leave ONE row carrying
+      // the SECOND write.
+      const outbox = after.table<OutboxRow, string>('outbox');
+      const row: OutboxRow = { k: 'zz1111|tag|X|CAT-1', netid: A, kind: 'tag', at: 1, attempts: 0, form: { role: 'IE-1' } };
+      await outbox.put(row);
+      await outbox.put({ ...row, at: 2, form: { role: 'IE-2' } });
+      expect(await outbox.count(), `&k unique after v${v} -> v${SCHEMA_VERSION}`).toBe(1);
+      expect((await outbox.toArray())[0]).toMatchObject({ at: 2, form: { role: 'IE-2' } });
 
       // The stale stamp is REPAIRED on open (never a wipe): these rows were
       // written with schemaVersion = v, and the repair runs from the ready hook.
