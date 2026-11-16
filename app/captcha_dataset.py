@@ -152,10 +152,17 @@ def write(img_bytes, ocr, ext="png", folder="success"):
                 return None
         except OSError:
             pass
-        path = os.path.join(d, f"{safe}.{ext}")
-        # The whitelist already makes traversal impossible; this proves the
-        # result still resolves inside the folder before anything is opened.
-        if os.path.dirname(os.path.realpath(path)) != os.path.realpath(d):
+        # `ocr` AND `ext` arrive from a caller (the login pipeline, and the
+        # POST /internal/captcha route), so the sink below has to be PROVEN
+        # inside the folder, not merely assumed safe. realpath() + startswith()
+        # is the pair py/path-injection models (normalise, then prove the
+        # prefix): the earlier dirname comparison guarded at runtime but the
+        # query could not see it, so the alerts stayed open.
+        if ext not in _EXT.values():
+            ext = "png"
+        root = os.path.realpath(d) + os.sep
+        path = os.path.realpath(os.path.join(root, f"{safe}.{ext}"))
+        if not path.startswith(root):
             log.warning("captcha dataset refused out-of-dir path ocr=%r", ocr)
             return None
         tmp = path + ".tmp"
