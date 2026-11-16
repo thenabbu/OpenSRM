@@ -16,6 +16,13 @@ import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
 import { bindTimetableEditor } from './data/timetableEditor';
+import {
+  applyGroupDefaults,
+  bindItemBeacon,
+  bindOfflineBanner,
+  bindScrollIndicator,
+  registerServiceWorker,
+} from './data/pageChrome';
 import { warn as logWarn } from './log';
 
 /**
@@ -414,6 +421,43 @@ bindAttView();
 (window as unknown as { __osrmTimetableEditor?: typeof bindTimetableEditor }).__osrmTimetableEditor =
   bindTimetableEditor;
 bindTimetableEditor();
+
+// W5.4b: page chrome — the five dash.js behaviours that belong to the page
+// rather than to a panel (scroll indicator, item beacon, settings groups,
+// offline banner, SW registration). Each marker below is the stand-down: the
+// legacy block in dash.js checks it and skips its own copy, so until W5.4
+// deletes that file neither runs twice.
+//
+// Ordering matters for exactly one of them: the settings-group rule arms
+// `osrm:island-mounted` BEFORE hydration below can fire the first mount.
+const chrome = window as unknown as {
+  __osrmScrollIndicator?: typeof bindScrollIndicator;
+  __osrmItemBeacon?: typeof bindItemBeacon;
+  __osrmGroupDefaults?: typeof applyGroupDefaults;
+  __osrmOfflineBanner?: typeof bindOfflineBanner;
+  __osrmSwRegister?: typeof registerServiceWorker;
+};
+if (!chrome.__osrmScrollIndicator) {
+  chrome.__osrmScrollIndicator = bindScrollIndicator;
+  bindScrollIndicator();
+}
+if (!chrome.__osrmItemBeacon) {
+  chrome.__osrmItemBeacon = bindItemBeacon;
+  bindItemBeacon();
+}
+if (!chrome.__osrmGroupDefaults) {
+  chrome.__osrmGroupDefaults = applyGroupDefaults;
+  applyGroupDefaults();
+  document.addEventListener('osrm:island-mounted', () => applyGroupDefaults());
+}
+if (!chrome.__osrmOfflineBanner) {
+  chrome.__osrmOfflineBanner = bindOfflineBanner;
+  bindOfflineBanner();
+}
+if (!chrome.__osrmSwRegister) {
+  chrome.__osrmSwRegister = registerServiceWorker;
+  registerServiceWorker();
+}
 
 // The mount entry, exposed for the same reason __osrmRefreshData is: the e2e bar
 // has to be able to make an island repaint a page that is already hydrated, and

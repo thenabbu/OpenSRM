@@ -17,6 +17,10 @@ function showError(msg) {
 // The bar is width 0 until the page is hovered or scrolled: `is-scrolling`
 // keeps it visible for a moment after the scroll ends so it does not blink.
 (function () {
+  // W5.4b: web/src/data/pageChrome.ts owns this now (main.ts binds it and sets
+  // __osrmScrollIndicator). Two listeners would each start their own 1200 ms
+  // timer, so this copy stands down when the bundle is here.
+  if (window.__osrmScrollIndicator) return;
   var t;
   window.addEventListener('scroll', function () {
     document.documentElement.classList.add('is-scrolling');
@@ -105,6 +109,9 @@ document.querySelectorAll('[data-refresh]').forEach(function(b) {
 // is dropped there, so a stale attribute can never mint a new label).
 // Fire-and-forget with keepalive, wrapped — telemetry must never break a click.
 (function () {
+  // W5.4b: web/src/data/pageChrome.ts bindItemBeacon() owns this now; main.ts
+  // sets __osrmItemBeacon. Two delegated listeners beacon every click twice.
+  if (window.__osrmItemBeacon) return;
   var ITEM_TAB = {  // which tab a given item belongs to, for the beacon body
     'attendance-graph': 'attendance', 'attendance-table': 'attendance',
     'attendance-sort': 'attendance',
@@ -206,6 +213,9 @@ document.querySelectorAll('[data-tool-tab]').forEach(function(a) {
 //    ponytail: evaluated once per node; rotating across the sm breakpoint
 //    keeps whatever state the user has toggled (still fully toggleable).
 function applyGroupDefaults() {
+  // W5.4b: web/src/data/pageChrome.ts applyGroupDefaults() owns this now and
+  // re-arms on osrm:island-mounted itself. Both copies would run on every mount.
+  if (window.__osrmGroupDefaults) return;
   // .flex.flex-col, not `#personal-details .collapse input`: after hydration the
   // island's own block is a SECOND #personal-details, and the row's toggle input
   // would match that selector — opening the row the user has not opened.
@@ -236,6 +246,9 @@ document.addEventListener('osrm:island-mounted', applyGroupDefaults);
   if (stale && navigator.onLine !== false) ref(true);
 })();
 
+// W5.4b: web/src/data/pageChrome.ts bindOfflineBanner() owns this pair now
+// (main.ts sets __osrmOfflineBanner). Both copies would paint the same node.
+if (!window.__osrmOfflineBanner) {
 window.addEventListener('offline', function() {
   var el = document.getElementById('offline-banner');
   el.className = 'alert alert-soft alert-warning fixed bottom-0 left-0 right-0 z-50 rounded-none';
@@ -246,6 +259,7 @@ window.addEventListener('online', function() {
   el.className = '';
   el.textContent = '';
 });
+}
 
 // Phase 6: pause the avatar's idle loops while it is offscreen. IO needs
 // no polling; paused pose is preserved (motion.css). Low-tier is paused by
@@ -269,7 +283,9 @@ document.addEventListener('osrm:island-mounted', armAvatarOffscreen);
 
 // audit: register here too — a valid session lands on / directly and never
 // loads /login, so login.js alone would never register the SW for those users.
-if ("serviceWorker" in navigator && location.pathname !== "/login") {
+// W5.4b: web/src/data/pageChrome.ts registerServiceWorker() owns this now
+// (main.ts sets __osrmSwRegister), same URL/scope/stand-down rule.
+if (!window.__osrmSwRegister && "serviceWorker" in navigator && location.pathname !== "/login") {
   navigator.serviceWorker.register("/static/sw.js", {scope: "/"}).catch(function(){});
 }
 
