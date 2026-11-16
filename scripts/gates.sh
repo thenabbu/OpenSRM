@@ -190,7 +190,14 @@ elif [ $# -gt 0 ]; then
   skip "e2e (named-suite run)"
 else
   step "e2e browser suites (== CI Tests/e2e job)"
-  DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" bash scripts/ci_e2e_http.sh $(e2e_suites) \
+  # SCOPE_FEATURES: the same value CI exports for this step. Without it the four
+  # data-gated panels (/campus, /academics, /fees, /tools) abort(404), and
+  # test_route_panels goes red 2/35 on a tree CI passes — a local-only false
+  # failure that reads exactly like a broken deployment. gates.sh passing this
+  # inline is the point: the local bar must not be a different environment.
+  DATA_DIR="$(mktemp -d)" PORT=18177 VENV="$V" \
+    SCOPE_FEATURES=hourwise,academics,fees,placement,library,campus,profile,attendance,marks \
+    bash scripts/ci_e2e_http.sh $(e2e_suites) \
     >/tmp/e2e-$$.log 2>&1 && ok "ci_e2e_http.sh ($(e2e_suites | wc -l) suites)" || {
     bad "ci_e2e_http.sh"; tail -25 /tmp/e2e-$$.log | sed 's/^/         /'; }
   for s in test_dash_fit test_dut_official_tt; do

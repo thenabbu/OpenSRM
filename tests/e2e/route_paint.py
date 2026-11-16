@@ -26,6 +26,14 @@ Per route, four assertions, in this order:
               noise nobody reads, so the prod build talks to the console not at
               all. web/src/log.ts is the single switch that decides, and this
               assertion is what pins it shut.
+  5. CSP      zero `securitypolicyviolation` events. The console half above
+              cannot see a blocked fetch that logs nothing, and a CSP refusal
+              is silent at the network layer, so it is counted from the event
+              the browser fires rather than from a log line that may never be
+              written. Scope: this is a PAGE assertion. It cannot observe a
+              service worker's own requests or the policy applied inside the
+              worker's context — tests/e2e/test_sw.py owns that half, and this
+              file does not pretend otherwise.
 
 `/api/refresh` returning 401 is NOT an error here: the page fires it in the
 background before the session cookie is read, and the app handles it (see
@@ -73,6 +81,20 @@ SETTLED = """() => {
   const is = [...document.querySelectorAll('[data-island]')];
   return {n: is.length, done: is.filter(e => e.dataset.mountedAt || e.dataset.hydrated).length};
 }"""
+
+# W5.5 assertion 5. Installed before the first byte of every document, so a
+# refusal during parse (a blocked <script>, an inline handler, a font) is
+# caught, not just the ones that happen after hydration. Deliberately NOT a
+# string match on the console: the browser fires this event even when the page
+# logs nothing at all, which is the case that matters.
+CSP_PROBE = """
+window.__csp = [];
+document.addEventListener('securitypolicyviolation', function (e) {
+  window.__csp.push({d: e.violatedDirective, b: e.blockedURI,
+                     s: e.sourceFile, l: e.lineNumber});
+});
+"""
+CSP_READ = "() => (window.__csp || [])"
 
 
 class Leg:
@@ -144,7 +166,13 @@ def check_route(page, leg, route, island, row_sel, row_word):
         HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval")
         spurious = [e for e in errors if not any(n in e for n in HARNESS_NOISE)]
         noisy = [c for c in console if not any(n in c for n in HARNESS_NOISE)]
-        clean = not spurious and not noisy and not net_fail
+        # W5.5: the same harness excuse, in its structured form. A
+        # securitypolicyviolation whose blockedURI is `eval` is Playwright's own
+        # page.evaluate() being refused by `script-src 'self'` — the harness
+        # tripping the app's policy, never the app. Only that exact case is
+        # excused: a blocked script, style, font, connect or frame counts.
+        csp = [v for v in page.evaluate(CSP_READ) if v.get("b") != "eval"]
+        clean = not spurious and not noisy and not net_fail and not csp
         if route in EMPTY_BY_DESIGN:
             # Declared empty: hydrating to exactly zero rows is the CORRECT
             # outcome, and painting any is a regression worth failing on.
@@ -163,6 +191,10 @@ def check_route(page, leg, route, island, row_sel, row_word):
             detail += f"; console {spurious[:2]}"
         if noisy:
             detail += f"; {len(noisy)} console line(s), first {noisy[:2]}"
+        if csp:
+            detail += (f"; {len(csp)} CSP violation(s), first "
+                       f"{csp[0]['d']} blocked {csp[0]['b'] or '(inline)'}"
+                       f"{' at ' + csp[0]['s'] if csp[0]['s'] else ''}")
         leg.chk(route, ok, detail)
         return ok
     finally:
@@ -218,6 +250,10 @@ def main():
         ctx.add_cookies([{"name": "srm_session", "value": args.token,
                           "domain": _host, "path": "/"}])
         page = ctx.new_page()
+        # W5.5 assertion 5. Registered once per page: it re-runs on every
+        # navigation (so window.__csp is fresh per route) and it covers the
+        # parse, which a listener attached after goto() would miss.
+        page.add_init_script(CSP_PROBE)
         for route in routes:
             if route not in ROUTES:
                 leg.chk(route, False, "not in the route table — a skipped route is a fake pass")
