@@ -155,6 +155,10 @@ run_step "PWA icons (check_icons.py)"               env PYTHONPATH=. "$V/bin/pyt
 # app/static/app.css, and exactly one app-*.css may exist in dist/ (a stale
 # build hash left behind is what once precached a 404 and killed offline).
 run_step "CSS parity (css_parity.py)"               env PYTHONPATH=. "$V/bin/python" scripts/css_parity.py
+# W7.3b: css_parity only proves legacy ⊆ dist — both entries could agree while
+# BOTH lack a class web/src writes (that is how the update banner rendered
+# 2400px off-screen). This reads the write sites and requires a rule.
+run_step "CSS classes for web/src (check_css_classes.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_css_classes.py
 if command -v docker >/dev/null 2>&1; then
   run_step "promtool (observability config + rules)" bash scripts/ci_promtool.sh
 else

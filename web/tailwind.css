@@ -16,6 +16,7 @@
 @source "../app/app.py";
 @source "../app/static/*.js";
 @source "../app/static/safelist";
+@source "./src";
 
 /* Hand-written sheets in the SAME order as the old <link> tags
    (framework first, then timetable, motion, gaze). They stay unlayered,
