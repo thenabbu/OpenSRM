@@ -74,6 +74,12 @@ jobs:
       # stayed green on the exact same tree.
       - name: check_docs (docs must not contradict the code)
         run: PYTHONPATH=. .venv/bin/python scripts/check_docs.py
+      # Unit 8.2. Icons drift silently: a stale 1024 declared as 512 installs
+      # badly on Android and nobody notices until a home-screen icon looks wrong.
+      # Reads real IHDR bytes + the template wiring, and self-tests its own
+      # ability to fail on every run.
+      - name: check_icons (manifest + template wiring + real IHDR sizes)
+        run: PYTHONPATH=. .venv/bin/python scripts/check_icons.py
       # Phase 2.3. Runs here as well as in gates.sh: the dist CSS is committed,
       # so a rebuild that drops selectors or leaves a stale app-*.css hash
       # behind must go red on the PR, not only on someone's laptop.
