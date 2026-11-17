@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, 'feat/**']
   pull_request:
-    branches: [main]
+    branches: [main, feat/preact-migration]
 
 # audit: default token read-only for this workflow
 permissions:
