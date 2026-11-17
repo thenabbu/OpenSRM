@@ -455,6 +455,19 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: .venv/bin/python tests/e2e/test_offline_routes.py
 
+      # Accessibility (axe-core over 9 routes + a live Tab walk and a focus-ring
+      # check) and stress (slow link, flaky API, repeated reloads, offline
+      # flapping, a 4x-throttled client under heap churn). Both need a seeded,
+      # LOGGED-IN server, so they share one boot in scripts/a11y_stress.sh —
+      # the same script gates.sh runs locally.
+      #
+      # PORT 18188 on purpose: run_push_duts.sh below owns 18185-18187.
+      - name: Accessibility + stress (scripts/a11y_stress.sh)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          PORT: '18188'
+        run: VENV="$PWD/.venv" bash scripts/a11y_stress.sh
+
       # Boots its own three gunicorn instances (18185 unconfigured /
       # 18186 push-enabled / 18187 same DB with push env stripped) and runs
       # test_push_sw + test_push_ui against them.

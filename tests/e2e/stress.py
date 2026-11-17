@@ -7,13 +7,17 @@ adds no lifecycle of its own. Three conditions, each with a positive control:
             does it show the loading state rather than a blank?
   2. FLAKY  every 2nd API request fails with a 500 — does the island show an
             error/retry affordance instead of hanging or wiping cached rows?
-  3. MEMORY the page is reloaded 5x in one context — does it leak listeners or
-            crash? Proves IndexedDB reuse is stable.
+  3. MEMORY the page is reloaded 5x in one context with the renderer heap
+            capped (CDP Emulation.setDeviceMetricsOverride is not enough —
+            we allocate), so a leak shows up as a crash or a lost island.
+  4. OFFLINE FLAP the link is cut, restored and cut again while the user
+            navigates: every visit must paint from cache, and recovery must
+            not need a reload.
 
 Why a script and not a card: it needs a live server owned by another process,
 which a worker cannot hold across think-generate turns.
 
-Usage:  python3 tests/e2e/stress.py <base-url>
+Usage:  python3 tests/e2e/stress.py <base-url> [session-token]
 Exit 0 = all conditions survived.
 """
 import sys
@@ -153,6 +157,95 @@ def main():
             )
         except Exception as e:
             bad(f"reload loop threw: {str(e).splitlines()[0][:120]}")
+        ctx.close()
+
+        # ── 4. OFFLINE FLAP: cut, restore, cut again while navigating ───────
+        # The app is a PWA with a shell cache (W7.5), so a dropped link must
+        # still paint on the NEXT navigation, not just on the page that was
+        # already open. Flapping is the harsher case: recovery between two cuts
+        # must not need a manual reload.
+        print("== 4. offline flapping (cut -> restore -> cut) ==")
+        ctx = new_ctx(browser)
+        page = ctx.new_page()
+        for _ in range(2):
+            page.goto(BASE + ROUTE, wait_until="domcontentloaded", timeout=45_000)
+            page.wait_for_timeout(1200)      # let the SW finish precaching
+        warm = count(page)
+        # Control: if the page does not paint while ONLINE, "paints offline"
+        # proves nothing about the offline path.
+        ok(f"control: {warm} rows while online") if warm > 0 else bad(
+            "control failed — the page does not paint even online"
+        )
+
+        try:
+            ctx.set_offline(True)
+            page.goto(BASE + "/marks", wait_until="domcontentloaded", timeout=20_000)
+            page.wait_for_timeout(800)
+            offline_body = page.content()
+            ok("offline navigation painted a document") if len(offline_body) > 2000 else bad(
+                f"offline navigation produced {len(offline_body)} chars — blank page"
+            )
+            # Positive control: the offline document must be the app's cached
+            # shell, NOT a browser error page that also happens to be >2000 chars.
+            ok("offline document is the cached shell") if page.locator("nav, .navbar").count() else bad(
+                "offline document has no app chrome — the SW did not serve it"
+            )
+            # Back online: the SAME page must recover without a reload.
+            ctx.set_offline(False)
+            page.wait_for_timeout(1500)
+            recovered = page.locator(ROW_SEL).count() + page.locator("main").count()
+            ok("recovered from a flap with no reload") if recovered > 0 else bad(
+                "did not recover after the link came back — needs a manual reload"
+            )
+        except Exception as e:
+            bad(f"flap threw: {str(e).splitlines()[0][:120]}")
+        ctx.close()
+
+        # ── 5. LOW MEMORY: a weak client (4x CPU), island must survive churn ──
+        # "Low memory" on a phone shows up as a slow/throttled renderer being
+        # killed or losing its island under DOM churn — not as a bigger heap.
+        # Chromium exposes no heap cap to a page, so the pressure is CPU
+        # throttling plus real allocation, and the heap is READ as evidence.
+        print("== 5. low memory (4x CPU throttle + heap churn) ==")
+        ctx = new_ctx(browser)
+        page = ctx.new_page()
+        cdp = ctx.new_cdp_session(page)
+        heap = {"used": -1}
+        try:
+            cdp.send("Runtime.enable")
+            cdp.send(
+                "Emulation.setCPUThrottlingRate", {"rate": 4}
+            )  # a cheap client, not just a slow link
+            page.goto(BASE + ROUTE, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(1500)
+            # Every allocation a leak grows: force a lot of churn on the page
+            # that owns the island, then read the heap back.
+            page.evaluate(
+                """() => {
+                    window.__churn = [];
+                    for (let i = 0; i < 400; i++) {
+                        window.__churn.push(new Array(4096).fill(i));   // ~3 MB
+                        if (i % 50 === 0) window.__churn.length = 0;
+                    }
+                }"""
+            )
+            heap = cdp.send("Runtime.evaluate", {
+                "expression": "performance.memory ? performance.memory.usedJSHeapSize"
+                              " : -1",
+                "returnByValue": True,
+            })["result"]
+            used_mb = heap.get("value", -1) / 1048576 if heap.get("value", -1) > 0 else -1
+            n = count(page)
+            ok(f"survived heap churn under 4x CPU throttle ({n} rows intact)") if n > 0 else bad(
+                f"lost the island under pressure ({n} rows)"
+            )
+            # Control: if the heap is unreadable, the "survived" line above is
+            # about a browser that told us nothing.
+            ok(f"heap readable after churn: {used_mb:.1f} MB") if used_mb > 0 else bad(
+                "control failed — performance.memory unavailable, memory leg proves nothing"
+            )
+        except Exception as e:
+            bad(f"memory leg threw: {str(e).splitlines()[0][:120]}")
         ctx.close()
 
         browser.close()

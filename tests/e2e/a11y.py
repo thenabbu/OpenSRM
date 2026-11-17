@@ -45,7 +45,24 @@ ROUTES = [
 ]
 
 FATAL_IMPACT = {"critical", "serious"}
-FATAL_RULES = {"color-contrast"}
+FATAL_RULES = {
+    "color-contrast",
+    # Landmark rules are BEST-PRACTICE in axe, so the wcag-only tag filter never
+    # reports them — which is how "landmarks/names" was in the plan yet absent
+    # from this audit. Named explicitly so they are gated, not merely run.
+    "landmark-one-main",
+    "landmark-unique",
+    "region",
+}
+
+# Uncaught page errors are as fatal as a violation: a route that throws while
+# serving an accessible-looking DOM is still a broken route.
+TAGS = ["wcag2a", "wcag2aa", "wcag21aa", "best-practice"]
+
+# Keyboard leg. 12 stops is more than every route's chrome (skip target, 5 nav
+# links, dock, main controls) so a trap or a dead end shows up as a repeat.
+TAB_STOPS = 12
+MIN_STOPS = 5
 
 PASS = FAIL = 0
 
@@ -60,6 +77,30 @@ def bad(m):
     global FAIL
     FAIL += 1
     print(f"  [FAIL] {m}")
+
+
+# One predicate for both the keyboard walk and its positive control, so the
+# control proves the same code path the assertions trust.
+FOCUS_JS = """() => {
+    const el = document.activeElement;
+    if (!el || el === document.body) return {tag: 'body'};
+    const cs = getComputedStyle(el);
+    const ring = (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
+              || (cs.boxShadow && cs.boxShadow !== 'none');
+    const text = (el.innerText || el.getAttribute('aria-label')
+                  || el.getAttribute('title') || el.getAttribute('alt') || '')
+                 .trim().replace(/\\s+/g, ' ').slice(0, 24);
+    return {tag: el.tagName.toLowerCase(), text: text, visible: !!ring};
+}"""
+
+
+def tab_walk(page, stops):
+    """Press Tab `stops` times and report what took focus each time."""
+    out = []
+    for _ in range(stops):
+        page.keyboard.press("Tab")
+        out.append(page.evaluate(FOCUS_JS))
+    return out
 
 
 def find_axe():
@@ -108,9 +149,9 @@ def main():
                 page.wait_for_function("() => typeof axe !== 'undefined'", timeout=15_000)
                 res = page.evaluate(
                     """async () => await axe.run(document, {
-                        runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']},
+                        runOnly: {type: 'tag', values: %s},
                         resultTypes: ['violations'],
-                    })"""
+                    })""" % TAGS
                 )
             except Exception as e:
                 bad(f"{name}: threw {str(e).splitlines()[0][:110]}")
@@ -125,13 +166,68 @@ def main():
             total += len(fatal)
             if fatal:
                 for v in fatal:
-                    nodes = len(v.get("nodes", []))
+                    nodes = v.get("nodes", [])
+                    # The selector, not just the count: "1 node" sends nobody to
+                    # the file. It is the first thing a fixer needs.
+                    tgt = ", ".join(
+                        str(n.get("target", ["?"])[0]) for n in nodes[:2]
+                    ) or "-"
                     bad(
-                        f"{name}: {v['id']} ({v.get('impact')}) — {nodes} node(s): "
-                        f"{v.get('help', '')[:70]}"
+                        f"{name}: {v['id']} ({v.get('impact')}) — {len(nodes)} "
+                        f"node(s) {tgt}: {v.get('help', '')[:60]}"
                     )
             else:
                 ok(f"{name}: no critical/serious violations ({len(viol)} advisory)")
+
+            # ── keyboard navigation + visible focus ───────────────────────
+            # axe cannot see either: it scores markup, not a live tab order, and
+            # it has no rule for "the ring is visible". These are the two
+            # behaviours the plan names that a markup audit structurally misses.
+            if name == "dashboard":
+                # Positive control for the ring detector. An element with the
+                # indicator stripped MUST be flagged, else "every stop is
+                # visible" is a sentence about nothing (R-115).
+                page.evaluate(
+                    """() => {
+                        const a = document.createElement('a');
+                        a.id = 'focus-probe'; a.href = '#';
+                        a.tabIndex = 0; a.textContent = 'probe';
+                        a.style.cssText = 'outline:none!important;'
+                                        + 'box-shadow:none!important';
+                        document.body.appendChild(a);
+                        a.focus();
+                    }"""
+                )
+                probe = page.evaluate(FOCUS_JS)
+                page.evaluate("() => document.getElementById('focus-probe').remove()")
+                if probe.get("tag") == "a" and probe.get("visible") is False:
+                    ok("control: the focus detector flags a stripped indicator")
+                else:
+                    bad(f"control failed — stripped-indicator probe read as {probe}")
+
+            walk = tab_walk(page, TAB_STOPS)
+            stops = [s for s in walk if s["tag"] != "body"]
+            if len(stops) >= MIN_STOPS:
+                ok(f"{name}: {len(stops)}/{TAB_STOPS} Tabs land on a control")
+            else:
+                bad(f"{name}: only {len(stops)}/{TAB_STOPS} Tabs reach any control "
+                    f"— keyboard users cannot get into the page")
+
+            blind = [s for s in stops if not s["visible"]]
+            if blind:
+                b0 = blind[0]
+                bad(f"{name}: {len(blind)}/{len(stops)} focus stops draw NO visible "
+                    f"ring (e.g. {b0['tag']} '{b0['text']}')")
+            elif stops:
+                ok(f"{name}: all {len(stops)} focus stops draw a visible ring")
+
+            # A trap hands focus back to an element already seen instead of
+            # moving on; allow one repeat (wrap-around at the end of the page).
+            distinct = len({(s["tag"], s["text"]) for s in stops})
+            if stops and distinct < len(stops) - 1:
+                bad(f"{name}: focus repeats — {distinct} distinct of {len(stops)} "
+                    f"stops, looks like a trap")
+
             if errors:
                 bad(f"{name}: {len(errors)} page error(s) — {errors[0]}")
             page.close()

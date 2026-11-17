@@ -45,6 +45,17 @@
 html { overscroll-behavior-y: contain; }   /* contains scroll chains; pairs with pull.js (phase 7) */
 button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; user-select: none; }
 
+/* ── Focus ring, one rule for every focus stop ────────────────────────────
+   `<summary>` is natively focusable, so a keyboard user lands on the fees
+   receipt rows and the hourly accordion headings. Chromium draws no default
+   ring for them, and only .hw-mrow had one (timetable.css) — every other
+   summary was a focus stop with nothing on screen. Written once here rather
+   than per-template: a new disclosure must not silently become invisible. */
+:where(a, button, summary, label, [role=tab], input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .pressable { transition: transform 220ms var(--ease-spring), background-color 150ms; }
 .pressable:active { transform: scale(.97); transition-duration: var(--t-press); }
 
