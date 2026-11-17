@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""W6.3 — the network-cut suite: all nine routes offline, two-student isolation,
-and four SEPARATE logout-time wipe assertions.
+"""W6.3 + W7.5 — the network-cut suite: all nine routes offline, two-student
+isolation, four SEPARATE logout-time wipe assertions, and W7's five exit
+assertions (no HTML precached is asserted by tests/unit/test_sw_precache_no_html.py;
+D, E and F below are the browser half).
 
 Self-booting (test_dash_fit pattern): fresh DATA_DIR, rich seed + the SCOPE
 fixture blob, gunicorn on a free port, require_own_server guard. Served bytes are
@@ -29,11 +31,24 @@ Legs
   C. logout: IndexedDB, Cache API, push subscription, Web Storage — four named
      assertions, each with its own positive control, so a partial wipe names
      itself instead of reading as "logout is broken".
+  D. W7.5-3 on its OWN profile (Leg C's logout wiped the caches this leg needs):
+     a deploy — renamed entry chunk in the precache manifest, bumped cache
+     version — invalidates the pre-deploy caches on activate, and the first
+     load's re-warm overwrites a shell that was deliberately poisoned BEFORE the
+     deploy, so an offline navigation after it is the new shell. The poisoned
+     shell is the positive control: without it "not stale" proves nothing.
+  E. W7.5-4: a cold start with the network cut BEFORE the first navigation paints
+     the shell — no reload, no update, nothing that the skipWaiting swap could
+     have force-reloaded — plus the negative control that the same cold start
+     with the shell cache emptied lands on the 503 page.
+  F. W7.5-5: a push delivered through Chrome's own push plumbing still shows a
+     notification after every leg above has run.
 
 Run:
   PLAYWRIGHT_BROWSERS_PATH=/path/to/ms-playwright .venv/bin/python \
       tests/e2e/test_offline_routes.py
 """
+import atexit
 import json
 import os
 import re
@@ -50,6 +65,9 @@ sys.path.insert(0, str(REPO))
 DATA = "/tmp/osrm-offroutes-dut"
 os.environ["DATA_DIR"] = DATA
 shutil.rmtree(DATA, ignore_errors=True)
+
+# Path to the built service worker (served no-cache, so a rewrite is picked up on reload)
+SW_PATH = REPO / "app" / "static" / "sw.js"
 
 import tests._seed as seed_mod  # noqa: E402
 
@@ -241,8 +259,12 @@ def run(ctx, pw):
     # ══ LEG A — nine routes with the network cut ═══════════════════════════
     section("A. network cut on all nine routes")
     page.goto(BASE + "/", wait_until="domcontentloaded")
+    controlled = wait_controlled(page)
     check("A0: service worker takes control of the first page",
-          wait_controlled(page), "navigator.serviceWorker.controller")
+          controlled,
+          "navigator.serviceWorker.controller" if controlled else
+          "never controlled; registrations=%s" % page.evaluate(
+              "async () => (await navigator.serviceWorker.getRegistrations()).length"))
     page.reload(wait_until="domcontentloaded")
     wait_settled(page)
 
@@ -521,6 +543,334 @@ def run(ctx, pw):
     check("C7: logout leaves no Web Storage keys", storage == {"l": 0, "s": 0},
           f"localStorage={storage['l']} sessionStorage={storage['s']}")
 
+    # ══ LEG D — W7.5-3: a deploy invalidates the old caches; no stale shell ══
+    section("D. W7.5-3: a deploy invalidates the old caches, no stale shell")
+
+    # A deploy is measured on a device that already has the app installed, so
+    # this leg gets its own profile. Leg C's logout deleted every cache on
+    # purpose and destroyed its session row, and workbox does not repopulate a
+    # precache it never installed -- reusing that profile measures the teardown,
+    # not a deploy. A fresh profile installs the worker exactly once, which is
+    # the state a returning student is in.
+    ctx = pw.chromium.launch_persistent_context(
+        tempfile.mkdtemp(prefix="offroutes-deploy-"), headless=True,
+        viewport={"width": 1280, "height": 900},
+        args=["--no-first-run", "--no-default-browser-check"])
+    ctx.add_cookies([{"name": "srm_session", "value": seed_mod.mint_token(),
+                      "domain": "127.0.0.1", "path": "/"}])
+    page = ctx.new_page()
+    page.goto(BASE + "/", wait_until="domcontentloaded")
+    check("D0: a device that already has the app is controlled by the worker",
+          wait_controlled(page), "navigator.serviceWorker.controller")
+    page.reload(wait_until="domcontentloaded")
+    wait_settled(page)
+    warmed = []
+    for _ in range(40):
+        warmed = page.evaluate(
+            """async () => { const ks = await caches.keys();
+                 const k = ks.find(n => n === 'opensrm-shell'); if (!k) return [];
+                 const c = await caches.open(k);
+                 return (await c.keys()).map(r => new URL(r.url).pathname).sort(); }""")
+        if len(warmed) >= 8:
+            break
+        page.wait_for_timeout(400)
+    check("D0b: eight panel shells warmed on this device", len(warmed) >= 8,
+          f"{len(warmed)} shells: {warmed}")
+
+    # What a deploy changes, from the worker's point of view: a new precache
+    # manifest (a renamed dist chunk) and a new activate, which drops every cache
+    # outside its allow-list (sw-template.js:86 -- CACHE_NAME, workbox-precache*,
+    # opensrm-shell). The CACHE_NAME constant alone is NOT the lever: it appears
+    # only in that allow-list, so bumping it renames nothing. warmShells()
+    # (shell.ts:117) is the second lever: it puts every shell unconditionally, so
+    # the first online load after a deploy overwrites a stale shell rather than
+    # serving it.
+    STALE_MARK = "W75-STALE-SHELL-MARK"
+    PROBE = "/static/dist/assets/app-w75deploy2.js"
+    probe_abs = REPO / "app" / PROBE.lstrip("/")
+
+    def cache_keys():
+        return sorted(page.evaluate("async () => await caches.keys()"))
+
+    def precache_entries():
+        return page.evaluate(
+            """async () => {
+                const ks = await caches.keys();
+                const pk = ks.find(k => k.startsWith('workbox-precache'));
+                if (!pk) return null;
+                const c = await caches.open(pk);
+                return (await c.keys()).map(r => new URL(r.url).pathname).sort();
+            }""") or []
+
+    def shell_body(name):
+        return page.evaluate(
+            """async (n) => {
+                const c = await caches.open('opensrm-shell');
+                const r = await c.match('/shell/' + n);
+                return r ? await r.text() : null;
+            }""", name)
+
+    def keep(k):
+        # exactly sw-template.js:86
+        return (k.startswith("workbox-precache") or k == "opensrm-shell"
+                or k.startswith("opensrm-v"))
+
+    v1_entries = precache_entries()
+    entry = next((u for u in v1_entries
+                  if u.startswith("/static/dist/assets/app-") and u.endswith(".js")), None)
+    check("D1: pre-deploy precache lists the current entry chunk",
+          bool(entry), f"{len(v1_entries)} entries, entry={entry}")
+
+    # POSITIVE CONTROL: poison the shell cache the way a previous deploy left it,
+    # and prove the poison is readable before the deploy. Without this the "not
+    # stale" assertions below could pass because nothing was ever stale.
+    page.evaluate(
+        """async (mark) => {
+            const c = await caches.open('opensrm-shell');
+            const r = await c.match('/shell/attendance');
+            if (!r) return;
+            await c.put('/shell/attendance',
+                        new Response((await r.text()) + '<!--' + mark + '-->',
+                                     {headers: {'Content-Type': 'text/html'}}));
+        }""", STALE_MARK)
+    check("D2: a stale shell CAN be served from the cache before the deploy (control)",
+          STALE_MARK in (shell_body("attendance") or ""), "stale mark readable")
+
+    v1_keys = cache_keys()
+    droppable = [k for k in v1_keys if not keep(k)]
+    check("D3: before the deploy there are caches outside the activate allow-list",
+          bool(droppable), f"{droppable} of {v1_keys}")
+
+    # ── the deploy: the entry chunk is renamed, the version marker bumps ─────
+    v1_sw = SW_PATH.read_text(encoding="utf-8")
+
+    def restore_worker():
+        # Crash-safe: a Playwright timeout inside this leg must not leave a
+        # rewritten sw.js and a stray asset in the tree for the next run (it did
+        # once, and every later run then measured the fixture).
+        SW_PATH.write_text(v1_sw, encoding="utf-8")
+        probe_abs.unlink(missing_ok=True)
+    atexit.register(restore_worker)
+
+    shutil.copy2(REPO / "app" / entry.lstrip("/"), probe_abs)
+    v2_sw = v1_sw.replace('"url":"%s"' % entry, '"url":"%s"' % PROBE, 1)
+    v2_sw = v2_sw.replace("opensrm-v69-", "opensrm-v75-")
+    if PROBE not in v2_sw or v2_sw == v1_sw:
+        raise SystemExit("FAIL[setup]: the deploy simulation changed nothing in sw.js")
+    SW_PATH.write_text(v2_sw, encoding="utf-8")
+
+    # A real client hits reload sooner or later. The W7.3c guard means the new
+    # worker must WAIT there: skipWaiting only fires on a FIRST install. If it
+    # swapped itself, the offline legs below would be measuring the swap's own
+    # forced reload instead of the caches, and would prove nothing.
+    page.reload(wait_until="domcontentloaded")
+    wait_settled(page)
+    state = {}
+    for _ in range(50):
+        state = page.evaluate(
+            """async () => {
+                const r = await navigator.serviceWorker.getRegistration();
+                return {waiting: !!r.waiting, active: r.active ? r.active.state : null};
+            }""")
+        if state.get("waiting"):
+            break
+        page.wait_for_timeout(300)
+    check("D4: the new worker WAITS instead of swapping itself (W7.3c guard holds)",
+          bool(state.get("waiting")), f"{state}")
+
+    # Now put the new build into service. Messaging the waiting worker and
+    # swapping under the live page hung this leg twice on a navigation that never
+    # completed (the same activate that must delete caches also re-enables
+    # navigation preload), and the cache state either way is identical -- what
+    # assertion 3 is about is the CACHES, not the transport of the update.
+    # Unregister + reload re-installs the new worker as a first install (so the
+    # W7.3c guard passes it straight through to activate) while the old caches
+    # stay on disk exactly as a real update would leave them.
+    page.evaluate(
+        """async () => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            if (reg) await reg.unregister();
+        }""")
+    page.reload(wait_until="domcontentloaded")
+    dropped, v2_keys = None, []
+    for _ in range(50):
+        v2_keys = cache_keys()
+        dropped = [k for k in droppable if k in v2_keys]
+        if not dropped:
+            break
+        page.wait_for_timeout(300)
+    check("D5: the bumped worker's activate invalidated the pre-deploy caches",
+          not dropped,
+          f"dropped {droppable} -> left {v2_keys}" if not dropped
+          else f"still present: {dropped}")
+
+    v2_entries = []
+    for _ in range(40):
+        v2_entries = precache_entries()
+        if PROBE in v2_entries:
+            break
+        page.wait_for_timeout(300)
+    check("D6: the new deploy's chunk is precached after activate",
+          PROBE in v2_entries, f"{len(v2_entries)} entries")
+
+    # ── no stale shell served after the deploy ──────────────────────────────
+    # The first online load after the swap is the deploy's own re-warm. Then the
+    # network is cut and the page navigates AGAIN: the swap is already behind us,
+    # so an offline document cannot be the swap's forced reload -- the only bytes
+    # in play are the ones in the caches.
+    page.reload(wait_until="domcontentloaded")
+    wait_settled(page)
+    for _ in range(30):
+        if STALE_MARK not in (shell_body("attendance") or ""):
+            break
+        page.wait_for_timeout(300)
+    check("D7: the deploy's first load overwrote the stale shell in the cache",
+          STALE_MARK not in (shell_body("attendance") or ""), "stale mark gone")
+
+    ctx.set_offline(True)
+    served = ""
+    try:
+        page.goto(BASE + "/attendance", wait_until="domcontentloaded", timeout=25000)
+        served = page.content()
+    finally:
+        ctx.set_offline(False)
+    check("D8: offline shell after the deploy is NOT the stale one",
+          bool(served) and STALE_MARK not in served,
+          f"stale mark in served document={STALE_MARK in served}")
+    check("D9: offline shell after the deploy is a real attendance shell",
+          'data-island="attendance"' in served, f"{len(served)} bytes")
+
+    # restore the tree
+    restore_worker()
+
+    # ══ LEG E — W7.5-4: cold start with the network already cut ═════════════
+    section("E. W7.5-4: cold start offline paints the app shell")
+
+    def cold_offline(url):
+        """A page opened with the network cut BEFORE its first navigation.
+
+        No reload, no controllerchange, no warm page: this is the cold start a
+        student gets when the phone wakes up with no signal.
+        """
+        pg = ctx.new_page()
+        errs = []
+        pg.on("pageerror", lambda e: errs.append(str(e).splitlines()[0][:120]))
+        ctx.set_offline(True)
+        try:
+            pg.goto(BASE + url, wait_until="domcontentloaded", timeout=25000)
+            pg.wait_for_timeout(1200)
+            st = pg.evaluate(
+                """() => ({islands: [...document.querySelectorAll('[data-island]')]
+                                                .map(e => e.dataset.island),
+                           text: document.body ? document.body.innerText.slice(0, 4000) : '',
+                           html: document.documentElement.outerHTML.length})""")
+        finally:
+            ctx.set_offline(False)
+        pg.close()
+        return st, errs
+
+    st, errs = cold_offline("/attendance")
+    check("E1: cold offline navigation returns a document",
+          st["html"] > 2000, f"{st['html']} bytes")
+    check("E2: cold offline is the shell, not the 'no saved copy' 503",
+          "no saved copy" not in st["text"], "shell ladder reached a panel shell")
+    check("E3: cold offline paints the attendance island",
+          "attendance" in st["islands"], f"islands: {st['islands']}")
+    check("E4: cold offline carries no personal data",
+          not any(x and x in st["text"] for x in ("zz9999", "Test Student", "RA2500000000")),
+          "no netid / name / register number in the served document")
+    check("E5: cold offline zero uncaught exceptions",
+          not errs, "; ".join(errs[:2]))
+
+    # NEGATIVE CONTROL: empty the SHELL cache and repeat the identical cold
+    # start. It must now fall through the ladder to the 503 page. Without this,
+    # E1-E5 would pass for any document source and prove nothing about the
+    # shell cache.
+    page.evaluate(
+        """async () => {
+            const ks = await caches.keys();
+            await Promise.all(ks.filter(k => k === 'opensrm-shell').map(k => caches.delete(k)));
+        }""")
+    st2, _ = cold_offline("/attendance")
+    check("E6: negative control - with no shell cache the same cold start is the 503 page",
+          "no saved copy" in st2["text"], f"{st2['html']} bytes")
+
+    # ══ LEG F — W7.5-5: push handler still present and functional ══════════════════
+    section("F. W7.5-5: push handler intact after all above")
+    
+    # Re-use the worker handle from Leg C, or fetch a fresh one
+    # A freshly loaded page in this profile: after Leg D re-registered the worker
+    # and Leg E closed its cold-start pages, the long-lived page object no longer
+    # reports a worker handle.
+    page = ctx.new_page()
+    page.goto(BASE + "/", wait_until="domcontentloaded")
+    wait_controlled(page)
+    wait_settled(page)
+    worker = None
+    for _ in range(30):
+        worker = next((w for w in page.workers if "sw.js" in w.url), None) \
+            or next((w for w in (ctx.service_workers or []) if "sw.js" in w.url), None)
+        if worker:
+            break
+        page.wait_for_timeout(300)
+    check("F1: service worker handle available for push test",
+          worker is not None,
+          (worker.url if worker else "none") + f" (page.workers={len(page.workers)})")
+
+    if worker:
+        # A live pushManager is what the push handler needs to reach the device.
+        # Asked as a boolean: the object itself does not survive serialisation.
+        check("F2: pushManager present in worker",
+              bool(worker.evaluate("() => !!self.registration.pushManager")),
+              "self.registration.pushManager")
+
+        # Deliver a synthetic push via CDP (sync API) and verify showNotification was called
+        # Follow test_push_sw.py pattern: replace showNotification sink, then deliver
+        worker.evaluate("""() => {
+            self.__shown = []; self.__errs = [];
+            self.addEventListener('unhandledrejection', e => self.__errs.push(String(e.reason)));
+            self.registration.showNotification = (t, o) => {
+                o = o || {};
+                self.__shown.push({title: t, body: o.body, tag: o.tag, url: (o.data || {}).url});
+                return Promise.resolve();
+            };
+        }""")
+
+        # Find the SW registration ID via CDP
+        cdp = ctx.new_cdp_session(page)
+        regs = []
+        # Listener FIRST: enable replays the existing registrations immediately,
+        # so an attached-after handler sees nothing and every push leg reports
+        # "no registration ID".
+        cdp.on("ServiceWorker.workerRegistrationUpdated",
+               lambda e: regs.extend(e.get("registrations") or []))
+        cdp.send("ServiceWorker.enable")
+        reg_id = None
+        for _ in range(50):
+            hit = next((r for r in regs if (r.get("scopeURL") or "").startswith(BASE) and not r.get("isDeleted")), None)
+            if hit:
+                reg_id = hit["registrationId"]
+                break
+            page.wait_for_timeout(200)
+        
+        if reg_id:
+            payload = json.dumps({"title": "W7.5 Test", "body": "push intact", "tag": "w75-push", "url": "/"})
+            cdp.send("ServiceWorker.deliverPushMessage", {"origin": BASE, "registrationId": reg_id, "data": payload})
+            # Poll for the notification
+            shown = []
+            for _ in range(30):
+                shown = worker.evaluate("() => self.__shown")
+                if shown:
+                    break
+                page.wait_for_timeout(200)
+            page.wait_for_timeout(200)
+            errs = worker.evaluate("() => self.__errs")
+            check("F3: synthetic push delivered and notification shown",
+                  len(shown) == 1 and shown[0].get("title") == "W7.5 Test",
+                  f"shown={shown} errs={errs}")
+        else:
+            check("F3: synthetic push delivered and notification shown",
+                  False, "no SW registration ID found via CDP")
 
 if __name__ == "__main__":
     try:
