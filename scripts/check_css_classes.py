@@ -48,7 +48,7 @@ SITES = (
     re.compile(r"""setAttribute\(\s*(['"])class\1\s*,\s*([^)]*)\)"""),
 )
 QUOTED = re.compile(r"""['"`]([^'"`]*)['"`]""")
-NOT_A_TOKEN = set("""{}$=?"'`;<>|#@,""".replace('"', ''))
+NOT_A_TOKEN = set("{}$=?'`;<>|#@,")
 
 
 def class_names(css: str) -> set[str]:
@@ -114,9 +114,10 @@ def known_classes() -> tuple[set[str], list[str]]:
     for f in files:
         known |= class_names(open(f, encoding="utf-8").read())
     for tpl in glob.glob(os.path.join(REPO, "app", "templates", "**", "*.html"), recursive=True):
+        # Stylesheets are not the only home of a class: base.html and
+        # settings.html carry hand-written <style> blocks no Tailwind entry sees.
         for block in re.findall(r"<style[^>]*>(.*?)</style>", open(tpl, encoding="utf-8").read(), re.S):
             known |= class_names(block)
-        files.append(tpl)
     return known, files
 
 
@@ -134,8 +135,6 @@ def main() -> int:
     # positive control: the extractor must find the exact string that started
     # this card, and the CSS must know the utilities around it. Without this a
     # broken extractor would report "0 missing" forever.
-    banner = " ".join("alert alert-info fixed bottom-20 left-4 right-4 z-50 mx-auto "
-                      "max-w-md text-sm shadow-lg".split())
     check("extractor finds the banner class string",
           {"bottom-20", "shadow-lg", "alert-info"} <= written.keys(),
           f"files={sorted(written.get('bottom-20', []))}")
@@ -149,7 +148,7 @@ def main() -> int:
           not missing,
           "; ".join(f"{t} ({', '.join(sorted(f))})" for t, f in sorted(missing.items())))
 
-    print(f"\nknown classes={len(known)} css sources={len(css_files)} "
+    print(f"\nknown classes={len(known)} css files={len(css_files)} "
           f"tokens written={len(written)} dead-refs allowed={len(DEAD_REFS)}")
     if fails:
         print("FAILED:", ", ".join(fails))
