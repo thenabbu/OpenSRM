@@ -148,6 +148,9 @@ run_step() {
 }
 run_step "architecture DAG (check_architecture.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_architecture.py
 run_step "doc consistency (check_docs.py)"          env PYTHONPATH=. "$V/bin/python" scripts/check_docs.py
+# Unit 8.2: the icon set. Manifest + template wiring + real IHDR pixels, with a
+# positive control inside the script so a green run proves the gate can go red.
+run_step "PWA icons (check_icons.py)"               env PYTHONPATH=. "$V/bin/python" scripts/check_icons.py
 # Phase 2.3: the Vite CSS must stay semantically equal to the committed
 # app/static/app.css, and exactly one app-*.css may exist in dist/ (a stale
 # build hash left behind is what once precached a 404 and killed offline).

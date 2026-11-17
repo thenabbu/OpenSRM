@@ -1,9 +1,9 @@
 {
   "api": {
     "/": {
-      "bytes": 52075,
+      "bytes": 57380,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13282,
+      "gzip_bytes": 13811,
       "status": 200
     },
     "/api/marks": {
@@ -61,9 +61,9 @@
       "status": 200
     },
     "/login": {
-      "bytes": 13745,
+      "bytes": 18709,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 4782,
+      "gzip_bytes": 5259,
       "status": 200
     },
     "/logout": {
@@ -78,10 +78,148 @@
       "gzip_bytes": 25183,
       "status": 200
     },
-    "/static/apple-touch-icon.png": {
-      "bytes": 5010,
+    "/static/apple-splash-1080x2340.png": {
+      "bytes": 18876,
       "content_type": "image/png",
-      "gzip_bytes": 5007,
+      "gzip_bytes": 9126,
+      "status": 200
+    },
+    "/static/apple-splash-1125x2436.png": {
+      "bytes": 19986,
+      "content_type": "image/png",
+      "gzip_bytes": 9497,
+      "status": 200
+    },
+    "/static/apple-splash-1170x2532.png": {
+      "bytes": 20754,
+      "content_type": "image/png",
+      "gzip_bytes": 9591,
+      "status": 200
+    },
+    "/static/apple-splash-1179x2556.png": {
+      "bytes": 21183,
+      "content_type": "image/png",
+      "gzip_bytes": 9759,
+      "status": 200
+    },
+    "/static/apple-splash-1206x2622.png": {
+      "bytes": 21911,
+      "content_type": "image/png",
+      "gzip_bytes": 10001,
+      "status": 200
+    },
+    "/static/apple-splash-1242x2208.png": {
+      "bytes": 20219,
+      "content_type": "image/png",
+      "gzip_bytes": 10080,
+      "status": 200
+    },
+    "/static/apple-splash-1242x2688.png": {
+      "bytes": 22614,
+      "content_type": "image/png",
+      "gzip_bytes": 10114,
+      "status": 200
+    },
+    "/static/apple-splash-1260x2736.png": {
+      "bytes": 22987,
+      "content_type": "image/png",
+      "gzip_bytes": 10221,
+      "status": 200
+    },
+    "/static/apple-splash-1284x2778.png": {
+      "bytes": 22981,
+      "content_type": "image/png",
+      "gzip_bytes": 9764,
+      "status": 200
+    },
+    "/static/apple-splash-1290x2796.png": {
+      "bytes": 23285,
+      "content_type": "image/png",
+      "gzip_bytes": 9903,
+      "status": 200
+    },
+    "/static/apple-splash-1320x2868.png": {
+      "bytes": 24626,
+      "content_type": "image/png",
+      "gzip_bytes": 10629,
+      "status": 200
+    },
+    "/static/apple-splash-1488x2266.png": {
+      "bytes": 26595,
+      "content_type": "image/png",
+      "gzip_bytes": 12753,
+      "status": 200
+    },
+    "/static/apple-splash-1536x2048.png": {
+      "bytes": 25566,
+      "content_type": "image/png",
+      "gzip_bytes": 12970,
+      "status": 200
+    },
+    "/static/apple-splash-1620x2160.png": {
+      "bytes": 27700,
+      "content_type": "image/png",
+      "gzip_bytes": 13850,
+      "status": 200
+    },
+    "/static/apple-splash-1640x2360.png": {
+      "bytes": 29106,
+      "content_type": "image/png",
+      "gzip_bytes": 13938,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2224.png": {
+      "bytes": 28649,
+      "content_type": "image/png",
+      "gzip_bytes": 13940,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2388.png": {
+      "bytes": 29860,
+      "content_type": "image/png",
+      "gzip_bytes": 13937,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2420.png": {
+      "bytes": 30100,
+      "content_type": "image/png",
+      "gzip_bytes": 14007,
+      "status": 200
+    },
+    "/static/apple-splash-2048x2732.png": {
+      "bytes": 37800,
+      "content_type": "image/png",
+      "gzip_bytes": 16769,
+      "status": 200
+    },
+    "/static/apple-splash-2064x2752.png": {
+      "bytes": 36967,
+      "content_type": "image/png",
+      "gzip_bytes": 17110,
+      "status": 200
+    },
+    "/static/apple-splash-640x1136.png": {
+      "bytes": 9251,
+      "content_type": "image/png",
+      "gzip_bytes": 6210,
+      "status": 200
+    },
+    "/static/apple-splash-750x1334.png": {
+      "bytes": 11155,
+      "content_type": "image/png",
+      "gzip_bytes": 6958,
+      "status": 200
+    },
+    "/static/apple-splash-828x1792.png": {
+      "bytes": 13606,
+      "content_type": "image/png",
+      "gzip_bytes": 7495,
+      "status": 200
+    },
+    "/static/apple-touch-icon.png": {
+      "bytes": 4305,
+      "content_type": "image/png",
+      "gzip_bytes": 4241,
       "status": 200
     },
     "/static/dist/assets/app-HASH.css": {
@@ -97,9 +235,9 @@
       "status": 404
     },
     "/static/favicon.ico": {
-      "bytes": 1153,
+      "bytes": 7228,
       "content_type": "image/vnd.microsoft.icon",
-      "gzip_bytes": 1176,
+      "gzip_bytes": 5898,
       "status": 200
     },
     "/static/gaze.js": {
@@ -133,9 +271,9 @@
       "status": 200
     },
     "/static/manifest.json": {
-      "bytes": 1137,
+      "bytes": 2161,
       "content_type": "application/json",
-      "gzip_bytes": 392,
+      "gzip_bytes": 467,
       "status": 200
     },
     "/static/perf.js": {
@@ -159,9 +297,9 @@
   },
   "pages": {
     "/": {
-      "dom_nodes": 310,
-      "html_bytes": 52075,
-      "html_gzip_bytes": 13282,
+      "dom_nodes": 342,
+      "html_bytes": 57380,
+      "html_gzip_bytes": 13811,
       "js_bytes": 57666,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
@@ -175,8 +313,8 @@
     },
     "/login": {
       "dom_nodes": null,
-      "html_bytes": 13745,
-      "html_gzip_bytes": 4782,
+      "html_bytes": 18709,
+      "html_gzip_bytes": 5259,
       "js_bytes": 36235,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
@@ -188,7 +326,7 @@
       "script_tags": 3
     }
   },
-  "revision": "f9baab7",
+  "revision": "87e5b76",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -237,12 +375,12 @@
     }
   },
   "totals": {
-    "api_bytes": 341714,
-    "api_gzip_bytes": 90668,
+    "api_bytes": 904154,
+    "api_gzip_bytes": 354327,
     "dom_nodes_all_panels": 2077,
-    "dom_nodes_page": 310,
-    "html_bytes": 65820,
-    "html_gzip_bytes": 18064,
+    "dom_nodes_page": 342,
+    "html_bytes": 76089,
+    "html_gzip_bytes": 19070,
     "js_bytes": 62543,
     "js_gzip_bytes": 20958
   }
