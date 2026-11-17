@@ -87,9 +87,11 @@ check("safelist file committed", os.path.isfile(
 
 # ── W5.4: classes the BUNDLE writes at runtime ────────────────────────────
 # These used to reach app.css only because app/static/dash.js and timetable.js
-# spelled the same literals; both files are deleted and the scanner does not
-# read web/src, so they are safelisted and pinned here. Each is written by a
-# named module — dropping one from the safelist is a silent skin regression.
+# spelled the same literals; both files are deleted. They stay safelisted and
+# pinned here: W7.3b added `@source "../../web/src"` to both CSS entries, but a
+# safelist entry is what keeps a *runtime-interpolated* class (one the scanner
+# cannot see as a literal) alive, so dropping one is still a silent regression.
+# Web/src literal classes are covered by scripts/check_css_classes.py.
 RUNTIME = ("alert-warning", "rounded-none", "text-success", "animate-spin",
            "ml-1", "last:border-b-0", "space-y-0.5")
 rt_missing = [t for t in RUNTIME if t not in css_flat]
