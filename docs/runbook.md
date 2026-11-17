@@ -82,9 +82,13 @@ How it runs:
 5. The box fetches `scripts/deploy_gated.sh` **from the release tag**, then runs
    it. The deploy is therefore the same script the lab uses: snapshot, pull,
    pin, `compose up -d`, verify, auto-rollback.
-6. The runner then verifies the site a second time, from outside the box:
-   `/healthz` is 200, `/login` is 200, HSTS is present (proof the app still
-   trusts the edge secret), and the running image reports the expected commit.
+6. The runner then confirms two more things. The live edge is checked **on the
+   box** with the wrapper's `verify` verb: `/healthz` is 200, `/login` is 200,
+   and HSTS is present (proof the app still trusts the edge secret). The runner
+   checks the image identity through `status`: the deployed tag and the commit
+   the running image was built from.
+   Cloudflare challenges GitHub's runner egress, so a runner-side `curl` gets
+   403 even when the site is healthy. That is why the edge check runs on the box.
 
 A failed deploy does not leave a broken site. `deploy_gated.sh` re-pins the
 previous tag and verifies it before it exits non-zero.
