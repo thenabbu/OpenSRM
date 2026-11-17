@@ -1,5 +1,5 @@
 import { canInstall, promptInstall, watchForInstallAvailability } from './install';
-import { applyUpdate, watchForUpdate } from './update';
+import { applyUpdate, refreshOnVisible, watchForUpdate } from './update';
 
 /**
  * P8.3 — the update / install banner.
@@ -76,6 +76,12 @@ export function mountBanner(): void {
   watchForUpdate(() => {
     paint(el, 'A new version of openSRM is ready.', [['Reload', () => applyUpdate()]]);
   });
+
+  // Look for a new worker when the tab comes back into view. Mounted here, with
+  // the watcher above, because the notification it can produce is this banner:
+  // the poll forces `registration.update()`, the update installs, waits, and
+  // `watchForUpdate` turns that into the notice.
+  refreshOnVisible();
 
   // The install affordance appears whenever the browser gets round to firing
   // `beforeinstallprompt` — which can be after this module has mounted.
