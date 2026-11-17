@@ -121,8 +121,11 @@ jobs:
           echo "$OUT" > /tmp/status.txt
           grep -q '^deployed=' /tmp/status.txt || { echo "::error::the box did not report a deployed tag"; exit 1; }
           CURRENT=$(sed -n 's/^deployed=//p' /tmp/status.txt)
+          REV=$(sed -n 's/^revision=//p' /tmp/status.txt)
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT" = "${{ steps.v.outputs.version }}" ]; then
+          if [ "$CURRENT" = "${{ steps.v.outputs.version }}" ] &&
+             [ -n "$REV" ] &&
+             [ "$REV" = "${{ steps.v.outputs.expected_sha }}" ]; then
             echo "already=$CURRENT" >> "$GITHUB_OUTPUT"
             echo "already on $CURRENT - nothing to do"
           else

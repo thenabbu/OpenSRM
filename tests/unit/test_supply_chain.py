@@ -155,6 +155,18 @@ check("no uvx in CI or gates.sh (unpinned resolution)",
       "uvx ruff" not in scans and "uvx ruff" not in rd(".github/workflows/lint.yml")
       and "uvx ruff" not in rd("scripts/gates.sh"))
 
+# ── 5. oclab deploy: tag plus revision, never tag alone ─────────────────────
+oclab = rd(".github/workflows/cd-oclab.yml")
+check("oclab deploy re-deploys a reused tag from a different revision",
+      '[ "$REV" = "${{ steps.v.outputs.expected_sha }}" ]; then' in oclab
+      and '[ -n "$REV" ]' in oclab
+      and '[ "$CURRENT" = "${{ steps.v.outputs.version }}" ]' in oclab,
+      "a tag can already be deployed while a stale image revision is still running")
+check("oclab deploy checks status revision and confirms it",
+      "sed -n 's/^revision=//p' /tmp/status.txt" in oclab
+      and '[ "$REV" != "${{ steps.v.outputs.expected_sha }}" ]' in oclab,
+      "status must expose revision and final verification must match it")
+
 # ── 4. docs ─────────────────────────────────────────────────────────────────
 scans_doc = rd("docs/SCANS.md")
 for tool in ("gitleaks", "pip-audit", "trivy"):
