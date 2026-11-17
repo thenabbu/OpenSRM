@@ -152,3 +152,19 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
 with `python3 scripts/build_arch_diagram.py`, which asserts the grid/label rules and fails
 on an off-edge port, a crossing segment, or a label collision. Read `docs/diagrams.md`
 before touching it. Ship html + png + generator together.
+
+## Finishing a card
+
+When the work is done, complete the kanban card **with a result**. A card closed with an empty result
+is indistinguishable from a card whose worker gave up: it cannot be audited later, it gets respawned
+because nobody can see the work already landed, and the orchestrator has to rebuild the evidence from
+`git log` and `gh` after the fact.
+
+```
+hermes kanban complete <id> --result "DELIVERED: PR #N merged as <sha>. Tests <run-url> SUCCESS.
+What changed, in two lines. What you could NOT verify, said plainly."
+```
+
+Evidence means a pushed SHA plus a CI run URL — not "tests pass". If a completion contract is a PR URL
+the gate checks every required check on the **PR head**, so the PR has to be green before you complete,
+not after.
