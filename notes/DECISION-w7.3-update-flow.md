@@ -20,8 +20,10 @@ plan's wording cannot be met without moving the constraint it documents.
 ## 1. The banner is a real button the user cannot see
 
 `banner.ts:33` gives the element
-`fixed bottom-20 left-4 right-4 z-50 mx-auto max-w-md …`. Everything except `bottom-20`
-is in the compiled CSS. `scripts/build-css.sh` builds `app/static/src.css`, which is
+`fixed bottom-20 left-4 right-4 z-50 mx-auto max-w-md …`. Of that string, `bottom-20` and
+`shadow-lg` are **missing** from the compiled CSS and the rest are present (`alert`,
+`alert-info`, `fixed`, `left-4`, `right-4`, `z-50`, `mx-auto`, `max-w-md`, `text-sm`) —
+so this is not a stale build. `scripts/build-css.sh` builds `app/static/src.css`, which is
 `@import "tailwindcss" source(none)` plus an explicit `@source` list
 (`app/static/src.css:11-15`) naming `templates`, `views`, `app.py`, `static/*.js`,
 `safelist` — and **not `web/src`**. `web/tailwind.css:14-18` (the Vite entry that produces
