@@ -25,6 +25,22 @@ const dismissed = (): boolean => {
   try { return sessionStorage.getItem(DISMISSED_KEY) === '1'; } catch { return false; }
 };
 
+/**
+ * iOS has no install API at all: Safari never fires `beforeinstallprompt`, so
+ * the Install button below is unreachable on every iPhone and iPad — the Share
+ * sheet is the only install path. `navigator.standalone` is the iOS-only signal
+ * for "already running from the Home Screen", the one state where the
+ * instruction must stay quiet.
+ *
+ * Kept free of daisyUI class words on purpose: Tailwind scans this file, so a
+ * plain English word that is also a component name emits kilobytes of CSS.
+ */
+function iosNeedsInstallInstructions(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent || '') && !standalone;
+}
+
 function banner(): HTMLElement {
   const existing = document.getElementById(ID);
   if (existing) return existing;
@@ -91,4 +107,10 @@ export function mountBanner(): void {
       ['Install app', () => void promptInstall()],
     ]);
   });
+
+  // iOS: the same slot, as words instead of a button, because there is no event
+  // to wait for. Same session dismissal as the other two notices.
+  if (iosNeedsInstallInstructions()) {
+    paint(el, 'Install openSRM: tap Share, then Add to Home Screen.', []);
+  }
 }

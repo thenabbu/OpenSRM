@@ -89,6 +89,29 @@
     }
   ],
   "id": "/",
+  "shortcuts": [
+    {
+      "name": "Attendance",
+      "short_name": "Attendance",
+      "description": "Subject-wise attendance for the current semester",
+      "url": "/attendance",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Marks",
+      "short_name": "Marks",
+      "description": "Internal marks by subject",
+      "url": "/marks",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Timetable",
+      "short_name": "Timetable",
+      "description": "The weekly class timetable",
+      "url": "/timetable",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "categories": [
     "education",
     "productivity"
