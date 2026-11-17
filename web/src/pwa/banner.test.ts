@@ -74,6 +74,22 @@ const click = (el: HTMLElement, label: string): void => {
 
 const realLocation = Object.getOwnPropertyDescriptor(window, 'location');
 
+/**
+ * Pretend to be the one browser family with no install API. Safari never fires
+ * `beforeinstallprompt`, so this state is what an iPhone actually gives us.
+ */
+function fakeIOS(standalone = false): void {
+  Object.defineProperty(navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    configurable: true,
+  });
+  Object.defineProperty(navigator, 'standalone', { value: standalone, configurable: true });
+}
+const dropUaOverrides = (): void => {
+  delete (navigator as unknown as Record<string, unknown>).userAgent;
+  delete (navigator as unknown as Record<string, unknown>).standalone;
+};
+
 beforeEach(() => {
   document.body.replaceChildren();
   sessionStorage.clear();
@@ -82,6 +98,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   document.body.replaceChildren();
+  dropUaOverrides();
   // jsdom's Location is not spy-able (`Cannot redefine property: reload`), so the
   // reload test swaps the whole object; put the real one back for the next test.
   if (realLocation) Object.defineProperty(window, 'location', realLocation);
@@ -171,6 +188,44 @@ describe('update banner', () => {
     expect(sessionStorage.getItem('pwa-banner-dismissed')).toBe('1');
 
     sw.fire('controllerchange');                            // a later fire must stay quiet
+    expect(shown(bannerEl())).toBe(false);
+  });
+});
+
+describe('iOS install instructions', () => {
+  it('tells an iPhone how to install, because Safari never fires the prompt', () => {
+    fakeIOS();
+    mountBanner();
+
+    const el = bannerEl();
+    expect(shown(el)).toBe(true);
+    expect(el.textContent).toContain('Add to Home Screen');
+    expect(el.textContent).toContain('Share');
+    // No dead button: there is no prompt event on iOS to hand it to.
+    expect(labels(el)).not.toContain('Install app');
+  });
+
+  it('says nothing to an iPhone already running from the Home Screen', () => {
+    fakeIOS(true);
+    mountBanner();
+
+    expect(shown(bannerEl())).toBe(false);
+  });
+
+  it('says nothing on a browser that has a real install prompt', () => {
+    // Positive control for the gate: same code, non-iOS user agent.
+    mountBanner();
+    expect(shown(bannerEl())).toBe(false);
+  });
+
+  it('the iOS wording stays dismissed for the session', () => {
+    fakeIOS();
+    mountBanner();
+    click(bannerEl(), '✕');
+
+    document.body.replaceChildren();
+    mountBanner();
+
     expect(shown(bannerEl())).toBe(false);
   });
 });
