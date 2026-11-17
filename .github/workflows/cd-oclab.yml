@@ -139,34 +139,23 @@ jobs:
               -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
               "ubuntu@$OCLAB_HOST" "deploy ${{ steps.v.outputs.version }}"
 
-      # The box already checked itself through the public URL. This is the
-      # independent check: a second reader, outside the box, on the real edge.
-      - name: Verify from the runner
+      # The live-edge check runs on the BOX, not here.
+      #
+      # Cloudflare challenges GitHub's runner egress: the first real run of this
+      # workflow reported 20 consecutive 403s for /healthz on a deploy that had
+      # already succeeded and was serving 200. Verifying from the runner would
+      # have marked every good deploy as failed. The box's own egress is not
+      # challenged, and box -> Cloudflare -> box is still the real public route.
+      #
+      # The forced command exposes this as the `verify` verb so the deploy key
+      # still cannot run arbitrary commands.
+      - name: Verify the live edge
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
         run: |
           set -eu
-          ok=0
-          for i in $(seq 1 20); do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$HEALTH_URL" || echo 000)
-            if [ "$CODE" = 200 ]; then ok=1; break; fi
-            echo "attempt $i: /healthz -> $CODE"; sleep 6
-          done
-          [ "$ok" = 1 ] || { echo "::error::$HEALTH_URL never returned 200"; exit 1; }
-          echo "healthz 200"
-
-          LOGIN=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$LOGIN_URL")
-          echo "/login -> $LOGIN"
-          [ "$LOGIN" = 200 ] || { echo "::error::/login returned $LOGIN"; exit 1; }
-
-          # HSTS is emitted only from inside _behind_cf(), so its presence
-          # proves CF_EDGE_SECRET still matches what Caddy injects. A 200 alone
-          # does not: a mistyped secret still serves pages, just without Secure
-          # cookies.
-          if curl -sD- -o /dev/null --max-time 15 "$HEALTH_URL" | grep -qi '^strict-transport-security'; then
-            echo "edge secret still trusted (HSTS present)"
-          else
-            echo "::error::HSTS missing - the app no longer trusts the edge secret"
-            exit 1
-          fi
+          ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+              "ubuntu@$OCLAB_HOST" verify
 
       # A restart is verified by the identity it reports, not by the clock, and
       # not by the deploy script's own exit code.
