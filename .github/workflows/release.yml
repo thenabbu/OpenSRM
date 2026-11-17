@@ -93,6 +93,11 @@ jobs:
           git add VERSION pyproject.toml uv.lock
           git commit -m "chore(release): v$new" \
             -m "Automatic: main gained user-facing changes without moving VERSION, so the trio is bumped here. Level $level (minor when the push carried a feat, patch otherwise)."
+          # persist-credentials is false above, so git has no token of its own:
+          # the push died with "could not read Username for 'https://github.com'"
+          # on the first push that ever needed a bump. gh already holds the
+          # token in GH_TOKEN, so let it install the credential helper.
+          gh auth setup-git
           git push -q origin "chore/release-v$new"
           { printf 'Automatic version bump. main gained user-facing changes without moving VERSION, so this PR moves the trio (VERSION + pyproject.toml + uv.lock) to **v%s**.\n\n' "$new"
             printf 'Level: %s (minor when the push carried a feat, patch otherwise; major is always a human decision).\n\n' "$level"
