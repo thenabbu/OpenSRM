@@ -34,3 +34,7 @@ ops/observability/proof/
 
 # dev-lan.sh bind-mount
 .dev-lan-data/
+
+# worktree artifact: a one-line absolute core.hooksPath. Leaked into a commit once
+# (aff25a4) and all 4 CI jobs passed with it in the tree - green CI will not catch it.
+.hookdir
