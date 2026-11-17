@@ -18,6 +18,11 @@ a partial run is not a push bar. Exit 0 (`GATES GREEN`) means nothing was skippe
 `.github/workflows/tests.yml`, so a suite added to CI is picked up
 automatically — **never hand-maintain a second list of suites in this file.**
 
+`--fast` is for iteration only. Anything that touches templates, CSS or JS needs
+the full `bash scripts/gates.sh` before you push: `--fast` skips the golden-drift
+step (`capture_golden.sh --check`, ~2.5 min), and a stale golden is the single
+most common red on this branch (6 of 27 merged PRs).
+
 ## Where things run
 
 - **Local dev**: repo at `/opt/data/opensrm-repo` on the hermes host, venv
