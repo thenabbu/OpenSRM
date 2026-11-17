@@ -65,6 +65,65 @@ Two host facts this script encodes, both learned the hard way:
 - the image reverts on rollback but the **schema does not** — which is exactly
   why the snapshot comes first.
 
+## Deploy (automatic, oclab only)
+
+The second deployment lives on the Oracle VPS at `srm-d1.200871.xyz`. It deploys
+itself. **The lab prod does not.** The "no watcher" rule above still holds for
+`srm.200871.xyz`, and the key that deploys the VPS does not exist on the lab.
+
+How it runs:
+
+1. A push to `main` starts **Build & Push**.
+2. If the run is green, **Deploy oclab (automatic)** starts. It uses the same
+   commit that was built, not `main` as it is now.
+3. The job asks the box what it runs. If the box already runs that version, the
+   job stops. This makes a re-run safe.
+4. Otherwise the job calls `deploy <version>` on the box over SSH.
+5. The box fetches `scripts/deploy_gated.sh` **from the release tag**, then runs
+   it. The deploy is therefore the same script the lab uses: snapshot, pull,
+   pin, `compose up -d`, verify, auto-rollback.
+6. The runner then verifies the site a second time, from outside the box:
+   `/healthz` is 200, `/login` is 200, HSTS is present (proof the app still
+   trusts the edge secret), and the running image reports the expected commit.
+
+A failed deploy does not leave a broken site. `deploy_gated.sh` re-pins the
+previous tag and verifies it before it exits non-zero.
+
+### One-time setup
+
+On the box, as `ubuntu`:
+
+```bash
+ssh-keygen -t ed25519 -N '' -f /tmp/gha
+sudo install -m 755 opensrm-deploy /usr/local/bin/opensrm-deploy   # see below
+printf 'restrict,command="/usr/local/bin/opensrm-deploy" %s\n' "$(cat /tmp/gha.pub)" \
+  >> ~/.ssh/authorized_keys
+```
+
+`/usr/local/bin/opensrm-deploy` is the only program that key may run. It
+accepts two verbs: `status` (read the deployed tag and image commit) and
+`deploy <x.y.z>`. Any other request is refused before it reaches a shell. This
+matters because the box's `docker` group is effectively root.
+
+In the repository:
+
+```bash
+gh secret   set OCLAB_DEPLOY_SSH --repo thenabbu/OpenSRM < /tmp/gha
+gh variable set OCLAB_HOST       --repo thenabbu/OpenSRM --body <address>
+```
+
+`OCLAB_HOST` is a variable, not text in the workflow, because this repository is
+public and the origin address is the one thing the Cloudflare-only ingress
+keeps private.
+
+### Manual deploy of the VPS
+
+Same path, without waiting for a push:
+
+```bash
+gh workflow run cd-oclab.yml -f version=2.13.0
+```
+
 ## Deploy (by hand, for reference)
 
 **Sequence: sync the compose file FIRST, then pull.** `docker compose pull`

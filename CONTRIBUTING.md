@@ -59,11 +59,13 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    (`uvx ruff check app/` + `uv lock --check`) and **Tests**
    (`unit` + `docker` + `e2e`). The Docker image is pushed to
    `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` — a release push
-   only, and only if the tests are
-   green there; deployment itself is manual (see
-   [docs/runbook.md](docs/runbook.md)). Merges use merge commits with a
-   `merge: <summary>` subject — never squash — so the atomic commits stay
-   intact.
+   only, and only if the tests are green there — plus `:<sha>` on every push.
+   Each build publishes **`linux/amd64` and `linux/arm64`** as one manifest
+   list, built on a native runner per architecture, so the arm64 VPS can pull
+   the same tag the lab does. Deployment of lab prod stays manual (see
+   [docs/runbook.md](docs/runbook.md)); the oclab VPS deploys itself. Merges
+   use merge commits with a `merge: <summary>` subject — never squash — so the
+   atomic commits stay intact.
 
 ### Commit format
 
@@ -148,14 +150,21 @@ that catch people out first:
   dependency or a fixable HIGH/CRITICAL CVE fails the run.
   [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
   `.trivyignore`-style escape hatch.
-- **Deploy** — **gated, never automatic**: there is still no watcher. Nothing
-  deploys until a human approves the `production` environment on a
-  `workflow_dispatch` run, and `scripts/deploy_gated.sh` then does the
-  mechanical part (verified snapshot, digest pin, health + render checks,
-  auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
+- **Deploy (lab prod)** — **gated, never automatic**: there is still no watcher
+  for `srm.200871.xyz`. Nothing deploys until a human approves the `production`
+  environment on a `workflow_dispatch` run, and `scripts/deploy_gated.sh` then
+  does the mechanical part (verified snapshot, digest pin, health + render
+  checks, auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
   [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
-  removed at the maintainer's request — do not add one back. The approval gate
-  is what keeps that promise while removing the 1am manual steps.
+  removed at the maintainer's request — do not add one back **for prod**. The
+  approval gate is what keeps that promise while removing the 1am manual steps.
+- **Deploy (oclab VPS)** — **automatic, and only there**:
+  `cd-oclab.yml` deploys `srm-d1.200871.xyz` after a green **Build & Push** on
+  `main`. It never builds, it pulls the published `:<VERSION>` image, and it
+  runs the same `deploy_gated.sh`, so a bad deploy still rolls itself back. The
+  key it uses exists only on the VPS and can run two verbs (`status`,
+  `deploy <version>`). Scope is deliberate: automating the second deployment
+  must not quietly become automating prod.
 
 ## Portal rate limits
 
