@@ -168,3 +168,10 @@ What changed, in two lines. What you could NOT verify, said plainly."
 Evidence means a pushed SHA plus a CI run URL — not "tests pass". If a completion contract is a PR URL
 the gate checks every required check on the **PR head**, so the PR has to be green before you complete,
 not after.
+
+**Checkpoint, don't hoard.** A run can die at its time cap with the work finished but unpushed - and a dead
+worker takes its worktree with it. `git add -A && git commit && git push -u origin <branch>` within about 20
+minutes of starting, then again whenever a test passes; do not wait for the whole suite to be green. A pushed
+red branch is recoverable and a retry resumes from it; an unpushed green worktree is gone. Skip
+`git add -A` if `.hookdir` or `web/node_modules` are untracked (`.hookdir` is gitignored now, node_modules is
+not) - prefer naming the files you changed.
