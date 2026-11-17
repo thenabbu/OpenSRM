@@ -151,6 +151,17 @@ def t_path_separator_defused():
     cds.clear()
 
 
+def t_untrusted_ext_is_not_a_path():
+    """`ext` is caller-supplied too (POST /internal/captcha): it must end up as
+    a known suffix inside the folder, never as path syntax the join could eat."""
+    _reset()
+    p = cds.write(PNG + b"ext-probe", "qw12er", ext="../../evil.png", folder="success")
+    assert p is not None, "an unknown ext must fall back to png, not refuse the write"
+    assert os.path.dirname(p) == cds.dataset_dir("success"), p
+    assert p.endswith(".png"), p
+    cds.clear()
+
+
 # ── the solver fix ──────────────────────────────────────────────────────────
 def t_sanitize_strips_unissued_glyphs():
     assert sanitize_captcha("vs9jn+") == "vs9jn", "a '+' can never be a portal character"
