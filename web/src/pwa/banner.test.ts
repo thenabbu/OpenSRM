@@ -24,6 +24,40 @@ function fakeSW() {
   return sw;
 }
 
+/** The same, plus a registration: the shape an UPDATE actually arrives in. */
+function fakeSWWithRegistration() {
+  const swTarget = new EventTarget();
+  const regTarget = new EventTarget();
+  const workerTarget = new EventTarget();
+  const worker = {
+    state: 'installing',
+    addEventListener: workerTarget.addEventListener.bind(workerTarget),
+    removeEventListener: workerTarget.removeEventListener.bind(workerTarget),
+    // The browser sets `state` and then fires the event; do the same.
+    finish: (): void => {
+      worker.state = 'installed';
+      workerTarget.dispatchEvent(new Event('statechange'));
+    },
+  };
+  const reg = {
+    installing: null as unknown,
+    waiting: null as unknown,
+    update: vi.fn(async () => {}),
+    addEventListener: regTarget.addEventListener.bind(regTarget),
+    removeEventListener: regTarget.removeEventListener.bind(regTarget),
+    fire: (type: string) => regTarget.dispatchEvent(new Event(type)),
+  };
+  const sw = {
+    controller: null as unknown,
+    getRegistration: vi.fn(async () => reg),
+    addEventListener: swTarget.addEventListener.bind(swTarget),
+    removeEventListener: swTarget.removeEventListener.bind(swTarget),
+    fire: (type: string) => swTarget.dispatchEvent(new Event(type)),
+  };
+  Object.defineProperty(navigator, 'serviceWorker', { value: sw, configurable: true });
+  return { sw, reg, worker };
+}
+
 const bannerEl = (): HTMLElement => {
   const el = document.getElementById('pwa-banner');
   if (!el) throw new Error('banner was never mounted into <body>');
@@ -72,6 +106,22 @@ describe('update banner', () => {
     expect(labels(el)).toContain('Reload');
   });
 
+  it('appears from updatefound + installed, with no controllerchange (the iOS path)', async () => {
+    const { sw, reg, worker } = fakeSWWithRegistration();
+    sw.controller = { scriptURL: '/static/sw.js' };         // page already controlled
+    mountBanner();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // getRegistration() settles
+
+    reg.installing = worker;
+    reg.fire('updatefound');
+    expect(shown(bannerEl())).toBe(false);                 // still downloading: nothing to say yet
+
+    worker.finish();                                       // installed, waiting, page untouched
+    expect(shown(bannerEl())).toBe(true);
+    expect(bannerEl().textContent).toContain('A new version of openSRM is ready.');
+    expect(labels(bannerEl())).toContain('Reload');
+  });
+
   it('never tells a first-time visitor to reload the page they just opened', () => {
     const sw = fakeSW();                                   // controller === null
     mountBanner();
@@ -82,18 +132,24 @@ describe('update banner', () => {
     expect(shown(bannerEl())).toBe(false);
   });
 
-  it('clicking Reload reloads the page exactly once', () => {
-    const sw = fakeSW();
-    sw.controller = { scriptURL: '/static/sw.js', postMessage: vi.fn() };
+  it('clicking Reload promotes the WAITING worker, then reloads exactly once', async () => {
+    const { sw, reg } = fakeSWWithRegistration();
+    const waitingPost = vi.fn();
+    reg.waiting = { postMessage: waitingPost };
+    sw.controller = { scriptURL: '/static/sw.js' };
     const reload = vi.fn();
     Object.defineProperty(window, 'location', { value: { reload }, configurable: true });
     mountBanner();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // getRegistration() settles
 
-    sw.controller = { scriptURL: '/static/sw.js', postMessage: vi.fn() };
+    sw.controller = { scriptURL: '/static/sw.js' };
     sw.fire('controllerchange');
     click(bannerEl(), 'Reload');
+    await new Promise((resolve) => setTimeout(resolve, 0)); // applyUpdate's lookup settles
 
-    // Reload is armed by the click and fires when the worker actually takes over.
+    // The cue goes to the waiting worker; the reload is armed by the click and
+    // fires when that worker actually takes over.
+    expect(waitingPost).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
     expect(reload).not.toHaveBeenCalled();
     sw.fire('controllerchange');
     expect(reload).toHaveBeenCalledTimes(1);

@@ -32,17 +32,36 @@ const CACHE_NAME = '__CACHE_NAME__';
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-// Take over immediately. Without skipWaiting a new worker installs and then sits
-// in `waiting` until every tab of the old one closes — so on a fresh profile the
-// registration never reaches `activate` and `navigator.serviceWorker.controller`
-// stays null. Measured symptom: `__shellWarm` reported stored=8 (the page wrote
-// the shells itself) while the gate failed
+// Take over immediately, but only on a FIRST install. Without skipWaiting a new
+// worker installs and then sits in `waiting` until every tab of the old one
+// closes — so on a fresh profile the registration never reaches `activate` and
+// `navigator.serviceWorker.controller` stays null. Measured symptom: `__shellWarm`
+// reported stored=8 (the page wrote the shells itself) while the gate failed
 // `[FAIL] online: service worker is controlling the page`.
 //
-// skipWaiting + clientsClaim is the pair Workbox documents for this; clientsClaim
-// is already called below. Safe here because the caches are namespaced by a
-// content-derived CACHE_NAME, so an older worker cannot serve a stale bundle.
-self.addEventListener('install', () => { void self.skipWaiting(); });
+// That measurement is about a first install, and ONLY that. Generalising it to
+// updates is a silent swap: `registration.active` is non-null exactly when an
+// outgoing worker exists, so an update that skips the wait activates and claims
+// the clients while the page is still running the previous bundle — and the
+// `activate` below then deletes the caches that page is fetching its chunks
+// from. Worst on the first load after a deploy, where a not-yet-imported chunk
+// answers 404 and the island never hydrates.
+//
+// An update therefore WAITS in `waiting` until the page asks for it (the
+// update banner's Reload posts SKIP_WAITING, handled below). activate — and the
+// cache wipe inside it — then runs on that reload, when nothing is still being
+// served from the caches it deletes. clientsClaim() below stays: a first install
+// needs it, and after a SKIP_WAITING the claim is what fires `controllerchange`.
+self.addEventListener('install', () => {
+  if (self.registration.active === null) void self.skipWaiting();
+});
+
+// The page's side of a waiting update: postMessage({type:'SKIP_WAITING'}).
+// Without this listener the Reload button would message a worker that ignores
+// it — the banner would dismiss nothing and the page would never swap.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') void self.skipWaiting();
+});
 
 // Navigation preload: the HTML request starts while the worker boots, so a
 // controlled page does not pay worker startup latency on its document.

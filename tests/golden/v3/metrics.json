@@ -73,9 +73,9 @@
       "status": 302
     },
     "/static/app.css": {
-      "bytes": 163607,
+      "bytes": 163826,
       "content_type": "text/css; charset=utf-8",
-      "gzip_bytes": 26680,
+      "gzip_bytes": 26695,
       "status": 200
     },
     "/static/apple-splash-1080x2340.png": {
@@ -289,9 +289,9 @@
       "status": 200
     },
     "/static/sw.js": {
-      "bytes": 29870,
+      "bytes": 29998,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9515,
+      "gzip_bytes": 9551,
       "status": 200
     }
   },
@@ -300,7 +300,7 @@
       "dom_nodes": 342,
       "html_bytes": 57380,
       "html_gzip_bytes": 13811,
-      "js_bytes": 57666,
+      "js_bytes": 57794,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/gaze.js",
@@ -308,25 +308,25 @@
         "/static/push.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 19164,
+      "js_gzip_bytes": 19200,
       "script_tags": 6
     },
     "/login": {
       "dom_nodes": null,
       "html_bytes": 18709,
       "html_gzip_bytes": 5259,
-      "js_bytes": 36235,
+      "js_bytes": 36363,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/login.js",
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 12231,
+      "js_gzip_bytes": 12267,
       "script_tags": 3
     }
   },
-  "revision": "1eccc3d",
+  "revision": "31d5f98",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -375,13 +375,13 @@
     }
   },
   "totals": {
-    "api_bytes": 912451,
-    "api_gzip_bytes": 355824,
+    "api_bytes": 912798,
+    "api_gzip_bytes": 355875,
     "dom_nodes_all_panels": 2077,
     "dom_nodes_page": 342,
     "html_bytes": 76089,
     "html_gzip_bytes": 19070,
-    "js_bytes": 62543,
-    "js_gzip_bytes": 20958
+    "js_bytes": 62671,
+    "js_gzip_bytes": 20994
   }
 }

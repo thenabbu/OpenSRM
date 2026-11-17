@@ -2,6 +2,9 @@
 
 **Status:** proposed — **two gaps confirmed, two plan asks already met.** Neither gap is a
 wording problem, so the recommendation is to change code in both places, not the plan.
+**Shipped:** W7.3c (`8.3-SWAP-IS-OPT-IN`) — the swap is no longer silent: a first install still
+takes over at once, an update waits in `waiting` and the user sees
+"A new version of openSRM is ready." with a Reload button, which posts SKIP_WAITING and reloads.
 **Date:** 2026-11-17 · **Task:** W7.3 (`RECOVERY_PLAN.md:208`, "update flow `prompt` +
 `visibilitychange` check, visible \"New version → Reload\", never a silent swap; test").
 
