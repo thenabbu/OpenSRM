@@ -624,15 +624,24 @@ def run(ctx, pw):
     # POSITIVE CONTROL: poison the shell cache the way a previous deploy left it,
     # and prove the poison is readable before the deploy. Without this the "not
     # stale" assertions below could pass because nothing was ever stale.
-    page.evaluate(
-        """async (mark) => {
-            const c = await caches.open('opensrm-shell');
-            const r = await c.match('/shell/attendance');
-            if (!r) return;
-            await c.put('/shell/attendance',
-                        new Response((await r.text()) + '<!--' + mark + '-->',
-                                     {headers: {'Content-Type': 'text/html'}}));
-        }""", STALE_MARK)
+    # Re-poison until the read-back shows it: warmShells() is still writing the
+    # eight shells for a moment after load, and one of those writes can land on
+    # top of the poison (it did, once, in CI).
+    for _ in range(10):
+        page.evaluate(
+            """async (mark) => {
+                const c = await caches.open('opensrm-shell');
+                const r = await c.match('/shell/attendance');
+                if (!r) return;
+                const body = await r.text();
+                if (body.includes('<!--' + mark + '-->')) return;
+                await c.put('/shell/attendance',
+                            new Response(body + '<!--' + mark + '-->',
+                                         {headers: {'Content-Type': 'text/html'}}));
+            }""", STALE_MARK)
+        if STALE_MARK in (shell_body("attendance") or ""):
+            break
+        page.wait_for_timeout(300)
     check("D2: a stale shell CAN be served from the cache before the deploy (control)",
           STALE_MARK in (shell_body("attendance") or ""), "stale mark readable")
 
@@ -772,8 +781,12 @@ def run(ctx, pw):
     st, errs = cold_offline("/attendance")
     check("E1: cold offline navigation returns a document",
           st["html"] > 2000, f"{st['html']} bytes")
+    # The SW's 503 says "this device has no saved copy yet"; the app's own failure
+    # copy says "there is no saved copy of this panel yet" (web/src/data/failure.ts).
+    # Match the SW sentence exactly, or a failed island chunk reads as a 503.
+    NO_COPY = "this device has no saved copy yet"
     check("E2: cold offline is the shell, not the 'no saved copy' 503",
-          "no saved copy" not in st["text"], "shell ladder reached a panel shell")
+          NO_COPY not in st["text"], "shell ladder reached a panel shell")
     check("E3: cold offline paints the attendance island",
           "attendance" in st["islands"], f"islands: {st['islands']}")
     check("E4: cold offline carries no personal data",
@@ -793,7 +806,7 @@ def run(ctx, pw):
         }""")
     st2, _ = cold_offline("/attendance")
     check("E6: negative control - with no shell cache the same cold start is the 503 page",
-          "no saved copy" in st2["text"], f"{st2['html']} bytes")
+          NO_COPY in st2["text"], f"{st2['html']} bytes")
 
     # ══ LEG F — W7.5-5: push handler still present and functional ══════════════════
     section("F. W7.5-5: push handler intact after all above")
@@ -806,10 +819,22 @@ def run(ctx, pw):
     page.goto(BASE + "/", wait_until="domcontentloaded")
     wait_controlled(page)
     wait_settled(page)
+    def active_worker():
+        cands = [w for w in page.workers if "sw.js" in w.url]
+        cands += [w for w in (ctx.service_workers or []) if "sw.js" in w.url]
+        for w in reversed(cands):
+            try:
+                if w.evaluate("() => self.serviceWorker && self.serviceWorker.state"):
+                    state = w.evaluate("() => self.serviceWorker.state")
+                    if state == "activated":
+                        return w
+            except Exception:            # a redundant worker: evaluate throws
+                continue
+        return None
+
     worker = None
     for _ in range(30):
-        worker = next((w for w in page.workers if "sw.js" in w.url), None) \
-            or next((w for w in (ctx.service_workers or []) if "sw.js" in w.url), None)
+        worker = active_worker()
         if worker:
             break
         page.wait_for_timeout(300)
