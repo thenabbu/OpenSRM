@@ -22,10 +22,12 @@ the user-visible thing this whole feature exists for. The Dexie row is implied:
 the server is dead, so a painted row can only have come from the cache.
 """
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -58,6 +60,10 @@ def main():
                     help="shell command that stops the server, run between the "
                          "online visit and the offline reload")
     ap.add_argument("--skip-logout", action="store_true")
+    ap.add_argument("--browser", default="chromium",
+                    choices=["chromium", "webkit", "firefox"],
+                    help="engine to paint offline in (default chromium); one "
+                         "summary line per run, W8.4")
     a = ap.parse_args()
 
     with sync_playwright() as pw:
@@ -65,13 +71,39 @@ def main():
         # run's service worker, whose cached routes point at a server that no
         # longer exists: the first goto() then hangs to the navigation timeout
         # and reads exactly like "the app is broken".
-        ctx = pw.chromium.launch_persistent_context(
-            tempfile.mkdtemp(prefix="offproof-profile-"),
-            headless=True,
-            args=["--no-first-run", "--no-default-browser-check"],
-        )
+        #
+        # W8.4: the engine is a parameter, not a constant. WebKit and Firefox
+        # are the reason this exists - each has its own service-worker
+        # lifetime, its own Cache API storage partition and its own secure-
+        # context rules, so "the Chromium run was green" is not evidence about
+        # either. launch_persistent_context is the API that keeps the cache and
+        # the worker across reloads, and it exists on all three engines.
+        if a.browser == "chromium":
+            ctx = pw.chromium.launch_persistent_context(
+                tempfile.mkdtemp(prefix="offproof-profile-"),
+                headless=True,
+                args=["--no-first-run", "--no-default-browser-check"],
+            )
+        else:
+            try:
+                ctx = getattr(pw, a.browser).launch_persistent_context(
+                    tempfile.mkdtemp(prefix="offproof-profile-"), headless=True)
+            except Exception as exc:      # missing build, broken deps, sandbox refusal
+                # NOT a skip. No browser means no offline proof, and an unproven
+                # offline path is the exact defect this file exists to catch.
+                print(f"\n  no {a.browser} — the offline path is UNPROVEN")
+                print(f"  {type(exc).__name__}: {str(exc).splitlines()[0][:300]}")
+                print("  install with: PLAYWRIGHT_BROWSERS_PATH="
+                      f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
+                      f".venv/bin/playwright install {a.browser}")
+                return 2
+        # The cookie's domain MUST match the host we navigate to. This was
+        # hardcoded to 127.0.0.1, so any run against a LAN address sent no
+        # session and every route 302'd to /login (the same bug route_paint.py
+        # already fixed; this file kept its copy).
         ctx.add_cookies([{"name": "srm_session", "value": a.token,
-                          "domain": "127.0.0.1", "path": "/"}])
+                          "domain": urlparse(a.base).hostname or "127.0.0.1",
+                          "path": "/"}])
         page = ctx.new_page()
 
         # ── 1. online ───────────────────────────────────────────────────────
@@ -200,7 +232,8 @@ def main():
                 page.evaluate("location.href='/logout'")
             page.wait_for_timeout(8000)
 
-            if page.url.startswith("chrome-error://"):
+            if page.url.startswith(("chrome-error://", "about:neterror",
+                                    "webkit-error", "about:blank")):
                 print("    [SKIP] logout redirect — server is down, /logout is unresolvable offline")
             else:
                 dbs = page.evaluate(
@@ -221,7 +254,7 @@ def main():
 
         ctx.close()
 
-    print(f"\n  browser leg: {PASS} passed, {FAIL} failed")
+    print(f"\n  browser leg [{a.browser}]: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 
 

@@ -351,10 +351,19 @@ jobs:
       # Headless shell only — these suites never need a headed browser.
       # Same PLAYWRIGHT_BROWSERS_PATH as the run steps below: the browser must
       # land where the suites look for it.
-      - name: Install Playwright chromium (headless shell)
+      #
+      # W8.4: webkit and firefox are here for the offline proof's engine matrix
+      # (scripts/offline_proof.sh, ENGINES on its step). The offline path is
+      # where the three engines genuinely differ — service-worker lifetime over
+      # a dead origin, Cache API storage partitioning, secure-context rules — so
+      # a Chromium-only run proves one third of what the card asks for. These
+      # two come from `playwright install` proper (there is no --only-shell for
+      # them). ubuntu-latest already carries libgtk-3/libXcursor; no
+      # `install-deps` step is needed, and adding one would need root.
+      - name: Install Playwright chromium, webkit and firefox
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: .venv/bin/playwright install --only-shell chromium
+        run: .venv/bin/playwright install --only-shell chromium && .venv/bin/playwright install webkit firefox
 
       # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
       # committed tests/golden/v3, naming every file that moved (and for the first
@@ -476,9 +485,15 @@ jobs:
       # 18183 (nothing above holds that port), so it needs no fixture here.
       # The script exits non-zero when any leg fails, which is the whole point
       # of this step — a gate that cannot fail is worse than no gate.
-      - name: Offline read path (scripts/offline_proof.sh)
+      #
+      # W8.4: ENGINES puts route_paint.py AND offline_paint.py through all three
+      # engines. Each engine gets its own server boot because the offline leg
+      # kills it on purpose. Roughly 3x this step's old wall time; the job's
+      # timeout-minutes (line 324) has the headroom.
+      - name: Offline read path, 3 engines (scripts/offline_proof.sh)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          ENGINES: chromium webkit firefox
         run: bash scripts/offline_proof.sh
 
       # W6.3: the network-cut suite. All nine routes with the network cut
