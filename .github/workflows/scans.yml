@@ -11,10 +11,14 @@
 name: Scans
 
 on:
+  # Same branch scoping as tests.yml: feat/preact-migration is the long-lived
+  # branch this wave's PRs land on, and without it listed here none of these
+  # scans run on that branch at all — the scans would exist and never execute.
+  # Drop the branch entry when the migration merges to main.
   pull_request:
-    branches: [main]
+    branches: [main, feat/preact-migration]
   push:
-    branches: [main]
+    branches: [main, feat/preact-migration]
   workflow_dispatch:
 
 # audit: scans only read the repo; the trivy build context never leaves the
@@ -106,6 +110,89 @@ jobs:
           # or the job goes green with a vulnerability in it.
           if total:
               raise SystemExit(f"pip-audit: {total} known vulnerabilit(y/ies) - see the summary above")
+          PY
+
+  web-deps:
+    # The `deps` job audits what runs on the server; this one audits what builds
+    # web/. Only preact/dexie/zod reach the browser inside dist/ — the rest is
+    # build-time tooling that never enters the image — but a compromised build
+    # chain is a supply-chain finding too, so it gates the merge like its
+    # siblings.
+    name: pnpm audit (web deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Same Node + pnpm pin as tests.yml job `web`. Two pins that disagree
+      # would audit a resolution the build never produces.
+      - name: Set up Node 22
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+      # No install step on purpose: pnpm audit resolves advisories from
+      # web/pnpm-lock.yaml, so this job never executes a dependency's
+      # postinstall script on the runner.
+      #
+      # pnpm audit exits non-zero WHEN IT FINDS ANYTHING (down to low), which
+      # under the runner's `bash -e` killed this step at the exact moment there
+      # was something to report — the same trap the pip-audit job above hit.
+      # `|| true` is deliberate; the reporter below owns the exit code.
+      - name: Audit web dependencies
+        run: |
+          pnpm -C web audit --json > pnpm-audit.json || true
+          python3 - <<'PY'
+          import json, os, sys
+
+          # Accepted HIGH/CRITICAL, one GHSA per line, each justified in
+          # notes/DECISION-w8.2-supply-chain.md. An entry here is a finding the
+          # maintainer looked at and could not fix — never a finding nobody read.
+          ACCEPTED = {
+              # picomatch ReDoS: the registry's newest release (4.0.7) IS the
+              # vulnerable one, so no upgrade exists; build-only (vite's globber).
+              "GHSA-fc5q-39xc-vjpf",
+          }
+
+          try:
+              adv = json.load(open("pnpm-audit.json")).get("advisories") or {}
+          except Exception as e:
+              # A missing/unparseable report means the audit did not run (no
+              # registry, bad lockfile). Silence there is a green check over an
+              # unaudited tree, which is worse than red.
+              sys.exit(f"pnpm-audit: unusable report ({e}) - the audit did not run")
+
+          gate = ("high", "critical")
+          hits = [a for a in adv.values() if a.get("severity") in gate]
+          blocking = [a for a in hits if a.get("github_advisory_id") not in ACCEPTED]
+          accepted = [a for a in hits if a.get("github_advisory_id") in ACCEPTED]
+          gone = ACCEPTED - {a.get("github_advisory_id") for a in adv.values()}
+
+          lines = [f"pnpm-audit: {len(hits)} HIGH/CRITICAL advisor(y/ies) in "
+                   f"{len(adv)} total, {len(accepted)} accepted"]
+          for a in sorted(hits, key=lambda x: x["severity"] + x["module_name"]):
+              lines.append(f"- **{a['severity'].upper()}** {a['module_name']} "
+                           f"`{a.get('vulnerable_versions','')}` "
+                           f"{a['github_advisory_id']} — {a['title']}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("\n\n### pnpm audit (web/)\n\n" + "\n".join(lines) + "\n")
+
+          # Also on stdout, not only in the job summary: "no unaccepted
+          # HIGH/CRITICAL" alone cannot tell "audited clean" from "audited
+          # nothing", and the summary is not in the log a reader greps.
+          print(lines[0])
+          if gone:
+              # Not a failure: the forcing function is a human reading it.
+              print("pnpm-audit: allowlist entry no longer reported, drop it:", sorted(gone))
+          if blocking:
+              sys.exit("pnpm-audit: %d unaccepted HIGH/CRITICAL - %s"
+                       % (len(blocking), [a["github_advisory_id"] for a in blocking]))
+          print("pnpm-audit: no unaccepted HIGH/CRITICAL")
           PY
 
   image:
