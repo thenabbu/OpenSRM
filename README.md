@@ -269,7 +269,7 @@ app/
   views/              per-tab view models (attendance, marks, academics, fees, campus, …)
   blueprints/         auth, dashboard, marks, timetable, feedback, push, internal (metrics)
   db.py               the one data-access layer for all SQL
-  migrations.py       versioned schema registry (18 migrations → schema v18)
+  migrations.py       versioned schema registry (17 migrations → schema v18)
 ```
 
 ### The SCOPE client
@@ -291,7 +291,7 @@ documentation and every call is encrypted:
 | Portal access | Pure HTTP (urllib) pipeline; an archived Playwright fallback stays off unless `PLAYWRIGHT_FALLBACK=enabled` |
 | SCOPE access | Stdlib-only SOAP client (`urllib` + embedded AES-CBC), bounded 8-connection pool per sync |
 | Captcha | ddddocr (self-contained OCR, no external service) |
-| Database | SQLite with a versioned migration registry (18 migrations → schema v18) |
+| Database | SQLite with a versioned migration registry (17 migrations → schema v18) |
 | Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/app.css` by a pinned, sha256-verified CLI — no runtime CDN. Vanilla JS, Jinja2 |
 | PWA | Service worker: navigation-preload HTML, cache-first `?v=` assets, network-first icons |
 | CI/CD | GitHub Actions — Lint · Tests (unit + docker + e2e) · Build & Push → `ghcr.io/thenabbu/opensrm` · report-only Scans |
