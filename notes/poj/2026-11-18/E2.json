@@ -8,7 +8,7 @@
     "   PASS  CSS parity (css_parity.py)\n   PASS  CSS classes for web/src (check_css_classes.py)\n   PASS  promtool (observability config + rules)\n   PASS  dashboard JSON is current (build_dashboard.py --check)\n   PASS  web/ (tsc + design tsc + vitest via ci_web.sh)\n== GATES GREEN - push is safe",
     "static tier green; browser tier is E8's judge, not duplicated here"
   ],
-  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "sha": "02940a77dfa35c701ce3b5a4a8801c042837beba",
   "round": 1,
-  "judged_at": "2026-11-18T17:05:01+00:00"
+  "judged_at": "2026-11-18T17:27:07+00:00"
 }

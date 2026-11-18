@@ -91,17 +91,28 @@ def run(cmd, cwd, timeout=600, env=None):
 # ---------------------------------------------------------------------------
 
 def j_e1(wt, ctx):
-    """Every CI job green on HEAD. Reads GitHub, not the local tree."""
-    sha = ctx["sha"]
+    """Every CI job green on HEAD. Reads GitHub, not the local tree.
+
+    Judges HEAD of the PUBLISHED branch: an unpushed local commit has no run by
+    definition, and reporting that as a failure of the deliverable answers a
+    question nobody asked. When --ref is a local-only branch the judge says so.
+    """
+    target = ctx.get("e1_ref") or ctx["branch"]
+    rc, out = run(f"git rev-parse {target}", wt, timeout=60)
+    if rc != 0:
+        return "ERROR", [out.strip()[:400]], f"cannot resolve {target}"
+    sha = out.strip()
     rc, out = run(f"gh run list --repo {ctx['repo']} --branch {ctx['branch']} "
-                  f"--limit 30 --json databaseId,headSha,conclusion,workflowName,status",
+                  f"--limit 40 --json databaseId,headSha,conclusion,workflowName,status",
                   wt, timeout=120)
     if rc != 0:
         return "ERROR", [out.strip()[:800]], "gh run list failed"
     runs = json.loads(out.strip() or "[]")
     on_head = [r for r in runs if r["headSha"] == sha]
     if not on_head:
-        return "FAIL", [f"no workflow run found for HEAD {sha[:7]}"], "HEAD unrun"
+        return "ERROR", [f"no workflow run for {target} ({sha[:7]}); "
+                         f"{'not pushed yet' if not ctx.get('pushed') else 'CI not started'}"], \
+            f"HEAD unrun ({target})"
     ev, bad = [], []
     for r in on_head:
         ev.append(f"{r['workflowName']} {r['headSha'][:7]} {r['conclusion']} "
@@ -400,6 +411,8 @@ def main():
     ap.add_argument("--round", type=int, default=1)
     ap.add_argument("--out", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--e1-ref", default="origin/feat/preact-migration",
+                    help="the ref E1 judges CI for (default: the published branch tip)")
     args = ap.parse_args()
 
     ids = [c.strip() for c in args.only.split(",") if c.strip()] or list(CRITERIA)
@@ -415,7 +428,8 @@ def main():
     root, wt = fresh_worktree(args.ref)
     rc, sha = run("git rev-parse HEAD", wt, timeout=60)
     sha = sha.strip()
-    ctx = {"sha": sha, "repo": args.repo, "branch": args.branch}
+    ctx = {"sha": sha, "repo": args.repo, "branch": args.branch,
+           "e1_ref": args.e1_ref, "pushed": bool(args.e1_ref)}
     outdir = pathlib.Path(args.out) if args.out else (
         REPO / "notes/poj" / datetime.date.today().isoformat())
     outdir.mkdir(parents=True, exist_ok=True)
