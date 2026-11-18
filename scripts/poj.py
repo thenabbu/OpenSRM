@@ -367,20 +367,38 @@ def j_e13(wt, ctx):
     ev.append(f"VERSION={out2.strip()}")
     if out2.strip() != "3.0.0":
         return "FAIL", ev, f"VERSION is {out2.strip()}, want 3.0.0"
-    rc3, out3 = run(f"git merge-base --is-ancestor origin/main HEAD; echo $?", wt, timeout=60)
+    rc3, out3 = run("git merge-base --is-ancestor origin/main HEAD; echo $?", wt, timeout=60)
     ev.append(f"main is ancestor of HEAD: {out3.strip() == '0'}")
     return "PASS", ev, "trio on 3.0.0; main merged in"
 
 
 def j_e14(wt, ctx):
-    """LLM-tier: STATUS.md truthfulness + board sanity. Mission-side, not repo."""
+    """STATUS.md truthful + board sane. Mission-side, and there is a checker.
+
+    `scripts/board_check.sh` in the mission dir is the real board invariant, so
+    the judge runs it rather than judging board state itself. STATUS.md is only
+    required to be FRESH: whether its prose is true is what the other judges
+    decide, and a judge that re-reads prose cannot add a fact to it.
+    """
+    ev, bad = [], []
+    chk = "/opt/data/missions/opensrm-preact/scripts/board_check.sh"
+    if not pathlib.Path(chk).exists():
+        return "ERROR", [f"{chk} missing"], "board checker not found"
+    rc, out = run(f"bash {chk}", wt, timeout=300)
+    last = [l for l in out.strip().splitlines() if l.strip()][-1] if out.strip() else "no output"
+    ev.append(f"board_check: {last}")
+    if rc != 0:
+        bad.append("board_check not CLEAN")
     status = pathlib.Path("/opt/data/missions/opensrm-preact/STATUS.md")
     if not status.exists():
-        return "ERROR", ["STATUS.md not found mission-side"], "mission file missing"
+        return "FAIL", ev + ["STATUS.md missing"], "no STATUS.md"
     age_days = (datetime.datetime.now().timestamp() - status.stat().st_mtime) / 86400
-    return ("PASS" if age_days < 3 else "FAIL"), \
-        [f"STATUS.md last modified {age_days:.1f} d ago"], \
-        ("" if age_days < 3 else "STATUS.md stale")
+    ev.append(f"STATUS.md last modified {age_days:.1f} d ago")
+    if age_days > 2:
+        bad.append(f"STATUS.md stale ({age_days:.1f} d)")
+    if bad:
+        return "FAIL", ev, "; ".join(bad)
+    return "PASS", ev, "board CLEAN, STATUS.md fresh"
 
 
 JUDGES = {
@@ -388,7 +406,7 @@ JUDGES = {
     "E4": (j_e4, "machine"), "E5": (j_e5, "machine"), "E6": (j_e6, "machine"),
     "E7": (j_e7, "machine"), "E8": (j_e8, "machine"), "E9": (j_e9, "machine"),
     "E10": (j_e10, "machine"), "E11": (j_e11, "machine"), "E12": (j_e12, "llm"),
-    "E13": (j_e13, "machine"), "E14": (j_e14, "llm"),
+    "E13": (j_e13, "machine"), "E14": (j_e14, "machine"),
 }
 
 
