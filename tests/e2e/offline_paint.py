@@ -89,14 +89,20 @@ def main():
                 ctx = getattr(pw, a.browser).launch_persistent_context(
                     tempfile.mkdtemp(prefix="offproof-profile-"), headless=True)
             except Exception as exc:      # missing build, broken deps, sandbox refusal
-                # NOT a skip. No browser means no offline proof, and an unproven
-                # offline path is the exact defect this file exists to catch.
-                print(f"\n  no {a.browser} — the offline path is UNPROVEN")
-                print(f"  {type(exc).__name__}: {str(exc).splitlines()[0][:300]}")
-                print("  install with: PLAYWRIGHT_BROWSERS_PATH="
-                      f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
-                      f".venv/bin/playwright install {a.browser}")
-                return 2
+                        # NOT a skip. No browser means no offline proof, and an unproven
+                        # offline path is the exact defect this file exists to catch.
+                        print(f"\n  no {a.browser} — the offline path is UNPROVEN")
+                        msg = str(exc).strip()
+                        # Playwright errors are multi-line; the first line is just the
+                        # category. Print the whole thing so the CI log has the detail.
+                        if "\n" in msg:
+                            print(f"  {msg[:2000]}")
+                        else:
+                            print(f"  {type(exc).__name__}: {msg[:500]}")
+                        print("  install with: PLAYWRIGHT_BROWSERS_PATH="
+                              f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
+                              f".venv/bin/playwright install {a.browser}")
+                        return 2
         # The cookie's domain MUST match the host we navigate to. This was
         # hardcoded to 127.0.0.1, so any run against a LAN address sent no
         # session and every route 302'd to /login (the same bug route_paint.py
