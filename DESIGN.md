@@ -757,7 +757,7 @@ Pre-flight checklist before you finish:
 - [ ] Templates gained new utility-class families? Added to `safelist/classes.html` + `app.css` rebuilt (§10.16)
 - [ ] A data-updating flow updates in place (no full-page reload); any new listener inside `<main>` is delegated or re-run idempotently
 - [ ] Looks right at 375px and 1280px, and keyboard focus is visible on every control I touched
-- [ ] Dashboard engine touched: `DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/unit/test_layout.py` still passes (25 checks, §4.17)
+- [ ] Dashboard engine touched: `DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/unit/test_layout.py` still passes (26 checks, §4.17)
 
 ---
 
