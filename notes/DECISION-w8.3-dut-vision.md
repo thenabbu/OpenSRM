@@ -126,8 +126,39 @@ guard the GHCR upgrade smoke uses — GitHub does not hand secrets to a
 
 `notes/vision/<route>-<device>.json` records the verdict, the class, the model,
 the answering model's corroborators (only when a pair was flagged), and the
-hashes of the golden and the fresh capture it judged. On a clean build
-`fresh_sha == golden_sha` **by construction**: the drift gate has just proven
-the capture is byte-identical to the golden, so the vision judge is looking at
-the same pixels. They diverge only when the build has drifted - which is the
-case where the judge is actually earning its keep.
+hashes of the golden and the fresh capture it judged.
+
+On the capture host the two hashes are equal (the golden was made there). **In
+CI they are not, and that is expected**: the drift gate runs `--no-screens`, so
+what it proves is `dom/`, `api/`, `routes.json` and `metrics.json`, never the
+PNGs - a GitHub runner's font stack is not the lab's. Measured on run
+44278658012 (`dashboard-mobile`): `golden_sha` 754409cc9fd764a3 vs `fresh_sha`
+37574efbdf48d3fb, verdict MATCH. The judge is asked *is this page broken*, not
+*is this the golden*, which is why a font-stack difference is not a failure and
+why the hash is recorded rather than compared.
+
+## Proof, in CI, on the pushed branch
+
+Two things had to be true and both were measured on head `40585a5`, all 14
+checks green, `mergeStateStatus: CLEAN`:
+
+| what | where it shows |
+|---|---|
+| `test_page_chrome_dut \| rc=0 \| 11s \| 10/10 passed` | `e2e`, through `ci_e2e_http.sh` |
+| the dist the DUTs drive is the one `pnpm build` produces | `web`: `build-web: app/static/dist/ app/static/sw.js matches committed output` |
+| `golden OK: 746c069 matches tests/golden/v3` | `e2e`, drift step |
+| `vision: 18/18 pairs MATCH (0 not a MATCH)` | `e2e`, vision step, per-pair timings 0.7-72.7s |
+| the pixels the model saw are kept | artifact `vision-verdicts` (1.2 MB, 18 verdicts + 18 PNGs) |
+
+The timings are the anti-vacuity check: 18 pairs at roughly two seconds each is
+18 real model calls, not a cached table. `scripts/dut_suite.sh` coverage is
+asserted in the same job (`dut_suite.sh's 14 DUT scripts all run in this job`),
+so a new DUT cannot be added and silently never run.
+
+## One flake, named rather than hidden
+
+`test_canary_sync` red on the first push of this branch ("refresh not ok (http
+302)") and green on the identical re-run - 13/13 locally both times. It boots
+its own gunicorn and mints its own session; nothing this branch touches is on
+that path. The suite's own docstring already records it going red on CI twice
+while passing 13/13 locally. Left as a known flake, not papered over.
