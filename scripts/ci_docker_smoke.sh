@@ -75,8 +75,12 @@ echo "ok  /login -> 200 after ${i}s"
 # cannot read - which is exactly how this smoke failed the first time it was
 # run under prod's flags (PermissionError on /app/data/secret).
 TOK=$(docker exec -i -u 10001 "$NAME" python - <<'PY'
-import json, sys, time
+import json, os, sys, time
 sys.path.insert(0, "/app")
+# a token one-shot must not boot the captcha solver: onnxruntime writes a
+# device_discovery warning to STDOUT and this capture is used verbatim as the
+# Cookie header (same trap that made test_canary_sync flake in CI).
+os.environ["OCR_PREWARM"] = "0"
 from app import app as A
 c = A.db()
 c.execute(

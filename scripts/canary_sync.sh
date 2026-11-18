@@ -27,8 +27,14 @@ DROP="${CANARY_DROP:-docker exec opensrm python /app/scripts/canary_cookie.py dr
 fail() { echo "canary: FAIL $*" >&2; exit 1; }
 
 TOKEN=$($MINT "$NETID") || fail "mint failed for netid=$NETID"
-TOKEN=$(printf '%s' "$TOKEN" | head -n1 | tr -d '\r')
-[ -n "$TOKEN" ] || fail "mint returned an empty token"
+# The token is the only 64-hex-char line the mint prints — take that one, not
+# line 1. `head -n1` was the CI flake: minting boots the app, whose OCR prewarm
+# thread makes ddddocr print its 3-line banner on STDOUT, and when that banner
+# won the race this script shipped a banner line as srm_session: /api/refresh
+# answered 302 (login redirect) and the real cookie row leaked, since the trap
+# dropped a digest nothing matched. `docker exec` can print notices too.
+TOKEN=$(printf '%s\n' "$TOKEN" | grep -Eo '[0-9a-f]{64}' | tail -n1)
+[ -n "$TOKEN" ] || fail "mint returned no session token"
 
 BODY=$(mktemp)
 ERR=$(mktemp)

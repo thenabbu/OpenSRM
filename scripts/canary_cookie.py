@@ -22,6 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # stdout/stderr by canary_sync.sh (the app logs "logging.level=..." at INFO
 # during import otherwise)
 os.environ["LOG_LEVEL"] = "WARNING"
+# ...and neither must the OCR prewarm: mint/check/drop never touch the portal,
+# but booting the app starts the ddddocr prewarm thread, which prints its
+# 3-line banner on STDOUT — straight into the token canary_sync.sh captures.
+os.environ["OCR_PREWARM"] = "0"
 
 
 def main(argv):

@@ -5,11 +5,13 @@ Arms covered:
   zz9999  full stub payload   -> exit 0, payload lands in the DB, cookie dropped
   zz9996  no user row         -> non-zero, reason "no stored creds"
   zz9997  stub returns empty  -> non-zero, reason "attendance empty after sync"
+  zz9998  mint prints a banner line before the token -> still one real sync
 The cookie row must be gone after EVERY run (the script's EXIT trap).
 """
 import atexit
 import json
 import os
+import shlex
 import signal
 import socket
 import subprocess
@@ -71,7 +73,7 @@ def _free_port():
 # ── seed: two users with stored (empty) data + encrypted password, one none ──
 c = A.db()
 empty = json.dumps({"courses": [], "monthly": [], "period": None, "daily_absent": {}})
-for netid in ("zz9999", "zz9997"):
+for netid in ("zz9999", "zz9997", "zz9998"):
     c.execute("INSERT INTO users(netid, password, attendance_json, marks_json) VALUES(?,?,?,?)",
               (netid, A.encrypt_pw("pw"), empty, "[]"))
 c.commit(); c.close()
@@ -133,9 +135,27 @@ if not up:
     sys.exit(1)
 
 
-def run_canary(netid):
+NOISY = os.path.join(TMP, "mint_noisy.sh")
+_NOISE = (
+    "** ONNX RUNTIME STDOUT NOISE — the exact line CI feeds canary_sync.sh **\n"
+    "The mint's own process boots this app, so its OCR prewarm makes\n"
+    "onnxruntime write a device_discovery RUNNER warning to STDOUT. On the\n"
+    "bare-metal CI runner that line carries real ESC (0x1b) bytes from the\n"
+    "runner's colouring — CI log, run 44118451632 attempt 1, immediately\n"
+    "before the 302: stderr=\\x1b[0;93m2026-11-17 ... [W:onnxruntime:Default,\n"
+    "device_discovery.cc:146 GetPciBusId] ... (escaped in this diff on purpose:\n"
+    "a raw ESC in a source file is exactly the trap this test pins).\n"
+    "Replaying the shape pins it instead of waiting for the race to lose.\n")
+with open(NOISY, "w") as f:
+    f.write("#!/bin/sh\n")
+    f.write("printf '%s\\n' " + shlex.quote(_NOISE) + "\n")
+    f.write(f'{sys.executable} {REPO}/scripts/canary_cookie.py mint "$1"\n')
+os.chmod(NOISY, 0o755)
+
+
+def run_canary(netid, mint=None):
     env = dict(os.environ, DATA_DIR=TMP, CANARY_BASE=base,
-               CANARY_MINT=f"{sys.executable} {REPO}/scripts/canary_cookie.py mint",
+               CANARY_MINT=mint or f"{sys.executable} {REPO}/scripts/canary_cookie.py mint",
                CANARY_CHECK=f"{sys.executable} {REPO}/scripts/canary_cookie.py check",
                CANARY_DROP=f"{sys.executable} {REPO}/scripts/canary_cookie.py drop")
     return subprocess.run(["bash", os.path.join(REPO, "scripts", "canary_sync.sh"), netid],
@@ -184,6 +204,18 @@ try:
     check("empty-parse run states the reason", "attendance empty" in p.stderr,
           f"stdout={p.stdout} stderr={p.stderr}")
     check("cookie deleted after empty-parse failure", _cookies("zz9997") == 0, _cookies("zz9997"))
+
+    # ── noisy mint stdout arm: `head -n1` took the mint's FIRST line as the
+    #    token. Minting boots the app, whose OCR prewarm makes onnxruntime
+    #    write a device_discovery warning to stdout; when that line came first
+    #    the script sent it as srm_session, /api/refresh answered 302 (login
+    #    redirect) and the real cookie row leaked — the exact CI shape (both
+    #    failures seen together on runs 44118451632 and 44228824803).
+    p = run_canary("zz9998", mint=NOISY)
+    check("noisy-mint run still syncs (the token is not line 1)",
+          p.returncode == 0 and "canary: OK" in p.stdout,
+          f"rc={p.returncode} stdout={p.stdout} stderr={p.stderr}")
+    check("cookie deleted after noisy-mint run", _cookies("zz9998") == 0, _cookies("zz9998"))
 finally:
     os.killpg(os.getpgid(srv.pid), signal.SIGTERM)
     end = time.monotonic() + 10
