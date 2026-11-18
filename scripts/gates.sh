@@ -44,6 +44,8 @@ uv sync --frozen --extra browser|CI runner setup, not a gate; locally the venv a
 .venv/bin/playwright install --only-shell chromium|CI runner setup; locally set PLAYWRIGHT_BROWSERS_PATH instead
 scope_ui_smoke (inside the CI docker job)|needs the built image
 corepack enable && corepack prepare pnpm@9.15.9 --activate|CI runner setup (installs the pinned pnpm toolchain); locally pnpm is already on PATH or the web/ step SKIPs
+bash scripts/build-web.sh --check|a full pnpm rebuild of web/ to prove the committed dist came from this source; CI does it once on the runner, and locally the tree you are testing IS the tree you are about to commit
+scripts/vision_verify.py|needs GEMINI_API_KEY (a repository secret) and 18 vision calls; the local bar must not require a cloud key. Run it by hand before touching anything layout-shaped: GEMINI_API_KEY=... .venv/bin/python scripts/vision_verify.py --capture-dir tests/golden/v3
 CIEOF
 LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP"
 
