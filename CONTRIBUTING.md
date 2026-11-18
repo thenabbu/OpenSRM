@@ -152,7 +152,7 @@ that catch people out first:
   [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
   `.trivyignore`-style escape hatch.
 - **Deploy (oclab VPS, the only path)** — **automatic**:
-  `cd-oclab.yml` deploys `srm-d1.200871.xyz` after a green **Build & Push** on
+  `cd-oclab.yml` deploys `srm.200871.xyz` (production) after a green **Build & Push** on
   `main`. It never builds, it pulls the published `:<VERSION>` image, and it
   runs `scripts/deploy_gated.sh`, so a bad deploy still rolls itself back. The
   key it uses exists only on the VPS and can run three verbs (`status`,
@@ -160,13 +160,12 @@ that catch people out first:
   and the image's revision label against the commit it built. After a skip, when
   the box already ran that tag, it checks the tag only: that image came from an
   earlier commit, so the revision cannot match this one.
-- **Deploy (lab prod)** — **retired from CI, by maintainer decision**: there is
-  no lab workflow, no `production` environment and no watcher for
-  `srm.200871.xyz`. The gated `deploy.yml` was removed because it had no secrets
-  and could never run. The lab still serves prod, so a lab version is changed by
-  hand: `bash scripts/deploy_gated.sh <tag>` on the host, then
-  `scripts/post_deploy.sh` from a checkout. See
-  [docs/runbook.md](docs/runbook.md). Do not add a lab workflow back.
+- **Deploy (lab prod)** — **retired**: on 2026-11-18 the database, the two keys
+  and the hostname `srm.200871.xyz` moved to the oclab box. The lab container is
+  stopped with `restart=no`, and its volume is kept for rollback only. There is no
+  lab workflow, no `production` environment and no watcher. Do not add one back.
+  To roll back, point the `srm` record at the lab tunnel, start the container, and
+  copy back any rows oclab accepted. See [docs/runbook.md](docs/runbook.md).
 
 ## Portal rate limits
 

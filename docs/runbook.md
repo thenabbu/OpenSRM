@@ -39,12 +39,10 @@ itself — the CSS is pre-compiled on the dev side and committed
 (`app/static/app.css`, CI re-builds it and fails if stale), so the runtime
 image carries no node/npm and no bundler.
 
-There is **one** deploy path. `cd-oclab.yml` deploys the oclab VPS automatically
-after a green **Build & Push** on `main`. Nothing in this repository deploys the
-lab. The lab prod (`srm.200871.xyz`) is retired from CI and takes a by-hand run
-on the host if it ever needs a version. See [Deploy
-(automatic)](#deploy-automatic) and [Deploy the lab by
-hand](#deploy-the-lab-by-hand).
+There is **one** deploy path. `cd-oclab.yml` deploys the oclab VPS, which serves
+production at `srm.200871.xyz`, after a green **Build & Push** on `main`. Nothing
+in this repository deploys the lab. See [Deploy
+(automatic)](#deploy-automatic) and [Roll back to the lab](#roll-back-to-the-lab).
 
 ## The deploy script
 
@@ -70,8 +68,9 @@ Two host facts this script encodes, both learned the hard way:
 
 ## Deploy (automatic)
 
-The deployment lives on the Oracle VPS at `srm-d1.200871.xyz`. It deploys
-itself, and it is the only deployment the repository runs.
+The deployment lives on the Oracle VPS and serves production at
+`srm.200871.xyz`. It deploys itself, and it is the only deployment the repository
+runs.
 
 How it runs:
 
@@ -141,9 +140,10 @@ Same path, without waiting for a push:
 gh workflow run cd-oclab.yml -f version=2.13.0
 ```
 
-## Deploy the lab by hand
+## Roll back to the lab
 
-The lab still serves `srm.200871.xyz`, but the repository no longer deploys it.
+The lab no longer serves production. Its container is stopped with
+`restart=no`, and its volume is kept for rollback. Move the hostname back first.
 There is no workflow for it, no `production` environment and no
 `LAB_DEPLOY_SSH` secret. Do this only when the lab itself needs a different
 version.

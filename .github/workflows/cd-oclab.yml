@@ -1,9 +1,11 @@
-# The ONLY deployment path: the oclab box (the Oracle VPS, srm-d1.200871.xyz).
+# The ONLY deployment path: the oclab box (the Oracle VPS), which serves
+# production at srm.200871.xyz.
 #
-# There were two until this workflow became the only one. The gated lab workflow
-# (deploy.yml) is gone: the repo had zero secrets for it, `ssh lab` resolves to
-# nothing on a runner, and it had never run. Lab prod (srm.200871.xyz) is retired
-# from CI - it takes a by-hand run of scripts/deploy_gated.sh on the host.
+# There were two paths until this one. The gated lab workflow (deploy.yml) is
+# gone: the repo had zero secrets for it, `ssh lab` resolves to nothing on a
+# runner, and it had never run. The lab stopped serving production on 2026-11-18,
+# when the database, the keys and the hostname moved here. Its container is
+# stopped with `restart=no` and its volume is kept for rollback only.
 # CONTRIBUTING.md and docs/runbook.md state this rule; keep them in step.
 #
 # Why this one is allowed to be automatic: it runs only after Build & Push has
@@ -50,10 +52,10 @@ jobs:
     timeout-minutes: 25
     environment:
       name: oclab
-      url: https://srm-d1.200871.xyz
+      url: https://srm.200871.xyz
     env:
-      HEALTH_URL: https://srm-d1.200871.xyz/healthz
-      LOGIN_URL: https://srm-d1.200871.xyz/login
+      HEALTH_URL: https://srm.200871.xyz/healthz
+      LOGIN_URL: https://srm.200871.xyz/login
     steps:
       - name: Check the deploy target is provisioned
         env:
