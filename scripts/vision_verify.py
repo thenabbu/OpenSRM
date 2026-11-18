@@ -210,8 +210,11 @@ def vote(png, route, device, vp, key, skip=()):
         try:
             txt = ask(model, route, device, vp, png, key)
         except urllib.error.HTTPError as e:
-            fails.append(("unreachable",
-                          "%s HTTP %s %s" % (model, e.code, e.read().decode()[:120])))
+            # Collapse the provider's pretty-printed JSON to ONE line: this text
+            # ends up in the per-pair row and in the job-summary headline, and
+            # "which of the two happened, in one line" is the whole point.
+            body = " ".join(e.read().decode().split())[:120]
+            fails.append(("unreachable", "%s HTTP %s %s" % (model, e.code, body)))
             continue
         except Exception as e:                       # noqa: BLE001 - any net fault
             fails.append(("unreachable", "%s %r" % (model, e)))

@@ -45,8 +45,8 @@ class Stub(BaseHTTPRequestHandler):
     mode = "ok"
     seen = 0
 
-    def _send(self, code, payload):
-        body = json.dumps(payload).encode()
+    def _send(self, code, payload, indent=None):
+        body = json.dumps(payload, indent=indent).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -56,7 +56,9 @@ class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
         Stub.seen += 1
         if Stub.mode == "all503" or (Stub.mode == "one503" and Stub.seen <= 3):
-            self._send(503, {"error": {"code": 503, "message": "high demand"}})
+            # Google's error body is pretty-printed, so the caller has to
+            # flatten it: the headline must stay one physical line.
+            self._send(503, {"error": {"code": 503, "message": "high demand"}}, indent=2)
             return
         broken = Stub.mode == "broken"
         verdict = {"broken": broken,
@@ -122,7 +124,11 @@ def main():
     check("outage: no DIFF/FAIL row",
           not [p for p in index.get("pairs_detail", []) if p["verdict"] in ("DIFF", "FAIL")])
     check("outage: summary line says UNREACHABLE", "UNREACHABLE" in summary, summary[:160])
-    check("outage: summary names the provider error", "HTTP 503" in summary, summary[:160])
+    check("outage: names the provider error", "HTTP 503" in summary, summary[:160])
+    # heading + one backticked line, and nothing else: a pretty-printed provider
+    # body inside the headline would spill it over several lines here.
+    check("outage: the headline is one physical line",
+          len([l for l in summary.splitlines() if l.strip()]) == 2, summary[:300])
     check("outage: never claimed as a regression", "REAL UI REGRESSION" not in proc.stdout,
           proc.stdout[-200:])
 

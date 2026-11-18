@@ -66,6 +66,10 @@ returns `UNREACHABLE`. This decision has a measured trigger, not a hunch.
   `answer`. `main()` counts them apart, prints the headline, writes the job
   summary, and returns exit 3 when most pairs were not judged. The comparison
   logic is unchanged.
+- The provider's error body is flattened to one line before it is reported.
+  Google answers with pretty-printed JSON, and the first CI run of this change
+  printed that body with its newlines intact, which spread the headline over
+  four log lines and broke the backticked line in the job summary.
 - `VISION_API_BASE`: the provider root, overridable only to drive the test below.
   CI does not set it.
 - `tests/unit/test_vision_verify.py`: drives the real script against a stub
@@ -77,8 +81,8 @@ returns `UNREACHABLE`. This decision has a measured trigger, not a hunch.
 The test drives the real script, so the pre-fix script is the break:
 
 ```
-pre-fix script:  test_vision_verify: 3 passed, 10 failed   (all three outage cases red)
-fixed script:    test_vision_verify: 13 passed, 0 failed
+pre-fix script:  test_vision_verify: 3 passed, 11 failed   (all three outage cases red)
+fixed script:    test_vision_verify: 14 passed, 0 failed
 ```
 
 The three cases measured through `VISION_API_BASE`:
