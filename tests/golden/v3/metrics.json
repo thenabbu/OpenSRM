@@ -1,9 +1,9 @@
 {
   "api": {
     "/": {
-      "bytes": 57424,
+      "bytes": 57444,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13834,
+      "gzip_bytes": 13848,
       "status": 200
     },
     "/api/marks": {
@@ -291,15 +291,15 @@
     "/static/sw.js": {
       "bytes": 29998,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9551,
+      "gzip_bytes": 9552,
       "status": 200
     }
   },
   "pages": {
     "/": {
       "dom_nodes": 342,
-      "html_bytes": 57424,
-      "html_gzip_bytes": 13834,
+      "html_bytes": 57444,
+      "html_gzip_bytes": 13848,
       "js_bytes": 57794,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
@@ -308,7 +308,7 @@
         "/static/push.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 19200,
+      "js_gzip_bytes": 19201,
       "script_tags": 6
     },
     "/login": {
@@ -322,11 +322,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 12267,
+      "js_gzip_bytes": 12268,
       "script_tags": 3
     }
   },
-  "revision": "1bd8908",
+  "revision": "efe9bdb",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -345,8 +345,8 @@
     },
     "dashboard": {
       "panel_dom_nodes": 172,
-      "panel_html_bytes": 16230,
-      "panel_html_gzip_bytes": 3716
+      "panel_html_bytes": 16250,
+      "panel_html_gzip_bytes": 3728
     },
     "fees": {
       "panel_dom_nodes": 72,
@@ -375,13 +375,13 @@
     }
   },
   "totals": {
-    "api_bytes": 913739,
-    "api_gzip_bytes": 356067,
+    "api_bytes": 913759,
+    "api_gzip_bytes": 356082,
     "dom_nodes_all_panels": 2077,
     "dom_nodes_page": 342,
-    "html_bytes": 76133,
-    "html_gzip_bytes": 19093,
+    "html_bytes": 76153,
+    "html_gzip_bytes": 19107,
     "js_bytes": 62671,
-    "js_gzip_bytes": 20994
+    "js_gzip_bytes": 20995
   }
 }

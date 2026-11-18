@@ -214,7 +214,7 @@ function ExamMeta({ e }: { e: P['exams'] extends null ? never : NonNullable<P['e
 function Exams({ exams }: { exams: NonNullable<P['exams']> }) {
   return (
     <div class="wbox rounded-box p-4">
-      <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-2">
         <span class="flex min-w-0 items-center gap-2 text-[11px] text-base-content/60">
           <span class="shrink-0">End sem exams</span>
           <span class={badge('neutral', { softness: 'soft', class: 'shrink-0' })}>{exams.label}</span>
