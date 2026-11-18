@@ -184,25 +184,52 @@ def main():
         # two independent assertion failures behind a single top-level "1 failed"
         # (COMPLETION_AUDIT.md, 2026-11-11). Catch it and let the assertions below
         # report honestly.
+        target = page.url
+        nav = None
         try:
             page.reload(wait_until="domcontentloaded")
+            nav = "reload"
         except Exception as exc:                  # noqa: BLE001 — any failure here is data
             print(f"    offline reload raised: {type(exc).__name__}: {str(exc).splitlines()[0][:120]}")
-            chk("offline: reload survived the dead server", False,
-                "reload threw — no worker answered the navigation")
+            # W8.4: Firefox refuses `reload` against a dead socket
+            # (NS_ERROR_CONNECTION_REFUSED) even while its worker controls the
+            # page and holds the shells. A fresh navigation is the OTHER thing a
+            # real user does offline and it goes through the same fetch handler,
+            # so try it before calling the engine broken. This is evidence, not
+            # a pass: the assertions below still have to see rows painted with
+            # the server dead.
+            try:
+                page.goto(target, wait_until="domcontentloaded")
+                nav = "goto"
+                print(f"    offline: reload refused, fresh navigation answered ({target})")
+            except Exception as exc2:             # noqa: BLE001
+                print(f"    offline goto raised too: {type(exc2).__name__}: {str(exc2).splitlines()[0][:120]}")
+        chk("offline: navigation survived the dead server", nav is not None,
+            f"neither reload nor goto was answered by the worker ({a.browser})")
+        if nav is None:
+            print("    no document is available offline — the rows checks below cannot pass")
         # Same deterministic settle as the online leg: wait for the islands to
         # announce they are done. Offline the marker is `data-mounted-at` (the
         # cache branch) — `data-hydrated` also appears, both are app-stamped.
         rows_off = 0
-        for _ in range(60):
-            rows_off = page.locator(ROWS).count()
-            if rows_off:
-                break
-            page.wait_for_timeout(250)
-        err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
-        print(f"    offline diag: {err}")
-        dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
-        print(f"    offline dom: {dom}")
+        try:
+            for _ in range(60):
+                rows_off = page.locator(ROWS).count()
+                if rows_off:
+                    break
+                page.wait_for_timeout(250)
+        except Exception as exc:                  # noqa: BLE001
+            print(f"    offline rows unreadable: {type(exc).__name__}")
+        # Diagnostics are best-effort: on a failed navigation they throw
+        # ("Execution context was destroyed"), and that must not abort the run
+        # before the summary line is printed.
+        try:
+            err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
+            print(f"    offline diag: {err}")
+            dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
+            print(f"    offline dom: {dom}")
+        except Exception as exc:                  # noqa: BLE001
+            print(f"    offline diagnostics unavailable: {type(exc).__name__}")
         chk("offline: reload still painted rows from Dexie", rows_off > 0,
             f"{rows_off} rows (online was {rows_online})")
 

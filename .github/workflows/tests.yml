@@ -321,7 +321,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 min was enough for one engine. W8.4 runs the offline proof three times
+    # (each with its own server boot, since the offline leg kills it on purpose)
+    # and apt-installs webkit's GTK4 deps; the measured job was 5m49s before the
+    # third engine could actually launch.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -358,12 +362,19 @@ jobs:
       # a dead origin, Cache API storage partitioning, secure-context rules — so
       # a Chromium-only run proves one third of what the card asks for. These
       # two come from `playwright install` proper (there is no --only-shell for
-      # them). ubuntu-latest already carries libgtk-3/libXcursor; no
-      # `install-deps` step is needed, and adding one would need root.
+      # them).
+      #
+      # --with-deps is REQUIRED for webkit, not optional polish: its build is
+      # webkit-ubuntu-26.04 and the runner is 24.04, so launch fails with a bare
+      # "Host system is missing dependencies" and no line naming the libraries
+      # (measured: libgtk-4, libgraphene, libevent, libopus). Runners have
+      # passwordless sudo, so this is an apt-get install, ~40 s.
       - name: Install Playwright chromium, webkit and firefox
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: .venv/bin/playwright install --only-shell chromium && .venv/bin/playwright install webkit firefox
+        run: |
+          .venv/bin/playwright install --only-shell chromium
+          .venv/bin/playwright install --with-deps webkit firefox
 
       # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
       # committed tests/golden/v3, naming every file that moved (and for the first
