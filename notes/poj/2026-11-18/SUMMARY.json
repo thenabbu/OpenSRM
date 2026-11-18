@@ -1,0 +1,46 @@
+{
+  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "round": 1,
+  "judged_at": "2026-11-18T17:05:17+00:00",
+  "pass": [
+    "E10",
+    "E13",
+    "E14",
+    "E2",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "E9"
+  ],
+  "fail": [
+    "E1",
+    "E11",
+    "E12",
+    "E3",
+    "E8"
+  ],
+  "error": [],
+  "fail_cards": [
+    {
+      "criterion": "E1",
+      "statement": "Every job of every workflow is green on HEAD of `origin/feat/preact-migration` (run URL + SHA recorded)."
+    },
+    {
+      "criterion": "E11",
+      "statement": "`docs/ARCHITECTURE.md` written, `architecture.html` updated, DESIGN / CONTRIBUTING / README / ROLLBACK updated."
+    },
+    {
+      "criterion": "E12",
+      "statement": "`FINAL_REPORT.md` with an evidence handle for every unit; `decisions.md` complete."
+    },
+    {
+      "criterion": "E3",
+      "statement": "9 MPA routes, one shared shell partial (nav markup exists once), per-route payload within an enforced budget."
+    },
+    {
+      "criterion": "E8",
+      "statement": "Hardening executed and in CI: Panel of Judges verdicts committed; a11y incl. keyboard/focus; stress incl. slow-3G + offline flapping; pip-audit + pnpm audit + trivy (image label == HEAD SHA) + gitleaks; **DUT 10/10** on the built artifact; Chromium + WebKit + Firefox."
+    }
+  ]
+}

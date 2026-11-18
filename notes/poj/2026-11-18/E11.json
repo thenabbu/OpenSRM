@@ -1,0 +1,18 @@
+{
+  "criterion": "E11",
+  "tier": "machine",
+  "statement": "`docs/ARCHITECTURE.md` written, `architecture.html` updated, DESIGN / CONTRIBUTING / README / ROLLBACK updated.",
+  "verdict": "FAIL",
+  "note": "missing/stale: docs/ARCHITECTURE.md, architecture.html has no preact",
+  "evidence": [
+    "docs/ARCHITECTURE.md: MISSING",
+    "docs/ROLLBACK.md: present",
+    "DESIGN.md: present",
+    "CONTRIBUTING.md: present",
+    "README.md: present",
+    "architecture.html mentions of preact: 0"
+  ],
+  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "round": 1,
+  "judged_at": "2026-11-18T17:05:16+00:00"
+}

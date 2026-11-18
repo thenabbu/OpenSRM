@@ -1,0 +1,15 @@
+{
+  "criterion": "E9",
+  "tier": "machine",
+  "statement": "Bundle budget enforced in CI; CSS gz \u2264 36,864 B; `app.py` \u2264 its line budget.",
+  "verdict": "PASS",
+  "note": "css gz 26849 B, app.py within budget",
+  "evidence": [
+    "budget line: if [ \"$GZ\" -gt 36864 ]; then / echo \"build-css: gzip size ${GZ} exceeds the 35 KB budget (36864 B)\" >&2",
+    "OK \u2014 no cycles, leaves stay leaves, app.py within budget",
+    "app.css gzipped now: 26849 B (budget 36864)"
+  ],
+  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "round": 1,
+  "judged_at": "2026-11-18T17:05:11+00:00"
+}

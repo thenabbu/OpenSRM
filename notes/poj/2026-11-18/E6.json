@@ -1,0 +1,16 @@
+{
+  "criterion": "E6",
+  "tier": "machine",
+  "statement": "**Offline executed in CI:** with the network cut, **9/9 routes** render from shell + IndexedDB, staleness labelled, write queue for `/marks/tag`, online/offline handled, second-student isolation, logout leaves nothing (IndexedDB, Cache API, push subscription, storage keys).",
+  "verdict": "PASS",
+  "note": "offline suites wired in CI and green",
+  "evidence": [
+    "2026-11-18T17:05:09 INFO opensrm.migrations db.schema version=18 \u2014 no pending migrations",
+    "2026-11-18T17:05:09 WARNING opensrm.http request method=GET path=/shell/attendance status=401 duration_ms=0 error=not logged in",
+    "2026-11-18T17:05:09 WARNING opensrm.http request method=GET path=/shell/attendance status=401 duration_ms=0 error=not logged in",
+    "CI references to offline suites: 5"
+  ],
+  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "round": 1,
+  "judged_at": "2026-11-18T17:05:10+00:00"
+}

@@ -1,0 +1,14 @@
+{
+  "criterion": "E8",
+  "tier": "machine",
+  "statement": "Hardening executed and in CI: Panel of Judges verdicts committed; a11y incl. keyboard/focus; stress incl. slow-3G + offline flapping; pip-audit + pnpm audit + trivy (image label == HEAD SHA) + gitleaks; **DUT 10/10** on the built artifact; Chromium + WebKit + Firefox.",
+  "verdict": "FAIL",
+  "note": "hardening step absent from CI",
+  "evidence": [
+    "CI references missing for: ['test_a11y', 'test_stress', 'pip-audit', 'pnpm audit', 'trivy', 'gitleaks']",
+    "committed PoJ summaries: 0"
+  ],
+  "sha": "8e5bc90261a493e4e57dea8271048370d1e86a02",
+  "round": 1,
+  "judged_at": "2026-11-18T17:05:11+00:00"
+}
