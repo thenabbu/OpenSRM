@@ -182,6 +182,10 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n\n### pnpm audit (web/)\n\n" + "\n".join(lines) + "\n")
 
+          # Also on stdout, not only in the job summary: "no unaccepted
+          # HIGH/CRITICAL" alone cannot tell "audited clean" from "audited
+          # nothing", and the summary is not in the log a reader greps.
+          print(lines[0])
           if gone:
               # Not a failure: the forcing function is a human reading it.
               print("pnpm-audit: allowlist entry no longer reported, drop it:", sorted(gone))
