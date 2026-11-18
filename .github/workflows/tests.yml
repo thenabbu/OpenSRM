@@ -321,7 +321,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 min was enough for one engine. W8.4 runs the offline proof three times
+    # (each with its own server boot, since the offline leg kills it on purpose)
+    # and apt-installs webkit's GTK4 deps; the measured job was 5m49s before the
+    # third engine could actually launch.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -351,10 +355,47 @@ jobs:
       # Headless shell only — these suites never need a headed browser.
       # Same PLAYWRIGHT_BROWSERS_PATH as the run steps below: the browser must
       # land where the suites look for it.
-      - name: Install Playwright chromium (headless shell)
+      #
+      # W8.4: webkit and firefox are here for the offline proof's engine matrix
+      # (scripts/offline_proof.sh, ENGINES on its step). The offline path is
+      # where the three engines genuinely differ — service-worker lifetime over
+      # a dead origin, Cache API storage partitioning, secure-context rules — so
+      # a Chromium-only run proves one third of what the card asks for. These
+      # two come from `playwright install` proper (there is no --only-shell for
+      # them).
+      #
+      # --with-deps is REQUIRED for webkit — its build is webkit-ubuntu-26.04
+      # and the runner is 24.04, so launch fails with "Host system is missing
+      # dependencies". But plain --with-deps installs a 177-package superset (a
+      # full X11 + GStreamer tree) and ate the entire job timeout on its own.
+      # The real gap is the ten libraries the launcher names, so install those
+      # and let apt resolve their dependencies.
+      #
+      # firefox gets no --with-deps: it launched fine on the stock runner
+      # (measured — it painted 9/9 routes in the first matrix run), so only the
+      # download is needed.
+      - name: WebKit system libraries (the 10 the launcher names)
+        run: |
+          sudo apt-get update -qq
+          # libx264's package name carries the soname version (164 on 24.04,
+          # 165 on 26.04), so resolve it rather than hardcode it.
+          X264=$(apt-cache search --names-only '^libx264-[0-9]+$' | head -1 | cut -d' ' -f1)
+          # The launcher names the exact missing libs at runtime. Iteration 1 named
+          # 10 libs; this build (webkit-ubuntu-26.04 on 24.04 runner) names only
+          # these three after the 10 are installed. Install those too.
+          sudo apt-get install -y -qq --no-install-recommends \
+            libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libopus0 \
+            libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
+            libwoff1 libharfbuzz-icu0 libsecret-1-0 libhyphen0 \
+            libmanette-0.2-0 libgles2 libavif16 "${X264:-libx264-164}" \
+            libflite1 libsoup-3.0-0 libwayland-server0
+
+      - name: Install Playwright chromium, webkit and firefox
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: .venv/bin/playwright install --only-shell chromium
+        run: |
+          .venv/bin/playwright install --only-shell chromium
+          .venv/bin/playwright install webkit firefox
 
       # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
       # committed tests/golden/v3, naming every file that moved (and for the first
@@ -476,9 +517,15 @@ jobs:
       # 18183 (nothing above holds that port), so it needs no fixture here.
       # The script exits non-zero when any leg fails, which is the whole point
       # of this step — a gate that cannot fail is worse than no gate.
-      - name: Offline read path (scripts/offline_proof.sh)
+      #
+      # W8.4: ENGINES puts route_paint.py AND offline_paint.py through all three
+      # engines. Each engine gets its own server boot because the offline leg
+      # kills it on purpose. Roughly 3x this step's old wall time; the job's
+      # timeout-minutes (line 324) has the headroom.
+      - name: Offline read path, 3 engines (scripts/offline_proof.sh)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          ENGINES: chromium webkit firefox
         run: bash scripts/offline_proof.sh
 
       # W6.3: the network-cut suite. All nine routes with the network cut

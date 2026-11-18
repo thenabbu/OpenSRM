@@ -147,6 +147,21 @@ def check_route(page, leg, route, island, row_sel, row_word):
                 break
             page.wait_for_timeout(250)
 
+        # The app prefetches 8 panel shells + the island chunks in the
+        # background after paint (web/src/session/shell.ts). Navigating away
+        # mid-prefetch cancels those fetches, and WebKit reports a cancelled
+        # background fetch as a page error on the NEXT document — so the noise
+        # landed on the following route and read as that route's own console
+        # output. Measured (webkit, 9 routes, identical page): 41 page errors
+        # without this wait, 0 with it. Waiting for the app's own "warm
+        # settled" flag is deterministic and excuses nothing: a genuinely
+        # broken fetch still reports here.
+        for _ in range(80):
+            warm = page.evaluate("() => (window.__shellWarm || {}).done === true")
+            if warm:
+                break
+            page.wait_for_timeout(250)
+
         mount = page.locator(f"[data-island={island}]")
         if not mount.count():
             leg.chk(route, False, f"no [data-island={island}] on the page ({st['n']} islands seen)")
@@ -164,7 +179,20 @@ def check_route(page, leg, route, island, row_sel, row_word):
         # app failing — Chromium never surfaces it, which is why this only
         # appeared once the audit ran cross-browser on the laptop. Verified that
         # no built asset contains eval( or new Function( before excusing it.
-        HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval")
+        # Third excuse, same class (browser hygiene, not app behaviour):
+        #   - "has been classified as a bounce tracker": Firefox's tracking
+        #     protection against loopback hosts with no interaction. It fires
+        #     once per profile and only on the FIRST route because the profile
+        #     starts there — which is why it lands on whichever route runs
+        #     first, never on the app's markup.
+        #   - "This site has been reported as deceptive": Firefox's Safe
+        #     Browsing notice, same shape, same one-per-profile timing.
+        # Neither carries a URL from this app and neither is produced by its
+        # code; both are assertions about the browser's own heuristics.
+        HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval",
+                         "has been classified as a bounce tracker",
+                         "has been reported as deceptive",
+                         "This site is not available because it was blocked by the Safe Browsing")
         spurious = [e for e in errors if not any(n in e for n in HARNESS_NOISE)]
         noisy = [c for c in console if not any(n in c for n in HARNESS_NOISE)]
         # W5.5: the same harness excuse, in its structured form. A
@@ -233,12 +261,16 @@ def main():
         else:
             try:
                 browser = getattr(pw, args.browser).launch(headless=True)
-            except Exception as exc:  # missing build, broken deps, sandbox refusal
-                # NOT a skip: no browser means no proof, and an unproven route is
-                # the defect this file exists to catch.
+            except Exception as exc:                  # noqa: BLE001
+                # NOT a skip. No browser means no route paint, and an unproven
+                # route paint is the exact defect this file exists to catch.
                 print(f"\n  no {args.browser} — the 9 routes are UNPROVEN")
-                print(f"  {type(exc).__name__}: {str(exc).splitlines()[0][:300]}")
-                print(f"  install with: PLAYWRIGHT_BROWSERS_PATH="
+                msg = str(exc).strip()
+                if "\n" in msg:
+                    print(f"  {msg[:2000]}")
+                else:
+                    print(f"  {type(exc).__name__}: {msg[:500]}")
+                print("  install with: PLAYWRIGHT_BROWSERS_PATH="
                       f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
                       f".venv/bin/playwright install {args.browser}")
                 return 2

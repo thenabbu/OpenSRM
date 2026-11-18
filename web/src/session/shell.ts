@@ -57,9 +57,9 @@ const log = (msg: string, e?: unknown): void =>
  */
 /** Surface the warm result on window for the offline DUT: console events from a
  *  page that navigates are dropped by Playwright, so a log is not evidence. */
-function expose(diag: string[], verdict: string): void {
+function expose(diag: string[], verdict: string, done = false): void {
   try {
-    (window as unknown as { __shellWarm?: unknown }).__shellWarm = { verdict, diag };
+    (window as unknown as { __shellWarm?: unknown }).__shellWarm = { verdict, diag, done };
   } catch {
     // non-browser context (unit tests): nothing to expose
   }
@@ -123,8 +123,15 @@ export async function warmShells(): Promise<number> {
   } catch (err) {
     log('shell cache unavailable', err);
   }
-  void warmChunks();
-  expose(diag, `done stored=${stored}`);
+  void warmChunks().then(() => {
+    // `done` flips only after the chunk warm too. Both halves fire their own
+    // fetches, and a navigation that lands mid-flight cancels them; WebKit
+    // surfaces a cancelled background fetch as a page error on the NEXT
+    // document, which the route-paint harness then reads as this route's
+    // console noise. Exposing one "everything settled" flag lets the harness
+    // wait for the prefetch instead of racing it.
+    expose(diag, `done stored=${stored}`, true);
+  });
   return stored;
 }
 

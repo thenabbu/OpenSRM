@@ -22,10 +22,12 @@ the user-visible thing this whole feature exists for. The Dexie row is implied:
 the server is dead, so a painted row can only have come from the cache.
 """
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
@@ -58,6 +60,10 @@ def main():
                     help="shell command that stops the server, run between the "
                          "online visit and the offline reload")
     ap.add_argument("--skip-logout", action="store_true")
+    ap.add_argument("--browser", default="chromium",
+                    choices=["chromium", "webkit", "firefox"],
+                    help="engine to paint offline in (default chromium); one "
+                         "summary line per run, W8.4")
     a = ap.parse_args()
 
     with sync_playwright() as pw:
@@ -65,13 +71,45 @@ def main():
         # run's service worker, whose cached routes point at a server that no
         # longer exists: the first goto() then hangs to the navigation timeout
         # and reads exactly like "the app is broken".
-        ctx = pw.chromium.launch_persistent_context(
-            tempfile.mkdtemp(prefix="offproof-profile-"),
-            headless=True,
-            args=["--no-first-run", "--no-default-browser-check"],
-        )
+        #
+        # W8.4: the engine is a parameter, not a constant. WebKit and Firefox
+        # are the reason this exists - each has its own service-worker
+        # lifetime, its own Cache API storage partition and its own secure-
+        # context rules, so "the Chromium run was green" is not evidence about
+        # either. launch_persistent_context is the API that keeps the cache and
+        # the worker across reloads, and it exists on all three engines.
+        if a.browser == "chromium":
+            ctx = pw.chromium.launch_persistent_context(
+                tempfile.mkdtemp(prefix="offproof-profile-"),
+                headless=True,
+                args=["--no-first-run", "--no-default-browser-check"],
+            )
+        else:
+            try:
+                ctx = getattr(pw, a.browser).launch_persistent_context(
+                    tempfile.mkdtemp(prefix="offproof-profile-"), headless=True)
+            except Exception as exc:      # missing build, broken deps, sandbox refusal
+                        # NOT a skip. No browser means no offline proof, and an unproven
+                        # offline path is the exact defect this file exists to catch.
+                        print(f"\n  no {a.browser} — the offline path is UNPROVEN")
+                        msg = str(exc).strip()
+                        # Playwright errors are multi-line; the first line is just the
+                        # category. Print the whole thing so the CI log has the detail.
+                        if "\n" in msg:
+                            print(f"  {msg[:2000]}")
+                        else:
+                            print(f"  {type(exc).__name__}: {msg[:500]}")
+                        print("  install with: PLAYWRIGHT_BROWSERS_PATH="
+                              f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
+                              f".venv/bin/playwright install {a.browser}")
+                        return 2
+        # The cookie's domain MUST match the host we navigate to. This was
+        # hardcoded to 127.0.0.1, so any run against a LAN address sent no
+        # session and every route 302'd to /login (the same bug route_paint.py
+        # already fixed; this file kept its copy).
         ctx.add_cookies([{"name": "srm_session", "value": a.token,
-                          "domain": "127.0.0.1", "path": "/"}])
+                          "domain": urlparse(a.base).hostname or "127.0.0.1",
+                          "path": "/"}])
         page = ctx.new_page()
 
         # ── 1. online ───────────────────────────────────────────────────────
@@ -152,25 +190,52 @@ def main():
         # two independent assertion failures behind a single top-level "1 failed"
         # (COMPLETION_AUDIT.md, 2026-11-11). Catch it and let the assertions below
         # report honestly.
+        target = page.url
+        nav = None
         try:
             page.reload(wait_until="domcontentloaded")
+            nav = "reload"
         except Exception as exc:                  # noqa: BLE001 — any failure here is data
             print(f"    offline reload raised: {type(exc).__name__}: {str(exc).splitlines()[0][:120]}")
-            chk("offline: reload survived the dead server", False,
-                "reload threw — no worker answered the navigation")
+            # W8.4: Firefox refuses `reload` against a dead socket
+            # (NS_ERROR_CONNECTION_REFUSED) even while its worker controls the
+            # page and holds the shells. A fresh navigation is the OTHER thing a
+            # real user does offline and it goes through the same fetch handler,
+            # so try it before calling the engine broken. This is evidence, not
+            # a pass: the assertions below still have to see rows painted with
+            # the server dead.
+            try:
+                page.goto(target, wait_until="domcontentloaded")
+                nav = "goto"
+                print(f"    offline: reload refused, fresh navigation answered ({target})")
+            except Exception as exc2:             # noqa: BLE001
+                print(f"    offline goto raised too: {type(exc2).__name__}: {str(exc2).splitlines()[0][:120]}")
+        chk("offline: navigation survived the dead server", nav is not None,
+            f"neither reload nor goto was answered by the worker ({a.browser})")
+        if nav is None:
+            print("    no document is available offline — the rows checks below cannot pass")
         # Same deterministic settle as the online leg: wait for the islands to
         # announce they are done. Offline the marker is `data-mounted-at` (the
         # cache branch) — `data-hydrated` also appears, both are app-stamped.
         rows_off = 0
-        for _ in range(60):
-            rows_off = page.locator(ROWS).count()
-            if rows_off:
-                break
-            page.wait_for_timeout(250)
-        err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
-        print(f"    offline diag: {err}")
-        dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
-        print(f"    offline dom: {dom}")
+        try:
+            for _ in range(60):
+                rows_off = page.locator(ROWS).count()
+                if rows_off:
+                    break
+                page.wait_for_timeout(250)
+        except Exception as exc:                  # noqa: BLE001
+            print(f"    offline rows unreadable: {type(exc).__name__}")
+        # Diagnostics are best-effort: on a failed navigation they throw
+        # ("Execution context was destroyed"), and that must not abort the run
+        # before the summary line is printed.
+        try:
+            err = page.evaluate("()=>JSON.stringify(window.__osrmDiag||[])")
+            print(f"    offline diag: {err}")
+            dom = page.evaluate("()=>({islands:[...document.querySelectorAll('[data-island]')].map(e=>e.dataset.island+':'+e.children.length), n:document.querySelectorAll('[data-island=attendance]').length})")
+            print(f"    offline dom: {dom}")
+        except Exception as exc:                  # noqa: BLE001
+            print(f"    offline diagnostics unavailable: {type(exc).__name__}")
         chk("offline: reload still painted rows from Dexie", rows_off > 0,
             f"{rows_off} rows (online was {rows_online})")
 
@@ -200,7 +265,8 @@ def main():
                 page.evaluate("location.href='/logout'")
             page.wait_for_timeout(8000)
 
-            if page.url.startswith("chrome-error://"):
+            if page.url.startswith(("chrome-error://", "about:neterror",
+                                    "webkit-error", "about:blank")):
                 print("    [SKIP] logout redirect — server is down, /logout is unresolvable offline")
             else:
                 dbs = page.evaluate(
@@ -221,7 +287,7 @@ def main():
 
         ctx.close()
 
-    print(f"\n  browser leg: {PASS} passed, {FAIL} failed")
+    print(f"\n  browser leg [{a.browser}]: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1
 
 

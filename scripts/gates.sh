@@ -46,6 +46,7 @@ scope_ui_smoke (inside the CI docker job)|needs the built image
 corepack enable && corepack prepare pnpm@9.15.9 --activate|CI runner setup (installs the pinned pnpm toolchain); locally pnpm is already on PATH or the web/ step SKIPs
 bash scripts/build-web.sh --check|a full pnpm rebuild of web/ to prove the committed dist came from this source; CI does it once on the runner, and locally the tree you are testing IS the tree you are about to commit
 scripts/vision_verify.py|needs GEMINI_API_KEY (a repository secret) and 18 vision calls; the local bar must not require a cloud key. Run it by hand before touching anything layout-shaped: GEMINI_API_KEY=... .venv/bin/python scripts/vision_verify.py --capture-dir tests/golden/v3
+sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libopus0 libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 libwoff1 libharfbuzz-icu0 libsecret-1-0 libhyphen0 libmanette-0.2-0 libgles2 libavif16 libflite1 libsoup-3.0-0 libwayland-server0|WebKit system libs (apt needs sudo); locally unavailable without root
 CIEOF
 LOCAL_ONLY="test_login_guide_server|7 real portal logins per run; portal caps 10/hour/IP"
 

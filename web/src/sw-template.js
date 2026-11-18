@@ -65,12 +65,31 @@ self.addEventListener('message', (event) => {
 
 // Navigation preload: the HTML request starts while the worker boots, so a
 // controlled page does not pay worker startup latency on its document.
+//
+// BUT NOT ON FIREFOX. With preload enabled, Firefox refuses the navigation
+// outright once the origin is unreachable: the preload request fails at the
+// network layer and Firefox surfaces that failure as the navigation result,
+// never reaching the handler that would have served the cached shell. Measured
+// on the same profile, same dead server, single reload: preload ON → 1st
+// navigation OK, 2nd throws NS_ERROR_CONNECTION_REFUSED; preload OFF → 1st,
+// 2nd and 3rd all answer from the shell cache. Chromium and WebKit answer
+// every navigation either way, and this app never serves HTML from its cache
+// (the html route's cacheWillUpdate returns null by design), so preload only
+// overlaps the worker's startup here — it is not what makes HTML respond.
+const PRELOAD_ENGLISH = /\bFirefox\/\d/.test(self.navigator.userAgent || '');
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     if (self.registration.navigationPreload) {
       try {
         const st = await self.registration.navigationPreload.getState();
-        if (!st.enabled) await self.registration.navigationPreload.enable();
+        // Disable (not merely skip enabling) on Firefox: a profile that ran an
+        // earlier build still has preload switched on, and the enabled state
+        // lives in the registration, not in this script.
+        if (PRELOAD_ENGLISH) {
+          if (st.enabled) await self.registration.navigationPreload.disable();
+        } else if (!st.enabled) {
+          await self.registration.navigationPreload.enable();
+        }
       } catch (err) { /* preload unsupported: the HTML route just fetches */ }
     }
     // Drop every cache from an earlier generation. Precache entries are
