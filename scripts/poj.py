@@ -255,12 +255,23 @@ def j_e8(wt, ctx):
     for f in sorted(wf.glob("*.yml")):
         txt = f.read_text()
         blob += txt
-        # Only RUN lines prove a step executes: the driver's name also appears in
-        # step labels and comments, so grepping raw YAML calls a disabled step
-        # "wired". Break-proved the hard way - replacing the run line with `echo`
-        # still PASSED until this was narrowed to the commands themselves.
-        run_lines += "".join(l for l in txt.splitlines()
-                            if l.strip().startswith(("run:", "- run:", "        run:")))
+        # Only RUN content proves a step executes: the driver's name also appears
+        # in step labels and comments, so grepping raw YAML calls a disabled step
+        # "wired". Two shapes to collect: inline `run: cmd` and block scalars
+        # (`run: |` followed by indented lines) - the supply-chain scans all use
+        # block scalars, so collecting only the `run:` line missed every one.
+        lines = txt.splitlines()
+        for i, l in enumerate(lines):
+            s = l.strip()
+            if not s.startswith("run:"):
+                continue
+            run_lines += s + "\n"
+            if s.rstrip() in ("run: |", "run: >", "run: |-", "run: >-"):
+                base = len(l) - len(l.lstrip())
+                for nxt in lines[i + 1:]:
+                    if nxt.strip() and (len(nxt) - len(nxt.lstrip())) <= base:
+                        break
+                    run_lines += nxt + "\n"
         per_file[f.name] = [k for k in direct if k in txt]
     missing = [f"{v} ({k})" for k, v in direct.items() if k not in run_lines]
     ev = [" ".join(f"{n}: {', '.join(v) or '-'}" for n, v in per_file.items())]
