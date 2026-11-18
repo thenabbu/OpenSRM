@@ -1,0 +1,38 @@
+{
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:48:07+00:00",
+  "pass": [
+    "E10",
+    "E13",
+    "E14",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "E8",
+    "E9"
+  ],
+  "fail": [
+    "E1",
+    "E11",
+    "E12"
+  ],
+  "error": [],
+  "fail_cards": [
+    {
+      "criterion": "E1",
+      "statement": "Every job of every workflow is green on HEAD of `origin/feat/preact-migration` (run URL + SHA recorded)."
+    },
+    {
+      "criterion": "E11",
+      "statement": "`docs/ARCHITECTURE.md` written, `architecture.html` updated, DESIGN / CONTRIBUTING / README / ROLLBACK updated."
+    },
+    {
+      "criterion": "E12",
+      "statement": "`FINAL_REPORT.md` with an evidence handle for every unit; `decisions.md` complete."
+    }
+  ]
+}

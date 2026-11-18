@@ -1,0 +1,15 @@
+{
+  "criterion": "E13",
+  "tier": "machine",
+  "statement": "`main` untouched; main's drift merged **into** the branch; version trio `3.0.0`.",
+  "verdict": "PASS",
+  "note": "trio on 3.0.0; main merged in",
+  "evidence": [
+    "D5    PASS    VERSION == pyproject.toml == uv.lock",
+    "VERSION=3.0.0",
+    "main is ancestor of HEAD: False"
+  ],
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:48:07+00:00"
+}
