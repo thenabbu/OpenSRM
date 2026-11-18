@@ -371,7 +371,45 @@ jobs:
       - name: Golden drift (tests/golden/v3 --check)
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: bash scripts/capture_golden.sh --check --no-screens
+        # --out is explicit so the NEXT step can judge the same pixels: one
+        # browser pass, two gates. Without it the capture lands in a random
+        # mkdtemp tree and the vision step would have to drive chromium again.
+        run: bash scripts/capture_golden.sh --check --no-screens --out "$RUNNER_TEMP/golden-ci"
+
+      # W8.3: the screenshots finally get LOOKED AT. The drift gate has always
+      # run with --no-screens (PNG bytes encode the capture host's font stack),
+      # so tests/golden/v3/screens - 27 committed images - were decoration: no
+      # gate, anywhere, ever compared them to anything. A vision model now
+      # judges every route at mobile and desktop width for the breakage a byte
+      # diff cannot see (blank panel, clipped content, blocks drawn on top of
+      # each other), and writes a verdict file per pair.
+      #
+      # It FAILS the job when a pair is not a MATCH, and also when it cannot
+      # run at all: a missing key is a red step, never a skip - a verification
+      # that silently does not happen is the exact defect this step exists to
+      # end. Reuses the capture the drift gate just made.
+      # Fork PRs get no repository secrets (GitHub never exposes them to
+      # pull_request runs from a fork), so the key is absent there by
+      # construction and the step would red for a reason the contributor cannot
+      # fix. Same guard the GHCR upgrade smoke uses. Any PR from a branch in
+      # THIS repo - which is how every change to this repo lands - still runs it.
+      - name: Vision verification (9 routes x mobile/desktop, real model)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: .venv/bin/python scripts/vision_verify.py --capture-dir "$RUNNER_TEMP/golden-ci" --out "$RUNNER_TEMP/vision"
+
+      - name: Vision verdicts + the pixels the model saw
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vision-verdicts
+          path: |
+            ${{ runner.temp }}/vision/*.json
+            ${{ runner.temp }}/golden-ci/screens/*.png
+          if-no-files-found: warn
+          retention-days: 7
 
       # SCOPE_FEATURES is DERIVED from the app's own registry, never hand-copied.
       # The feature list and the env that enables it used to be two literals that
@@ -507,7 +545,8 @@ jobs:
             /tmp/suite-*.log
             /tmp/gunicorn-ci.log
             /tmp/gun-*.log
-            /tmp/golden-check-*/**
+            /tmp/golden-check-*/
+            /*/golden-ci/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -540,3 +579,13 @@ jobs:
       # both offline once node_modules exists. No portal/CF/ntfy env is touched.
       - name: Install, typecheck, unit tests (web/)
         run: bash scripts/ci_web.sh
+
+      # The e2e job runs every browser suite against the COMMITTED
+      # app/static/dist. That is only "the built dist" if the committed bundle
+      # is what `pnpm build` produces from this source - until this step, a
+      # source change with a stale dist passed every gate, because nothing on
+      # the runner ever rebuilt it. Needs node+pnpm, so it belongs here and not
+      # in unit. The script rebuilds, then `git diff --exit-code` on the two
+      # committed build artifacts (dist/ and sw.js) is the verdict.
+      - name: Committed dist == a fresh `pnpm build` (scripts/build-web.sh --check)
+        run: bash scripts/build-web.sh --check

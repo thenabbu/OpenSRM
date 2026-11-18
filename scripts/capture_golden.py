@@ -1175,7 +1175,11 @@ def main() -> int:
     ap.add_argument("--python", default=None,
                     help="interpreter that imports the app (default: <repo>/.venv/bin/python, "
                          "then $OPENSRM_REPO/.venv/bin/python)")
-    ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--out", default=None,
+                    help="capture destination (default: tests/golden/v3 for a plain "
+                         "capture, a throwaway dir for --check). An explicit --out "
+                         "is honoured by --check too, so one capture can feed both "
+                         "the drift diff and the vision judge in scripts/vision_verify.py.")
     ap.add_argument("--port", type=int, default=18185)
     ap.add_argument("--check", nargs="?", const="", default=None, metavar="DIR",
                     help="capture into a throwaway dir and diff it against DIR "
@@ -1205,8 +1209,25 @@ def main() -> int:
 
     # --check never writes into the reference dir — it captures into a throwaway
     # tree and diffs that against the golden.
-    out = (Path(tempfile.mkdtemp(prefix="golden-check-")) / "capture"
-           if check_against is not None else Path(args.out))
+    # --check never writes into the reference dir by accident: with no explicit
+    # --out it still captures into a throwaway tree. When the caller DOES name a
+    # dir, that is an explicit decision and it is honoured - the W8.3 vision step
+    # reuses the drift gate's capture instead of driving the browser twice.
+    #
+    # tmp_root is the throwaway parent and the ONLY thing that may be deleted
+    # wholesale. It used to be derived as `out.parent`, which was safe only while
+    # out was always <mkdtemp>/capture; the moment a caller passed --out the code
+    # would have rmtree'd that caller's PARENT directory (measured: --out
+    # /tmp/golden-ci deletes /tmp). Deleting a capture has to name what it owns.
+    tmp_root = None
+    if args.out is None:
+        if check_against is not None:
+            tmp_root = Path(tempfile.mkdtemp(prefix="golden-check-"))
+            out = tmp_root / "capture"
+        else:
+            out = DEFAULT_OUT
+    else:
+        out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
     for d in ("dom", "screens", "api"):
@@ -1266,12 +1287,13 @@ def main() -> int:
                 for rel in [d.split()[-1] for d in diffs
                             if not d.split()[-1].startswith("screens/")][:3]:
                     print_change_markers(check_against, out, rel)
-                print(f"capture kept for inspection: {out.parent}")
+                print(f"capture kept for inspection: {out}")
             elif not dead:
-                shutil.rmtree(out.parent, ignore_errors=True)
+                if tmp_root is not None:
+                    shutil.rmtree(tmp_root, ignore_errors=True)
                 print(f"golden OK: {rev} matches {check_against}")
             else:
-                print(f"capture kept for inspection: {out.parent}")
+                print(f"capture kept for inspection: {out}")
     except Exception as e:
         rc = 1
         print(f"FAILED: {type(e).__name__}: {e}")
