@@ -121,3 +121,13 @@ The step needs `GEMINI_API_KEY` (set on the repository as a secret; the lab's
 each. Fork PRs never receive repository secrets, so the step carries the same
 guard the GHCR upgrade smoke uses — GitHub does not hand secrets to a
 `pull_request` run from a fork, and a contributor cannot fix that.
+
+## Reading a verdict file
+
+`notes/vision/<route>-<device>.json` records the verdict, the class, the model,
+the answering model's corroborators (only when a pair was flagged), and the
+hashes of the golden and the fresh capture it judged. On a clean build
+`fresh_sha == golden_sha` **by construction**: the drift gate has just proven
+the capture is byte-identical to the golden, so the vision judge is looking at
+the same pixels. They diverge only when the build has drifted - which is the
+case where the judge is actually earning its keep.
