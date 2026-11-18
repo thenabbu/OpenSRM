@@ -74,7 +74,8 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
 </style>{% endblock %}
 </head><body class="bg-base-100 text-base-content" data-scope-sync="{{ scope_sync_state }}"{% if data_netid %} data-netid="{{ data_netid }}"{% endif %}>
 <!-- Desktop: full navbar — brand | tabs center | sync + actions right -->
-<div class="navbar bg-base-200 border-b border-base-300 fixed top-0 left-0 right-0 z-20 hidden lg:flex edge-x"
+<header class="navbar bg-base-200 border-b border-base-300 fixed top-0 left-0 right-0 z-20 hidden lg:flex edge-x"
+     role="banner"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start items-center gap-2 min-w-0">
     <img src="/static/logo-rect.png" alt="OpenSRM" class="h-8 w-auto shrink-0 rounded-sm" width="150" height="40">
@@ -110,13 +111,14 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
     </button>
     <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap{% if sync_age_text %} island-fresh{% endif %}"data-ts="{{ last_epoch }}" data-full="{{ last }}" data-island="sync-age" data-props="#island-sync-age" title="{{ last }}"{% if not sync_age_text %} hidden{% endif %}>{{ sync_age_text }}</span>
   </div>
-</div>
+</header>
 <!-- Mobile: minimal navbar — refresh far LEFT, wordmark centred, settings far
      RIGHT. Both are icon-only (aria-label carries the name): the bar has room
      for exactly one label, and that label is the wordmark. Settings left the
      dock for Tools, so this icon is a phone's only route to it. The sync
      caption keeps its home beside the settings icon (DESIGN §4.9 reader). -->
 <div class="navbar bg-base-200 border-b border-base-300 fixed top-0 left-0 right-0 z-20 lg:hidden"
+     role="banner"
      style="padding-top:calc(0.5rem + env(safe-area-inset-top))">
   <div class="navbar-start flex-1 min-w-0 items-center gap-1">
     {# 44px tap targets (DESIGN §5 floor) — these two icons are the phone's

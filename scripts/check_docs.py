@@ -210,6 +210,28 @@ _e2e_unarmed = sorted(_e2e_disk - _e2e_armed - set(re.findall(r"(test_[a-z_0-9]+
 chk("D9", "every tests/e2e suite runs in CI or is LOCAL_ONLY",
     not _e2e_unarmed, f"unarmed={_e2e_unarmed}")
 
+# D10 — D9 above globs `test_*.py`, so a DRIVER (a11y.py, stress.py of the
+# a11y/stress gate, route_paint.py and offline_paint.py of the offline proof)
+# is invisible to it. That is exactly how the a11y+stress suite ended up wired
+# into gates.sh but absent from CI: locally green, never executed on a runner.
+# Resolve the single hop that matters — driver -> a .sh that CI names.
+_DRIVERS_MANUAL = {
+    # Not a gate: prints console/SW diagnostics for a failing offline run, has
+    # no PASS/FAIL and no exit code. Run by hand while triaging.
+    "probe_sw.py",
+}
+_scripts = list((R / "scripts").glob("*.sh")) + list((R / "tests/e2e").glob("*.sh"))
+_ci_scripts = [s for s in _scripts if s.name in _wf]
+_drivers_idle = []
+for _d in sorted(p.name for p in (R / "tests/e2e").glob("*.py")
+                 if not p.name.startswith(("_", "test_"))):
+    if _d in _DRIVERS_MANUAL or _d in _wf:
+        continue
+    if not any(_d in s.read_text(errors="replace") for s in _ci_scripts):
+        _drivers_idle.append(_d)
+chk("D10", "every tests/e2e driver script reaches CI through a CI-run .sh",
+    not _drivers_idle, f"unreachable={_drivers_idle}")
+
 fails = [r for r in results if not r[2]]
 for cid, desc, ok, ev in results:
     print(f"{cid:5} {'PASS' if ok else 'FAIL':7} {desc}")
