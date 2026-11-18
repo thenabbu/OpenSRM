@@ -364,17 +364,31 @@ jobs:
       # two come from `playwright install` proper (there is no --only-shell for
       # them).
       #
-      # --with-deps is REQUIRED for webkit, not optional polish: its build is
-      # webkit-ubuntu-26.04 and the runner is 24.04, so launch fails with a bare
-      # "Host system is missing dependencies" and no line naming the libraries
-      # (measured: libgtk-4, libgraphene, libevent, libopus). Runners have
-      # passwordless sudo, so this is an apt-get install, ~40 s.
+      # --with-deps is REQUIRED for webkit — its build is webkit-ubuntu-26.04
+      # and the runner is 24.04, so launch fails with "Host system is missing
+      # dependencies". But plain --with-deps installs a 177-package superset (a
+      # full X11 + GStreamer tree) and ate the entire job timeout on its own.
+      # The real gap is the ten libraries the launcher names, so install those
+      # and let apt resolve their dependencies.
+      #
+      # firefox gets no --with-deps: it launched fine on the stock runner
+      # (measured — it painted 9/9 routes in the first matrix run), so only the
+      # download is needed.
+      - name: WebKit system libraries (the 10 the launcher names)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libopus0 \
+            libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
+            libwoff1 libharfbuzz-icu0 libsecret-1-0 libhyphen0 \
+            libmanette-0.2-0 libgles2 libx264-164 libavif16
+
       - name: Install Playwright chromium, webkit and firefox
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: |
           .venv/bin/playwright install --only-shell chromium
-          .venv/bin/playwright install --with-deps webkit firefox
+          .venv/bin/playwright install webkit firefox
 
       # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
       # committed tests/golden/v3, naming every file that moved (and for the first
