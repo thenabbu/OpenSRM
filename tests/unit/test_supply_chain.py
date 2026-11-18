@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Unit: supply-chain CI surface — pins the image-tag/rollback contract and the
-report-only scan workflow. Static file checks, no server, no network.
+blocking scan workflow. Static file checks, no server, no network.
 
 Guards the two halves of the deploy story:
   1. compose must keep its default render byte-identical (OPENSRM_TAG unset =
      :latest) while allowing an explicit pin to roll the deploy back;
   2. build.yml must tag the image with the VERSION file's value next to
      :latest and the commit sha, and label the image with the same version;
-  3. scans.yml must stay report-only (continue-on-error on every job) with
-     SHA-pinned actions and read-only permissions — a silent flip to blocking
-     would change merge behaviour without a review-visible diff.
+  3. scans.yml must keep all four scans BLOCKING (gitleaks, pip-audit,
+     pnpm audit, trivy) with SHA-pinned actions and read-only permissions — a
+     silent drop back to report-only would change merge behaviour without a
+     review-visible diff, and the accepted-finding allowlist must stay an
+     explicit list of named advisories rather than a severity floor.
 """
 import re
 import sys
@@ -83,7 +85,8 @@ check("build records an SBOM", "sbom: true" in build)
 # ── 3. scans.yml: report-only surface ───────────────────────────────────────
 scans = rd(".github/workflows/scans.yml")
 jobs = re.findall(r"^  (\w[\w-]*):", scans.split("jobs:", 1)[1], re.M)
-check("scans.yml has the three scan jobs", set(jobs) == {"secrets", "deps", "image"}, str(jobs))
+check("scans.yml has the four scan jobs",
+      set(jobs) == {"secrets", "deps", "web-deps", "image"}, str(jobs))
 for job in jobs:
     block = re.split(rf"^  {job}:\n", scans, flags=re.M)[1]
     block = re.split(r"^  \w", block, flags=re.M)[0]  # cut at the next job key
@@ -117,12 +120,35 @@ check("no uvx in CI or gates.sh (unpinned resolution)",
       "uvx ruff" not in scans and "uvx ruff" not in rd(".github/workflows/lint.yml")
       and "uvx ruff" not in rd("scripts/gates.sh"))
 
+# ── 3b. the web-deps job: audits the lockfile, blocks on a new HIGH/CRITICAL ──
+_web = re.split(r"^  web-deps:\n", scans, flags=re.M)[1].split("\n  image:")[0]
+check("pnpm audit reads web/pnpm-lock.yaml and never installs",
+      "pnpm -C web audit --json" in _web and "pnpm install" not in _web,
+      "an install step would run a dependency's postinstall on the runner")
+check("pnpm audit fails the job on an unaccepted HIGH/CRITICAL",
+      "unaccepted HIGH/CRITICAL" in _web and "sys.exit" in _web,
+      "pip-audit's lesson: the tool's own exit code is swallowed by `|| true`")
+check("pnpm audit fails when the report is missing",
+      "the audit did not run" in _web,
+      "an unreachable registry must not read as a clean audit")
+check("pnpm audit's accepted set is an explicit GHSA allowlist",
+      "ACCEPTED" in _web and "GHSA-fc5q-39xc-vjpf" in _web,
+      "acceptance is one named advisory, not a severity floor")
+check("pnpm audit runs the same Node pin as the web job",
+      "node-version: '22'" in _web and "pnpm@9.15.9" in _web)
+
 # ── 4. docs ─────────────────────────────────────────────────────────────────
 scans_doc = rd("docs/SCANS.md")
-for tool in ("gitleaks", "pip-audit", "trivy"):
+for tool in ("gitleaks", "pip-audit", "pnpm audit", "trivy"):
     check(f"docs/SCANS.md documents {tool}", tool in scans_doc)
-check("SCANS.md documents flip-to-blocking per job",
-      "continue-on-error" in scans_doc and "exit-code" in scans_doc)
+# The doc said "report-only" for weeks while all four jobs blocked, and the pin
+# that was supposed to catch it asserted the STALE section instead (it required
+# "continue-on-error", which the workflow no longer contains). Pin the claim a
+# reader actually acts on.
+check("SCANS.md says the scans block, and carries no report-only claim",
+      "block the merge" in scans_doc and "report-only" not in scans_doc.lower())
+check("SCANS.md records the accepted picomatch advisory",
+      "GHSA-fc5q-39xc-vjpf" in scans_doc)
 check("SCANS.md reports the blobatar git-dep gap",
       "blobatar" in scans_doc)
 
