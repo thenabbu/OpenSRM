@@ -232,11 +232,11 @@ def main():
                 args=["--no-first-run", "--no-default-browser-check"])
         else:
             try:
-                b = getattr(pw, a.browser).launch(headless=True)
+                b = getattr(pw, args.browser).launch(headless=True)
             except Exception as exc:                  # noqa: BLE001
                 # NOT a skip. No browser means no route paint, and an unproven
                 # route paint is the exact defect this file exists to catch.
-                print(f"\n  no {a.browser} — the 9 routes are UNPROVEN")
+                print(f"\n  no {args.browser} — the 9 routes are UNPROVEN")
                 msg = str(exc).strip()
                 if "\n" in msg:
                     print(f"  {msg[:2000]}")
@@ -244,7 +244,7 @@ def main():
                     print(f"  {type(exc).__name__}: {msg[:500]}")
                 print("  install with: PLAYWRIGHT_BROWSERS_PATH="
                       f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
-                      f".venv/bin/playwright install {a.browser}")
+                      f".venv/bin/playwright install {args.browser}")
                 return 2
         ctx = browser.new_context()
         # The cookie's domain MUST match the host we actually navigate to. This
