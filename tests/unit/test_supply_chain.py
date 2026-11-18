@@ -64,6 +64,18 @@ check("build.yml labels org.opencontainers.image.version from VERSION",
       re.search(r"org\.opencontainers\.image\.version=\$\{\{ steps\.version\.outputs\.version \}\}", build) is not None)
 check("build.yml labels org.opencontainers.image.revision from github.sha",
       re.search(r"org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}", build) is not None)
+# The labels block only proves the EXPRESSION is in the workflow. Without this
+# step a mislabelled push is green and a deploy cannot say which code runs: the
+# artifact is read back and compared to the commit that built it. Keyed on the
+# pushed digest, never on :latest, which answers for whatever moved it last.
+check("build.yml verifies the pushed image's revision label against this commit",
+      re.search(r"docker inspect -f '\{\{index \.Config\.Labels "
+                r"\"org\.opencontainers\.image\.revision\"\}\}' \"\$img\"", build) is not None
+      and 'steps.build.outputs.digest' in build
+      and '[ "$got" = "${{ github.sha }}" ]' in build,
+      "label expression present but never checked against the built artifact")
+check("the revision check keys on the digest, not the mutable :latest tag",
+      'steps.build.outputs.digest' in build and re.search(r"opensrm:latest", build) is None)
 # rollback integrity: the version tag must come from the file, not a literal —
 # a hardcoded tag would survive a release bump silently
 _check_no_literal = not re.search(r"type=raw,value=\d+\.\d+\.\d+", build)

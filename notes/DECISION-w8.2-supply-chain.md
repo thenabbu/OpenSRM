@@ -16,12 +16,16 @@ Three other card premises were wrong and are corrected here:
   convention for a decision record is this file — `notes/DECISION-*.md`.
 - `web/` does not exist on `main`. The preact client lives on
   `feat/preact-migration`, which is where this whole wave's PRs land.
-- "image label == HEAD" needed no work. `build.yml` already labels
-  `org.opencontainers.image.revision=${{ github.sha }}`, and the live image
-  proves it: `docker inspect opensrm --format '{{index .Config.Labels
-  "org.opencontainers.image.revision"}}'` returns `274efc68504…`, which is the
-  `main` commit the running container was built from.
-  `tests/unit/test_supply_chain.py` pins the label expression.
+- "image label == HEAD" needed no work *to the expression* — but nothing ever
+  checked the artifact, so that half of the card was not actually proven. The
+  label is set (`org.opencontainers.image.revision=${{ github.sha }}`, pinned by
+  `test_supply_chain.py`), and the live image agrees: reading
+  `ghcr.io/thenabbu/opensrm@sha256:adb79d8e…` returns
+  `274efc685045dda3ab10620d257e9e23d19d1110`, the `main` commit that built it.
+  A pin on the expression only proves the string is in the workflow, so a
+  "Pushed image is labelled with this commit" step now reads the pushed digest
+  back and fails if `revision != github.sha` or the version label differs from
+  the `VERSION` file. Keyed on the digest, not `:latest`, which is mutable.
 
 ## The gate
 

@@ -93,6 +93,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -103,3 +104,22 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The label expression above is pinned by test_supply_chain.py, but a pin
+      # only proves the string is in the workflow. This reads the artifact that
+      # was just pushed and checks it names THIS commit — the property a deploy
+      # relies on to answer "which code is running". Keyed on the pushed digest,
+      # not on :latest: :latest is a mutable tag and would answer for whatever
+      # moved it last.
+      - name: Pushed image is labelled with this commit
+        run: |
+          img="ghcr.io/thenabbu/opensrm@${{ steps.build.outputs.digest }}"
+          got=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$img")
+          echo "image $img -> revision ${got:-<unlabelled>}"
+          [ "$got" = "${{ github.sha }}" ] || {
+            echo "::error::image label ${got:-<unlabelled>} != commit ${{ github.sha }}"; exit 1; }
+          rel=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$img")
+          want=$(cat VERSION)
+          [ "$rel" = "$want" ] || {
+            echo "::error::version label ${rel:-<unlabelled>} != VERSION $want"; exit 1; }
+          echo "labels match: revision=$got version=$rel"
