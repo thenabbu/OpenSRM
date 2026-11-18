@@ -380,11 +380,15 @@ jobs:
           # libx264's package name carries the soname version (164 on 24.04,
           # 165 on 26.04), so resolve it rather than hardcode it.
           X264=$(apt-cache search --names-only '^libx264-[0-9]+$' | head -1 | cut -d' ' -f1)
+          # The launcher names the exact missing libs at runtime. Iteration 1 named
+          # 10 libs; this build (webkit-ubuntu-26.04 on 24.04 runner) names only
+          # these three after the 10 are installed. Install those too.
           sudo apt-get install -y -qq --no-install-recommends \
             libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libopus0 \
             libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
             libwoff1 libharfbuzz-icu0 libsecret-1-0 libhyphen0 \
-            libmanette-0.2-0 libgles2 libavif16 "${X264:-libx264-164}"
+            libmanette-0.2-0 libgles2 libavif16 "${X264:-libx264-164}" \
+            libflite1 libsoup-3.0-0 libwayland-server0
 
       - name: Install Playwright chromium, webkit and firefox
         env:
