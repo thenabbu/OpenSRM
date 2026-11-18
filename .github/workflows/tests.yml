@@ -210,6 +210,10 @@ jobs:
       # ON), and off must degrade to server-rendered panels, not a 500.
       - name: test_rollback_flag (PREACT_ISLANDS gates only the island tag)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_rollback_flag.py
+      # The vision gate's own three states, against a stub provider: a 503 must
+      # read UNREACHABLE, a broken page must read REAL UI REGRESSION.
+      - name: test_vision_verify (a provider outage is not a UI regression)
+        run: .venv/bin/python tests/unit/test_vision_verify.py
 
   docker:
     runs-on: ubuntu-latest
