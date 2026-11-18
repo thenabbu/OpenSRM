@@ -31,9 +31,17 @@ USAGE
   bash scripts/vision_verify.sh                     # capture, then verify
 
   Writes notes/vision/<route>-<device>.json per pair plus index.json.
-  Exit 0 = every pair MATCH. Exit 1 = a DIFF, a DISPUTED pair, or an answer the
-  judge could not read (an unreadable answer is never a pass). Exit 2 = cannot
-  run at all (no key, no capture) - never a silent skip.
+  THREE STATES, NOT TWO. Exit 0 = every pair MATCH. Exit 1 = a real UI finding:
+  a DIFF, a DISPUTED pair, a missing capture, or an answer the judge replied
+  with but we could not read (an unreadable answer is never a pass). Exit 2 =
+  cannot run at all (no key, no capture) - never a silent skip. Exit 3 =
+  UNREACHABLE: the provider answered none or almost none of the pairs (HTTP
+  5xx/429, timeout, refused, refusal), so this gate verified no pixel at all.
+
+  The split exists because a 503 is not a UI regression. Before it, an outage and
+  a broken page produced the same verdict, the same count and the same exit 1,
+  so every red e2e run had to be re-diagnosed by hand to find out which one it
+  was. The rule and its reasoning: notes/DECISION-w8.6a-vision-unreachable.md.
 
   A broken page is confirmed by a SECOND model before it fails the run: one
   model's opinion is a hypothesis, two agreeing models are a finding. The
@@ -66,6 +74,10 @@ DEVICES = [("mobile", "390x844"), ("desktop", "1440x900")]
 # and pro ids go 503 far more often. Second entry is the corroborator.
 LADDER = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest"]
 ENV_FILES = [Path("/opt/data/.env")]
+# Provider root. Overridable ONLY so the three states can be break-proved
+# against a stub server (tests/unit/test_vision_verify.py); CI leaves it unset.
+API_BASE = os.environ.get(
+    "VISION_API_BASE", "https://generativelanguage.googleapis.com/v1beta/models/")
 # Only shrink what is genuinely huge. A 390x1551 phone capture shrunk to a 352px
 # wide thumbnail turns 11px labels into a smear the model then reads wrong.
 MAX_EDGE = 2000
@@ -155,8 +167,7 @@ def ask(model, route, device, vp, png, key):
     body = {"contents": [{"parts": parts}],
             "generationConfig": {"temperature": 0.0,
                                  "responseMimeType": "application/json"}}
-    url = ("https://generativelanguage.googleapis.com/v1beta/models/"
-           "%s:generateContent?key=%s" % (model, key))
+    url = "%s%s:generateContent?key=%s" % (API_BASE, model, key)
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=180) as r:
@@ -185,7 +196,13 @@ def parse(txt):
 
 
 def vote(png, route, device, vp, key, skip=()):
-    """One model's opinion. Returns (dict|None, model, failures)."""
+    """One model's opinion. Returns (dict|None, model, failures).
+
+    Each failure is (kind, message). `unreachable` means the provider never
+    returned a verdict (HTTP error, timeout, refused connection, refusal);
+    `answer` means a model DID reply and the reply is not a verdict we can
+    accept. Only the second says anything about the page.
+    """
     fails = []
     for model in LADDER:
         if model in skip:
@@ -193,17 +210,31 @@ def vote(png, route, device, vp, key, skip=()):
         try:
             txt = ask(model, route, device, vp, png, key)
         except urllib.error.HTTPError as e:
-            fails.append("%s HTTP %s %s" % (model, e.code, e.read().decode()[:120]))
+            fails.append(("unreachable",
+                          "%s HTTP %s %s" % (model, e.code, e.read().decode()[:120])))
             continue
         except Exception as e:                       # noqa: BLE001 - any net fault
-            fails.append("%s %r" % (model, e))
+            fails.append(("unreachable", "%s %r" % (model, e)))
             continue
         d = parse(txt)
         if d is None:
-            fails.append("%s unparseable: %r" % (model, txt[:100]))
+            fails.append(("answer", "%s unparseable: %r" % (model, txt[:100])))
             continue
         return d, model, fails
     return None, None, fails
+
+
+def step_summary(line):
+    """One line in the GitHub job summary, so which of the two states happened is
+    readable from the job page instead of the log. No-op outside Actions."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("### Vision verification\n\n`%s`\n" % line)
+    except OSError:
+        pass
 
 
 def main() -> int:
@@ -249,7 +280,7 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    index, bad = [], 0
+    index, bad, unreachable = [], 0, 0
     for route in routes:
         for device, vp in DEVICES:
             fresh = fresh_dir / ("%s-%s.png" % (route, vp))
@@ -264,11 +295,20 @@ def main() -> int:
             png = shrink(fresh)
             first, model, fails = vote(png, route, device, vp, key)
             if first is None:
-                bad += 1
-                print("  %-10s %-7s FAIL  vision unreachable: %s"
-                      % (route, device, " | ".join(fails)[:180]))
-                index.append({"route": route, "device": device, "verdict": "FAIL",
-                              "error": "vision call failed: " + " | ".join(fails)[:400]})
+                # An outage is not a UI finding, so it must not share the failure
+                # count with one. It only counts as UNREACHABLE when EVERY model
+                # went unanswered: a reply we could not read is a failed gate.
+                outage = all(k == "unreachable" for k, _ in fails)
+                verdict = "UNREACHABLE" if outage else "FAIL"
+                detail = " | ".join(m for _, m in fails)
+                if outage:
+                    unreachable += 1
+                else:
+                    bad += 1
+                print("  %-10s %-7s %-11s %s" % (route, device, verdict, detail[:180]))
+                index.append({"route": route, "device": device, "verdict": verdict,
+                              "error": ("vision unreachable: " if outage
+                                        else "vision call failed: ") + detail[:400]})
                 continue
 
             broken = bool(first.get("broken"))
@@ -318,18 +358,41 @@ def main() -> int:
                                               "confidence", "broken_class")})
             time.sleep(0.3)
 
+    matched = sum(1 for p in index if p["verdict"] == "MATCH")
+    outage_msg = next((p["error"] for p in index if p["verdict"] == "UNREACHABLE"), "")
+    # UNREACHABLE does not fail the run by itself: the provider being down is not
+    # evidence the page broke, and failing on it is what made every red e2e run
+    # ambiguous. It DOES fail when most pairs were never judged - a green gate
+    # that verified nothing is decoration. Real verdicts always fail.
+    blind = unreachable > 0 and unreachable * 2 >= len(index)
+    if bad:
+        headline = ("vision: REAL UI REGRESSION - %d/%d pairs not a MATCH "
+                    "(DIFF/DISPUTED/FAIL), %d unreachable - verdicts in %s"
+                    % (bad, len(index), unreachable, out))
+    elif blind:
+        headline = ("vision: UNREACHABLE - the provider answered %d/%d pairs, too "
+                    "few to verify the UI, so nothing was checked; this is an "
+                    "outage, not a regression (%s)"
+                    % (len(index) - unreachable, len(index), outage_msg[:160]))
+    elif unreachable:
+        headline = ("vision: %d/%d pairs MATCH, %d UNREACHABLE - provider outage, "
+                    "not a UI regression (%s) - verdicts in %s"
+                    % (matched, len(index), unreachable, outage_msg[:120], out))
+    else:
+        headline = "vision: %d/%d pairs MATCH - verdicts in %s" % (matched, len(index), out)
     summary = {
         "revision": rev,
-        "pairs": len(index), "matched": len(index) - bad, "failed": bad,
+        "pairs": len(index), "matched": matched, "failed": bad,
+        "unreachable": unreachable,
         "devices": [d for d, _ in DEVICES],
         "coverage": "route list from %s/routes.json" % golden.name,
         "pairs_detail": index,
         "verified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     (out / "index.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("vision: %d/%d pairs MATCH (%d not a MATCH) - verdicts in %s"
-          % (len(index) - bad, len(index), bad, out))
-    return 0 if bad == 0 else 1
+    print(headline)
+    step_summary(headline)
+    return 1 if bad else (3 if blind else 0)
 
 
 if __name__ == "__main__":
