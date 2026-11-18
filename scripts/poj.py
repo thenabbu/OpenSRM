@@ -251,18 +251,24 @@ def j_e8(wt, ctx):
     direct = {"pip-audit": "pip-audit", "pnpm audit": "pnpm audit",
               "trivy": "trivy", "gitleaks": "gitleaks", "dut_suite": "DUT suite"}
     wf = pathlib.Path(wt) / ".github/workflows"
-    blob, per_file = "", {}
+    blob, per_file, run_lines = "", {}, ""
     for f in sorted(wf.glob("*.yml")):
         txt = f.read_text()
         blob += txt
+        # Only RUN lines prove a step executes: the driver's name also appears in
+        # step labels and comments, so grepping raw YAML calls a disabled step
+        # "wired". Break-proved the hard way - replacing the run line with `echo`
+        # still PASSED until this was narrowed to the commands themselves.
+        run_lines += "".join(l for l in txt.splitlines()
+                            if l.strip().startswith(("run:", "- run:", "        run:")))
         per_file[f.name] = [k for k in direct if k in txt]
-    missing = [f"{v} ({k})" for k, v in direct.items() if k not in blob]
+    missing = [f"{v} ({k})" for k, v in direct.items() if k not in run_lines]
     ev = [" ".join(f"{n}: {', '.join(v) or '-'}" for n, v in per_file.items())]
     for suite, driver in indirect.items():
-        in_ci = driver in blob                                   # link 1: CI runs the driver
+        in_ci = driver in run_lines                             # link 1: CI RUNS the driver
         sp = pathlib.Path(wt) / driver
-        runs_suite = sp.exists() and suite in sp.read_text()      # link 2: driver runs the suite
-        ev.append(f"{suite} <- {driver}: ci={in_ci} driver_runs_suite={runs_suite}")
+        runs_suite = sp.exists() and suite in sp.read_text()     # link 2: driver runs the suite
+        ev.append(f"{suite} <- {driver}: ci_runs={in_ci} driver_runs_suite={runs_suite}")
         if not (in_ci and runs_suite):
             missing.append(f"{suite} (via {driver})")
     if missing:
