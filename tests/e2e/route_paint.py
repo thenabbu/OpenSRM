@@ -232,7 +232,7 @@ def main():
                 args=["--no-first-run", "--no-default-browser-check"])
         else:
             try:
-                b = getattr(pw, args.browser).launch(headless=True)
+                browser = getattr(pw, args.browser).launch(headless=True)
             except Exception as exc:                  # noqa: BLE001
                 # NOT a skip. No browser means no route paint, and an unproven
                 # route paint is the exact defect this file exists to catch.
