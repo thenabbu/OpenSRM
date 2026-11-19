@@ -1,0 +1,15 @@
+{
+  "criterion": "E5",
+  "tier": "machine",
+  "statement": "Dexie + Zod complete: atomic multi-table writes, one schema-version source, upgrade tests for every prior version, validation-on-read, logout deletes the database.",
+  "verdict": "PASS",
+  "note": "dexie suite + logout wipe green",
+  "evidence": [
+    " Test Files  1 passed (1)",
+    "      Tests  16 passed (16)",
+    "RESULT: PASS \u2014 0 failed"
+  ],
+  "sha": "b675bd78e77c0744f815ad602a2eb68d9b0302fb",
+  "round": 4,
+  "judged_at": "2026-11-19T20:24:15+00:00"
+}

@@ -1,0 +1,13 @@
+{
+  "criterion": "E12",
+  "tier": "llm",
+  "statement": "`FINAL_REPORT.md` with an evidence handle for every unit; `decisions.md` complete.",
+  "verdict": "PASS",
+  "note": "",
+  "evidence": [
+    "FINAL_REPORT.md present, 247 lines"
+  ],
+  "sha": "b675bd78e77c0744f815ad602a2eb68d9b0302fb",
+  "round": 4,
+  "judged_at": "2026-11-19T20:24:27+00:00"
+}
