@@ -158,8 +158,15 @@ def _req(opener, url, headers, data=None, timeout=25):
 
 
 def _telemetry_b64(t0):
+    # The portal fingerprints this blob: a payload carrying
+    # currentDomain="sp.srmist.edu.in" is silently bounced (LoginServlet
+    # answers 200 with the untouched login page and no alert element, which
+    # the classifier reads as a rate-limit "silent rejection"). Any OTHER
+    # value for currentDomain — another host, or the key omitted — is
+    # processed normally, so this is a deny-list on our forged signature,
+    # not a domain check. Hence: never emit that key.
     return base64.b64encode(json.dumps({
-        "startTime": int(time.time() * 1000 - 10000), "currentDomain": PORTAL_HOST,
+        "startTime": int(time.time() * 1000 - 10000),
         "timezoneOffset": -330, "screenWidth": 1920, "screenHeight": 1080,
         "colorDepth": 24, "devicePixelRatio": 1, "platform": "Win32",
         "userAgent": UA, "language": "en-US", "hardwareConcurrency": 8,
@@ -290,7 +297,7 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     # attempt in this scope; _post_login decides whether it was CORRECT.
     captcha_dataset.offer(img_bytes, ocr)
     return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
-            "rdelim": rdelim, "ocr": ocr,
+            "rdelim": rdelim, "ocr": ocr, "page_len": len(html),
             # kept so a PREFLIGHT ctx (solved outside the login scope) can be
             # restaged by _login if the portal rejects it. ~1.2 KB, 150s TTL.
             "img_bytes": img_bytes}
@@ -360,9 +367,15 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
-    # Silent rejection: login page again, no error text → portal rate-limiting
+    # Silent rejection: login page again, no error text. Record whether the
+    # body is the UNTOUCHED login page (same byte length as the page this ctx
+    # was prepared from): that means LoginServlet discarded the request as a
+    # bot instead of evaluating the credentials, which is a payload problem,
+    # not the portal rate-limiting us as the message claims.
+    same_page = bool(ctx.get("page_len")) and len(rhtml) == ctx["page_len"]
     log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text) "
-                "portal_alert=%r bytes=%d", attempt, alert, len(rhtml))
+                "portal_alert=%r bytes=%d untouched_login_page=%s",
+                attempt, alert, len(rhtml), same_page)
     helpers["portal_fail_once"]()
     return "fail", sync_error("portal_cooldown",
                               "SRM portal rejected the login without an error (likely "
