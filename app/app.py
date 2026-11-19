@@ -416,6 +416,9 @@ def init_db():
 # Portal constants + captcha solver: app/captcha.py (leaf). Re-exported.
 # Session identity lives in app/auth.py (get_current_user has 18 consumers —
 # it belongs under this facade, not inside it). Re-exported for callers.
+# CAPTCHA dataset capture (off unless CAPTCHA_DATASET=1) — re-exported so the
+# blueprints and tests reach it through the facade like every other module.
+from . import captcha_dataset  # noqa: E402,F401 — re-exported
 from .auth import (  # noqa: E402,F401 — re-exported
     # CF_EDGE_SECRET is deliberately NOT imported: a copy would land in this
     # module's __dict__ and shadow the _FacadeModule proxy, so
@@ -974,6 +977,7 @@ from .observability import (  # noqa: E402,F401 — re-exported
     _proc_threads,
     _push_tick_last_ok_ts,
     healthz,
+    internal_captcha_capture,
     internal_metrics,
     track_session_activity,
 )

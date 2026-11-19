@@ -29,7 +29,8 @@ that exists only there arrives empty. Every knob below goes into
 CI builds every green `main` push: `lint` + `tests` (unit/docker/e2e) gate the
 publish job (`.github/workflows/build.yml`, `needs: [lint, tests]`), which
 pushes `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` (from the
-`VERSION` file) + `:<short-sha>`, with OCI `version`/`revision` labels
+`VERSION` file) — and only on the push that moved `VERSION`, so a version tag
+names one immutable artifact — with OCI `version`/`revision` labels
 (verified: `git show origin/main:.github/workflows/build.yml`; live labels on
 the running container: `docker inspect opensrm --format
 '{{json .Config.Labels}}'` → `org.opencontainers.image.version: 1.23.0`).
@@ -63,6 +64,69 @@ Two host facts this script encodes, both learned the hard way:
   (`docker cp` cannot see files on that tmpfs);
 - the image reverts on rollback but the **schema does not** — which is exactly
   why the snapshot comes first.
+
+## Deploy (automatic, oclab only)
+
+The second deployment lives on the Oracle VPS at `srm-d1.200871.xyz`. It deploys
+itself. **The lab prod does not.** The "no watcher" rule above still holds for
+`srm.200871.xyz`, and the key that deploys the VPS does not exist on the lab.
+
+How it runs:
+
+1. A push to `main` starts **Build & Push**.
+2. If the run is green, **Deploy oclab (automatic)** starts. It uses the same
+   commit that was built, not `main` as it is now.
+3. The job asks the box what it runs. If the box already runs that version, the
+   job stops. This makes a re-run safe.
+4. Otherwise the job calls `deploy <version>` on the box over SSH.
+5. The box fetches `scripts/deploy_gated.sh` **from the release tag**, then runs
+   it. The deploy is therefore the same script the lab uses: snapshot, pull,
+   pin, `compose up -d`, verify, auto-rollback.
+6. The runner then confirms two more things. The live edge is checked **on the
+   box** with the wrapper's `verify` verb: `/healthz` is 200, `/login` is 200,
+   and HSTS is present (proof the app still trusts the edge secret). The runner
+   checks the image identity through `status`: the deployed tag and the commit
+   the running image was built from.
+   Cloudflare challenges GitHub's runner egress, so a runner-side `curl` gets
+   403 even when the site is healthy. That is why the edge check runs on the box.
+
+A failed deploy does not leave a broken site. `deploy_gated.sh` re-pins the
+previous tag and verifies it before it exits non-zero.
+
+### One-time setup
+
+On the box, as `ubuntu`:
+
+```bash
+ssh-keygen -t ed25519 -N '' -f /tmp/gha
+sudo install -m 755 opensrm-deploy /usr/local/bin/opensrm-deploy   # see below
+printf 'restrict,command="/usr/local/bin/opensrm-deploy" %s\n' "$(cat /tmp/gha.pub)" \
+  >> ~/.ssh/authorized_keys
+```
+
+`/usr/local/bin/opensrm-deploy` is the only program that key may run. It
+accepts two verbs: `status` (read the deployed tag and image commit) and
+`deploy <x.y.z>`. Any other request is refused before it reaches a shell. This
+matters because the box's `docker` group is effectively root.
+
+In the repository:
+
+```bash
+gh secret   set OCLAB_DEPLOY_SSH --repo thenabbu/OpenSRM < /tmp/gha
+gh variable set OCLAB_HOST       --repo thenabbu/OpenSRM --body <address>
+```
+
+`OCLAB_HOST` is a variable, not text in the workflow, because this repository is
+public and the origin address is the one thing the Cloudflare-only ingress
+keeps private.
+
+### Manual deploy of the VPS
+
+Same path, without waiting for a push:
+
+```bash
+gh workflow run cd-oclab.yml -f version=2.13.0
+```
 
 ## Deploy (by hand, for reference)
 
@@ -107,7 +171,9 @@ polls; its request lines are DEBUG at INFO level, so their absence from
 CI publishes `:<VERSION>` next to `:latest`, so any released version can be
 pinned (verified: `git show origin/main:.github/workflows/build.yml` tag
 rules; images that exist for the lab: `:1.23.0` = what ran before this
-release, `:1.24.0`, `:1.25.0`, plus `:<short-sha>`).
+release, `:1.24.0`, `:1.25.0`). There is no `:<sha>` tag — the exact commit is
+in the OCI `revision` label (`docker image inspect <img> --format
+'{{index .Config.Labels "org.opencontainers.image.revision"}}'`).
 
 ```bash
 ssh lab 'echo "OPENSRM_TAG=1.24.0" >> /docker/opensrm/.env'   # PROJECT env file
@@ -282,6 +348,65 @@ Two design notes worth knowing before adding a series:
 - **Gauges run at render time** (~once per 30s scrape). The DB gauges open
   their own short-lived connection rather than using `db()`, so a scrape can
   never join an in-flight transaction or block a writer.
+
+## CAPTCHA dataset capture (off by default)
+
+Every portal login can keep the CAPTCHA image the portal served plus the OCR
+string that was submitted — a labelled dataset of REAL captchas for
+retraining/evaluating the solver. Nothing about the login path changes; capture
+is best-effort and can never fail a request.
+
+**Two folders, split by the portal's own verdict:**
+
+| Folder | Written when | Name is |
+|---|---|---|
+| `captcha-dataset/success/` | the login succeeded (`HRDSystem`) | the OCR text that was ACCEPTED |
+| `captcha-dataset/failed/` | the portal answered `Invalid captcha` | the OCR text ddddocr returned |
+
+Inside the container that is `/app/data/captcha-dataset/{success,failed}` — the
+`opensrm-data` volume on the host.
+
+Only those two branches are captured. A wrong **password** is NOT a captcha
+failure (the captcha may well have been right), and a silent rate-limit
+rejection means the portal never judged the text at all — neither writes to
+`failed/`, because the label would be a lie.
+
+- **`CAPTCHA_DATASET=1`** turns it on (read per call, so no rebuild needed).
+  Unset/`0` = every entry point costs one env lookup.
+- **Only inside a scrape scope.** A preflight solved while a visitor is still
+  typing is discarded if they never submit — that image was never validated.
+- The LAST attempt wins: each attempt restages its own image+OCR, so a rejected
+  attempt lands in `failed/` and the retry that finally succeeds lands in
+  `success/` under its own answer.
+- Byte-identical images are deduped per folder (sha256); a cap of 100 000 files
+  writes a `.full` marker instead of filling the volume.
+- Each written pair appends one `captcha_seen(hash, ts, source)` row, where
+  `source` is `success`/`failed` — so the solver's real accuracy is
+  `success / (success + failed)` straight out of SQLite.
+
+The OCR answer is also now filtered to the portal's own alphabet before submit
+(`sanitize_captcha` in `app/captcha.py`): ddddocr was observed returning a `+`,
+a character the captcha field can never contain, which is a guaranteed miss.
+
+Manual drop-in for copies found outside the login path (another host, a
+browser extension, a probe): `POST /internal/captcha` with
+`{"image_b64","text","ext","folder"}` where `folder` is `success` or `failed`
+(defaults to `success`), auth `X-Captcha-Token: $CAPTCHA_SECRET`
+(unset = endpoint off; deliberately a DIFFERENT secret from `METRICS_SECRET`).
+`GET /internal/captcha` returns `{enabled, success:{dir,count,size_bytes},
+failed:{...}}`.
+
+```bash
+docker exec -e CAPTCHA_DATASET=1 opensrm printenv CAPTCHA_DATASET   # sanity
+docker exec opensrm sh -c 'ls /app/data/captcha-dataset/success | head'
+docker exec opensrm sh -c 'ls /app/data/captcha-dataset/success | wc -l;
+                           ls /app/data/captcha-dataset/failed  | wc -l'
+```
+
+Expected rate: **one pair per cold login** (success) plus one per rejected OCR
+attempt, so success accumulates slowly (a few a day) while `failed/` fills
+whenever the solver misreads.
+
 
 ## Observability stack (optional)
 

@@ -177,7 +177,7 @@ def validate(root: str) -> list[str]:
         r'device-width:\s*(\d+)px\).*?device-height:\s*(\d+)px\).*?'
         r'-webkit-device-pixel-ratio:\s*([\d.]+)\).*?orientation:\s*portrait')
     for href, media in re.findall(
-            r'<link rel="apple-touch-startup-image" href="/static/([^"]+)" media="([^"]+)"',
+            r'<link rel="apple-touch-startup-image" href="{{ asset\(\'([^\']+)\'\) }}" media="([^"]+)"',
             head):
         m = media_re.search(media)
         path = os.path.join(static, href)
@@ -228,9 +228,11 @@ def validate(root: str) -> list[str]:
         if not os.path.isfile(path):
             continue
         src = open(path, encoding='utf-8').read()
-        for href, sizes in re.findall(
-                r'(?:href|content)="/static/([\w.-]+\.(?:png|ico))"(?:\s+sizes="(\d+x\d+)")?',
+        for asset_href, raw_href, sizes in re.findall(
+                r'(?:href|content)="(?:\{\{ asset\(\'([^\']+)\'\) \}\}|/static/([\w.-]+\.(?:png|ico)))"'
+                r'(?:\s+sizes="(\d+x\d+)")?',
                 src):
+            href = asset_href or raw_href
             refs.setdefault(href, None)
             if sizes:
                 refs[href] = tuple(int(v) for v in sizes.split('x'))
@@ -295,15 +297,15 @@ def self_test() -> list[str]:
             dw, dh, sf = splash_media
             open(os.path.join(tdir, 'pwa_head.html'), 'w').write(
                 '<link rel="manifest" href="/static/manifest.json">\n'
-                '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">\n'
-                '<link rel="icon" type="image/x-icon" href="/static/favicon.ico">\n'
-                '<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">\n'
+                '<link rel="apple-touch-icon" href="{{ asset(\'apple-touch-icon.png\') }}">\n'
+                '<link rel="icon" type="image/x-icon" href="{{ asset(\'favicon.ico\') }}">\n'
+                '<link rel="icon" type="image/png" sizes="192x192" href="{{ asset(\'icon-192.png\') }}">\n'
                 '<meta name="apple-mobile-web-app-capable" content="yes">\n'
                 '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n'
                 '<meta name="apple-mobile-web-app-title" content="OpenSRM">\n'
                 '<meta name="msapplication-TileColor" content="#111111">\n'
-                '<meta name="msapplication-TileImage" content="/static/icon-150.png">\n'
-                f'<link rel="apple-touch-startup-image" href="/static/apple-splash-750x1334.png"'
+                '<meta name="msapplication-TileImage" content="{{ asset(\'icon-150.png\') }}">\n'
+                f'<link rel="apple-touch-startup-image" href="{{{{ asset(\'apple-splash-750x1334.png\') }}}}"'
                 f' media="(device-width: {dw}px) and (device-height: {dh}px) and'
                 f' (-webkit-device-pixel-ratio: {sf}) and (orientation: portrait)">\n')
             open(os.path.join(tmp, 'app', 'templates', 'base.html'), 'w').write(

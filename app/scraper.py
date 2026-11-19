@@ -19,6 +19,7 @@ State note: `_browser`, `_loop`, `_pw`, `_persistent_*` are process-local
 singletons guarded by `_pw_lock`; the app requires gunicorn -w 1.
 """
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -27,7 +28,7 @@ import sys
 import threading
 import time
 
-from . import metrics
+from . import captcha_dataset, metrics
 from .captcha import CAPTCHA_JS, LOGIN_URL, solve_captcha_b64
 from .db import set_cold_fetch, user_cold_fetch
 from .errors import sync_error
@@ -178,6 +179,11 @@ async def _do_login(page, ctx, netid, password):
     _sc = _sync_ctx.get()
     if _sc is not None:
         _sc.fail_counted = False  # one portal-fail per request, not per retry
+    # CAPTCHA dataset scope (off unless CAPTCHA_DATASET=1): staged pairs die
+    # with this login attempt. Only this pipeline is known to run inside a
+    # scrape scope (_sync_ctx is set by fetch_attendance), so only here can a
+    # solved legibly-connected image be told apart from a prospect's preflight.
+    captcha_dataset.begin()
     # Check global portal cooldown before attempting
     cooldown = _portal_cooldown_remaining()
     if cooldown > 0:
@@ -199,6 +205,7 @@ async def _do_login(page, ctx, netid, password):
             log.warning("playwright login netid=%s abort=captcha_image_empty (portal served no image)", netid)
             return _pw_login_done(False, sync_error("portal_down", "captcha image failed to load — portal may be slow"), _ca + 1)
         captcha = solve_captcha_b64(b64)
+        captcha_dataset.offer(base64.b64decode(b64), captcha)
         if not captcha:
             log.warning("playwright login netid=%s abort=ocr_empty", netid)
             return _pw_login_done(False, sync_error("internal", "captcha OCR returned empty"), _ca + 1)
@@ -209,6 +216,7 @@ async def _do_login(page, ctx, netid, password):
         try:
             await page.wait_for_url(lambda url: "HRDSystem" in url, timeout=8000)
             _live("_portal_ok")()
+            captcha_dataset.commit()   # the pair that got us here
             return _pw_login_done(True, None, _ca + 1)
         except Exception:
             # Extract the specific error the portal showed
@@ -233,6 +241,8 @@ async def _do_login(page, ctx, netid, password):
                     last_err = "captcha expired"
                 elif "invalid captcha" in err_lower:
                     last_err = f"invalid captcha (read: {captcha})"
+                    # Portal judged the read WRONG — real negative sample.
+                    captcha_dataset.reject()
                 elif "HRDSystem" not in current_url and "login" in current_url.lower():
                     # Silent rejection: portal returned login page with no error
                     # This means portal rate-limited us

@@ -138,7 +138,7 @@ def _origin_host_guard():
 _CROSS_SITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # session-authenticated POSTs served through the tunnel (see above);
 # the push tick is secret-header auth, same exemption for the same reason.
-_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/marks/tag")
+_CROSS_SITE_EXEMPT = ("/internal/push/tick", "/internal/captcha", "/marks/tag")
 
 
 def _cross_site_guard():

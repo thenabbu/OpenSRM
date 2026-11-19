@@ -30,7 +30,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from . import metrics
+from . import captcha_dataset, metrics
 
 log = logging.getLogger("opensrm.portal")
 
@@ -286,8 +286,14 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     if on_step: on_step("Reading captcha…", 30)
     log.debug("login attempt=%d step=captcha bytes=%d ocr=%s", attempt,
               len(img_bytes), ocr)
+    # Dataset: stage the pair, never act on it here. Overwrites any earlier
+    # attempt in this scope; _post_login decides whether it was CORRECT.
+    captcha_dataset.offer(img_bytes, ocr)
     return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
-            "rdelim": rdelim, "ocr": ocr}
+            "rdelim": rdelim, "ocr": ocr,
+            # kept so a PREFLIGHT ctx (solved outside the login scope) can be
+            # restaged by _login if the portal rejects it. ~1.2 KB, 150s TTL.
+            "img_bytes": img_bytes}
 
 
 def _portal_alert(rhtml):
@@ -326,6 +332,9 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
               attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
     if ok:
+        # The captcha was accepted (the POST succeeded) — this is the pair the
+        # solver got RIGHT. Scoped: nothing is staged outside a scrape scope.
+        captcha_dataset.commit()
         return "ok", None
     low = rhtml.lower()
     alert = _portal_alert(rhtml)
@@ -346,6 +355,8 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     if "invalid captcha" in low:
         log.info("login attempt=%d invalid_captcha ocr=%s portal_alert=%r",
                  attempt, ctx["ocr"], alert)
+        # The portal judged this read WRONG — that is a real negative sample.
+        captcha_dataset.reject()
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
@@ -370,10 +381,22 @@ def _login(opener, netid, password, base, xheaders, helpers, on_step=None, prepa
     None. Raises HttpScraperError on transport fail."""
     from app.app import sync_error  # deferred: app.app imports this module lazily
     extra = 1 if prepared else 0   # a pre-solved captcha counts as one attempt
+    # CAPTCHA dataset scope for THIS login. Must open here, not in _prepare:
+    # _prepare is shared with preflight() (a captcha solved while the visitor is
+    # still typing, which must NOT be stored), and a scope opened per-attempt
+    # inside the loop would drop each attempt's staging before _post_login could
+    # judge it. Only the login path reaches _post_login, so scoping here is what
+    # makes "staged pair -> portal verdict" reliable.
+    captcha_dataset.begin()
     # Preflight path: warm session + solved captcha from the typing phase.
     if prepared:
         try:
             if on_step: on_step("Using pre-solved captcha…", 40)
+            # That image was solved outside this scope — restage it so a
+            # rejection of it is still recorded (its bytes are in the ctx).
+            if prepared["ctx"].get("img_bytes"):
+                captcha_dataset.offer(prepared["ctx"]["img_bytes"],
+                                      prepared["ctx"].get("ocr"))
             action, err = _post_login(prepared["opener"], prepared["ctx"], netid,
                                       password, base, xheaders, helpers, on_step, attempt=1)
             if action == "ok":

@@ -39,26 +39,33 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    you push. The full matrix with per-suite commands and CI runner tags is
    in [AGENTS.md](AGENTS.md#test-matrix-all-green-before-push); the
    conventions live in [tests/README.md](tests/README.md).
-4. **Version** — for user-visible changes bump all three together:
-   `VERSION` + `pyproject.toml`, then run `uv lock` so `uv.lock` matches
-   (patch = fix, minor = feature, major = breaking/user-visible redesign;
-   docs/tests-only changes get no bump). The number renders on the login
-   page and dashboard navbar, and `tests/unit/test_audit_findings.py` plus
-   CI both enforce the trio. **Nothing else is needed for a release**: the
-   `Release` workflow tags `vX.Y.Z` on `main` and publishes a GitHub Release
-   whose notes are generated from the commits in that range. Release notes
-   are not written by hand and do not live in the app.
+4. **Version** — you normally do not touch it. If a merge to `main` carries
+   `app/` or `Dockerfile` changes without moving `VERSION`, the `Release`
+   workflow's `bump` job opens a `chore(release)` PR that moves the trio
+   (`VERSION` + `pyproject.toml` + `uv.lock`) and auto-merges it once the
+   required checks pass: `patch` by default, `minor` when the push carried a
+   `feat`, and `major` never automatically — say so in the PR body if a change
+   is breaking. The trio is also checked by `check_docs.py` D5 and
+   `test_audit_findings` M23, and the number renders on the login page and
+   dashboard navbar. The same workflow tags `vX.Y.Z`, publishes the GitHub
+   Release whose notes are generated from the commits in the range, and
+   refreshes `CHANGELOG.md`. Release notes are not written by hand and do not
+   live in the app.
+   `main` is protected by required checks, so **nothing pushes to it directly** —
+   not a human, not the bot. Everything lands through a PR.
 5. **Commit** — one logical change per commit, message = finding + evidence
    + fix + how it was verified.
 6. **Push + PR** — open a PR against `main`. PR CI runs **Lint**
    (`uvx ruff check app/` + `uv lock --check`) and **Tests**
    (`unit` + `docker` + `e2e`). The Docker image is pushed to
-   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`
-   only after the merge lands on `main` and only if lint *and* tests are
-   green there; deployment itself is manual (see
-   [docs/runbook.md](docs/runbook.md)). Merges use merge commits with a
-   `merge: <summary>` subject — never squash — so the atomic commits stay
-   intact.
+   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` — a release push
+   only, and only if the tests are green there — plus `:<sha>` on every push.
+   Each build publishes **`linux/amd64` and `linux/arm64`** as one manifest
+   list, built on a native runner per architecture, so the arm64 VPS can pull
+   the same tag the lab does. Deployment of lab prod stays manual (see
+   [docs/runbook.md](docs/runbook.md)); the oclab VPS deploys itself. Merges
+   use merge commits with a `merge: <summary>` subject — never squash — so the
+   atomic commits stay intact.
 
 ### Commit format
 
@@ -140,9 +147,10 @@ that catch people out first:
     7 real portal logins per run and the portal caps 10/hour per IP.
     `test_login_guide_check` **is** in CI: it mocks `/api/login` in the
     browser, so nothing reaches the portal.
-- **Build** — on push to `main`: image pushed to
-  `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` + `:<short-sha>`,
-  gated on `needs: [lint, tests]` so a red suite never publishes
+- **Build** — on push to `main`: the image is built every time but pushed to
+  `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` only when that push
+  moved `VERSION` (a manually dispatched run builds without publishing unless
+  `republish` is set), gated on `needs: [lint, tests]` so a red suite never publishes
   `:latest`. The shipped image omits the browser fallback; build with
   `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
   `OPENSRM_TAG` (see AGENTS.md "Prod deploy").
@@ -151,14 +159,21 @@ that catch people out first:
   dependency or a fixable HIGH/CRITICAL CVE fails the run.
   [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
   `.trivyignore`-style escape hatch.
-- **Deploy** — **gated, never automatic**: there is still no watcher. Nothing
-  deploys until a human approves the `production` environment on a
-  `workflow_dispatch` run, and `scripts/deploy_gated.sh` then does the
-  mechanical part (verified snapshot, digest pin, health + render checks,
-  auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
+- **Deploy (lab prod)** — **gated, never automatic**: there is still no watcher
+  for `srm.200871.xyz`. Nothing deploys until a human approves the `production`
+  environment on a `workflow_dispatch` run, and `scripts/deploy_gated.sh` then
+  does the mechanical part (verified snapshot, digest pin, health + render
+  checks, auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
   [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
-  removed at the maintainer's request — do not add one back. The approval gate
-  is what keeps that promise while removing the 1am manual steps.
+  removed at the maintainer's request — do not add one back **for prod**. The
+  approval gate is what keeps that promise while removing the 1am manual steps.
+- **Deploy (oclab VPS)** — **automatic, and only there**:
+  `cd-oclab.yml` deploys `srm-d1.200871.xyz` after a green **Build & Push** on
+  `main`. It never builds, it pulls the published `:<VERSION>` image, and it
+  runs the same `deploy_gated.sh`, so a bad deploy still rolls itself back. The
+  key it uses exists only on the VPS and can run two verbs (`status`,
+  `deploy <version>`). Scope is deliberate: automating the second deployment
+  must not quietly become automating prod.
 
 ## Portal rate limits
 

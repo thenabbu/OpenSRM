@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      republish:
+        description: "Republish :latest + :<VERSION> at the current commit (no VERSION move)"
+        type: boolean
+        default: false
 
 # audit: default token is read-only; build job opts into packages:write itself
 permissions:
@@ -21,12 +26,113 @@ jobs:
   tests:
     uses: ./.github/workflows/tests.yml
 
-  build:
+  # The VERSION gate and the tag list, resolved ONCE. Two build legs and a merge
+  # have to agree on both, and three copies of the gate is three ways to disagree.
+  meta:
     needs: [tests]
     # A manual dispatch from any other branch must not publish :latest.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      released: ${{ steps.version.outputs.released }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      # Read access is all the gate needs, and logging in keeps the question
+      # working if the package ever goes private.
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The VERSION file is the single source of release truth (app badge +
+      # pyproject + uv.lock all mirror it) - tag the image with it too so a
+      # deploy can pin/roll back: ghcr.io/thenabbu/opensrm:<VERSION>.
+      - name: Read VERSION
+        id: version
+        run: |
+          set -eu
+          V="$(cat VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Should THIS commit publish :<VERSION> and :latest?
+          #
+          # Ask the REGISTRY, not the diff. The old gate compared the previous
+          # commit's VERSION with VERSION, and a bump commit followed by another
+          # push to main defeats it: the second push's baseline already carries
+          # the new version, so it answered "unchanged". Measured on v2.12.1 - a
+          # GitHub Release exists, :2.12.1 returns 404 from GHCR, :2.12.0
+          # returns 200. A release with no deployable image, and no step failed.
+          #
+          # A missing tag is the question that actually matters, and it is
+          # idempotent: a publish that was cancelled, failed or was superseded
+          # is repaired by the next push. An existing :VERSION is never
+          # rewritten, so :2.12.0 stays a fixed rollback point.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # A dispatch is a build check by default; republishing a version is
+            # an explicit request, never a side effect.
+            RELEASED="${{ inputs.republish }}"
+            echo "dispatch: republish=${RELEASED} (VERSION $V)"
+          elif docker buildx imagetools inspect "ghcr.io/thenabbu/opensrm:$V" >/dev/null 2>&1; then
+            RELEASED=false
+            echo "VERSION unchanged (:$V is already published): nothing is published"
+          else
+            RELEASED=true
+            echo ":$V is not published yet: :$V and :latest will move"
+          fi
+          echo "released=$RELEASED" >> "$GITHUB_OUTPUT"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/thenabbu/opensrm
+          # :latest then :VERSION, and NOTHING else. A sha tag made GHCR name
+          # every package version after the commit (`a9c2598`), and because a tag
+          # is unique per digest the old entries kept only their sha - the page
+          # read like random words. GHCR names a version after a tag it carries,
+          # so :VERSION goes LAST; it is the name a human reads.
+          # The exact commit is not lost: it is the OCI revision label below and
+          # the provenance attestation, and any version is pinnable via :VERSION.
+          tags: |
+            type=raw,value=latest,enable=${{ steps.version.outputs.released == 'true' }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.released == 'true' }}
+
+  # One leg per CPU architecture, each on a NATIVE runner, then a manifest list
+  # that points at both. Without this the package is amd64-only and
+  # `docker pull ghcr.io/thenabbu/opensrm:<tag>` on the arm64 oclab VPS dies with
+  # "no matching manifest for linux/arm64/v8" - which is why that box had to
+  # build from source on 2 vCPUs instead of pulling.
+  #
+  # `ubuntu-24.04-arm` is GitHub-hosted and costs nothing on a PUBLIC repo; on a
+  # private one it is billable. QEMU emulation was the alternative and was
+  # rejected: the Dockerfile runs apt-get upgrade, which stalls badly emulated.
+  build:
+    needs: [meta]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -38,52 +144,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
-      # The VERSION file is the single source of release truth (app badge +
-      # pyproject + uv.lock all mirror it) - tag the image with it too so a
-      # deploy can pin/roll back: ghcr.io/thenabbu/opensrm:<VERSION>.
-      - name: Read VERSION
-        id: version
+      # An unreleased commit publishes nothing: no sha-named package version to
+      # clutter the registry. The build still runs, so a broken Dockerfile is
+      # caught on the merge rather than at release time.
+      - name: Choose the output mode
+        id: out
         run: |
           set -eu
-          V="$(cat VERSION)"
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          # Did THIS push move VERSION? `git diff` against the pushed range,
-          # not HEAD~1: a multi-commit push would hide an earlier bump.
-          # Only a real bump may move :VERSION and :latest - re-pushing them on
-          # every docs commit makes :2.11.0 a moving target and destroys the
-          # rollback point the tag exists for.
-          BEFORE="${{ github.event.before }}"
-          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE:VERSION" 2>/dev/null; then
-            MOVED=$(git show "${BEFORE}:VERSION" | tr -d '[:space:]')
+          if [ "${{ needs.meta.outputs.released }}" = "true" ]; then
+            echo "mode=type=image,name=ghcr.io/thenabbu/opensrm,push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
           else
-            MOVED=""
+            echo "mode=type=cacheonly" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$MOVED" != "$V" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "VERSION moved (${MOVED:-<none>} -> $V): :$V and :latest will move"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            echo "VERSION unchanged ($V): only the sha tag is published"
-          fi
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: ghcr.io/thenabbu/opensrm
-          # :sha ALWAYS (every commit is identifiable). :VERSION and :latest
-          # only on a real VERSION bump, so they name an immutable artifact.
-          tags: |
-            type=raw,value=latest,enable=${{ steps.version.outputs.released == 'true' }}
-            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.released == 'true' }}
-            type=sha,prefix=
-          # metadata-action derives org.opencontainers.image.version from the
-          # highest-priority tag (latest) - pin the real release number and
-          # the exact commit on the label instead, so `docker inspect` names
-          # the release even on the latest-labeled image.
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
@@ -92,26 +164,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # Pushed BY DIGEST with no tag: a tag written here would be a moving
+      # target while the other leg is still building. `merge` names it once,
+      # only after both digests exist.
+      #
+      # Labels are set per leg because they land in the image CONFIG, which
+      # `imagetools create` cannot rewrite afterwards. metadata-action derives
+      # org.opencontainers.image.version from the highest-priority tag (latest)
+      # - so the real release number and the exact commit are pinned here.
+      - name: Build ${{ matrix.arch }}
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          platforms: ${{ matrix.platform }}
+          outputs: ${{ steps.out.outputs.mode }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Per-arch scopes: a shared one makes the two legs evict each other.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       # The label expression above is pinned by test_supply_chain.py, but a pin
       # only proves the string is in the workflow. This reads the artifact that
       # was just pushed and checks it names THIS commit — the property a deploy
       # relies on to answer "which code is running". Keyed on the pushed digest,
       # not on :latest: :latest is a mutable tag and would answer for whatever
-      # moved it last.
+      # moved it last. Only an unreleased build has no digest to read.
       - name: Pushed image is labelled with this commit
+        if: needs.meta.outputs.released == 'true'
         run: |
           img="ghcr.io/thenabbu/opensrm@${{ steps.build.outputs.digest }}"
           got=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$img")
@@ -123,3 +207,78 @@ jobs:
           [ "$rel" = "$want" ] || {
             echo "::error::version label ${rel:-<unlabelled>} != VERSION $want"; exit 1; }
           echo "labels match: revision=$got version=$rel"
+
+      - name: Export digest
+        if: needs.meta.outputs.released == 'true'
+        run: |
+          set -eu
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}"
+
+      - name: Upload digest
+        if: needs.meta.outputs.released == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # The only job that writes a human-readable tag.
+  merge:
+    needs: [meta, build]
+    if: needs.meta.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list
+        env:
+          TAGS: ${{ needs.meta.outputs.tags }}
+        working-directory: /tmp/digests
+        run: |
+          set -eu
+          TAGARGS=""
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            TAGARGS="$TAGARGS -t $t"
+          done <<< "$TAGS"
+          SRCARGS=""
+          for f in *; do
+            [ -f "$f" ] || continue
+            SRCARGS="$SRCARGS ghcr.io/thenabbu/opensrm@$(cat "$f")"
+          done
+          echo "tags:    $TAGARGS"
+          echo "sources: $SRCARGS"
+          # shellcheck disable=SC2086  # deliberate: both are lists of arguments
+          docker buildx imagetools create $TAGARGS $SRCARGS
+
+      # A green merge only proves the API accepted it. Read the artifact.
+      - name: Verify the published manifest carries both architectures
+        run: |
+          set -eu
+          REF="${{ needs.meta.outputs.version }}"
+          docker buildx imagetools inspect "ghcr.io/thenabbu/opensrm:$REF" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.Architecture}} {{end}}' \
+            | tee /tmp/platforms.txt
+          grep -q amd64 /tmp/platforms.txt || { echo "::error::amd64 missing from :$REF"; exit 1; }
+          grep -q arm64 /tmp/platforms.txt || { echo "::error::arm64 missing from :$REF"; exit 1; }

@@ -1,0 +1,177 @@
+# Automatic deployment to the oclab box (the Oracle VPS, srm-d1.200871.xyz).
+#
+# SCOPE, and it matters: this deploys the SECOND deployment ONLY. Lab prod
+# (srm.200871.xyz) stays gated behind deploy.yml and the `production`
+# environment, exactly as CONTRIBUTING promises. The "no watcher" rule that
+# doc states is about prod; this workflow does not touch prod, and the
+# deploy key it uses does not exist on the lab.
+#
+# Why this one is allowed to be automatic: it runs only after Build & Push has
+# gone green on main, it never builds anything itself (it pulls an immutable
+# digest-pinned tag), and scripts/deploy_gated.sh verifies the result and rolls
+# back on its own. A bad release leaves a healthy previous version running, not
+# a broken site.
+#
+# Two repository settings are required; the run fails loudly if either is
+# missing rather than silently skipping the deploy (see deploy.yml for why):
+#   secret   OCLAB_DEPLOY_SSH  private half of the deploy key whose public half
+#                              is installed on the box with a forced command.
+#   variable OCLAB_HOST        the box's address. Deliberately NOT in this file:
+#                              the repo is public, and the origin IP is what the
+#                              Cloudflare-only ingress exists to keep private.
+name: Deploy oclab (automatic)
+
+on:
+  workflow_run:
+    workflows: ["Build & Push"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to deploy (default: VERSION at the selected ref)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Never two deploys at once, and never cancel one mid-flight: a cancelled deploy
+# could leave a tag pinned to an image that was never verified.
+concurrency:
+  group: deploy-oclab
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # workflow_run fires for failed builds too - a red build must never deploy.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: oclab
+      url: https://srm-d1.200871.xyz
+    env:
+      HEALTH_URL: https://srm-d1.200871.xyz/healthz
+      LOGIN_URL: https://srm-d1.200871.xyz/login
+    steps:
+      - name: Check the deploy target is provisioned
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+          OCLAB_SSH: ${{ secrets.OCLAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          missing=0
+          if [ -z "${OCLAB_HOST:-}" ]; then
+            echo "::error::variable OCLAB_HOST is not set, so this deploy has nowhere to go."
+            echo "::error::  gh variable set OCLAB_HOST --repo $GITHUB_REPOSITORY --body <address>"
+            missing=1
+          fi
+          if [ -z "${OCLAB_SSH:-}" ]; then
+            echo "::error::secret OCLAB_DEPLOY_SSH is not set, so this deploy cannot authenticate."
+            echo "::error::  On the box: ssh-keygen -t ed25519 -N '' -f /tmp/gha && cat /tmp/gha.pub"
+            echo "::error::  Then add it to ubuntu's authorized_keys with the forced command:"
+            echo "::error::    restrict,command=\"/usr/local/bin/opensrm-deploy\" <the pubkey>"
+            echo "::error::  Then: gh secret set OCLAB_DEPLOY_SSH --repo $GITHUB_REPOSITORY < /tmp/gha"
+            missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+          echo "target provisioned"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Deploy exactly the commit that was built, not whatever main is now:
+          # main may have moved while the build ran.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Resolve the version to deploy
+        id: v
+        run: |
+          set -eu
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="$(cat VERSION)"
+          # The forced command re-validates this, but fail here so a typo is an
+          # obviously-misplaced input rather than an SSH-level rejection.
+          case "$V" in
+            *[!0-9.]*|"") echo "::error::'$V' is not a version number"; exit 1 ;;
+          esac
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "expected_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "deploying $V from $(git rev-parse --short HEAD)"
+
+      - name: Install the deploy key
+        env:
+          OCLAB_SSH: ${{ secrets.OCLAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$OCLAB_SSH" > ~/.ssh/oclab
+          chmod 600 ~/.ssh/oclab
+
+      - name: What is running now?
+        id: now
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+        run: |
+          set -eu
+          OUT=$(ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+                  "ubuntu@$OCLAB_HOST" status)
+          echo "$OUT"
+          echo "$OUT" > /tmp/status.txt
+          grep -q '^deployed=' /tmp/status.txt || { echo "::error::the box did not report a deployed tag"; exit 1; }
+          CURRENT=$(sed -n 's/^deployed=//p' /tmp/status.txt)
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          if [ "$CURRENT" = "${{ steps.v.outputs.version }}" ]; then
+            echo "already=$CURRENT" >> "$GITHUB_OUTPUT"
+            echo "already on $CURRENT - nothing to do"
+          else
+            echo "already=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy
+        if: steps.now.outputs.already == ''
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+        run: |
+          set -eu
+          ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+              "ubuntu@$OCLAB_HOST" "deploy ${{ steps.v.outputs.version }}"
+
+      # The live-edge check runs on the BOX, not here.
+      #
+      # Cloudflare challenges GitHub's runner egress: the first real run of this
+      # workflow reported 20 consecutive 403s for /healthz on a deploy that had
+      # already succeeded and was serving 200. Verifying from the runner would
+      # have marked every good deploy as failed. The box's own egress is not
+      # challenged, and box -> Cloudflare -> box is still the real public route.
+      #
+      # The forced command exposes this as the `verify` verb so the deploy key
+      # still cannot run arbitrary commands.
+      - name: Verify the live edge
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+        run: |
+          set -eu
+          ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+              "ubuntu@$OCLAB_HOST" verify
+
+      # A restart is verified by the identity it reports, not by the clock, and
+      # not by the deploy script's own exit code.
+      - name: Confirm the running image is the one we asked for
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+        run: |
+          set -eu
+          OUT=$(ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new "ubuntu@$OCLAB_HOST" status)
+          echo "$OUT"
+          DEPLOYED=$(echo "$OUT" | sed -n 's/^deployed=//p')
+          REV=$(echo "$OUT" | sed -n 's/^revision=//p')
+          [ "$DEPLOYED" = "${{ steps.v.outputs.version }}" ] || {
+            echo "::error::box reports $DEPLOYED, expected ${{ steps.v.outputs.version }}"; exit 1; }
+          if [ -n "$REV" ] && [ "$REV" != "${{ steps.v.outputs.expected_sha }}" ]; then
+            echo "::error::running image was built from $REV, expected ${{ steps.v.outputs.expected_sha }}"
+            exit 1
+          fi
+          echo "verified: $DEPLOYED built from ${REV:-<no label>}"

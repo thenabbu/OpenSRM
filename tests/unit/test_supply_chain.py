@@ -57,11 +57,19 @@ check("build.yml reads VERSION from the file",
       "the image tag must derive from the VERSION file (single source of truth)")
 check("build.yml tags raw VERSION value",
       re.search(r"type=raw,value=\$\{\{ steps\.version\.outputs\.version \}\}", build) is not None)
-check("build.yml keeps :latest and the sha tag",
-      "type=raw,value=latest" in build and "type=sha,prefix=" in build,
-      "latest keeps meaning latest; sha stays for hotfix identification")
+check("build.yml publishes :latest and :<VERSION> and no sha tag",
+      "type=raw,value=latest" in build and "type=sha" not in build,
+      "a sha tag makes GHCR name the package version after the commit "
+      "(page read 'a9c2598' instead of '2.12.0')")
+check(":VERSION is emitted last (GHCR names a version by a tag it carries)",
+      build.index("type=raw,value=latest")
+      < build.index("type=raw,value=${{ steps.version.outputs.version }}"),
+      "tag order decides the name a human reads in the package list")
+# The gate and the tag list live in one `meta` job now: two build legs and a
+# merge must not each resolve them, or they can disagree about which push is a
+# release. The legs therefore read them as needs.meta.*.
 check("build.yml labels org.opencontainers.image.version from VERSION",
-      re.search(r"org\.opencontainers\.image\.version=\$\{\{ steps\.version\.outputs\.version \}\}", build) is not None)
+      re.search(r"org\.opencontainers\.image\.version=\$\{\{ needs\.meta\.outputs\.version \}\}", build) is not None)
 check("build.yml labels org.opencontainers.image.revision from github.sha",
       re.search(r"org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}", build) is not None)
 # The labels block only proves the EXPRESSION is in the workflow. Without this
@@ -86,13 +94,43 @@ check("no hardcoded version literal in tags", _check_no_literal)
 check("version/latest tags are gated on a real VERSION change",
       "released == 'true'" in build,
       "tags must be enable=<VERSION moved>, or :2.11.0 drifts with every commit")
-check("sha tag is unconditional", "type=sha,prefix=" in build)
-check("VERSION change compares the pushed range, not HEAD~1",
-      "github.event.before" in build)
+# Multi-arch pushes each leg by DIGEST and `merge` names the tag, so "publishes
+# nothing" is expressed differently: an unreleased commit falls back to a
+# cache-only build, and the only tag-writing job is skipped outright.
+check("an unreleased commit publishes nothing",
+      "mode=type=cacheonly" in build
+      and "if: needs.meta.outputs.released == 'true'" in build,
+      "otherwise every docs commit mints an untagged package version")
+# The gate was DEAD for weeks and printed 'moved' on every push: checkout was
+# depth-1, so the baseline commit did not exist and the comparison fell through
+# to the always-released branch. It then broke the OTHER way: comparing
+# HEAD~1:VERSION still skipped a real release when a bump commit is followed by
+# another push to main, because the second push's baseline already carries the
+# new version. Measured on v2.12.1 - a Release exists, :2.12.1 returns 404,
+# :2.12.0 returns 200. Asking the registry is idempotent and repairs a cancelled
+# publish, so that is what this pins.
+check("VERSION gate asks the registry instead of diffing history",
+      "imagetools inspect" in build and "HEAD~1:VERSION" not in build,
+      "a history diff misses a bump that is followed by another push to main")
 # Provenance + SBOM make the artifact's origin and contents verifiable at
 # deploy time instead of trusting a mutable tag.
 check("build records provenance", "provenance: mode=max" in build)
 check("build records an SBOM", "sbom: true" in build)
+
+# Multi-arch is the reason this file changed: the package was amd64-only, so the
+# arm64 oclab VPS could not pull ANY published tag and had to build from source
+# on 2 vCPUs. Pin the pairing (platform <-> native runner) and the merge, or a
+# later edit can quietly drop one leg and reintroduce the original failure.
+check("build.yml builds both architectures on native runners",
+      "linux/amd64" in build and "ubuntu-latest" in build
+      and "linux/arm64" in build and "ubuntu-24.04-arm" in build,
+      "an amd64-only package cannot be pulled on the arm64 VPS")
+check("build.yml merges the legs into one manifest list",
+      "push-by-digest=true" in build and "imagetools create" in build,
+      "two digests, one tag - or the package is single-arch again")
+check("the merge job fails when an architecture is missing",
+      build.count("missing from") >= 2,
+      "a green merge only proves the API accepted it; read the manifest")
 
 # ── 3. scans.yml: report-only surface ───────────────────────────────────────
 scans = rd(".github/workflows/scans.yml")

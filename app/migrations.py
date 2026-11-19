@@ -301,6 +301,13 @@ def m014_push_type_prefs(conn):
             if "duplicate column name" not in str(e):
                 raise
 
+@migration(version=19, description="captcha_seen (sha256 of every CAPTCHA image the solver got right — pacing + accuracy, no image, no netid)")
+def m019_captcha_seen(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS captcha_seen (
+        hash TEXT PRIMARY KEY,
+        ts INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+        source TEXT NOT NULL DEFAULT 'http')""")
+
 @migration(version=12, description="usage_events (in-app telemetry: event counts per day, no PII)")
 def m012_usage_events(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS usage_events (

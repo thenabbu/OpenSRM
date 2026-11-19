@@ -19,8 +19,21 @@ def get_solver():
         _solver = ddddocr.DdddOcr(beta=True)
     return _solver
 
+# The portal's own alphabet. ddddocr occasionally emits a glyph that is not on
+# it — a "+" turned up in a measured sample (read: "vs9jn+"). The captcha field
+# could never have held that character, so the POST is dead on arrival; strip to
+# the portal's alphabet before submitting. Case is not significant to the portal,
+# so uppercase reads must survive — only lowercase the alphabet, not the answer.
+CAPTCHA_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+
+def sanitize_captcha(text):
+    """Drop anything the portal could not have issued (e.g. '+', '.', ' ')."""
+    return "".join(c for c in (text or "") if c in CAPTCHA_CHARS)
+
+
 def solve_captcha_b64(b64):
-    return get_solver().classification(base64.b64decode(b64))
+    return sanitize_captcha(get_solver().classification(base64.b64decode(b64)))
 
 CAPTCHA_JS = """async () => {
     const img = document.querySelector('img[alt="Captcha"]');

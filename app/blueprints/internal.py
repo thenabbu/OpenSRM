@@ -1,5 +1,5 @@
 """Internal/ops routes: health probe, metrics, no-cache static serving."""
-from ..app import healthz, internal_metrics, static_no_cache
+from ..app import healthz, internal_captcha_capture, internal_metrics, static_no_cache
 from . import FlatBlueprint
 
 bp = FlatBlueprint("internal", __name__)
@@ -11,3 +11,7 @@ bp = FlatBlueprint("internal", __name__)
 bp.add_url_rule("/static/<path:filename>", view_func=static_no_cache)
 bp.add_url_rule("/healthz", view_func=healthz)
 bp.add_url_rule("/internal/metrics", view_func=internal_metrics)
+# GET status / POST one labelled pair. Secret-header auth (CAPTCHA_SECRET),
+# so the cross-site guard exempts it exactly like /internal/push/tick.
+bp.add_url_rule("/internal/captcha", view_func=internal_captcha_capture,
+                methods=["GET", "POST"])
