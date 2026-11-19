@@ -1,0 +1,16 @@
+{
+  "criterion": "E1",
+  "tier": "machine",
+  "statement": "Every job of every workflow is green on HEAD of `origin/feat/preact-migration` (run URL + SHA recorded).",
+  "verdict": "PASS",
+  "note": "4 workflows green on 62ed738",
+  "evidence": [
+    "Lint 62ed738 success https://github.com/thenabbu/OpenSRM/actions/runs/44599856325",
+    "Scans 62ed738 success https://github.com/thenabbu/OpenSRM/actions/runs/44599856270",
+    "CodeQL 62ed738 success https://github.com/thenabbu/OpenSRM/actions/runs/44599856187",
+    "Tests 62ed738 success https://github.com/thenabbu/OpenSRM/actions/runs/44599856322"
+  ],
+  "sha": "b675bd78e77c0744f815ad602a2eb68d9b0302fb",
+  "round": 4,
+  "judged_at": "2026-11-19T20:22:49+00:00"
+}

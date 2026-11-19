@@ -56,7 +56,7 @@ Criterion wording is verbatim from `RECOVERY_PLAN.md` §2 (the panel copies it f
 | E13 | `main` untouched, drift merged in, trio 3.0.0 | PASS | `origin/main` ancestor of HEAD; `VERSION` 3.0.0 |
 | E14 | `STATUS.md` truthful, board matches reality | PASS | 3 blocked cards are genuine (see §5), no ghosts |
 
-Round-3 verdicts on the PR head for this file are committed under `notes/poj/2026-11-20/` (same directory as round 2, which judged `59f8a92`; round 3 supersedes it by SHA, round 2 is preserved in history at `508741b`).
+**Panel round 4: 14 PASS / 0 FAIL / 0 ERROR at `b675bd7`** — verdicts committed under `notes/poj/2026-11-19/`. Round 2 (13 PASS / 1 FAIL at `59f8a92`) stays at `notes/poj/2026-11-20/` because the panel names its directory from the UTC date; it is superseded by SHA, not deleted. Round 2's single red was E12, i.e. this file, which is why it was red and is now green.
 
 ---
 
