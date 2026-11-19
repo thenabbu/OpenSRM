@@ -229,10 +229,19 @@ def validate(root: str) -> list[str]:
             continue
         src = open(path, encoding='utf-8').read()
         for asset_href, raw_href, sizes in re.findall(
-                r'(?:href|content)="(?:\{\{ asset\(\'([^\']+)\'\) \}\}|/static/([\w.-]+\.(?:png|ico)))"'
+                r'(?:href|src|content)="(?:\{\{ asset\(\'([^\']+)\'\) \}\}|/static/([\w.-]+\.(?:png|ico)))'
+                r'(?:\?v=[^"]*)?"'
                 r'(?:\s+sizes="(\d+x\d+)")?',
                 src):
             href = asset_href or raw_href
+            if raw_href:
+                # An unversioned /static/<image> is never edge-cached on this zone
+                # (cf-cache-status: BYPASS), so every page load re-fetches an
+                # unchanging image through the origin. #163 fixed the head block and
+                # dashboard.html; a template that inlines the same file later
+                # reintroduces it (base.html did). Enforce the asset() form.
+                bad(f'{os.path.basename(path)} serves {raw_href} unversioned',
+                    "wrap it in asset('<file>')")
             refs.setdefault(href, None)
             if sizes:
                 refs[href] = tuple(int(v) for v in sizes.split('x'))
