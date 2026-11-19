@@ -601,6 +601,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # W8.6 Panel of Judges — one adversarial judge per criterion E1-E14.
+      # Runs in a FRESH detached worktree at the PR/HEAD ref so the verdict is
+      # on the committed code, not on the caller's dirty tree. Each judge is a
+      # command where a command exists; E12/E14 are prose reads.
+      # Verdict JSON per criterion committed under notes/poj/<date>/.
+      # Any FAIL becomes a card; repeat until all PASS.
+      - name: Panel of Judges (E1-E14)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -eu
+          REF="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "PoJ against ${REF:0:7}"
+          .venv/bin/python scripts/poj.py --ref "$REF" --round ${{ github.run_number }}
+
   # web/ — the Preact islands. Nothing else in this file touches TypeScript, so
   # before this job a type error or a broken island could merge with every
   # workflow green. Runs the same three gates the local build does, via one

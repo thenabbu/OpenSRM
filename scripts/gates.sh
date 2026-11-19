@@ -176,6 +176,11 @@ else
   skip "web/ gate (no pnpm)"
 fi
 
+# W8.6 Panel of Judges - one adversarial judge per criterion E1-E14, in a
+# fresh detached worktree at HEAD. Prose-only criteria (E12/E14) read files;
+# everything else is a command whose exit code IS the verdict.
+[ -z "$FAST" ] && run_step "Panel of Judges E1-E14 (scripts/poj.py)" env PYTHONPATH=. "$V/bin/python" scripts/poj.py --ref HEAD --round 0
+
 [ -n "$FAST" ] && { finish; }
 
 # --- 3. Unit suites (every one CI runs) ------------------------------------
