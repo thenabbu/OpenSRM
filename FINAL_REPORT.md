@@ -83,7 +83,7 @@ Round-3 verdicts on the PR head for this file are committed under `notes/poj/202
 | 1.3 API contract fixtures | `76e8e95` | 44567883661 | `tests/golden/v3/api/` |
 | 1.4 visual goldens | `1f23db9` | — | `tests/golden/v3/screens/` |
 | 1.5 baseline metrics | `76e8e95` | 44567883661 | `tests/golden/v3/metrics.json` |
-| 1.6 behaviour matrix | **mission dir only** | — | **deviation:** `docs/BEHAVIOR_MATRIX.json` is absent from the repo; `git grep` for it = 0 hits (`decisions.md:298`, `:844`, `:847`) |
+| 1.6 behaviour matrix | **mission dir only** | — | **deviation:** a `BEHAVIOR_MATRIX.json` under the repo's docs/ directory does not exist; `git grep` for the name = 0 hits (`decisions.md:298`, `:844`, `:847`) |
 
 ### Phase 2 — toolchain
 
@@ -198,7 +198,7 @@ The plan was written before the code was read. These are the places the branch k
 | A6 | Main drift merged **into** the branch, twice | `main` had moved to `8bf410c` and to newer commits; the W10.1 card's premise (`main` = `26ed196`) was wrong three ways | A6; PR #237 (`59f8a92`) |
 | A7 | Offline architecture ratified as built (shell + IndexedDB, not the plan's sketch) | The plan's sketch assumed a morph-based shell that A1 removed | A7 |
 | A8 | `PROGRESS.md` folded into `STATUS.md` | Two status files drifted; one authority | A8 |
-| W7.1 | Kept `workbox-build`; did **not** migrate to `vite-plugin-pwa` | Measured: 74/74 offline parity either way, but the plugin needs 6 deps, 4 config escapes, an outDir rename and two post-build steps — for zero user-visible change. The plan allows this ("or an approved exception") | `decisions.md:503`; `notes/build/w7.1-vite-plugin-pwa-experiment.md`; PR #206 |
+| W7.1 | Kept `workbox-build`; did **not** migrate to `vite-plugin-pwa` | Measured: 74/74 offline parity either way, but the plugin needs 6 deps, 4 config escapes, an outDir rename and two post-build steps — for zero user-visible change. The plan allows this ("or an approved exception") | `decisions.md:503`; the mission-side experiment report (notes/build/w7.1-vite-plugin-pwa-experiment.md, not in this repo); PR #206 |
 | W10.2 | Fresh-clone proof ran on the **lab**, not the laptop | No LAN route to the laptop, no tailscale client in the container; the claim (repo reproduces its own bar from an empty dir) does not depend on which CPU ran it, only on honesty about it | `decisions.md:847` |
 | — | `38` archived/done cards carry an **empty result** and are not used as evidence anywhere above | The board's definition of done did not require evidence until the review-lane proposal; those cards are history, and this report cites commits and CI instead | `decisions.md:340` |
 
