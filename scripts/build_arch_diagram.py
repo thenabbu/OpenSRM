@@ -108,7 +108,7 @@ def tall(col, row, height, kind, name, subs):
 
 NODES = {
     # left: the client
-    "browser":  cell("A", "1", "input", "Your browser", ["PWA · phone, laptop"]),
+    "browser":  cell("A", "1", "input", "Your browser", ["PWA · Preact islands"]),
     # right: the two SRM systems this app reads
     "portal":   cell("D", "1", "external", "SRM student portal", ["HTML · captcha"]),
     "proxy":    cell("D", "2", "optional", "Egress proxy", ["when configured"]),
@@ -116,7 +116,7 @@ NODES = {
     # centre: the app, one vertical spine
     "edge":     cell("B", "1", "external", "Cloudflare edge", ["HTTPS"]),
     "routes":   cell("B", "2", "backend", "Flask routes + views",
-                     ["session guards", "Jinja renders HTML"]),
+                     ["session guards", "Jinja + Preact islands"]),
     "limits":   cell("B", "3", "backend", "Rate limits + budget",
                      ["per netid · per IP · budget"]),
     "pipeline": cell("B", "4", "core", "Portal pipeline",
@@ -383,7 +383,7 @@ def render(pending):
 </defs>''')
 
     for zx, zy, zw, zh, label in ((16, 80, 248, 112, "YOUR DEVICE"),
-                                  (320, 80, 696, 528, "OPENSRM · FLASK + GUNICORN")):
+                                  (320, 80, 696, 528, "OPENSRM · GUNICORN + FLASK + PREACT")):
         lw = math.ceil(text_w(label, 8, mono=True) * 1.1) + 16
         add(f'<rect x="{zx}" y="{zy}" width="{zw}" height="{zh}" rx="8" fill="rgba(255,255,255,0.02)" stroke="{RULE_A}" stroke-width="0.8"/>')
         add(f'<rect x="{zx+8}" y="{zy+2}" width="{lw}" height="12" rx="2" fill="{PAPER}"/>')
@@ -467,8 +467,9 @@ def render(pending):
     return "\n".join(out)
 
 
-DESC = ("Your browser reaches the OpenSRM container through the Cloudflare edge. Inside it, Flask "
-        "routes hand work to two independent sources: the portal pipeline, which fetches the SRM "
+DESC = ("Your browser reaches the OpenSRM container through the Cloudflare edge, and loads a Preact "
+        "island bundle that hydrates one panel inside each server-rendered page. Inside the container, "
+        "Flask routes hand work to two independent sources: the portal pipeline, which fetches the SRM "
         "student portal directly or through the optional egress proxy, and the SCOPE client, which "
         "calls the SOAP backend behind SRM's mobile app. Both feed the parsers, everything is "
         "written through one data-access layer into the SQLite store, and the routes render pages "

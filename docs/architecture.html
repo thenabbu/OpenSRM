@@ -26,7 +26,7 @@
   <div class="diagram-container">
     <svg viewBox="0 0 1024 640" width="1024" height="640" role="img" aria-labelledby="arch-title arch-desc" xmlns="http://www.w3.org/2000/svg">
       <title id="arch-title">OpenSRM data flow — portal and SCOPE into one store</title>
-      <desc id="arch-desc">Your browser reaches the OpenSRM container through the Cloudflare edge. Inside it, Flask routes hand work to two independent sources: the portal pipeline, which fetches the SRM student portal directly or through the optional egress proxy, and the SCOPE client, which calls the SOAP backend behind SRM's mobile app. Both feed the parsers, everything is written through one data-access layer into the SQLite store, and the routes render pages from that store.</desc>
+      <desc id="arch-desc">Your browser reaches the OpenSRM container through the Cloudflare edge, and loads a Preact island bundle that hydrates one panel inside each server-rendered page. Inside the container, Flask routes hand work to two independent sources: the portal pipeline, which fetches the SRM student portal directly or through the optional egress proxy, and the SCOPE client, which calls the SOAP backend behind SRM's mobile app. Both feed the parsers, everything is written through one data-access layer into the SQLite store, and the routes render pages from that store.</desc>
 <rect width="100%" height="100%" fill="#161616"/>
 <defs>
 <marker id="arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="rgba(255,255,255,0.62)"/></marker>
@@ -38,8 +38,8 @@
 <rect x="24" y="82" width="77" height="12" rx="2" fill="#161616"/>
 <text x="62" y="91" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">YOUR DEVICE</text>
 <rect x="320" y="80" width="696" height="528" rx="8" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.16)" stroke-width="0.8"/>
-<rect x="328" y="82" width="158" height="12" rx="2" fill="#161616"/>
-<text x="407" y="91" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">OPENSRM · FLASK + GUNICORN</text>
+<rect x="328" y="82" width="207" height="12" rx="2" fill="#161616"/>
+<text x="431" y="91" fill="rgba(255,255,255,0.50)" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle" letter-spacing="0.14em">OPENSRM · GUNICORN + FLASK + PREACT</text>
 <path d="M 248,136 L 296,136" fill="none" stroke="#0082ce" stroke-width="1.2" marker-end="url(#arch-arrow-link)" marker-start="url(#arch-arrow-link-start)"/>
 <path d="M 404,168 L 404,184" fill="none" stroke="rgba(255,255,255,0.62)" stroke-width="1.2" marker-end="url(#arch-arrow)" marker-start="url(#arch-arrow-start)"/>
 <path d="M 404,248 L 404,264" fill="none" stroke="rgba(255,255,255,0.62)" stroke-width="1.2" marker-end="url(#arch-arrow)"/>
@@ -68,7 +68,7 @@
 <rect x="32" y="104" width="216" height="64" rx="6" fill="#161616"/>
 <rect x="32" y="104" width="216" height="64" rx="6" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.50)" stroke-width="1.0"/>
 <text x="140" y="134" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Your browser</text>
-<text x="140" y="147" fill="rgba(255,255,255,0.62)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">PWA · phone, laptop</text>
+<text x="140" y="147" fill="rgba(255,255,255,0.62)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">PWA · Preact islands</text>
 <rect x="836" y="104" width="176" height="64" rx="6" fill="#161616"/>
 <rect x="836" y="104" width="176" height="64" rx="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.30)" stroke-width="1.0"/>
 <text x="924" y="134" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">SRM student portal</text>
@@ -89,7 +89,7 @@
 <rect x="296" y="184" width="216" height="64" rx="6" fill="#090909" stroke="#242424" stroke-width="1.0"/>
 <text x="404" y="208" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Flask routes + views</text>
 <text x="404" y="221" fill="rgba(255,255,255,0.62)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">session guards</text>
-<text x="404" y="234" fill="rgba(255,255,255,0.62)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Jinja renders HTML</text>
+<text x="404" y="234" fill="rgba(255,255,255,0.62)" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" text-anchor="middle">Jinja + Preact islands</text>
 <rect x="296" y="264" width="216" height="64" rx="6" fill="#161616"/>
 <rect x="296" y="264" width="216" height="64" rx="6" fill="#090909" stroke="#242424" stroke-width="1.0"/>
 <text x="404" y="294" fill="#ffffff" font-size="12" font-weight="600" font-family="'Geist', system-ui, sans-serif" text-anchor="middle">Rate limits + budget</text>

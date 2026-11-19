@@ -245,7 +245,7 @@ One Flask process, one SQLite file, **two** fetch pipelines — the whole data
 path, from SRM to pixel:
 
 <p align="center">
-  <img src="docs/architecture.png" alt="OpenSRM architecture — PWA → Cloudflare edge → Flask container (sessions, portal pipeline + optional egress proxy, SCOPE SOAP client, parsers, data access, SQLite) → view models, with the SRM student portal and the SCOPE backend as two independent external sources" width="100%">
+  <img src="docs/architecture.png" alt="OpenSRM architecture — a Preact-island PWA → Cloudflare edge → gunicorn serving Flask routes and views (sessions, rate limits, portal pipeline + optional egress proxy, SCOPE SOAP client, parsers, data access, SQLite), with the SRM student portal and the SCOPE backend as two independent external sources" width="100%">
 </p>
 
 A sync starts at your browser, crosses the tunnel as a normal HTTP
@@ -367,6 +367,7 @@ Full details, including the key-rotation runbook: [SECURITY.md](SECURITY.md).
 ## Documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, PR flow, portal rate limits
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the server, the Preact islands, the offline shell and the privacy rules
 - [SECURITY.md](SECURITY.md) — threat model, protections, key rotation
 - [docs/privacy.md](docs/privacy.md) — what is stored, what "Delete my data" erases
 - [AGENTS.md](AGENTS.md) — quickstart for coding agents: dev loop, test matrix, gotchas
