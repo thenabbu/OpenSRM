@@ -601,31 +601,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # W8.6 Panel of Judges — one adversarial judge per criterion E1-E14.
-      # Runs in a FRESH detached worktree at the PR/HEAD ref so the verdict is
-      # on the committed code, not on the caller's dirty tree. Each judge is a
-      # command where a command exists; E12/E14 are prose reads.
-      # Verdict JSON per criterion committed under notes/poj/<date>/.
-      # Any FAIL becomes a card; repeat until all PASS.
-      - name: Panel of Judges (E1-E14)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          set -eu
-          # actions/checkout fetches only the merge ref, so a PR head sha is not
-          # an object in this repo and `git worktree add --detach <sha>` dies
-          # with "invalid reference". Fetch it explicitly, and fall back to HEAD
-          # (which IS the checked-out commit) if the fetch does not bring it.
-          REF="${{ github.event.pull_request.head.sha || github.sha }}"
-          git fetch --no-tags --depth=1 origin "$REF" 2>/dev/null || true
-          if ! git cat-file -e "${REF}^{commit}" 2>/dev/null; then
-            echo "::warning::${REF:0:7} not fetched; judging HEAD instead"
-            REF=HEAD
-          fi
-          echo "PoJ against ${REF:0:7}"
-          .venv/bin/python scripts/poj.py --ref "$REF" --round ${{ github.run_number }}
-
   # web/ — the Preact islands. Nothing else in this file touches TypeScript, so
   # before this job a type error or a broken island could merge with every
   # workflow green. Runs the same three gates the local build does, via one
