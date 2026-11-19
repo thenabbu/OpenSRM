@@ -645,10 +645,16 @@ def run(ctx, pw):
     check("D2: a stale shell CAN be served from the cache before the deploy (control)",
           STALE_MARK in (shell_body("attendance") or ""), "stale mark readable")
 
+    # Seed a cache the new worker's activate MUST drop. Measuring only what the
+    # page happened to create makes this test hostage to routing: once every
+    # asset URL carries ?v=, the opensrm-static handler never fires, nothing
+    # sits outside the allow-list, and D5 below passes against an empty list -
+    # vacuously green, proving nothing. Seed it instead of hoping for it.
+    page.evaluate("async () => { await caches.open('opensrm-e2e-droppable'); }")
     v1_keys = cache_keys()
     droppable = [k for k in v1_keys if not keep(k)]
-    check("D3: before the deploy there are caches outside the activate allow-list",
-          bool(droppable), f"{droppable} of {v1_keys}")
+    check("D3: a cache outside the activate allow-list exists before the deploy",
+          'opensrm-e2e-droppable' in droppable, f"{droppable} of {v1_keys}")
 
     # ── the deploy: the entry chunk is renamed, the version marker bumps ─────
     v1_sw = SW_PATH.read_text(encoding="utf-8")
