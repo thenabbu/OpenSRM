@@ -124,6 +124,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_account_delete.py
       - name: test_login_reject (rejection classifier + quotas)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_login_reject.py
+      - name: test_telemetry_trap (the currentDomain bot trap)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_telemetry_trap.py
       - name: test_state_classes (rate/progress/portal-health locks + pruning)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_state_classes.py
       - name: test_fault_handling (corrupt-row degradation)
