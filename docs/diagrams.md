@@ -21,6 +21,7 @@ grid, font and arrow control and render identically everywhere.
 | `docs/architecture.html` | Generated source of truth — self-contained, viewable in any browser, header comment carries the regen commands. |
 | `docs/architecture.png` | The asset README embeds (`@2`, 1920×1200 for the 960×600 canvas). |
 | `README.md` → Architecture | Embeds the PNG (`width="100%"`). |
+| `docs/ARCHITECTURE.md` | The prose companion: server, Preact islands, offline shell, privacy rules. |
 
 ## Workflow
 

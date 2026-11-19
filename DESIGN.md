@@ -733,6 +733,38 @@ Front-end rules from the smoothness campaign (measured with `scripts/perf_baseli
 5. **Pause looping animations** when offscreen, when hidden, and on the low-end tier (§7 avatar rule).
 6. **Prove perf claims on a throttled machine** with `scripts/perf_baseline.py`, and report only measured numbers — a speed-up that was not measured is not a claim.
 
+## 10.17 The client layer (Preact islands)
+
+The panels are rendered by Preact (`web/`, TypeScript, Zod, Dexie). Designing
+one means designing what the server sends **and** what hydrates into it, so:
+
+1. **The server renders the value; the island renders the behaviour.** A
+   number, a row or a state must survive with JavaScript off. An island that
+   computes a value the server never sends is a design bug, not a feature.
+2. **Markup you style is the island's OUTPUT.** It is not in a Jinja template,
+   so the Tailwind scanner cannot see it (§10.1). Every utility family an
+   island builds (a status class chosen at runtime, a grid span computed from
+   data) must appear literally in a scanned file or in
+   `app/static/safelist/classes.html`, or it silently never ships.
+3. **`!important` is not a theming tool.** A daisyUI component wins inside its
+   own rules — measured, `text-base-content` does not override
+   `.badge-info`'s colour even with `!important` (§10.9). Use another variant
+   or a hand-rolled element. If a selector needed `!important` to win, the
+   design-system decision has not been made yet.
+4. **The cascade decides, not specificity.** Reach for the right token or the
+   right component variant; do not escalate selectors to beat a component.
+5. **Degraded states are visible states.** The offline banner, stale-row
+   styling and error toasts are enhancements over correct data — never the
+   only signal. Colour alone violates §0.7 anyway.
+6. **No new client assets bypass the build.** Colours and spacing come from
+   the same tokens whether they land in `app.css` or the bundle; never a hex
+   in a `.tsx`.
+
+How it all fits together, including the offline shell and the privacy rules:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
 ## 11. Workflow and checklist
 
 1. **Name what you are styling by its meaning:** surface? status? action? metadata?
@@ -740,7 +772,7 @@ Front-end rules from the smoothness campaign (measured with `scripts/perf_baseli
 3. **Pick color by meaning, from a token.** Check the `primary` trap (§2.4) and status-fill contrast (§2.8).
 4. **Write token-only classes or variables.**
 5. **Check at 375px:** no sideways page scroll, big enough targets, safe areas respected.
-6. **Static or token change?** Bump `CACHE_NAME` for `app/static/*`; update both template theme blocks (and Appendix A) for a token.
+6. **Static or token change?** Rebuild from `web/` — `workbox-config.js` regenerates `app/static/sw.js` and stamps `CACHE_NAME` from a hash of the bundle, so never bump it by hand. Update both template theme blocks (and Appendix A) for a token.
 
 Pre-flight checklist before you finish:
 
@@ -753,7 +785,7 @@ Pre-flight checklist before you finish:
 - [ ] New motion is `transform`/`opacity` only, interruptible, and off under `prefers-reduced-motion`
 - [ ] Data is in `font-mono`; copy is sentence case; errors say what to do
 - [ ] No inline script, external font, icon library, remote image, or CDN-loaded CSS/JS
-- [ ] `CACHE_NAME` bumped if anything in `app/static/` changed
+- [ ] `web/` rebuilt if anything in `app/static/dist/` or the SW changed (`CACHE_NAME` is stamped automatically)
 - [ ] Templates gained new utility-class families? Added to `safelist/classes.html` + `app.css` rebuilt (§10.16)
 - [ ] A data-updating flow updates in place (no full-page reload); any new listener inside `<main>` is delegated or re-run idempotently
 - [ ] Looks right at 375px and 1280px, and keyboard focus is visible on every control I touched
