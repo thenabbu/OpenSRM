@@ -46,7 +46,11 @@ import sys
 import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-PY = os.environ.get("OPENSRM_PY", str(pathlib.Path("/opt/data/opensrm-repo/.venv/bin/python")))
+# Default to THIS checkout's interpreter, not a hard-coded lab path. The old
+# default meant that anywhere else - CI above all - every judge ran under a
+# python that did not exist, and the resulting failures looked like product
+# defects rather than a missing runner.
+PY = os.environ.get("OPENSRM_PY") or str(REPO / ".venv" / "bin" / "python")
 
 # Criterion wording is copied VERBATIM from RECOVERY_PLAN.md §2 (E-table).
 # Paraphrasing it would let a judge pass something the plan did not ask for.
@@ -137,8 +141,21 @@ def j_e2(wt, ctx):
     if rc_st != 0 or out_st.strip():
         return "FAIL", [f"tree not clean, cannot be a fresh clone: {out_st.strip()[:300]}"], \
             "uncommitted changes"
-    rc, out = run("bash scripts/gates.sh --fast", wt, timeout=900)
+    # A worktree carries no .venv, so gates.sh --fast cannot run the python
+    # tier there. Borrow THIS checkout's interpreter and site-packages via
+    # VIRTUAL_ENV/PATH rather than declaring the branch broken - the absence of
+    # a venv in a worktree is a property of worktrees, not of the deliverable.
+    # If no interpreter is available at all, say so as ERROR: a judge that
+    # cannot run is not a verdict on the work.
+    if not pathlib.Path(PY).exists():
+        return "ERROR", [f"no python at {PY}; cannot run the static tier in a worktree"], \
+            "environment missing (no venv)"
+    venv = str(pathlib.Path(PY).parent.parent)
+    env = f'VIRTUAL_ENV="{venv}" PATH="{venv}/bin:$PATH" '
+    rc, out = run(env + "bash scripts/gates.sh --fast", wt, timeout=900)
     tail = "\n".join([l for l in out.strip().splitlines() if l.strip()][-6:])
+    if rc == 3:
+        return "ERROR", [tail], "gates.sh could not run here (exit 3 = environment, not failure)"
     if rc != 0:
         return "FAIL", [tail], f"gates.sh --fast rc={rc}"
     return "PASS", [tail, "static tier green; browser tier is E8's judge, not duplicated here"], \
@@ -192,7 +209,7 @@ def j_e5(wt, ctx):
     nm = pathlib.Path(wt) / "web/node_modules"
     if not nm.exists():
         # Symlink the canonical install, as the repo's own bootstrap does.
-        src = pathlib.Path("/opt/data/opensrm-repo/web/node_modules")
+        src = REPO / "web" / "node_modules"
         if src.exists():
             try:
                 nm.symlink_to(src)
