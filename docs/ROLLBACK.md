@@ -57,5 +57,9 @@ curl -s -b "srm_session=$TOKEN" http://127.0.0.1:8000/attendance | grep -c 'type
 curl -s -b "srm_session=$TOKEN" http://127.0.0.1:8000/attendance | grep -c 'class="att-subj"'   # -> row count > 0
 ```
 
-The unit suite pins both directions: `tests/unit/test_rollback_flag.py`
-(default is on, off drops exactly the module tag and keeps the rows).
+The unit suite pins both directions on EVERY panel route (not just
+`/attendance`): `tests/unit/test_rollback_flag.py` boots the app once with the
+flag on and once off, renders all nine routes in each, and asserts the two
+HTML bodies are the same page except for the module tag. Default is on, off
+drops exactly the module tag and keeps the rows — and neither direction can
+quietly lose a section.

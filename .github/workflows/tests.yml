@@ -206,9 +206,11 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_profile.py
       - name: test_readpath_netid (P7.1 offline read path — data-netid is the cache key)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_readpath_netid.py
-      # P10.1 rollback flag: PREACT_ISLANDS unset must still hydrate (default
-      # ON), and off must degrade to server-rendered panels, not a 500.
-      - name: test_rollback_flag (PREACT_ISLANDS gates only the island tag)
+      # P10.1 rollback flag, BOTH directions on EVERY panel route: PREACT_ISLANDS
+      # unset must still hydrate (default ON), and off must degrade to
+      # server-rendered panels, not a 500 — and must differ from ON by the module
+      # tag only, so neither direction can silently lose a section.
+      - name: test_rollback_flag (PREACT_ISLANDS, both directions, all 9 routes)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_rollback_flag.py
       # The vision gate's own three states, against a stub provider: a 503 must
       # read UNREACHABLE, a broken page must read REAL UI REGRESSION.
