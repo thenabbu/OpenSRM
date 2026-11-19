@@ -40,7 +40,11 @@ def check(name, cond, detail=""):
 
 
 class Stub(BaseHTTPRequestHandler):
-    """mode: ok | broken | all503 | one503 (one pair = the 3-model ladder)."""
+    """mode: ok | broken | onebroken | all503 | one503 (one pair = the 3-model ladder).
+
+    "onebroken" is the state that decides whether this is a gate: ONE route's
+    FIRST model answers "broken". Nothing else changes across the 18 pairs.
+    """
 
     mode = "ok"
     seen = 0
@@ -60,7 +64,11 @@ class Stub(BaseHTTPRequestHandler):
             # flatten it: the headline must stay one physical line.
             self._send(503, {"error": {"code": 503, "message": "high demand"}}, indent=2)
             return
-        broken = Stub.mode == "broken"
+        # onebroken: every model agrees the FIRST pair is broken (3 ladder
+        # requests), and every other pair is fine. That is "corrupt one expected
+        # label for a single route". A lone dissenting model is a hypothesis, not
+        # a finding - the corroboration below is meant to absorb it.
+        broken = Stub.mode == "broken" or (Stub.mode == "onebroken" and Stub.seen <= 3)
         verdict = {"broken": broken,
                    "broken_class": "b" if broken else None,
                    "defects": ["content clipped at the card edge"] if broken else [],
@@ -150,6 +158,23 @@ def main():
     check("broken page: summary says REAL UI REGRESSION", "REAL UI REGRESSION" in summary,
           summary[:160])
     check("broken page: not reported as an outage", "UNREACHABLE" not in summary,
+          summary[:160])
+
+    # ONE route's first model says broken; 17 pairs are pure MATCH. This is the
+    # shape the card names ("a real mismatch still fails the job ... for a single
+    # route") and it guards the exit rule itself: `return 1 if bad` must fire on
+    # bad == 1, not only when every pair failed.
+    proc, index, summary = run("onebroken")
+    print("onebroken: rc=%s" % proc.returncode)
+    check("one route broken: exit 1 (a real gate)", proc.returncode == 1, str(proc.returncode))
+    check("one route broken: exactly 1 failed, 0 unreachable",
+          (index.get("failed"), index.get("unreachable")) == (1, 0),
+          str((index.get("failed"), index.get("unreachable"))))
+    check("one route broken: the other %d pairs still MATCH" % (total - 1),
+          index.get("matched") == total - 1, str(index.get("matched")))
+    check("one route broken: summary says REAL UI REGRESSION",
+          "REAL UI REGRESSION" in summary, summary[:160])
+    check("one route broken: not reported as an outage", "UNREACHABLE" not in summary,
           summary[:160])
 
     print("\ntest_vision_verify: %d passed, %d failed" % (PASS, FAIL))
