@@ -1,0 +1,14 @@
+{
+  "criterion": "E7",
+  "tier": "machine",
+  "statement": "PWA: vite-plugin-pwa (or an approved exception), **no HTML ever cached**, update prompt + `visibilitychange`, **all 33 assets from `ICONS.md`** generated from `icon-1024.png` and actually referenced, iOS install sheet, Windows shortcuts, SW test suite incl. version-bump.",
+  "verdict": "PASS",
+  "note": "icons + SW privacy green",
+  "evidence": [
+    "RESULT: ALL PASS",
+    "[PASS] 15 precache entries, 0 page markup, entry /static/dist/assets/app-Bo9zt5Qb.js; push handler present; skipWaiting guarded"
+  ],
+  "sha": "59f8a92f0c1f716e42dd3b8629c79811feaab348",
+  "round": 2,
+  "judged_at": "2026-11-19T18:53:16+00:00"
+}
