@@ -158,13 +158,14 @@ that catch people out first:
   [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
   removed at the maintainer's request — do not add one back **for prod**. The
   approval gate is what keeps that promise while removing the 1am manual steps.
-- **Deploy (oclab VPS)** — **automatic, and only there**:
-  `cd-oclab.yml` deploys `srm-d1.200871.xyz` after a green **Build & Push** on
-  `main`. It never builds, it pulls the published `:<VERSION>` image, and it
-  runs the same `deploy_gated.sh`, so a bad deploy still rolls itself back. The
-  key it uses exists only on the VPS and can run two verbs (`status`,
-  `deploy <version>`). Scope is deliberate: automating the second deployment
-  must not quietly become automating prod.
+- **Deploy (oclab VPS)** — **automatic, and it deploys `srm.200871.xyz`**:
+  `cd-oclab.yml` runs after a green **Build & Push** on `main`. It never builds,
+  it pulls the published `:<VERSION>` image, and it runs the same
+  `deploy_gated.sh`, so a bad deploy still rolls itself back. The key it uses
+  exists only on the VPS and can run two verbs (`status`, `deploy <version>`).
+  `srm-d1.200871.xyz` is retired — it never had a DNS record, and every health
+  check pointed at it, which is why deploys reported failure while prod was
+  healthy. There is now one public host and this workflow owns it.
 
 ## Portal rate limits
 

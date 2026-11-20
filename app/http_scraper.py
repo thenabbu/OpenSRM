@@ -157,12 +157,12 @@ def _req(opener, url, headers, data=None, timeout=25):
     return resp.url, body
 
 
-# Interaction counters the portal's bot check accepts. They are also the
-# value cptoken must agree with: measure on a real login (2026-11-19, headless
-# Chromium driving the live page, captured over CDP) saw cptoken decode to
-# `elapsed + delimiter + <mouseClicks + keystrokeCount>`. Keep the pair in
-# sync via _telemetry_interactions() — a mismatch is one of the tells that
-# made LoginServlet answer "Invalid credentials" for a valid password.
+# Interaction counters. NOTE: measured 2026-11-20 — these magnitudes are NOT
+# what the portal checks. With a valid account, the OLD fabricated values
+# (5 clicks / 32 moves / 10 keys / 8500 ms) and a cptoken interaction total of
+# 3 both logged in fine once secureToken was present. They are kept only
+# because they mirror what a real browser reports, which is the safer default
+# for a bot-defended form. Do not cite them as the fix.
 _TEL_CLICKS = 4
 _TEL_MOVES = 7
 _TEL_KEYS = 22
@@ -175,18 +175,18 @@ def _telemetry_interactions():
 
 
 def _telemetry_b64(t0):
-    """Browser-shaped telemetry; the exact shape a real login sends.
+    """Browser-shaped telemetry, mirroring what a real login sends.
 
-    Measured against the live portal (2026-11-19): a genuine browser submit
-    that SUCCEEDED carried these keys and these magnitudes —
+    Shape captured from a genuine browser submit that SUCCEEDED (2026-11-19):
       currentDomain "sp.srmist.edu.in", platform "Linux x86_64",
       timezoneOffset 0, 1366x900, hardwareConcurrency 2, deviceMemory 8,
       mouseClicks 4, mouseMovements 7, keystrokeCount 22, typingSpeedMs 6108,
       canvasHash 563dae46, timeOnPageMs == submitTime - startTime.
-    The earlier fabricated blob (1920x1080 / Win32 / 5 clicks / 32 moves /
-    10 keys / 8500 ms / negative canvasHash) got the same credentials
-    rejected, and made fast requests look like a rate-limit. Do not "tidy"
-    these numbers: they are the difference between a login and no login.
+
+    This shape is NOT the thing that unblocked login. The load-bearing field is
+    `secureToken` (see _prepare); the bot check accepts these counters as they
+    are and also accepted the old fabricated ones. Keep the blob realistic
+    because it is free, not because it is load-bearing.
     """
     now_ms = int(time.time() * 1000)
     on_page = min(10000, max(1200, int((time.time() - t0) * 1000)))

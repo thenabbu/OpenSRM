@@ -67,7 +67,7 @@ Two host facts this script encodes, both learned the hard way:
 
 ## Deploy (automatic, oclab only)
 
-The second deployment lives on the Oracle VPS at `srm-d1.200871.xyz`. It deploys
+The second deployment lives on the Oracle VPS at `srm.200871.xyz`. It deploys
 itself. **The lab prod does not.** The "no watcher" rule above still holds for
 `srm.200871.xyz`, and the key that deploys the VPS does not exist on the lab.
 

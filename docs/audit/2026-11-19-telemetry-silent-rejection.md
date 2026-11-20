@@ -15,9 +15,36 @@ went stale; the newest successful sync was 2026-11-17T19:20Z.
 
 ## Root cause
 
-`LoginServlet` cross-checks the `telemetryPayload` we POST against the request
-and discards anything that does not look like a real browser session.
-`_telemetry_b64()` fabricated an implausible one:
+**`secureToken` was missing from the login POST.** The login page ships it as a
+hidden input, minted per request and bound to that request's `fpNonce` and the
+captcha's own `ts`. A browser submits it. We never did. Without it the portal
+cannot validate the captcha, and it answers `Invalid credentials` — the same
+string it uses for a wrong password, which is why this read as a credentials
+problem.
+
+Measured 2026-11-20 with a real account, one variable at a time:
+
+| request | result |
+|---|---|
+| real body **with** `secureToken` | `HRDSystem.jsp` — accepted |
+| identical body **without** `secureToken` | `Invalid credentials` — rejected |
+
+Everything else I first blamed was noise. With `secureToken` present the portal
+accepted the OLD fabricated counters (5 clicks / 32 moves / 10 keys / 8500 ms)
+**and** a `cptoken` interaction total of `3`. The telemetry shape table below is
+therefore a record of what a real browser sends, **not** the reason login broke.
+
+## What was NOT the cause (each tested and refuted)
+
+| theory | verdict |
+|---|---|
+| `currentDomain: "sp.srmist.edu.in"` is deny-listed | false — the accepted payload contains it |
+| telemetry counter magnitudes | false — old fabricated values are accepted |
+| `cptoken` interaction total | false — `3` is accepted |
+| datacenter IP / the oclab move | false — the old fat blob failed from the homelab too |
+| ddddocr reading the captcha wrong | false — it read every captcha correctly, including the accepted login |
+| headless browser detection | false — headless works; an earlier attempt only *looked* broken because `fill()` fires no keystrokes |
+
 
 | field | fabricated (rejected) | real browser (accepted) |
 |---|---|---|
@@ -45,14 +72,20 @@ portal answered with `HRDSystem.jsp`. Replaying that same request over plain
 `urllib`, no browser at all, also returned `HRDSystem.jsp`. The browser
 contributes nothing except the telemetry its own JS would compute.
 
-## Correction to the first diagnosis
+## How this was got wrong, twice
 
-The first fix removed `currentDomain` entirely, on the theory that the literal
-`"sp.srmist.edu.in"` was deny-listed. That theory came from a bisect that
-varied one key while the rest of the blob stayed implausible. Corrected: the
-real, accepted payload **contains** `currentDomain`; the rejection was the shape
-and internal consistency of the whole blob, not that one key. That change
-shipped as v2.12.2 and is superseded here.
+**v2.12.2** removed `currentDomain` entirely, on the theory that the literal
+`"sp.srmist.edu.in"` was deny-listed. Corrected: the accepted payload contains
+it. That bisect varied one key while the rest of the blob stayed implausible.
+
+**v2.12.3** shipped the browser-shaped telemetry blob *and* `secureToken` in the
+same commit, so the win was credited to the blob. It was `secureToken`. The
+actual isolation — same body, `secureToken` removed — happened 2026-11-20.
+
+The lesson is the same both times: **"Invalid credentials" is a generic
+rejection, and a bisect that moves one key inside an otherwise-wrong request
+attributes the fault to whichever key happened to tip the outcome.** The only
+valid baseline is a request that is known to be ACCEPTED.
 
 The bisect table below is kept as the record of how the wrong conclusion was
 reached — it is evidence about a *different* question (which payloads get
