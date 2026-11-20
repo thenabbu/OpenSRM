@@ -1,4 +1,4 @@
-# Automatic deployment to the oclab box (the Oracle VPS, srm-d1.200871.xyz).
+# Automatic deployment to the oclab box (the Oracle VPS, srm.200871.xyz).
 #
 # SCOPE, and it matters: this deploys the SECOND deployment ONLY. Lab prod
 # (srm.200871.xyz) stays gated behind deploy.yml and the `production`
@@ -50,10 +50,10 @@ jobs:
     timeout-minutes: 25
     environment:
       name: oclab
-      url: https://srm-d1.200871.xyz
+      url: https://srm.200871.xyz
     env:
-      HEALTH_URL: https://srm-d1.200871.xyz/healthz
-      LOGIN_URL: https://srm-d1.200871.xyz/login
+      HEALTH_URL: https://srm.200871.xyz/healthz
+      LOGIN_URL: https://srm.200871.xyz/login
     steps:
       - name: Check the deploy target is provisioned
         env:
