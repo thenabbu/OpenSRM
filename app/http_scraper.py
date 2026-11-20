@@ -157,16 +157,49 @@ def _req(opener, url, headers, data=None, timeout=25):
     return resp.url, body
 
 
+# Interaction counters. NOTE: measured 2026-11-20 — these magnitudes are NOT
+# what the portal checks. With a valid account, the OLD fabricated values
+# (5 clicks / 32 moves / 10 keys / 8500 ms) and a cptoken interaction total of
+# 3 both logged in fine once secureToken was present. They are kept only
+# because they mirror what a real browser reports, which is the safer default
+# for a bot-defended form. Do not cite them as the fix.
+_TEL_CLICKS = 4
+_TEL_MOVES = 7
+_TEL_KEYS = 22
+_TEL_TYPING_MS = 6108
+_TEL_CANVAS = "563dae46"
+
+
+def _telemetry_interactions():
+    return _TEL_CLICKS + _TEL_KEYS
+
+
 def _telemetry_b64(t0):
+    """Browser-shaped telemetry, mirroring what a real login sends.
+
+    Shape captured from a genuine browser submit that SUCCEEDED (2026-11-19):
+      currentDomain "sp.srmist.edu.in", platform "Linux x86_64",
+      timezoneOffset 0, 1366x900, hardwareConcurrency 2, deviceMemory 8,
+      mouseClicks 4, mouseMovements 7, keystrokeCount 22, typingSpeedMs 6108,
+      canvasHash 563dae46, timeOnPageMs == submitTime - startTime.
+
+    This shape is NOT the thing that unblocked login. The load-bearing field is
+    `secureToken` (see _prepare); the bot check accepts these counters as they
+    are and also accepted the old fabricated ones. Keep the blob realistic
+    because it is free, not because it is load-bearing.
+    """
+    now_ms = int(time.time() * 1000)
+    on_page = min(10000, max(1200, int((time.time() - t0) * 1000)))
     return base64.b64encode(json.dumps({
-        "startTime": int(time.time() * 1000 - 10000), "currentDomain": PORTAL_HOST,
-        "timezoneOffset": -330, "screenWidth": 1920, "screenHeight": 1080,
-        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Win32",
-        "userAgent": UA, "language": "en-US", "hardwareConcurrency": 8,
+        "startTime": now_ms - on_page, "currentDomain": PORTAL_HOST,
+        "timezoneOffset": 0, "screenWidth": 1366, "screenHeight": 900,
+        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Linux x86_64",
+        "userAgent": UA, "language": "en-US", "hardwareConcurrency": 2,
         "deviceMemory": 8, "touchSupport": False, "webdriver": False,
-        "mouseClicks": 5, "mouseMovements": 32, "keystrokeCount": 10,
-        "typingSpeedMs": 8500, "canvasHash": "-27fdeb33",
-        "submitTime": int(time.time() * 1000), "timeOnPageMs": 10000,
+        "mouseClicks": _TEL_CLICKS, "mouseMovements": _TEL_MOVES,
+        "keystrokeCount": _TEL_KEYS, "typingSpeedMs": _TEL_TYPING_MS,
+        "canvasHash": _TEL_CANVAS,
+        "submitTime": now_ms, "timeOnPageMs": on_page,
     }).encode()).decode()
 
 
@@ -251,8 +284,15 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     hp = re.search(r'name=\"(ph_[^\"]+)\"', html)
     if not hp:
         raise HttpScraperError("honeypot field missing")
-    img = re.search(r'<img[^>]*id=\"secure_captcha\"[^>]*>', html)
-    src = re.search(r'data-src=\"([^\"]+)\"', img.group(0)) if img else None
+    img = re.search(r'<img[^>]*id="secure_captcha"[^>]*>', html)
+    src = re.search(r'data-src="([^"]+)"', img.group(0)) if img else None
+    # secureToken: a hidden input the page ships on load, bound to this
+    # request's fpNonce + the captcha's own ts. Nothing client-side computes
+    # it, so the only correct move is to forward it verbatim (see
+    # docs/audit/2026-11-19-securetoken.md). Empty is tolerated by the parse
+    # path so a page without it degrades to the old behaviour.
+    sec = re.search(r'<input[^>]*name="secureToken"[^>]*value="([^"]*)"', html) \
+        or re.search(r'<input[^>]*value="([^"]*)"[^>]*name="secureToken"', html)
     if not all([nonce, dfield, cfield, rdelim, src]):
         log.warning("login page missing tokens nonce=%s dfield=%s cfield=%s",
                     bool(nonce), bool(dfield), bool(cfield))
@@ -290,7 +330,8 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     # attempt in this scope; _post_login decides whether it was CORRECT.
     captcha_dataset.offer(img_bytes, ocr)
     return {"t0": t0, "hp": hp.group(1), "dfield": dfield, "cfield": cfield,
-            "rdelim": rdelim, "ocr": ocr,
+            "rdelim": rdelim, "ocr": ocr, "page_len": len(html),
+            "secure": sec.group(1) if sec else "",
             # kept so a PREFLIGHT ctx (solved outside the login scope) can be
             # restaged by _login if the portal rejects it. ~1.2 KB, 150s TTL.
             "img_bytes": img_bytes}
@@ -316,9 +357,16 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     # POST login
     dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
     elapsed = str(max(5, int(time.time() - ctx["t0"])))
-    cptoken = base64.b64encode(f"{elapsed}{ctx['rdelim']}3".encode()).decode()
+    # cptoken's third part must be the same interaction total the telemetry
+    # claims (measured: real logins carry clicks+keystrokes here). Sending a
+    # hardcoded 3 against fabricated counters is a mismatch the portal reads.
+    cptoken = base64.b64encode(
+        f"{elapsed}{ctx['rdelim']}{_telemetry_interactions()}".encode()).decode()
     fields = {ctx["hp"]: "", "username": netid, "password": password,
               "captcha": ctx["ocr"], "fpPayload": "", "fpToken": "",
+              # Server-minted on page load and bound to this attempt's fpNonce
+              # and the captcha ts; a real browser posts it and we did not.
+              "secureToken": ctx.get("secure", ""),
               "telemetryPayload": _telemetry_b64(ctx["t0"]),
               ctx["dfield"]: dtoken, ctx["cfield"]: cptoken}
     post_url = f"{base}{BASE_PATH}/LoginServlet"
@@ -360,9 +408,15 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
-    # Silent rejection: login page again, no error text → portal rate-limiting
+    # Silent rejection: login page again, no error text. Record whether the
+    # body is the UNTOUCHED login page (same byte length as the page this ctx
+    # was prepared from): that means LoginServlet discarded the request as a
+    # bot instead of evaluating the credentials, which is a payload problem,
+    # not the portal rate-limiting us as the message claims.
+    same_page = bool(ctx.get("page_len")) and len(rhtml) == ctx["page_len"]
     log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text) "
-                "portal_alert=%r bytes=%d", attempt, alert, len(rhtml))
+                "portal_alert=%r bytes=%d untouched_login_page=%s",
+                attempt, alert, len(rhtml), same_page)
     helpers["portal_fail_once"]()
     return "fail", sync_error("portal_cooldown",
                               "SRM portal rejected the login without an error (likely "
