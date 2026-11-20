@@ -2,6 +2,46 @@
 
 Generated from git history by scripts/release_notes.py. Every GitHub Release body is the same rendering.
 
+## v2.12.4
+
+### What changed
+
+- **portal**: name the real cause — secureToken, not the telemetry shape
+
+
+## v2.12.3
+
+### What changed
+
+- **portal**: send telemetry the portal accepts, not a fabricated one
+
+
+## v2.12.2
+
+### What changed
+
+- **portal**: stop the telemetry key that voids every login
+
+### Internal
+
+- **ci**: let the release bump job push its branch
+- publish both architectures and deploy the oclab VPS automatically
+- **ci**: verify the live edge from the box, not from the runner
+
+
+## v2.12.1
+
+### What changed
+
+- **build**: name published images by version, not by commit sha
+- **captcha**: prove the dataset path is inside its folder for CodeQL
+
+### Internal
+
+- **release**: bump the trio automatically, never push main
+- stop the day-card check depending on the wall clock
+
+
 ## v2.12.0
 
 ### What changed
