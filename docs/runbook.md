@@ -39,15 +39,16 @@ itself — the CSS is pre-compiled on the dev side and committed
 (`app/static/app.css`, CI re-builds it and fails if stale), so the runtime
 image carries no node/npm and no bundler.
 
-Deploy is **manual** — no watcher exists, by maintainer decision
-(CONTRIBUTING.md "Deploy").
+There is **one** deploy path. `cd-oclab.yml` deploys the oclab VPS, which serves
+production at `srm.200871.xyz`, after a green **Build & Push** on `main`. Nothing
+in this repository deploys the lab. See [Deploy
+(automatic)](#deploy-automatic) and [Roll back to the lab](#roll-back-to-the-lab).
 
-## Deploy (gated, scripted)
+## The deploy script
 
-`scripts/deploy_gated.sh <tag-or-digest>` automates the steps *after* the
-decision, not the decision. The "no watcher" rule stands: nothing fires on its
-own, and the `production` GitHub Environment requires an approval before the
-workflow runs at all.
+`scripts/deploy_gated.sh <tag-or-digest>` does the mechanical part of a deploy,
+on the host that runs it. The automatic workflow runs it on the VPS. You can run
+it on the lab by hand.
 
 What it does, in order: snapshot the DB (verified — a snapshot with no users or
 a failed integrity check aborts the deploy), pull the target **before** stopping
@@ -65,11 +66,11 @@ Two host facts this script encodes, both learned the hard way:
 - the image reverts on rollback but the **schema does not** — which is exactly
   why the snapshot comes first.
 
-## Deploy (automatic, oclab only)
+## Deploy (automatic)
 
-The second deployment lives on the Oracle VPS at `srm.200871.xyz`. It deploys
-itself. **The lab prod does not.** The "no watcher" rule above still holds for
-`srm.200871.xyz`, and the key that deploys the VPS does not exist on the lab.
+The deployment lives on the Oracle VPS and serves production at
+`srm.200871.xyz`. It deploys itself, and it is the only deployment the repository
+runs.
 
 How it runs:
 
@@ -80,15 +81,25 @@ How it runs:
    job stops. This makes a re-run safe.
 4. Otherwise the job calls `deploy <version>` on the box over SSH.
 5. The box fetches `scripts/deploy_gated.sh` **from the release tag**, then runs
-   it. The deploy is therefore the same script the lab uses: snapshot, pull,
-   pin, `compose up -d`, verify, auto-rollback.
+   it: snapshot, pull, pin, `compose up -d`, verify, auto-rollback.
 6. The runner then confirms two more things. The live edge is checked **on the
    box** with the wrapper's `verify` verb: `/healthz` is 200, `/login` is 200,
-   and HSTS is present (proof the app still trusts the edge secret). The runner
-   checks the image identity through `status`: the deployed tag and the commit
-   the running image was built from.
+   and HSTS is present (proof the app still trusts the edge secret).
    Cloudflare challenges GitHub's runner egress, so a runner-side `curl` gets
    403 even when the site is healthy. That is why the edge check runs on the box.
+
+The last step checks the identity of what runs, and what it can check depends on
+whether this run deployed:
+
+- **After a deploy**, the image must be the tag we asked for, and its
+  `org.opencontainers.image.revision` label must equal the commit this run
+  checked out. That commit is what published the tag, so a mismatch is a real
+  fault and fails the run.
+- **After a skip**, the image must still be the tag we asked for. The revision
+  is printed and not compared. A tag is published once, from the commit that
+  moved `VERSION`, so a later commit cannot change that image. Comparing the two
+  failed every correct skip (run 44186834763: tag 2.12.1 built from `274efc6`,
+  run at `f0dbac4`).
 
 A failed deploy does not leave a broken site. `deploy_gated.sh` re-pins the
 previous tag and verifies it before it exits non-zero.
@@ -105,9 +116,10 @@ printf 'restrict,command="/usr/local/bin/opensrm-deploy" %s\n' "$(cat /tmp/gha.p
 ```
 
 `/usr/local/bin/opensrm-deploy` is the only program that key may run. It
-accepts two verbs: `status` (read the deployed tag and image commit) and
-`deploy <x.y.z>`. Any other request is refused before it reaches a shell. This
-matters because the box's `docker` group is effectively root.
+accepts three verbs: `status` (read the deployed tag and image commit), `verify`
+(check the live edge from the box) and `deploy <x.y.z>`. Any other request is
+refused before it reaches a shell. This matters because the box's `docker` group
+is effectively root.
 
 In the repository:
 
@@ -127,6 +139,30 @@ Same path, without waiting for a push:
 ```bash
 gh workflow run cd-oclab.yml -f version=2.13.0
 ```
+
+## Roll back to the lab
+
+The lab no longer serves production. Its container is stopped with
+`restart=no`, and its volume is kept for rollback. Move the hostname back first.
+There is no workflow for it, no `production` environment and no
+`LAB_DEPLOY_SSH` secret. Do this only when the lab itself needs a different
+version.
+
+The lab is behind NAT, so nothing dials in. Run the script on the host, from a
+checkout on the unit you want:
+
+```bash
+ssh lab
+cd /opt/data/opensrm-repo && git fetch origin --prune && git switch --detach <tag>
+DEPLOY_DRY_RUN=1 bash scripts/deploy_gated.sh <tag>   # rehearse: changes nothing
+bash scripts/deploy_gated.sh <tag>                    # snapshot, pull, pin, verify
+```
+
+Then check the lab's own edge by hand: `GET https://srm.200871.xyz/healthz` must
+be 200, and `GET /login` must be 200 with HSTS. `scripts/post_deploy.sh` is the
+lab-only helper for the rest of it: it purges the statics that changed from the
+Cloudflare zone and makes sure the served bytes match `origin/main`. It knows
+the lab's paths and zone, so it does not run anywhere else.
 
 ## Deploy (by hand, for reference)
 

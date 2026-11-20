@@ -62,8 +62,9 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    only, and only if the tests are green there — plus `:<sha>` on every push.
    Each build publishes **`linux/amd64` and `linux/arm64`** as one manifest
    list, built on a native runner per architecture, so the arm64 VPS can pull
-   the same tag the lab does. Deployment of lab prod stays manual (see
-   [docs/runbook.md](docs/runbook.md)); the oclab VPS deploys itself. Merges
+   the same tag the lab does. Deploy is one path: the oclab VPS deploys itself
+   after a green build (see [docs/runbook.md](docs/runbook.md)). The lab deploy
+   is retired from CI. Merges
    use merge commits with a `merge: <summary>` subject — never squash — so the
    atomic commits stay intact.
 
@@ -150,22 +151,21 @@ that catch people out first:
   dependency or a fixable HIGH/CRITICAL CVE fails the run.
   [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
   `.trivyignore`-style escape hatch.
-- **Deploy (lab prod)** — **gated, never automatic**: there is still no watcher
-  for `srm.200871.xyz`. Nothing deploys until a human approves the `production`
-  environment on a `workflow_dispatch` run, and `scripts/deploy_gated.sh` then
-  does the mechanical part (verified snapshot, digest pin, health + render
-  checks, auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
-  [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
-  removed at the maintainer's request — do not add one back **for prod**. The
-  approval gate is what keeps that promise while removing the 1am manual steps.
-- **Deploy (oclab VPS)** — **automatic, and it deploys `srm.200871.xyz`**:
-  `cd-oclab.yml` runs after a green **Build & Push** on `main`. It never builds,
-  it pulls the published `:<VERSION>` image, and it runs the same
-  `deploy_gated.sh`, so a bad deploy still rolls itself back. The key it uses
-  exists only on the VPS and can run two verbs (`status`, `deploy <version>`).
-  `srm-d1.200871.xyz` is retired — it never had a DNS record, and every health
-  check pointed at it, which is why deploys reported failure while prod was
-  healthy. There is now one public host and this workflow owns it.
+- **Deploy (oclab VPS, the only path)** — **automatic**:
+  `cd-oclab.yml` deploys `srm.200871.xyz` (production) after a green **Build & Push** on
+  `main`. It never builds, it pulls the published `:<VERSION>` image, and it
+  runs `scripts/deploy_gated.sh`, so a bad deploy still rolls itself back. The
+  key it uses exists only on the VPS and can run three verbs (`status`,
+  `verify`, `deploy <version>`). After a deploy the job checks the running tag
+  and the image's revision label against the commit it built. After a skip, when
+  the box already ran that tag, it checks the tag only: that image came from an
+  earlier commit, so the revision cannot match this one.
+- **Deploy (lab prod)** — **retired**: on 2026-11-18 the database, the two keys
+  and the hostname `srm.200871.xyz` moved to the oclab box. The lab container is
+  stopped with `restart=no`, and its volume is kept for rollback only. There is no
+  lab workflow, no `production` environment and no watcher. Do not add one back.
+  To roll back, point the `srm` record at the lab tunnel, start the container, and
+  copy back any rows oclab accepted. See [docs/runbook.md](docs/runbook.md).
 
 ## Portal rate limits
 

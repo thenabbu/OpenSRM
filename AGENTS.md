@@ -115,9 +115,11 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
 - Backfilling old tags/Releases is `scripts/backfill_releases.sh` (it skips tags that
   already exist); versions that exist as tags but not as Releases need the same treatment
   or `CHANGELOG.md` silently misses them.
-- Deploy is manual and separate from merge approval. `scripts/post_deploy.sh` runs the
-  whole verification chain (prod SHA == main, static purge, authenticated render).
-  `scripts/pr_preflight.sh` is its pre-merge twin.
+- Deploy is one path, to the oclab VPS, and it runs itself after a green build.
+  Nothing in CI deploys the lab. `scripts/post_deploy.sh` is the lab-only
+  verifier: prod SHA == main, static purge, authenticated render. It runs by
+  hand after a by-hand lab deploy. `scripts/pr_preflight.sh` is its pre-merge
+  twin.
 
 ## Safety rules (non-negotiable)
 

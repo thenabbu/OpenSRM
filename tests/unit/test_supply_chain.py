@@ -155,7 +155,48 @@ check("no uvx in CI or gates.sh (unpinned resolution)",
       "uvx ruff" not in scans and "uvx ruff" not in rd(".github/workflows/lint.yml")
       and "uvx ruff" not in rd("scripts/gates.sh"))
 
-# ── 4. docs ─────────────────────────────────────────────────────────────────
+# ── 4. the deploy path: exactly one, and its identity check is path-aware ────
+# Run 44186834763 failed a CORRECT skip. The box already ran 2.12.1 (built from
+# 274efc6 by the release merge); the trigger was a later docs merge (f0dbac4)
+# that publishes nothing. The step compared the running revision label against
+# the run's own commit, so every skip after a non-release push failed, and it
+# could never pass: no push after a release can change that image.
+#
+# Both halves are pinned below - a skip must NOT compare the revision, and a
+# real deploy MUST. A "fix" that drops the comparison entirely is the weaker
+# version of this test and fails the second check.
+oclab = rd(".github/workflows/cd-oclab.yml")
+_skip = oclab.find('if [ -n "$ALREADY" ]; then')      # -1 when the guard is gone
+_rev = oclab.find('[ "$REV" = "$WANT_SHA" ]')          # -1 when the compare is gone
+_tag = oclab.find('[ "$DEPLOYED" = "$WANT" ]')
+check("the revision is only compared after a real deploy",
+      _skip != -1 and _rev > _skip,
+      "on the skip path the image predates this commit by design")
+check("the revision is still compared after a real deploy", _rev != -1,
+      "a mismatch after a real deploy must still fail the run")
+check("the deployed tag is asserted on both paths",
+      _tag != -1 and _tag < _skip,
+      "the skip path asserts the tag instead of nothing")
+check("a missing revision label fails the run",
+      '[ -n "$REV" ] || {' in oclab,
+      "an unlabelled image cannot be verified at all")
+check("the identity step prints what it compared",
+      "echo \"compared: deployed=" in oclab)
+# One deploy path. Lab CI deploy was deploy.yml: no secrets ever configured, so
+# it never ran. Pinning the absence stops a second path growing back by habit.
+from pathlib import Path as _P
+_wf = sorted(p.name for p in (R / ".github/workflows").glob("*.yml"))
+check("only one workflow deploys (cd-oclab.yml)",
+      "cd-oclab.yml" in _wf and "deploy.yml" not in _wf, str(_wf))
+# Match the whole name: OCLAB_DEPLOY_SSH contains LAB_DEPLOY_SSH as a substring,
+# and a plain `in` check fails on the workflow that is supposed to keep working.
+import re as _re
+_lab_secret = _re.compile(r"(?<![A-Z_])LAB_DEPLOY_SSH")
+check("no workflow references the retired lab deploy secret",
+      not any(_lab_secret.search(rd(f".github/workflows/{w}")) for w in _wf),
+      "the gated lab workflow is gone; a secret name in a workflow is its ghost")
+
+# ── 5. docs ─────────────────────────────────────────────────────────────────
 scans_doc = rd("docs/SCANS.md")
 for tool in ("gitleaks", "pip-audit", "trivy"):
     check(f"docs/SCANS.md documents {tool}", tool in scans_doc)
