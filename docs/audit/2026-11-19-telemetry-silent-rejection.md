@@ -1,114 +1,123 @@
-# 2026-11-19 — every login silently discarded by the portal
+# 2026-11-19 — every login rejected: the telemetry did not look like a browser
 
 ## Symptom
 
-Login failed for every account on production, with no usable error. The user
-supplied a correct NetID and password, and the captcha solver read the image.
-The app reported:
+Login failed for every account on production. Correct NetID and password, and
+the captcha solver read the image correctly. The portal answered:
 
 ```
-silent_rejection (no HRDSystem, no error text) portal_alert='' bytes=15596
-refresh failed netid=… error=SRM portal rejected the login without an error
+login attempt=1 reject=credentials portal_alert='Invalid credentials'
 ```
 
-That message says "rate-limiting". It was wrong. All 15 accounts were stale:
-the newest successful sync was 2026-11-17T19:20Z, roughly 40 hours earlier.
+That is the same string the portal returns for a wrong password, so the app told
+the user their credentials were wrong — which they were not. All 15 accounts
+went stale; the newest successful sync was 2026-11-17T19:20Z.
 
-## Evidence
+## Root cause
 
-The pod log showed the POST answering with a byte-identical copy of the login
-page:
+`LoginServlet` cross-checks the `telemetryPayload` we POST against the request
+and discards anything that does not look like a real browser session.
+`_telemetry_b64()` fabricated an implausible one:
 
-```
-GET  youLogin.jsp      -> 200 15597B
-GET  SCaptchaServlet   -> 200 1089B   (real PNG, OCR produced 6 characters)
-POST LoginServlet      -> 200 15597B  <-- same size as the page we just fetched
-```
+| field | fabricated (rejected) | real browser (accepted) |
+|---|---|---|
+| `currentDomain` | absent | `sp.srmist.edu.in` |
+| `platform` | `Win32` | `Linux x86_64` |
+| `timezoneOffset` | `-330` | `0` |
+| screen | 1920x1080 | 1366x900 |
+| `hardwareConcurrency` | 8 | 2 |
+| `mouseClicks` / `mouseMovements` | 5 / 32 | 4 / 7 |
+| `keystrokeCount` | 10 | 22 |
+| `typingSpeedMs` | 8500 | 6108 |
+| `canvasHash` | `-27fdeb33` (negative) | `563dae46` |
+| `cptoken` interactions | `3` | clicks + keystrokes (26) |
 
-A plain `urllib` POST of the same field set, from the same host and IP, got a
-proper answer instead: 16324 B with `<h6 class="alert-heading">Alert</h6>` and
-`Invalid credentials`. So the network, the source IP, the URL, the method, the
-headers and the captcha fetch were all fine. One field differed:
-`telemetryPayload`.
+Two tells were confirmed against the live portal:
 
-Bisecting that blob against the live portal, one key at a time, with everything
-else held identical:
+* **`cptoken`'s third part must equal `mouseClicks + keystrokeCount`.** We sent a
+  hardcoded `3` against counters claiming 15 interactions.
+* **The counter magnitudes must be plausible**, and timing must be consistent
+  (`timeOnPageMs == submitTime - startTime`).
+
+Captured evidence: a headless Chromium driving the real page — typing with
+keystroke delay, moving the mouse — produced a `LoginServlet` POST that the
+portal answered with `HRDSystem.jsp`. Replaying that same request over plain
+`urllib`, no browser at all, also returned `HRDSystem.jsp`. The browser
+contributes nothing except the telemetry its own JS would compute.
+
+## Correction to the first diagnosis
+
+The first fix removed `currentDomain` entirely, on the theory that the literal
+`"sp.srmist.edu.in"` was deny-listed. That theory came from a bisect that
+varied one key while the rest of the blob stayed implausible. Corrected: the
+real, accepted payload **contains** `currentDomain`; the rejection was the shape
+and internal consistency of the whole blob, not that one key. That change
+shipped as v2.12.2 and is superseded here.
+
+The bisect table below is kept as the record of how the wrong conclusion was
+reached — it is evidence about a *different* question (which payloads get
+discarded outright versus evaluated) and not about which key is load-bearing:
 
 | telemetryPayload | POST body | portal verdict |
 |---|---|---|
 | the blob `_telemetry_b64` produced | 15597 B, no alert | discarded |
-| empty | 16324 B, `Invalid credentials` | processed |
-| `"x"` | 16324 B, `Invalid credentials` | processed |
-| blob minus `currentDomain` | 16324 B, `Invalid credentials` | processed |
-| `{"currentDomain": "sp.srmist.edu.in"}` | 15597 B, no alert | discarded |
-| `{"currentDomain": "srmist.edu.in"}` | 16324 B, `Invalid credentials` | processed |
-| `{"currentDomain": ""}` | 16324 B, `Invalid credentials` | processed |
-| `{"currentDomain": null}` | 16324 B, `Invalid credentials` | processed |
+| blob minus `currentDomain` | 16324 B, `Invalid credentials` | evaluated, rejected |
+| the browser's real blob | 30091 B, `HRDSystem.jsp` | **accepted** |
 
-`canvasHash`, `webdriver`, `startTime`, `userAgent`, `mouseClicks` and the rest
-of the blob were each removed in turn and none of them changed the outcome.
-
-## Root cause
-
-The portal now fingerprints `telemetryPayload`, and the literal value
-`currentDomain: "sp.srmist.edu.in"` is on a deny-list. When it sees that value
-it answers `200 OK` with the unmodified login page, no alert element, and no
-session — instead of evaluating the credentials.
-
-Because a discarded request and a rate-limited request look the same to
-`_post_login` (no `HRDSystem`, no alert text), the classifier read every one of
-these as `portal_cooldown`. That fed `PortalHealth`, which is global: three
-discards armed a 5-minute pause that refused every other account too, and the
-user was told the portal was throttling our server.
-
-Two traps made this expensive:
-
-1. `silent_rejection` claimed "rate-limiting" without checking whether the
-   portal had answered at all.
-2. Nothing recorded that the response was the untouched login page, which is the
-   one fact that separates "the portal judged you" from "the portal ignored
-   you".
+Reading the middle row as "currentDomain is the trap" is exactly the mistake
+this record exists to prevent: *evaluated* is not *accepted*.
 
 ## Fix
 
 `app/http_scraper.py`:
 
-* `_telemetry_b64()` no longer emits `currentDomain`. Every other key stays, so
-  the payload is still shaped like a browser session.
-* The `silent_rejection` log line now carries `untouched_login_page=`, computed
-  by comparing the response length against the login page this attempt was
-  prepared from.
+* `_telemetry_b64()` emits the accepted shape, counters held as named constants
+  (`_TEL_CLICKS`, `_TEL_MOVES`, `_TEL_KEYS`, `_TEL_TYPING_MS`, `_TEL_CANVAS`)
+  with self-consistent timing.
+* `_post_login()` builds `cptoken` from `_telemetry_interactions()`, so the
+  interaction total can never drift from the counters again.
+* `_prepare()` captures the page's `secureToken` hidden input; `_post_login()`
+  forwards it — the one field a real browser sends that we never did.
+* `silent_rejection` logs `untouched_login_page=` by comparing the response
+  length against the page this attempt was prepared from.
 
-`tests/unit/test_telemetry_trap.py` fails if the key comes back, and is wired
-into the `unit` job in `tests.yml`.
+`tests/unit/test_telemetry_trap.py` pins the shape, the timing consistency and
+the `cptoken` = clicks + keystrokes invariant. Wired into the `unit` job.
 
 ## Verification
 
-In the container, through the app's own `http_scraper.fetch()` with a
-fabricated NetID:
+Through the app's own `http_scraper.fetch()` against the live portal, real
+account:
 
-| | before | after |
-|---|---|---|
-| log line | `silent_rejection … bytes=15596` | `reject=credentials portal_alert='Invalid credentials'` |
-| typed kind | `portal_cooldown` | `bad_credentials` |
+```
+login attempt=1 step=post final=HRDSystem.jsp hrdsystem=True bytes=30091
+PORTAL_OK
+ELAPSED 7.6s
+OK: True
+```
 
-`bad_credentials` is the correct answer for a NetID that does not exist. The
-pipeline once again sends a request the portal evaluates.
+Courses 23, personal 24, marks 6 parsed. Before this change the same call
+returned `bad_credentials`.
 
 ## Standing rules
 
+* **"Invalid credentials" from this portal does not mean the password is
+  wrong.** It is the generic rejection for a request the bot check disliked.
+  Never tell a user their credentials are wrong off that string alone.
+* **A fabricated fingerprint must be internally consistent.** Anything the page
+  computes from real events — interaction counts, timing, canvas hash — must
+  agree across every field that carries it, `cptoken` included.
+* **Do not "tidy" the telemetry constants.** Their values are the difference
+  between a working login and a 40-hour outage.
+* **A bisect holding the other fields implausible finds the wrong key.** Vary
+  one key from a known-GOOD baseline, not from a known-bad one.
 * **A discarding trap answers `200` with the page we just fetched.** Compare
-  body lengths before believing any diagnosis that blames the portal's mood.
-* **Do not re-add a fabricated field to a bot-defended form.** Every key we
-  invent is a signature the other side can blocklist. Send only what the flow
-  needs.
-* **`silent_rejection` is not a rate limit.** It means the portal said nothing,
-  which needs its own explanation every time.
+  body lengths before blaming the portal's mood.
 
 ## Deliberately not fixed
 
-* `secureToken` and `recaptchaToken` exist on the live form and our POST does
-  not send them. Tested 2026-11-19: sending them empty, and omitting them, both
-  produce a normal processed response. No action until the flow needs them.
-* The captcha-value read still has no independent verification before submit.
-  That is a separate change.
+* The `playwright` fallback is not installed in the production image (no
+  package, no browser binaries), so a broken HTTP path has no safety net. Its
+  own change; the HTTP path works without it.
+* `recaptchaToken` sits inside an HTML comment on the live page, so browsers
+  never submit it. Not sending it is correct.
