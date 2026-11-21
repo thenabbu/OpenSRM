@@ -451,9 +451,7 @@ def panel_data(netid, active_panel="dashboard"):
                          enabled_features())
     # Tools rows come from the panel views themselves: a link renders only
     # when its panel renders (no second read of the cold blob).
-    # the merged copy the Settings panel paints (portal wins, scope fills gaps)
-    tools = _tools_entries(campus, fees, academics, hourwise,
-                           merge_personal(personal_data, _scope_fields))
+    tools = _tools_entries(campus, fees, academics, hourwise)
     return dict(
         # ── panels the API serves (app/blueprints/panels.py) ──
         courses=courses,          # /api/attendance: code, pct, budgets, tints

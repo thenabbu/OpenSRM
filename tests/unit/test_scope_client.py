@@ -257,20 +257,18 @@ def t_tools_entries_follow_the_panel():
     campus_library = {"show": True, "cards": [{"title": "Library", "rows": [{"title": "x"}]}]}
 
     HOURWISE = {"months": [{"label": "Nov 2026"}]}
-    PERSON = {"Student Name": "TEST STUDENT"}
 
     # nothing renders anywhere -> no rows at all, and the route 404s.
-    assert APP._tools_entries(campus_empty, None, None, None, None) == []
+    assert APP._tools_entries(campus_empty, None, None, None) == []
 
-    # fees/academics panels render -> their rows appear, in panel order.
-    got = APP._tools_entries(campus_empty, {"dues": 1}, {"cgpa": None, "courses": []},
-                             HOURWISE, PERSON)
-    assert [r["slug"] for r in got] == ["fees", "academics", "hourwise", "profile"], got
+    # fees/academics/hourwise panels render -> their rows appear, in order.
+    got = APP._tools_entries(campus_empty, {"dues": 1}, {"cgpa": None, "courses": []}, HOURWISE)
+    assert [r["slug"] for r in got] == ["fees", "academics", "hourwise"], got
     assert got[0]["tab"] == "fees" and got[1]["tab"] == "academics", got
     assert all(len(r) == 5 and r["tab"] for r in got), got
 
     # a campus card that renders brings its row (and only that row).
-    got = APP._tools_entries(campus_library, None, None, None, None)
+    got = APP._tools_entries(campus_library, None, None, None)
     assert [r["slug"] for r in got] == ["library"], got
     assert got[-1]["label"] == "Library" and got[-1]["tab"] == "campus", got
 
@@ -527,16 +525,15 @@ def t_tools_rows_carry_a_real_tab():
                                          for t in ("Placement", "Library",
                                                    "Hostel & transport", "Notifications")]}
     rows = A._tools_entries(campus_all, {"dues": 1}, {"cgpa": None, "courses": []},
-                            {"months": [{"label": "Nov 2026"}]}, {"Student Name": "X"})
+                            {"months": [{"label": "Nov 2026"}]})
 
     for r in rows:
         assert set(r) == {"slug", "label", "hint", "op", "tab"}, f"row shape: {r}"
         assert r["tab"] and isinstance(r["tab"], str), f"no tab target: {r}"
 
-    # and the two surfaces that live inside an existing tab are present at all
+    # and the surface that lives inside an existing tab is present at all
     slugs = {r["slug"] for r in rows}
     assert "hourwise" in slugs, "hourwise has no Tools row (no phone route)"
-    assert "profile" in slugs, "profile has no Tools row (no phone route)"
 
     # Each tab slug must name a tab that exists SOMEWHERE in the stack. A row
     # whose panel is not mounted yet is legal — dash.js defuses it to a disabled

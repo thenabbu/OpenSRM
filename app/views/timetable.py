@@ -83,15 +83,14 @@ def _budget_rows(courses):
 
 
 # ── Tools tab (SCOPE-sourced surfaces) ──────────────────────────────
-# One row per surface that has its own panel AND a panel that renders. The
-# gates are the panels themselves (fees/academics/island views are None when
-# empty or off; the campus rows come from campus_view()'s own cards), so a row
-# can never link to a page that hides itself. Nothing qualifying = empty list
-# = no entry, no tab. `op` is carried for the API contract only; the panel is
-# now the authority, so it is no longer a gate.
+# One row per SCOPE-sourced surface, gated on the panel that renders it: the
+# fees/academics/hourwise view models (None/empty when off or empty) and the
+# cards campus_view() itself built. A row therefore cannot link to a page that
+# hides itself, and with nothing qualifying there is no list, no tab, no route
+# (the panel 404s). `op` is carried for the API contract, not as a gate.
 
 
-def _tools_entries(campus, fees, academics, hourwise, personal):
+def _tools_entries(campus, fees, academics, hourwise):
     """Rows for the Tools panel: [{"slug","label","hint","op","tab"}].
 
     Takes the already-built panel view models — no second read of the cold
@@ -111,11 +110,6 @@ def _tools_entries(campus, fees, academics, hourwise, personal):
         rows.append({"slug": "hourwise", "label": "Attendance by hour",
                      "hint": "Every period, joined to your timetable",
                      "op": "getHourwiseAttendance", "tab": "attendance"})
-    # profile fills the Personal details section inside Settings.
-    if personal:
-        rows.append({"slug": "profile", "label": "Personal details",
-                     "hint": "Parents, date of birth, address",
-                     "op": "getStudentPersonalDetails", "tab": "settings"})
     rows.extend(tools_campus_rows((campus or {}).get("cards")))
     return rows
 

@@ -98,7 +98,7 @@ check("every stored op is {data, ts}",
 # page actually gets (a row exists only when its panel does).
 rows = A.panel_data(NETID, "tools")["tools"]
 slugs = sorted(r["slug"] for r in rows)
-check("_tools_entries yields SCOPE rows with data present", len(rows) >= 3, str(slugs))
+check("Tools rows appear for the panels the seeded data renders", len(rows) >= 2, str(slugs))
 check("every Tools row names a real tab",
       all(r.get("tab") in {"academics", "fees", "attendance", "settings", "campus", "tools"}
           for r in rows), str([(r["slug"], r.get("tab")) for r in rows]))
@@ -119,8 +119,7 @@ html = r.get_data(as_text=True)
 # disagree — the broken-link bug). The campus self-hide case is asserted below,
 # where there deliberately is no data.
 PANEL_ROUTES = {"tools": "/tools", "academics": "/academics",
-                "fees": "/fees", "attendance": "/attendance",
-                "settings": "/settings"}   # Tools row: "Personal details"
+                "fees": "/fees", "attendance": "/attendance"}
 PAGES = {}                      # tab -> its route's HTML, reused by the Tools check below
 for tab, route in PANEL_ROUTES.items():
     # ponytail: one GET per tab on top of `/`; fold into a loop over all nine if
@@ -142,7 +141,7 @@ check("campus route 404s when it has no cards",
 # They live on /tools — the Tools panel is the only place that renders them.
 tools_html = PAGES["tools"]
 hrefs = re.findall(r'data-tool-tab="([a-z]+)"', tools_html)
-check("Tools rows carry data-tool-tab targets", len(hrefs) >= 3, str(hrefs))
+check("Tools rows carry data-tool-tab targets", len(hrefs) >= 2, str(hrefs))
 missing = [h for h in hrefs if h not in PAGES or f'id="tab-{h}"' not in PAGES[h]]
 check("every Tools target panel exists in the DOM", not missing, str(missing))
 
