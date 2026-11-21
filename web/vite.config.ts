@@ -20,6 +20,15 @@ export default defineConfig({
     // precache list was always empty. Emit a plain-named copy instead.
     manifest: 'manifest.json',
     target: 'es2022',
+    // Ours, not esbuild's default: build.target is a JS target and Vite mirrors
+    // it onto the CSS pipeline, where es2022 means chrome94/safari15 — neither
+    // supports oklch(), so lightningcss downlevels every token to lab() + hex.
+    // That is a lossy round-trip of a colour we authored exactly (DESIGN §2.2),
+    // and it only became visible once the theme moved out of the inline <style>
+    // in partials/theme.html (which nothing ever processed) into this bundle.
+    // chrome111 is the first release with oklch; it is the same baseline the
+    // app already required, now stated instead of silently degraded.
+    cssTarget: 'chrome111',
     cssCodeSplit: true,
     rollupOptions: { input: { app: 'src/main.ts' } },
   },
