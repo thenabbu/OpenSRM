@@ -11,7 +11,7 @@ Run:  python tests/e2e/test_lowtier_dut.py   (needs seeded server on DUT_BASE).
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-lowtier")
-from _seed import seed_rich, mint_token, require_own_server
+from _seed import seed_rich, mint_token, require_own_server, bundle_css
 
 seed_rich()  # rich: the dashboard must have real height to scroll (no notices feed pads it any more)
 TOK = mint_token()
@@ -23,12 +23,7 @@ def check(name, ok, detail=""):
     results.append((name, ok))
     print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
-here = os.path.dirname(os.path.abspath(__file__))
-_assets = os.path.join(here, "..", "..", "app", "static", "dist", "assets")
-css = open(sorted(
-    os.path.join(_assets, f) for f in os.listdir(_assets)
-    if f.startswith("app-") and f.endswith(".css")
-)[0]).read()
+css = bundle_css()
 check("the bundle carries the low-tier/offscreen avatar pause rule",
       'data-perf=low] .mo-root' in css and          # minifier strips quotes
       ".mo-root.is-offscreen" in css and

@@ -11,7 +11,7 @@ Run:  python tests/e2e/test_pull_dut.py   (needs seeded server on DUT_BASE).
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-pull")
-from _seed import seed, mint_token, require_own_server
+from _seed import seed, mint_token, require_own_server, bundle_css
 
 seed(with_payload=False)
 TOK = mint_token()
@@ -23,8 +23,7 @@ def check(name, ok, detail=""):
     results.append((name, ok))
     print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
-here = os.path.dirname(os.path.abspath(__file__))
-css = open(os.path.join(here, "..", "..", "app", "static", "app.css")).read()
+css = bundle_css()
 check("overscroll containment compiled (phase-5 pairing)",
       "overscroll-behavior-y:contain" in css)
 
