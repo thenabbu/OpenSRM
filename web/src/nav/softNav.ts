@@ -131,13 +131,13 @@ export function syncChrome(live: Document, next: Document, url: URL): void {
     const on = a.dataset.tab === tab;
     // Which class to toggle is decided by the NAV the link lives in, not by a
     // container class: the desktop navbar's links are `.navbar-center a` (server
-    // emits `tab-active`), the mobile dock's are `.dock a` (`dock-active`), and
-    // the mobile navbar's gear is neither — it is the one link the swap must
-    // leave alone, whichever tab is active.
-    const inDock = a.closest('.dock') !== null;
+    // emits `tab-active`), everything else draws the dock's bar (`dock-active`) —
+    // including the mobile navbar's settings gear, which is neither a dock link
+    // nor a navbar-center one but is the ONLY way to reach /settings on a phone.
+    // Toggling is what the server does per route: on for the active tab, removed
+    // otherwise, so the gear carries its state only while /settings is shown.
     const inNavbarCenter = a.closest('.navbar-center') !== null;
-    if (!inDock && !inNavbarCenter) continue;
-    a.classList.toggle(inDock ? 'dock-active' : 'tab-active', on);
+    a.classList.toggle(inNavbarCenter ? 'tab-active' : 'dock-active', on);
     if (on) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
