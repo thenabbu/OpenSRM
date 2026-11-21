@@ -300,12 +300,18 @@ registerRoute(
     // neither the strategy nor its offline ladder ever runs and the navigation
     // dies with net::ERR_FAILED. A rejected or absent preload therefore falls
     // through to the strategy exactly as before.
-    let network;
-    if (params.event && params.event.preloadResponse) {
-      network = params.event.preloadResponse.catch(() => null);
-    } else {
-      network = html.handle(params).catch(() => null);
-    }
+    // A preload that resolves FALSY must fall through to the strategy, not be
+    // treated as "no answer": Firefox implements no navigation preload, and a
+    // preload promise that resolves `undefined` made the handler skip the
+    // network entirely and go straight to the ladder — measured as /tools and
+    // /settings returning the DASHBOARD shell on firefox while the server was
+    // serving them fine. It is not awaited here: awaiting it is the unbounded
+    // hang this route exists to avoid (see SHELL_RACE_MS).
+    const preload = params.event && params.event.preloadResponse;
+    const viaStrategy = () => html.handle(params).catch(() => null);
+    const network = preload
+      ? preload.then((r) => (r || viaStrategy())).catch(viaStrategy)
+      : viaStrategy();
 
     // No shell for THIS panel on this device: nothing to race with, so wait for
     // the network and let the strategy own the failure path. X-Osrm-Path says
