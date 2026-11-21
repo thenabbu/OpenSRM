@@ -225,11 +225,17 @@ function shellPaths(url) {
   return ['/shell/' + panel, '/shell/dashboard', '/shell/'];
 }
 
-/** The cached shell for this URL, or null when this device has none yet. */
-async function cachedShell(url) {
+/** The shell this URL's panel owns, or null. `exact` refuses the ladder: a
+ *  fallback shell carries ANOTHER panel's markup (the /shell route swaps a gated
+ *  panel for the dashboard and says so in X-Shell-Panel), which is fine as an
+ *  offline last resort and wrong as a first paint — a tap on /tools would show
+ *  the dashboard. */
+async function cachedShell(url, exact = false) {
+  const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
   for (const path of shellPaths(url)) {
     const hit = await caches.match(path);
-    if (hit) return hit;
+    if (!hit) continue;
+    if (!exact || hit.headers.get('X-Shell-Panel') === panel) return hit;
   }
   return null;
 }
@@ -272,7 +278,10 @@ registerRoute(
   // through here would hand it a shell instead of the page it asked for.
   ({ request }) => request.mode === 'navigate',
   async (params) => {
-    const shell = await cachedShell(new URL(params.request.url));
+    // Exact panel only, and only for the RACE: a shell that belongs to another
+    // route is not a valid first paint. The offline ladder below still takes any
+    // shell (a wrong-panel shell beats an error page when there is no network).
+    const shell = await cachedShell(new URL(params.request.url), true);
 
     // Navigation preload starts the request while the worker boots, so a
     // controlled page does not pay worker-startup latency. With the server DEAD
