@@ -96,7 +96,11 @@ try:
         pg.goto(BASE + "/", wait_until="networkidle")
         pg.click("#tab-timetable-tab")
         pg.wait_for_selector("#tab-timetable", state="visible")
-        pg.wait_for_timeout(400)
+        # The panel arriving is not the editor being live: the route swap lands
+        # first and the island hydrates a beat later (soft nav, nav/softNav.ts);
+        # binding happens on that mount. Wait for the binding marker itself —
+        # a sleep here measured the machine, not the behaviour.
+        pg.wait_for_function("() => !!window.__osrmTimetableEditorBound", timeout=15000)
 
         # ── tt-open-editor ────────────────────────────────────────────────
         # The marker alone proves the MODULE is in the bundle, not that it BOUND.

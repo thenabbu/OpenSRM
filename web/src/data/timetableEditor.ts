@@ -395,6 +395,13 @@ export function bindTimetableEditor(doc: Document = document): boolean {
   const grid = doc.getElementById(NODES.grid);
   const palette = doc.getElementById(NODES.palette);
   if (!editBtn || !editor || !grid || !palette) return false;
+  // Bound per ELEMENT, not per page. A soft navigation (nav/softNav.ts) swaps the
+  // timetable panel in and the island re-renders it, so the nodes this would bind
+  // are new ones — while the previous call's `__osrmTimetableEditorBound` marker
+  // still says "bound". The dataset flag is the truth: it travels with the node,
+  // so a re-render rebinds and a repeated call on the same markup does nothing.
+  if (editBtn.dataset.ttBound) return true;
+  editBtn.dataset.ttBound = '1';
 
   const q = (id: string) => doc.getElementById(id);
   const hiddenIds = [NODES.saveBtn, NODES.cancelBtn, NODES.addBtn] as const;

@@ -97,13 +97,14 @@ html[data-theme="openSRM"] {
    (the data-theme block above paints the tokens this matches). */
 html { background: oklch(20% 0 0); }
 </style>
-<link rel="stylesheet" href="{{ asset('app.css') }}">
-{# P4.1 build output: one CSS + one module entry (both content-hashed by Vite;
-   asset_dist() maps the import name through app/static/dist/.vite/manifest.json).
+{# ONE stylesheet. `web/tailwind.css` is a verbatim mirror of `app/static/src.css`
+   plus `@source ./src`, so the Vite bundle's CSS is a superset of the legacy
+   `app.css` the preact branch used to link as well: every route shipped ~330 KB
+   of CSS to parse (27 KB of it gzipped twice) and the second sheet won every
+   cascade tie by document order. The bundle's copy is the one to keep.
+   P4.1: asset_dist() maps the import name through app/static/dist/.vite/manifest.json.
    NOT deferred: the module must own the sync caption before anything else can
-   write it. W5.4 deleted the legacy dash.js that this ordering used to protect
-   against, but the module still runs in <head> (after parsing, before
-   DOMContentLoaded) so the island mounts first and a refresh's "Syncing…" is
-   preserved by it. #}
+   write it. The module runs in <head> (after parsing, before DOMContentLoaded)
+   so the island mounts first and a refresh's "Syncing…" is preserved by it. #}
 <link rel="stylesheet" href="{{ asset_dist('app.css') }}">
 {% if preact_islands %}<script type="module" src="{{ asset_dist('app') }}"></script>{% endif %}
