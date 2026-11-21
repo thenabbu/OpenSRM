@@ -51,6 +51,9 @@ assert by["21CSS201T"]["title"] == "Computer Organization And Architecture"
 assert by["21CSS201T"]["scored_disp"] == "16.2" and by["21CSS201T"]["max_disp"] == "20"
 assert by["21CSS201T"]["pct"] == 81.0
 assert [s["pct"] for s in v] == [81.0, 67.0, 87.5, 72.0]
+# the rendered percent keeps its one decimal: a JS Number would print the
+# float as "81" and the hydrated card disagreed with the no-JS paint.
+assert [s["pct_disp"] for s in v] == ["81.0", "67.0", "87.5", "72.0"]
 # exactly one accent: unique lowest (67.0) AND below the 75 target
 assert [s["code"] for s in v if s["outlier"]] == ["21MAB206T"], \
     [s["code"] for s in v if s["outlier"]]

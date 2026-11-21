@@ -199,6 +199,9 @@ def presentation(vm):
     Absences card.
     """
     netid = vm["netid"]
+    # The reminder card's server-known state. Imported here, not at module top:
+    # app.routes_push imports the app facade, which imports this module.
+    from ..routes_push import push_ssr_state as _push_ssr_state
     # scope-filled copy of personal (portal values win, scope gaps only); the
     # profile widget's avatar stays the generated blobatar. Read once: the
     # template and the settings island must paint the same keys.
@@ -272,6 +275,9 @@ def presentation(vm):
         # the profile widget's avatar stays the generated blobatar
         personal=personal,
         settings_props=_shell_off(vm, settings_island.block(settings_island.props(personal))),
+        # P6.8: the reminder state the server already knows, so the card is not
+        # stuck on "Loading…" with JS blocked (push.js repaints the same text).
+        push_state=_push_ssr_state(netid),
         campus=vm["campus"],
         campus_props=_shell_off(vm, campus_island.block(campus_island.props(vm["campus"]))),
         tools=vm["tools"],
@@ -443,7 +449,9 @@ def panel_data(netid, active_panel="dashboard"):
     # knob, so the feature set is read per request like every other gate.
     campus = campus_view(_jload(row["scope_json"] if row else None, {}),
                          enabled_features())
-    tools = _tools_entries(netid)
+    # Tools rows come from the panel views themselves: a link renders only
+    # when its panel renders (no second read of the cold blob).
+    tools = _tools_entries(campus, fees, academics, hourwise)
     return dict(
         # ── panels the API serves (app/blueprints/panels.py) ──
         courses=courses,          # /api/attendance: code, pct, budgets, tints

@@ -83,7 +83,7 @@ function Subject({ s }: { s: MarksSubject }) {
       <div class="flex items-baseline justify-between gap-2">
         <span class="font-mono text-xs text-base-content/60">{s.code}</span>
         {/* neutral number; exactly one outlier on the page may take the accent (§2.7) */}
-        <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}`}>{s.pct}%</span>
+        <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}`}>{s.pct_disp}%</span>
       </div>
       <h3 class="text-sm font-semibold leading-snug">{s.title || s.code}</h3>
       <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">{s.scored_disp}/{s.max_disp}</div>

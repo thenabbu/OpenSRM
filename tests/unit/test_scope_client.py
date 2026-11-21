@@ -241,47 +241,36 @@ def t_migration_m018():
         shutil.rmtree(tmp, True)
 
 
-def t_tools_entries_gates():
-    """Tools panel gate: slug enabled AND its op holds data; else no row.
+def t_tools_entries_follow_the_panel():
+    """Tools rows follow the PANEL that renders, not the feature toggle.
 
-    Three failure modes pinned here, all of which would put a dead row on the
-    Tools tab (or 500 the dashboard): a disabled slug with data behind it, an
-    enabled slug whose op never landed, and a stored entry that is not the
-    documented {"data","ts"} dict (corrupt/foreign scope_json).
+    The bug this pins: tools gated on "the op's blob is truthy" while /campus
+    hides itself when campus_view() finds no rows, so an alive-empty account
+    (every campus op answering "No ... Found") got four rows linking to a 404.
+    A row must exist exactly when its panel does — so the builder takes the
+    built panel views and never reads the blob again.
     """
     import importlib
     APP = importlib.import_module("app.app")
 
-    def rows(scope_json, features):
-        _seed_user(scope_json=scope_json)
-        os.environ["SCOPE_FEATURES"] = features
-        try:
-            return APP._tools_entries(NETID)
-        finally:
-            os.environ.pop("SCOPE_FEATURES", None)
+    campus_empty = {"show": False, "cards": []}
+    campus_library = {"show": True, "cards": [{"title": "Library", "rows": [{"title": "x"}]}]}
 
-    blob = json.dumps({
-        "getFeeDetails": {"data": {"dues": 1200}, "ts": 1},
-        "getStudentExamProvisionalResult": {"data": [], "ts": 1},   # alive-empty
-        "getLibraryTransaction": "not-a-dict",                      # corrupt shape
-        "getHostelDetails": {"ts": 1},                              # no data key
-    })
-    # both slugs on: only fees qualifies (academics empty, library corrupt,
-    # campus has no data) -> exactly one row, and it is Fees.
-    got = rows(blob, "fees,academics,library,campus")
-    assert [r["slug"] for r in got] == ["fees"], got
-    assert got[0]["label"] == "Fees" and got[0]["op"] == "getFeeDetails", got
-    # fees disabled, academics enabled: fees' data must NOT leak in.
-    got = rows(blob, "academics")
-    assert got == [], got
-    # everything off: zero footprint, and no users-row read needed.
-    assert rows(blob, "off") == []
-    # empty / absent blob with features on: nothing to show.
-    assert rows("{}", "all") == []
-    assert rows(None, "all") == []
-    # whole blob the wrong shape must not raise (degrade to no tools).
-    assert rows('["unexpected"]', "all") == []
-    assert rows("{not json", "all") == []
+    HOURWISE = {"months": [{"label": "Nov 2026"}]}
+
+    # nothing renders anywhere -> no rows at all, and the route 404s.
+    assert APP._tools_entries(campus_empty, None, None, None) == []
+
+    # fees/academics/hourwise panels render -> their rows appear, in order.
+    got = APP._tools_entries(campus_empty, {"dues": 1}, {"cgpa": None, "courses": []}, HOURWISE)
+    assert [r["slug"] for r in got] == ["fees", "academics", "hourwise"], got
+    assert got[0]["tab"] == "fees" and got[1]["tab"] == "academics", got
+    assert all(len(r) == 5 and r["tab"] for r in got), got
+
+    # a campus card that renders brings its row (and only that row).
+    got = APP._tools_entries(campus_library, None, None, None)
+    assert [r["slug"] for r in got] == ["library"], got
+    assert got[-1]["label"] == "Library" and got[-1]["tab"] == "campus", got
 
 
 def t_cold_sync_stores_data():
@@ -527,19 +516,24 @@ def t_tools_rows_carry_a_real_tab():
 
     A row with no `tab` renders href="#" and switches nothing; a row pointing at
     a panel that does not exist is what dash.js has to defuse at runtime. Both
-    are silent in a screenshot, so pin them here.
+    are silent in a screenshot, so pin them here. Built with every panel
+    rendering, so the list is the whole catalogue.
     """
     import app.app as A
 
-    # the catalog itself: every entry is a 5-tuple ending in a tab slug
-    for entry in A.TOOLS:
-        assert len(entry) == 5, f"TOOLS entry not (slug,label,hint,op,tab): {entry}"
-        assert entry[4] and isinstance(entry[4], str), f"no tab target: {entry}"
+    campus_all = {"show": True, "cards": [{"title": t, "rows": [{"title": "x"}]}
+                                         for t in ("Placement", "Library",
+                                                   "Hostel & transport", "Notifications")]}
+    rows = A._tools_entries(campus_all, {"dues": 1}, {"cgpa": None, "courses": []},
+                            {"months": [{"label": "Nov 2026"}]})
 
-    # and the two surfaces that live inside an existing tab are present at all
-    slugs = {e[0] for e in A.TOOLS}
+    for r in rows:
+        assert set(r) == {"slug", "label", "hint", "op", "tab"}, f"row shape: {r}"
+        assert r["tab"] and isinstance(r["tab"], str), f"no tab target: {r}"
+
+    # and the surface that lives inside an existing tab is present at all
+    slugs = {r["slug"] for r in rows}
     assert "hourwise" in slugs, "hourwise has no Tools row (no phone route)"
-    assert "profile" in slugs, "profile has no Tools row (no phone route)"
 
     # Each tab slug must name a tab that exists SOMEWHERE in the stack. A row
     # whose panel is not mounted yet is legal — dash.js defuses it to a disabled
@@ -547,8 +541,8 @@ def t_tools_rows_carry_a_real_tab():
     # link. Known-tab list = every surface the SCOPE suite installs.
     KNOWN = {"dashboard", "attendance", "timetable", "marks", "settings",
              "tools", "fees", "academics", "campus"}
-    for slug, label, hint, op, tab in A.TOOLS:
-        assert tab in KNOWN, f"{label} -> #{tab}: not a known tab"
+    for r in rows:
+        assert r["tab"] in KNOWN, f"{r['label']} -> #{r['tab']}: not a known tab"
 
 
 def t_sync_fetches_concurrently():
@@ -651,7 +645,7 @@ TESTS = [
     ("enabled_features 'off'/'': empty set", t_features_off_is_empty),
     ("ops_for dedup + catalog coverage", t_ops_for_dedup),
     ("migration m018 runs + idempotent re-runs", t_migration_m018),
-    ("Tools panel gate: enabled slug + landed data only", t_tools_entries_gates),
+    ("Tools rows follow the panel that renders", t_tools_entries_follow_the_panel),
     ("cold sync stores {data, ts} + fetched_at", t_cold_sync_stores_data),
     ("cold sync preserve-if-empty + transport break", t_cold_sync_preserve_and_transport_break),
     ("cold sync alive-empty stored as-is", t_cold_sync_alive_empty_stored_as_is),

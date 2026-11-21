@@ -11,7 +11,7 @@ const PROPS: MarksProps = {
   subjects: [
     {
       code: '21CSS201T', title: 'Computer Organization And Architecture',
-      scored_disp: '32.5', max_disp: '50', pct: 65, outlier: true,
+      scored_disp: '32.5', max_disp: '50', pct: 65, pct_disp: '65.0', outlier: true,
       components: [
         { name: 'FT-I', date_disp: '04 Sep', score_disp: '8.5', max_disp: '15',
           derived: 'IE-1', confirmed: null,
@@ -22,7 +22,7 @@ const PROPS: MarksProps = {
     },
     {
       code: '21CSC203P', title: 'Advanced Programming Practice', scored_disp: '9',
-      max_disp: '10', pct: 90, outlier: false,
+      max_disp: '10', pct: 90, pct_disp: '90.0', outlier: false,
       components: [],   // -> "No assessment data"
     },
   ],
@@ -74,7 +74,7 @@ describe('P6.3 marks island', () => {
     expect(weak.textContent).toContain('32.5/50');
     // exactly one text-secondary on the page, on the outlier (§2.7)
     const pct = weak.querySelector('.text-lg')!;
-    expect(pct.textContent).toBe('65%');
+    expect(pct.textContent).toBe('65.0%');
     expect(pct.className).toContain('text-secondary');
     expect(document.querySelectorAll('.text-secondary')).toHaveLength(1);
     expect(strong.querySelector('h3')!.textContent).toBe('Advanced Programming Practice');

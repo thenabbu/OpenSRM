@@ -72,6 +72,25 @@ def _push_conf():
     }
 
 
+def push_ssr_state(netid):
+    """The reminder state the SERVER can decide, as push.js would print it.
+
+    First paint only: the card used to ship the literal "Loading…" and stay
+    there forever with JS blocked. These three states need no browser, so the
+    template renders them; "" means only the browser can answer (permission,
+    subscription) and the card keeps its loading line until push.js runs.
+    Texts are byte-identical to the same branches in app/static/push.js.
+    """
+    conf = _push_conf()
+    if not conf["configured"]:
+        return "Class reminders are not set up on this server yet."
+    if not conf["enabled"]:
+        return "Class reminders are switched off on the server for now."
+    if conf["allow"] and (netid or "").lower() not in conf["allow"]:
+        return "Class reminders are rolling out — your account is not enabled yet."
+    return ""
+
+
 def _endpoint_hash(endpoint):
     """Capability URL must never be logged in full — short hash prefix only."""
     return hashlib.sha256(endpoint.encode()).hexdigest()[:12]

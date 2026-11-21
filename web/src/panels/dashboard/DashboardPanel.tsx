@@ -195,11 +195,18 @@ function Marks({ marks }: { marks: P['marks'] }) {
   );
 }
 
-/** exams.html — the `·`-joined detail line, identical on both breakpoints. */
-function ExamMeta({ e }: { e: P['exams'] extends null ? never : NonNullable<P['exams']>['rows'][number] }) {
+/** exams.html — the `·`-joined detail line. `code` only on the mobile line:
+ *  the desktop line already prints the code in its title, and printing it twice
+ *  is what shipped "25 Nov · 21MAB206T · AN · 02:00-05:00".
+ */
+function ExamTail({ e, code = false }: {
+  e: P['exams'] extends null ? never : NonNullable<P['exams']>['rows'][number];
+  code?: boolean;
+}) {
   return (
     <>
-      {e.code} &middot; {e.session_disp}
+      {code ? <>{e.code} &middot; </> : null}
+      {e.session_disp}
       {e.slot ? <> &middot; {e.slot}</> : null}
       {e.hall ? (
         <>
@@ -241,7 +248,7 @@ function Exams({ exams }: { exams: NonNullable<P['exams']> }) {
               <span class="min-w-0 flex-1 sm:hidden">
                 <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{e.name_disp}</span>
                 <span class="block mt-0.5 font-mono text-xs text-base-content/60">
-                  <ExamMeta e={e} />
+                  <ExamTail e={e} code />
                 </span>
               </span>
               <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
@@ -250,7 +257,7 @@ function Exams({ exams }: { exams: NonNullable<P['exams']> }) {
                   <span class="text-base-content">{e.name_disp}</span>
                 </span>
                 <span class="shrink-0 font-mono text-xs text-base-content/60">
-                  {e.short} &middot; <ExamMeta e={e} />
+                  {e.short} &middot; <ExamTail e={e} />
                 </span>
               </span>
             </li>

@@ -94,9 +94,11 @@ check("every stored op is {data, ts}",
       all(isinstance(v, dict) and "data" in v and "ts" in v for v in blob.values()))
 
 # ── the Tools gate produces rows ───────────────────────────────────────────
-rows = A._tools_entries(NETID)
+# Built from the same view models the route renders, so this checks the rows the
+# page actually gets (a row exists only when its panel does).
+rows = A.panel_data(NETID, "tools")["tools"]
 slugs = sorted(r["slug"] for r in rows)
-check("_tools_entries yields SCOPE rows with data present", len(rows) >= 3, str(slugs))
+check("Tools rows appear for the panels the seeded data renders", len(rows) >= 2, str(slugs))
 check("every Tools row names a real tab",
       all(r.get("tab") in {"academics", "fees", "attendance", "settings", "campus", "tools"}
           for r in rows), str([(r["slug"], r.get("tab")) for r in rows]))
@@ -139,7 +141,7 @@ check("campus route 404s when it has no cards",
 # They live on /tools — the Tools panel is the only place that renders them.
 tools_html = PAGES["tools"]
 hrefs = re.findall(r'data-tool-tab="([a-z]+)"', tools_html)
-check("Tools rows carry data-tool-tab targets", len(hrefs) >= 3, str(hrefs))
+check("Tools rows carry data-tool-tab targets", len(hrefs) >= 2, str(hrefs))
 missing = [h for h in hrefs if h not in PAGES or f'id="tab-{h}"' not in PAGES[h]]
 check("every Tools target panel exists in the DOM", not missing, str(missing))
 

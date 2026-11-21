@@ -145,7 +145,10 @@ details[open]>summary .acad-chev{transform:rotate(180deg)}
             <input type="checkbox" id="push-toggle" class="toggle" hidden
                    aria-label="Turn notifications on or off">
           </div>
-          <p class="text-sm text-base-content/60" id="push-state">Loading…</p>
+          {# Server paints the states it can decide (no VAPID / switched off /
+             not allowlisted); "Loading…" stays only for the ones the browser
+             must answer. push.js repaints the same sentence, so no flash. #}
+          <p class="text-sm text-base-content/60" id="push-state">{{ push_state or 'Loading…' }}</p>
           <div id="push-controls" hidden>
             <div class="flex flex-col gap-3">
               <label class="flex items-center justify-between gap-3 text-sm" for="push-lead">
