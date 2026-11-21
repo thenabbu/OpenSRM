@@ -443,6 +443,13 @@ bindAttView();
 (window as unknown as { __osrmTimetableEditor?: typeof bindTimetableEditor }).__osrmTimetableEditor =
   bindTimetableEditor;
 bindTimetableEditor();
+// Re-arm on every island mount: on a hard load of anything but /timetable the
+// editor's nodes do not exist yet and the call above returns false, and the
+// editor only appears when that route is swapped in. Idempotent per element (see
+// the ttBound flag in timetableEditor.ts), so the extra calls are free.
+document.addEventListener('osrm:island-mounted', () => {
+  bindTimetableEditor();
+});
 
 // W5.4b: page chrome — the five dash.js behaviours that belong to the page
 // rather than to a panel (scroll indicator, item beacon, settings groups,

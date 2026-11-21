@@ -239,8 +239,13 @@ chk('L46', "manifest linked on dashboard",
     has('app/templates/partials/pwa_head.html', r'rel="manifest"')
     and has('app/templates/base.html', r'include "partials/pwa_head\.html"')
     and has('app/templates/home.html', r'extends "base\.html"'))
-chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
-    has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
+# The linked sheet is the Vite bundle (asset_dist('app.css')) since the preact
+# migration: one compiled sheet per page, not the bundle plus the legacy
+# app.css. The toolchain + committed-output halves below are unchanged, and they
+# are what this finding is about.
+chk('L47', "compiled CSS: one compiled sheet linked, no CDN, toolchain pinned, output committed",
+    has('app/templates/partials/theme.html', r"asset_dist\('app\.css'\)")
+    and not has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r'jsdelivr')
     and has('scripts/build-css.sh', r'TW_VERSION=4\.3\.3')
     and has('scripts/build-css.sh', r'DAISY_VERSION=5\.7\.46')
