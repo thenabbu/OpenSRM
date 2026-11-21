@@ -2,7 +2,8 @@
 
 app/templates/tools.html paints one row per entry of `tools`
 (app/views/timetable.py:_tools_entries): a destination link, a label and a
-hint. Nothing here is user data — the rows are app-owned URLs gated server-side
+hint. A row exists only when its panel renders, so the list is built from
+the panel views (campus cards included) rather than from feature toggles. Nothing here is user data — the rows are app-owned URLs gated server-side
 by SCOPE_FEATURES, and the route already 404s when the list is empty.
 
 The island re-renders the <ul> only; the card, the heading and the footnote

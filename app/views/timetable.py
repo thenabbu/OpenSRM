@@ -41,16 +41,13 @@ from ..db import (
     upsert_group,
     upsert_subject,
     user_personal,
-    user_scope_data,
-)
-from ..db import (
-    jload as _jload,
 )
 from ..portal.parsers.common import _group_key, _semester_int
 from ..portal.parsers.timetable import DAY_ORDER
-from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS, TOOLS
+from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS
 from . import timetable_island
 from .attendance import _join_attendance, _title_case
+from .campus import tools_campus_rows
 from .ticker import _now_next_from_slots
 
 log = __import__("logging").getLogger("opensrm")
@@ -86,40 +83,40 @@ def _budget_rows(courses):
 
 
 # ── Tools tab (SCOPE-sourced surfaces) ──────────────────────────────
-# One entry per SCOPE surface. A row renders ONLY when its feature slug is
-# enabled AND its representative op landed a non-empty answer; nothing
-# qualifying = empty list = no entry, no tab (zero footprint — the mission
-# toggle contract, and the same self-hiding rule the dashboard widgets obey).
-# `tab` is the panel that surface's own PR mounts: the row navigates there
-# when that panel exists today and renders inert otherwise, so this stays a
-# landing surface for the SCOPE rotation instead of a duplicate of it.
+# One row per surface that has its own panel AND a panel that renders. The
+# gates are the panels themselves (fees/academics/island views are None when
+# empty or off; the campus rows come from campus_view()'s own cards), so a row
+# can never link to a page that hides itself. Nothing qualifying = empty list
+# = no entry, no tab. `op` is carried for the API contract only; the panel is
+# now the authority, so it is no longer a gate.
 
 
-def _tools_entries(netid):
-    """Rows for the Tools panel: [{"slug","label","hint","op"}].
+def _tools_entries(campus, fees, academics, hourwise, personal):
+    """Rows for the Tools panel: [{"slug","label","hint","op","tab"}].
 
-    Two gates, both required: SCOPE_FEATURES enables the slug (the ops
-    contract) and the cold blob holds a non-empty answer for the op (an
-    enabled surface with nothing behind it must not advertise itself).
-    Costs one users-row read, and only when a feature is enabled at all.
+    Takes the already-built panel view models — no second read of the cold
+    blob. Each argument is the data its destination renders, so None/falsy
+    means "that surface has nothing" and the row would be a dead link.
     """
-    from app.scope.ops import enabled_features  # lazy: app.scope imports app.db
-    on = enabled_features()
-    if not on:
-        return []
-    row = user_scope_data(netid)
-    # shape guard on both levels: a corrupt/foreign scope_json must degrade to
-    # "no tools", never 500 the dashboard (same rule as _stored in scope.sync
-    # and _jload's wrong-shape branch — audit B10).
-    blob = _jload(row["scope_json"] if row else None, {})
     rows = []
-    for feat, label, hint, op, tab in TOOLS:
-        if feat not in on:
-            continue
-        entry = blob.get(op)
-        if isinstance(entry, dict) and entry.get("data"):
-            rows.append({"slug": feat, "label": label, "hint": hint,
-                         "op": op, "tab": tab})
+    if fees is not None:
+        rows.append({"slug": "fees", "label": "Fees", "hint": "Dues, payments and receipts",
+                     "op": "getFeeDetails", "tab": "fees"})
+    if academics is not None:
+        rows.append({"slug": "academics", "label": "Academics",
+                     "hint": "Results, grades and credits",
+                     "op": "getExamDetails", "tab": "academics"})
+    # hourwise renders inside the Attendance tab, not a panel of its own.
+    if hourwise:
+        rows.append({"slug": "hourwise", "label": "Attendance by hour",
+                     "hint": "Every period, joined to your timetable",
+                     "op": "getHourwiseAttendance", "tab": "attendance"})
+    # profile fills the Personal details section inside Settings.
+    if personal:
+        rows.append({"slug": "profile", "label": "Personal details",
+                     "hint": "Parents, date of birth, address",
+                     "op": "getStudentPersonalDetails", "tab": "settings"})
+    rows.extend(tools_campus_rows((campus or {}).get("cards")))
     return rows
 
 

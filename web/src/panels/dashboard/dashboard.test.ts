@@ -141,6 +141,30 @@ describe('P6.2 dashboard island', () => {
     expect(q().getByText('Auto-fill mid-sem feedback')).toBeTruthy();
   });
 
+  it('exam row prints the subject code once per breakpoint (not twice)', async () => {
+    // The bug: the exam detail line was one shared component that started with
+    // the code, so the DESKTOP line read "12 Dec · 21CSS201T · FN · …" under a
+    // title that already printed the code. Server markup (exams.html) prints it
+    // on the mobile line only; hydration must agree.
+    document.body.innerHTML = newPage();
+    await hydrateAll(document, Date.now() / 1000);
+    const el = grid();
+    const row = Array.from(el.querySelectorAll<HTMLElement>('.widget-scroll li'))
+      .find((li) => text(li).includes('Computer Organization'))!;
+    // the day chip is also sm:hidden — the text column is min-w-0 flex-1
+    const mobile = row.querySelector<HTMLElement>('[class*="min-w-0 flex-1"]')!;
+    const desktop = row.querySelector<HTMLElement>('[class*="hidden sm:flex"]')!;
+    // mobile: name block, then the meta line that carries the code (needed there)
+    expect(text(mobile)).toContain('Computer Organization');
+    expect(text(mobile)).toContain('21CSS201T · FN · A · Hall M-201 · Seat 41');
+    // title span (code + name) then the detail span; no whitespace between them
+    expect(text(desktop)).toBe('21CSS201T Computer Organization12 Dec · FN · A · Hall M-201 · Seat 41');
+    // and the desktop detail itself never repeats the code
+    const detail = desktop.lastElementChild as HTMLElement;
+    expect(text(detail)).toBe('12 Dec · FN · A · Hall M-201 · Seat 41');
+    expect(text(detail)).not.toContain('21CSS201T');
+  });
+
   it('the profile widget survives hydration (P6.2b regression)', async () => {
     // The bug: hydration replaced the grid's children with six widgets and the
     // identity box vanished after first paint. These three selectors are what

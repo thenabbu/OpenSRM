@@ -46,6 +46,7 @@ def props(marks):
             "scored_disp": s.get("scored_disp", "?"),
             "max_disp": s.get("max_disp", "?"),
             "pct": float(s.get("pct") or 0),
+            "pct_disp": s.get("pct_disp") or "",
             "outlier": bool(s.get("outlier")),
             "components": comps,
         })

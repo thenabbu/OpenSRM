@@ -185,7 +185,7 @@ const MARKS = {
   subjects: [
     {
       code: '21CSS201T', title: 'Computer Organization', scored_disp: '3', max_disp: '5',
-      pct: 60, outlier: false,
+      pct: 60, pct_disp: '60.0', outlier: false,
       components: [{
         name: 'FT-I', date_disp: '09/Sep/2026', score_disp: '3', max_disp: '5',
         derived: '', confirmed: 'none', ie: null,

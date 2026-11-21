@@ -23,7 +23,8 @@ export const marksProps = z.object({
       title: z.string(),                    // already .title()'d server-side
       scored_disp: z.string(),
       max_disp: z.string(),
-      pct: z.number(),
+      pct: z.number(),                     // raw, for the outlier accent
+      pct_disp: z.string(),                // '94.0' — one decimal, server-formatted
       outlier: z.boolean(),
       components: z.array(
         z.object({
