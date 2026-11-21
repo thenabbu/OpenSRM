@@ -13,6 +13,19 @@ def _fmt_score(v):
     except (TypeError, ValueError):
         return "?"
 
+def _fmt_pct(v):
+    """Percent as one decimal: 94.0 -> '94.0', 78.6 -> '78.6'.
+
+    The template printed the raw float and a JS Number drops the ".0", so the
+    hydrated card said "94%" where the no-JS paint said "94.0%" (one page, two
+    renderings). Formatting lives here, once, like every other display string.
+    """
+    try:
+        return f"{float(v):.1f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
 def _fmt_max(v):
     """Maxima are whole marks on the portal: 15.0 -> '15' (never '15.00')."""
     try:
@@ -67,6 +80,7 @@ def _marks_view(marks, tags=None):
         out.append({"code": code, "title": (s.get("title") or "").title(),
                     "scored_disp": _fmt_score(st), "max_disp": _fmt_max(mt),
                     "pct": round(st / mt * 100, 1) if mt else 0.0, "outlier": False,
+                    "pct_disp": _fmt_pct(round(st / mt * 100, 1) if mt else 0.0),
                     "components": comps})
     # One muted accent per screen (DESIGN.md §2.7): the UNIQUE lowest subject,
     # and only below the 75% target — everything else on this page is neutral.

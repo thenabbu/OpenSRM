@@ -144,6 +144,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_canary_sync.py
       - name: test_marks_view (marks view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_marks_view.py
+      - name: test_settings_push_ssr (reminder card first paint)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_settings_push_ssr.py
       - name: test_layout (card/widget engine)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_layout.py
       - name: test_css_safelist (render-time classes exist in app.css)

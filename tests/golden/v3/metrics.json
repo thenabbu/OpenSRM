@@ -285,7 +285,7 @@
     "/static/sw.js": {
       "bytes": 30703,
       "content_type": "text/javascript; charset=utf-8",
-      "gzip_bytes": 9805,
+      "gzip_bytes": 9809,
       "status": 200
     }
   },
@@ -302,7 +302,7 @@
         "/static/push.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 20021,
+      "js_gzip_bytes": 20025,
       "script_tags": 6
     },
     "/login": {
@@ -316,11 +316,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-      "js_gzip_bytes": 12521,
+      "js_gzip_bytes": 12525,
       "script_tags": 3
     }
   },
-  "revision": "a15f0a7",
+  "revision": "bf0fbd9",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -339,8 +339,8 @@
     },
     "dashboard": {
       "panel_dom_nodes": 172,
-      "panel_html_bytes": 16250,
-      "panel_html_gzip_bytes": 3728
+      "panel_html_bytes": 16224,
+      "panel_html_gzip_bytes": 3725
     },
     "fees": {
       "panel_dom_nodes": 72,
@@ -349,13 +349,13 @@
     },
     "marks": {
       "panel_dom_nodes": 60,
-      "panel_html_bytes": 5496,
-      "panel_html_gzip_bytes": 1388
+      "panel_html_bytes": 5537,
+      "panel_html_gzip_bytes": 1400
     },
     "settings": {
       "panel_dom_nodes": 117,
-      "panel_html_bytes": 11280,
-      "panel_html_gzip_bytes": 2491
+      "panel_html_bytes": 11291,
+      "panel_html_gzip_bytes": 2493
     },
     "timetable": {
       "panel_dom_nodes": 54,
@@ -363,19 +363,19 @@
       "panel_html_gzip_bytes": 1120
     },
     "tools": {
-      "panel_dom_nodes": 62,
-      "panel_html_bytes": 6261,
-      "panel_html_gzip_bytes": 1165
+      "panel_dom_nodes": 55,
+      "panel_html_bytes": 5588,
+      "panel_html_gzip_bytes": 1114
     }
   },
   "totals": {
     "api_bytes": 752795,
-    "api_gzip_bytes": 331269,
-    "dom_nodes_all_panels": 2077,
+    "api_gzip_bytes": 331273,
+    "dom_nodes_all_panels": 2070,
     "dom_nodes_page": 357,
     "html_bytes": 76098,
     "html_gzip_bytes": 19118,
     "js_bytes": 64733,
-    "js_gzip_bytes": 21815
+    "js_gzip_bytes": 21819
   }
 }

@@ -179,3 +179,29 @@ def campus_view(scope, features):
             items = [line_row(r, meta_pred=lambda k: "date" in k or "time" in k) for r in notes]
             cards.append({"title": "Notifications", "rows": _sort_newest(items, notes)})
     return {"show": bool(cards), "cards": cards}
+
+
+# ── Tools tab rows ──────────────────────────────────────────────────
+# A Tools row is a link to a panel, so it renders ONLY when that panel
+# renders. campus_view() above is the authority for the campus card, so
+# the rows are read off those cards and this module cannot disagree with
+# the page a row points at. (Before: a separate gate on the op's blob made
+# four rows point at a /campus that 404s on an alive-empty account.)
+_TOOLS_CAMPUS = (
+    # (card title, slug, label, hint)
+    ("Placement", "placement", "Placement", "Offers, eligibility, registration"),
+    ("Library", "library", "Library", "Issued books, due dates, fines"),
+    ("Hostel & transport", "campus", "Hostel & transport", "Room, mess and bus route"),
+    ("Notifications", "campus", "Notifications", "Campus notices and circulars"),
+)
+
+
+def tools_campus_rows(cards):
+    """{(slug, label, hint, op, tab)} for the campus cards the tab renders.
+
+    `cards` is campus_view()'s list, so an empty list yields no rows and the
+    Tools tab never links to a campus page that hides itself.
+    """
+    titles = {c.get("title") for c in cards or ()}
+    return [{"slug": slug, "label": label, "hint": hint, "op": None, "tab": "campus"}
+            for title, slug, label, hint in _TOOLS_CAMPUS if title in titles]

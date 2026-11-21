@@ -645,7 +645,6 @@ from .scope_sync import (  # noqa: E402,F401
 from .static_data import (  # noqa: E402,F401 — re-exported
     SLOTS,
     TIMETABLE_TIME_OFFSETS,
-    TOOLS,
 )
 
 # usage_events retention: env-configurable (USAGE_EVENTS_RETENTION_DAYS,
