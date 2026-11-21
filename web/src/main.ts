@@ -456,8 +456,13 @@ bindTimetableEditor();
 const rebindTimetableEditor = (): void => {
   let tries = 0;
   const attempt = (): void => {
-    if (typeof document === 'undefined') return;
-    if (bindTimetableEditor() || ++tries > 20) return;
+    if (typeof document === 'undefined') return;      // test env torn down
+    if (bindTimetableEditor()) return;
+    // Retry ONLY where the editor can appear. On every other route the panel is
+    // absent, so there is nothing to wait for — and 20 timers ticking for 2 s on
+    // every island mount is a cost the perf budget can see (a switch window on
+    // /attendance caught one long task before this guard existed).
+    if (!document.getElementById('tab-timetable') || ++tries > 20) return;
     setTimeout(attempt, 100);
   };
   attempt();
