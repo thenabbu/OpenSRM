@@ -134,6 +134,11 @@ def check_route(page, leg, route, island, row_sel, row_word):
     page.on("response", on_response)
     try:
         resp = page.goto(f"{args.base}{route}", wait_until="domcontentloaded")
+        # Which branch of the service worker answered (network / shell-race /
+        # offline-ladder). A shell looks like a perfectly good 200 document, and
+        # the difference decides whether a missing island is a bug here or a
+        # gated panel on the server.
+        branch = (resp.headers.get("x-osrm-path") if resp else None) or "none"
         if resp is None or resp.status >= 400:
             leg.chk(route, False, f"route itself returned {resp.status if resp else 'no response'}")
             return False
@@ -176,7 +181,7 @@ def check_route(page, leg, route, island, row_sel, row_word):
             leg.chk(route, False,
                     f"no [data-island={island}] on the page ({st['n']} islands seen: "
                     f"{detail['islands']}) title={detail['title']!r} html={detail['len']}B "
-                    f"dashboardPanel={detail['dash']}")
+                    f"dashboardPanel={detail['dash']} sw-branch={branch}")
             return False
         hydrated = mount.first.evaluate(
             "(e) => !!(e.dataset.hydrated || e.dataset.mountedAt)")

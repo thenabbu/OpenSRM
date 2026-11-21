@@ -240,6 +240,17 @@ async function cachedShell(url, exact = false) {
   return null;
 }
 
+/** Copy a response with X-Osrm-Path naming the branch that produced it. */
+function tag(res, branch) {
+  try {
+    const out = new Response(res.body, res);
+    out.headers.set('X-Osrm-Path', branch);
+    return out;
+  } catch {
+    return res;                     // opaque or already-consumed: leave it alone
+  }
+}
+
 async function offlineShell(url) {
   return (await cachedShell(url)) || OFFLINE_503;
 }
@@ -267,7 +278,7 @@ const html = new NetworkFirst({
   plugins: [
     {
       cacheWillUpdate: async () => null,
-      handlerDidError: async ({ request }) => offlineShell(new URL(request.url)),
+      handlerDidError: async ({ request }) => tag(await offlineShell(new URL(request.url)), 'offline-ladder'),
     },
   ],
 });
@@ -296,16 +307,22 @@ registerRoute(
       network = html.handle(params).catch(() => null);
     }
 
-    // No shell on this device yet (first ever visit): there is nothing to race
-    // with, so wait for the network and let the strategy own the failure path.
-    if (!shell) return (await network) || offlineShell(new URL(params.request.url));
+    // No shell for THIS panel on this device: nothing to race with, so wait for
+    // the network and let the strategy own the failure path. X-Osrm-Path says
+    // which branch answered — a harness that only sees "a page arrived" cannot
+    // otherwise tell a shell from a real render.
+    if (!shell) {
+      const res = (await network) || offlineShell(new URL(params.request.url));
+      return tag(res, res ? 'network-or-ladder' : 'none');
+    }
 
     let timer;
     const stall = new Promise((resolve) => {
       timer = setTimeout(() => resolve(null), SHELL_RACE_MS);
     });
     try {
-      return (await Promise.race([network, stall])) || shell;
+      const raced = await Promise.race([network, stall]);
+      return tag(raced || shell, raced ? 'network' : 'shell-race');
     } finally {
       clearTimeout(timer);
     }
