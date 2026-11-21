@@ -36,6 +36,7 @@ HEAD_PARTIAL = 'partials/pwa_head.html'
 
 SAFE_RADIUS = 0.4   # maskable safe circle: inner 80% of the canvas
 BRIGHT = 200        # artwork ink vs the dark background fill
+BG = (17, 17, 17)   # #111111, the manifest's background_color / theme_color
 FAVICON_FRAMES = {16, 24, 32, 48}
 APPLE_TOUCH = (180, 180)
 BADGE = (96, 96)
@@ -76,7 +77,12 @@ def opaque(path: str) -> bool:
 
 
 def safe_zone(path: str) -> tuple[int, int, float]:
-    """(mark px, px outside the safe circle, radius) — computed in C, not in a loop."""
+    """(mark px, px outside the safe circle, radius) — computed in C, not in a loop.
+
+    Kept as a MEASUREMENT for the report line only. It is NOT the maskable gate
+    any more: see bleed() for why "nothing outside the safe circle" is the wrong
+    rule for a tile-shaped mark.
+    """
     im = Image.open(path).convert('RGB')
     n = im.size[0]
     bright = im.convert('L').point(lambda v: 255 if v > BRIGHT else 0)
@@ -86,6 +92,23 @@ def safe_zone(path: str) -> tuple[int, int, float]:
     # subtract() is 255 only where ink sits outside the circle: one histogram.
     out_px = ImageChops.subtract(bright, circle).histogram()[255]
     return bright.histogram()[255], out_px, r
+
+
+def bleed(path: str) -> tuple[int, int]:
+    """(canvas side, art width in px) of the non-background content.
+
+    A maskable icon is a picture the LAUNCHER crops: it applies its own shape and
+    keeps only the inner 80% circle. So the artwork must FILL the canvas — the
+    mask then becomes its outline. A mark that stops short of the edge is a plate
+    floating in a field, and the field is what a user sees as a thick ring around
+    the logo once Android draws its mask over it. That defect shipped: the mark
+    was circle-clipped to 69% of the canvas and every installed icon had the ring.
+    """
+    im = Image.open(path).convert('RGB')
+    side = im.size[0]
+    bbox = ImageChops.difference(im, Image.new('RGB', im.size, BG)).convert('L') \
+        .point(lambda v: 255 if v > 6 else 0).getbbox()
+    return side, (bbox[2] - bbox[0]) if bbox else 0
 
 
 # ── every check, as a function of a root so the self-test can re-point it ────
@@ -132,10 +155,10 @@ def validate(root: str) -> list[str]:
             bad(f'{name} non-empty')
         declared[name] = actual
         if entry.get('purpose') == 'maskable':
-            mark, out_px, r = safe_zone(path)
-            if mark == 0 or out_px:
-                bad(f'{name} mark inside inner-80% circle',
-                    f'{mark} mark px, {out_px} outside r={r:.1f}')
+            side, art = bleed(path)
+            if art < side * 0.98:
+                bad(f'{name} mark fills the canvas (maskable)',
+                    f'artwork spans {art}px of {side} — a mark that stops short reads as a ring')
 
     # Chromium installability is a POSITIVE requirement: both sizes, both purposes.
     for size in ('192x192', '512x512'):
@@ -279,7 +302,13 @@ def self_test() -> list[str]:
         os.makedirs(static)
         os.makedirs(tdir)
         src = Image.new('RGB', (1024, 1024), (17, 17, 17))
-        ImageDraw.Draw(src).rectangle([400, 400, 620, 620], fill=(255, 255, 255))
+        # The fixture mark is a FULL-BLEED tile, like app/static/icon-1024.png: one
+        # white half running to the canvas edge, one dark half, and a glyph. A
+        # centred white square on #111 would make every maskable icon in the
+        # fixture fail the new bleed rule and prove nothing about the rule.
+        ImageDraw.Draw(src).rectangle([0, 0, 474, 1023], fill=(255, 255, 255))
+        ImageDraw.Draw(src).rectangle([475, 0, 1023, 1023], fill=(0, 0, 0))
+        ImageDraw.Draw(src).rectangle([560, 400, 700, 620], fill=(255, 255, 255))
         marks = {}
         for name, side in [('icon-192.png', 192), ('icon-512.png', 512),
                            ('icon-1024.png', 1024), ('icon-maskable-192.png', 192),
@@ -344,10 +373,18 @@ def self_test() -> list[str]:
             problems.append('positive control broken: a 1-frame favicon passed')
 
         write_tree()
-        Image.new('RGB', (1024, 1024), (255, 255, 255)).save(
-            os.path.join(static, 'icon-maskable-512.png'))   # bright to every corner
-        if not any('mark inside inner-80% circle' in f for f in validate(tmp)):
-            problems.append('positive control broken: a full-bleed maskable passed')
+        # The shipped defect: the mark circle-clipped into a disc on a square
+        # plate, so 69% of the canvas is artwork and the rest is the plate the
+        # launcher shows as a ring. This is the exact icon that was on the device.
+        disc = Image.new('RGB', (1024, 1024), BG)
+        m = Image.new('L', (1024, 1024), 0)
+        r = 0.345 * 1024
+        ImageDraw.Draw(m).ellipse([512 - r, 512 - r, 512 + r, 512 + r], fill=255)
+        disc.paste(src, (0, 0), m)
+        disc.resize((512, 512), Image.LANCZOS).save(
+            os.path.join(static, 'icon-maskable-512.png'))
+        if not any('mark fills the canvas (maskable)' in f for f in validate(tmp)):
+            problems.append('positive control broken: a disc-clipped maskable passed')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return problems

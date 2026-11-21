@@ -85,12 +85,20 @@ def api_shell(panel: str = "dashboard"):
     # panel falls back to the dashboard shell: same chrome, correct nav, no data.
     from werkzeug.exceptions import HTTPException  # noqa: PLC0415
 
+    # Which panel's markup this response actually carries. It is the REQUESTED
+    # panel unless the gate fell back to the dashboard, and the service worker
+    # reads it (X-Shell-Panel) to decide whether a shell is a valid first paint
+    # for the route being opened: serving the dashboard's markup for a tap on
+    # /tools is worse than waiting for the network. Measured: a stalled origin
+    # handed /tools and /settings the dashboard shell.
+    rendered = panel
     try:
         resp = _shell(panel)
         body = resp.get_data(as_text=True) if hasattr(resp, "get_data") else str(resp)
     except HTTPException:
         if panel == "dashboard":
             raise
+        rendered = "dashboard"
         resp = _shell("dashboard")
         body = resp.get_data(as_text=True) if hasattr(resp, "get_data") else str(resp)
 
@@ -102,7 +110,7 @@ def api_shell(panel: str = "dashboard"):
 
     r = Response(body, mimetype="text/html")
     r.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
-    r.headers["X-Shell-Panel"] = panel
+    r.headers["X-Shell-Panel"] = rendered
     return r
 
 

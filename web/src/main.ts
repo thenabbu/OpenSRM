@@ -31,6 +31,7 @@ import {
   registerServiceWorker,
 } from './data/pageChrome';
 import { bindPullToRefresh } from './data/pullToRefresh';
+import { bindSoftNav } from './nav/softNav';
 import { warn as logWarn } from './log';
 
 /**
@@ -442,6 +443,33 @@ bindAttView();
 (window as unknown as { __osrmTimetableEditor?: typeof bindTimetableEditor }).__osrmTimetableEditor =
   bindTimetableEditor;
 bindTimetableEditor();
+// Re-arm on every island mount: on a hard load of anything but /timetable the
+// editor's nodes do not exist yet and the call above returns false, and the
+// editor only appears when that route is swapped in. Idempotent per element (see
+// the ttBound flag in timetableEditor.ts), so the extra calls are free.
+// One immediate attempt, then a brief bounded retry: the nodes bindTimetableEditor
+// needs are not all in the document at the instant the signal fires (the grid is
+// rendered by the island from the timetable data), and it returns false unless it
+// finds every one of them. 20 x 100 ms is the ceiling; the bind itself is per
+// element, so a retry after success is a no-op. The `typeof document` guard is for
+// unit tests, where a pending timer can outlive the jsdom environment.
+const rebindTimetableEditor = (): void => {
+  let tries = 0;
+  const attempt = (): void => {
+    if (typeof document === 'undefined') return;      // test env torn down
+    if (bindTimetableEditor()) return;
+    // Retry ONLY where the editor can appear. On every other route the panel is
+    // absent, so there is nothing to wait for — and 20 timers ticking for 2 s on
+    // every island mount is a cost the perf budget can see (a switch window on
+    // /attendance caught one long task before this guard existed).
+    if (!document.getElementById('tab-timetable') || ++tries > 20) return;
+    setTimeout(attempt, 100);
+  };
+  attempt();
+};
+for (const ev of ['osrm:island-mounted', 'osrm:route-swapped'] as const) {
+  document.addEventListener(ev, rebindTimetableEditor);
+}
 
 // W5.4b: page chrome — the five dash.js behaviours that belong to the page
 // rather than to a panel (scroll indicator, item beacon, settings groups,
@@ -563,3 +591,14 @@ const pull = window as unknown as { __osrmPull?: typeof bindPullToRefresh };
 pull.__osrmPull = bindPullToRefresh;
 // No-ops on a fine pointer (desktop mouse), so nothing to feature-detect here.
 bindPullToRefresh();
+
+// Soft navigation: a tab tap swaps the route in place instead of reloading the
+// document (see nav/softNav.ts for why). Bound LAST so the markers it looks for
+// — base.html's `route:start` / `route:end` and the ids above — are all present,
+// and so a soft-nav swap re-runs nothing that is about the document rather than
+// the route. The chrome binders (scroll indicator, beacon, copy, pull, outbox)
+// are delegated at document level and keep working across a swap; this is the
+// one behaviour the swap re-runs, with the fresh island markup as its root.
+bindSoftNav(document, window, {
+  hydrate: (root) => hydrateAll(root, Date.now() / 1000),
+});

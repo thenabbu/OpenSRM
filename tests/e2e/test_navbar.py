@@ -153,8 +153,19 @@ with sync_playwright() as p:
     page.reload(wait_until='networkidle')   # restore server-rendered state
 
     page.click('#tab-attendance-tab')
-    page.wait_for_load_state('networkidle')
-    page.wait_for_timeout(300)
+    # A soft swap (web/src/nav/softNav.ts) fires no load event, and the tint is a
+    # background-color TRANSITION: 300 ms after the click it can still be mid-flight
+    # (measured as prevBg oklab(1 0 0 / 0.0066) instead of transparent — the flake
+    # this replaced). Wait for the route AND for the transition to land.
+    page.wait_for_function(
+        "() => location.pathname === '/attendance' && !!document.getElementById('tab-attendance')",
+        timeout=10000)
+    page.wait_for_function("""() => {
+      const nav = document.querySelector('.navbar.hidden');
+      const d = [...nav.querySelectorAll('nav a[data-tab]')].find(t => t.dataset.tab === 'dashboard');
+      const bg = getComputedStyle(d).backgroundColor;
+      return bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent';
+    }""", timeout=5000)
     moved = page.evaluate("""() => {
       const nav = document.querySelector('.navbar.hidden');
       const tabs = [...nav.querySelectorAll('nav a[data-tab]')];
