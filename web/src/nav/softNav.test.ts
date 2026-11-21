@@ -275,3 +275,25 @@ describe('bindSoftNav: history and focus', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('bindSoftNav: route-swapped signal', () => {
+  it('announces the route after hydration so page binders can re-arm', async () => {
+    const live = docWith('<main id="dash">dashboard</main>');
+    const next = docWith('<main id="timetable">grid</main>');   // no island inside
+    live.body.insertAdjacentHTML('beforeend', '<a id="go" href="/timetable">T</a>');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(next.documentElement.outerHTML, { status: 200 })));
+    const seen: string[] = [];
+    live.addEventListener('osrm:route-swapped', (e) => seen.push((e as CustomEvent).detail));
+    const win = {
+      location: { ...HERE, assign: vi.fn() },
+      history: { pushState: vi.fn() },
+      scrollTo: vi.fn(),
+      addEventListener: vi.fn(),
+    } as unknown as Window;
+    bindSoftNav(live, win, { hydrate: async () => {}, now: () => 0 });
+
+    live.getElementById('go')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    await vi.waitFor(() => expect(seen).toEqual(['/timetable']));
+    vi.unstubAllGlobals();
+  });
+});

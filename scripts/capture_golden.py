@@ -822,7 +822,8 @@ def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
                     page.wait_for_load_state("load")
                     page.wait_for_function(
                         """(want) => location.pathname === want
-                                      && !!document.getElementById('tab-' + want.slice(1))""",
+                                      && !!document.getElementById('tab-' +
+                                             (want === '/' ? 'dashboard' : want.slice(1)))""",
                         arg="/" if tab == "dashboard" else f"/{tab}",
                         timeout=15000,
                     )

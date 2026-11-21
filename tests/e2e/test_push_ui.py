@@ -31,16 +31,28 @@ def b64url(b):
     return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
 
 def open_settings(page, base):
-    """Reach /settings the way a user does now that the app is an MPA: from the
-    dashboard, CLICK the real navigation link. At >=lg that is the navbar tab
-    (#tab-settings-tab); on a phone the dock no longer carries Settings, so the
-    navbar gear (#tab-settings-mobile) is the only route to it. Both are plain
-    <a href="/settings"> anchors — no client-side router intercepts them, so the
-    click is a full page load. A user action beats page.goto here: the whole
-    point of the card is that a real user can reach the notification surface.
+    """Reach /settings the way a user does: from the dashboard, CLICK the real
+    navigation link. At >=lg that is the navbar tab (#tab-settings-tab); on a
+    phone the dock no longer carries Settings, so the navbar gear
+    (#tab-settings-mobile) is the only route to it. A user action beats
+    page.goto here: the whole point of the card is that a real user can reach the
+    notification surface.
+
+    The link is a plain <a href>, and since soft navigation (web/src/nav/
+    softNav.ts) the page swaps the route in place — no document load fires, so
+    there is no `networkidle` to wait for and the card's own async boot (status
+    fetch, then render) decides when the state line stops saying "Loading…".
+    Wait for that text, not for a network event: networkidle is already
+    unsatisfiable in this app (the /shell/* warmers never settle).
     """
     page.goto(f"{base}/", wait_until="networkidle")
     page.locator('a[data-tab="settings"]:visible').first.click()
+    page.wait_for_selector("#push-card", state="visible", timeout=10000)
+    page.wait_for_function(
+        """() => { const s = document.getElementById('push-state');
+                  return !!s && s.textContent.trim() !== '' && s.textContent.trim() !== 'Loading…'; }""",
+        timeout=10000,
+    )
     page.wait_for_load_state("networkidle")
     page.wait_for_selector('#push-card', state='visible', timeout=5000)
 

@@ -447,9 +447,24 @@ bindTimetableEditor();
 // editor's nodes do not exist yet and the call above returns false, and the
 // editor only appears when that route is swapped in. Idempotent per element (see
 // the ttBound flag in timetableEditor.ts), so the extra calls are free.
-document.addEventListener('osrm:island-mounted', () => {
-  bindTimetableEditor();
-});
+// One immediate attempt, then a brief bounded retry: the nodes bindTimetableEditor
+// needs are not all in the document at the instant the signal fires (the grid is
+// rendered by the island from the timetable data), and it returns false unless it
+// finds every one of them. 20 x 100 ms is the ceiling; the bind itself is per
+// element, so a retry after success is a no-op. The `typeof document` guard is for
+// unit tests, where a pending timer can outlive the jsdom environment.
+const rebindTimetableEditor = (): void => {
+  let tries = 0;
+  const attempt = (): void => {
+    if (typeof document === 'undefined') return;
+    if (bindTimetableEditor() || ++tries > 20) return;
+    setTimeout(attempt, 100);
+  };
+  attempt();
+};
+for (const ev of ['osrm:island-mounted', 'osrm:route-swapped'] as const) {
+  document.addEventListener(ev, rebindTimetableEditor);
+}
 
 // W5.4b: page chrome — the five dash.js behaviours that belong to the page
 // rather than to a panel (scroll indicator, item beacon, settings groups,

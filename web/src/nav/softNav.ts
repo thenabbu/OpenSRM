@@ -252,6 +252,12 @@ export function bindSoftNav(doc: Document, win: Window, opts: SoftNavOptions): v
       // Hydrate AFTER the swap; the server paint is already on screen and a
       // failed island keeps it (mountBounded restores the server's children).
       await opts.hydrate(doc);
+      // A route landed. `osrm:island-mounted` is NOT enough to announce this:
+      // a route can arrive with no island of its own (the timetable panel is
+      // server markup plus a grid the bundle fills), so page-level binders that
+      // re-arm on island mount alone never hear about it. Those binders listen
+      // for this as well and are idempotent.
+      doc.dispatchEvent(new CustomEvent('osrm:route-swapped', { detail: url.pathname }));
     } finally {
       busy = false;
     }

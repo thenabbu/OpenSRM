@@ -21,6 +21,11 @@
           cbExm = el('push-type-exams');
     if (!stateEl || stateEl.dataset.osrmPushBound) return;
     stateEl.dataset.osrmPushBound = '1';
+    // The card is server-rendered with "Loading…" in place of the state line. On a
+    // repeat boot that caption is already gone (render() replaced it) — but the
+    // FIRST boot after a soft swap must not leave a stale "Loading…" behind if the
+    // status call is slow, so both boots start from the same caption.
+    stateEl.textContent = 'Loading…';
 
   const fb = (msg, isErr) => {
     if (!fbEl) return;
@@ -333,4 +338,8 @@
 
   boot();
   document.addEventListener('osrm:island-mounted', boot);
+  // A route can land WITHOUT an island mounting (the settings panel is server
+  // markup), so the swap itself is the second signal. boot() is idempotent per
+  // card, so hearing both is free.
+  document.addEventListener('osrm:route-swapped', boot);
 })();
