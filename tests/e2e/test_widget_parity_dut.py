@@ -99,7 +99,12 @@ SNAPSHOT = """([anchorSel, boxSel]) => {
       attrs: [...n.attributes].map(a => [a.name, a.value]),
       text: n.children.length ? '' : n.textContent.trim().slice(0, 80),
     });
-    for (const c of n.children) walk(c, depth + 1);
+    // The avatar well is the ONE island-owned subtree: the server has no SVG
+    // generator any more (@blobatar/preact does it in the browser), so it paints
+    // an empty well and the island fills it. Comparing the contents would fail
+    // by design, so the node itself is compared (tag + attrs) and the walk stops
+    // there. Everything around it is still compared exactly.
+    for (const c of n.children) if (!n.hasAttribute('data-avatar-well')) walk(c, depth + 1);
   };
   walk(box, 0);
   return out;

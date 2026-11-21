@@ -24,8 +24,12 @@ def check(name, ok, detail=""):
     print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
 here = os.path.dirname(os.path.abspath(__file__))
-css = open(os.path.join(here, "..", "..", "app", "static", "app.css")).read()
-check("app.css carries the low-tier/offscreen avatar pause rule",
+_assets = os.path.join(here, "..", "..", "app", "static", "dist", "assets")
+css = open(sorted(
+    os.path.join(_assets, f) for f in os.listdir(_assets)
+    if f.startswith("app-") and f.endswith(".css")
+)[0]).read()
+check("the bundle carries the low-tier/offscreen avatar pause rule",
       'data-perf=low] .mo-root' in css and          # minifier strips quotes
       ".mo-root.is-offscreen" in css and
       "animation-play-state:paused" in css)

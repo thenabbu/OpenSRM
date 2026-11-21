@@ -5,7 +5,7 @@
       {# The avatar is painted by the dashboard island (@blobatar/preact) — the
          server no longer generates SVG for it. This well is the pre-hydration
          paint and the no-JS state: same box, empty until the bundle mounts. #}
-      <div class="bg-base-300 w-16 h-16 rounded-full overflow-hidden"></div>
+      <div class="bg-base-300 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center" data-avatar-well></div>
     </div>
     <div class="min-w-0 flex-1">
       <div class="text-sm font-semibold truncate">{{ student_name or netid }}</div>

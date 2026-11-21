@@ -29,7 +29,7 @@ function Profile({ p }: { p: P['profile'] }) {
     <div class="wbox rounded-box p-4">
       <div class="flex items-center gap-3 min-w-0">
         <div class="avatar shrink-0">
-          <div class="bg-base-300 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center">
+          <div class="bg-base-300 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center" data-avatar-well="">
             <Blobatar elementRef={ref} name={p.netid} size={64} animate="always" />
           </div>
         </div>

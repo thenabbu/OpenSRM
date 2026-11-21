@@ -85,7 +85,7 @@ with sync_playwright() as p:
           any(o.get("threshold") == 0 for o in io), str(io))
     check("dash-avatar-offscreen: it observes the avatar that is still in the document",
           pg.evaluate("() => !!(window.__io.lastEl && window.__io.lastEl.isConnected"
-                      " && window.__io.lastEl.classList.contains('blobatar-gaze'))"),
+                      " && window.__io.lastEl.classList.contains('mo-root'))"),
           str(pg.evaluate("() => window.__io.map(o => [o.tag, o.connected])")))
 
     root = pg.evaluate("""() => {
