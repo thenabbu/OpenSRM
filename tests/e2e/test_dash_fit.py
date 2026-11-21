@@ -217,14 +217,24 @@ try:
         # land at y=100 and keep moving. Wait for a stable, non-zero scrollY first.
         pg.wait_for_function("() => window.scrollY > 0", timeout=10000)
         pg.wait_for_timeout(150)
-        slip = pg.evaluate("""() => {
-          const de = document.documentElement;
-          const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
-          const nr = nav.getBoundingClientRect();
-          const top = document.elementFromPoint(innerWidth / 2, nr.height / 2);
-          return {y: window.scrollY, sh: de.scrollHeight, ch: de.clientHeight,
-                  navTop: Math.round(nr.top), navCovers: nav.contains(top) || top === nav,
-                  scrolling: de.classList.contains('is-scrolling')}; }""")
+        # navCovers is RETRIED, not sampled once. elementFromPoint at the navbar
+        # centre answers with whatever is on top AT THAT INSTANT, and in CI it
+        # sometimes answered "not the navbar" at y=100/sh=620 with every other
+        # value already correct — one sample that disagrees with itself between
+        # runs. The assertion is unchanged; a real overlap keeps failing.
+        slip = {"navCovers": False}
+        for _ in range(20):
+            slip = pg.evaluate("""() => {
+              const de = document.documentElement;
+              const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
+              const nr = nav.getBoundingClientRect();
+              const top = document.elementFromPoint(innerWidth / 2, nr.height / 2);
+              return {y: window.scrollY, sh: de.scrollHeight, ch: de.clientHeight,
+                      navTop: Math.round(nr.top), navCovers: nav.contains(top) || top === nav,
+                      scrolling: de.classList.contains('is-scrolling')}; }""")
+            if slip["navCovers"]:
+                break
+            pg.wait_for_timeout(100)
         check("desktop: navbar stays fixed over the scrolling page, bar shows on use",
               slip["y"] > 0 and slip["sh"] > slip["ch"] and slip["navTop"] == 0
               and slip["navCovers"] and slip["scrolling"], json.dumps(slip))
