@@ -219,14 +219,40 @@ const OFFLINE_503 = new Response(
   { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
 );
 
-async function offlineShell(url) {
+/** The shell cache keys for a URL, in preference order. */
+function shellPaths(url) {
   const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
-  for (const path of ['/shell/' + panel, '/shell/dashboard', '/shell/']) {
+  return ['/shell/' + panel, '/shell/dashboard', '/shell/'];
+}
+
+/** The cached shell for this URL, or null when this device has none yet. */
+async function cachedShell(url) {
+  for (const path of shellPaths(url)) {
     const hit = await caches.match(path);
     if (hit) return hit;
   }
-  return OFFLINE_503;
+  return null;
 }
+
+async function offlineShell(url) {
+  return (await cachedShell(url)) || OFFLINE_503;
+}
+
+// A cold PWA launch is this route's worst case: the browser process is new, the
+// radio may still be attaching, and `await preloadResponse` has NO timeout of its
+// own — it settles when the fetch does, or when the platform gives up on it
+// (measured on Chrome: ~10 s against a connection that accepts and then stalls).
+// Nothing paints in the meantime, so every launch on a bad link opens to a blank
+// screen for ~10 s and THEN shows the dashboard. NetworkFirst alone cannot fix
+// that: it had no networkTimeoutSeconds, and even with one, its timeout path
+// matches 'opensrm-html' — a cache this route deliberately never writes.
+//
+// So the shell becomes a real first-paint candidate, not only the offline
+// fallback: if this device has one cached, race the network against it and paint
+// whichever arrives first. A healthy load is unchanged (the network wins inside
+// the window and the fresh server HTML is used); a stalled one paints the
+// PII-free shell, and the islands repaint it from Dexie.
+const SHELL_RACE_MS = 2000;
 
 const html = new NetworkFirst({
   cacheName: 'opensrm-html',
@@ -241,24 +267,39 @@ const html = new NetworkFirst({
 });
 
 registerRoute(
-  ({ request }) => request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html'),
+  // Navigations ONLY. A page-initiated `fetch(route, {accept: text/html})` is how
+  // soft navigation swaps a route in place (web/src/nav/softNav.ts): routing that
+  // through here would hand it a shell instead of the page it asked for.
+  ({ request }) => request.mode === 'navigate',
   async (params) => {
-    // Navigation preload starts the request while the worker boots. With the
-    // server DEAD that promise REJECTS — and an uncaught rejection here escapes
-    // the route handler entirely: html.handle() is never reached, so
-    // handlerDidError never runs, so the offline shell is never served and the
-    // navigation dies with net::ERR_FAILED. That was the last offline failure.
-    // Treat a failed preload as "no preload" and fall through to the strategy.
-    let preloaded = null;
+    const shell = await cachedShell(new URL(params.request.url));
+
+    // Navigation preload starts the request while the worker boots, so a
+    // controlled page does not pay worker-startup latency. With the server DEAD
+    // the promise REJECTS — and an uncaught rejection escapes the handler, so
+    // neither the strategy nor its offline ladder ever runs and the navigation
+    // dies with net::ERR_FAILED. A rejected or absent preload therefore falls
+    // through to the strategy exactly as before.
+    let network;
     if (params.event && params.event.preloadResponse) {
-      try {
-        preloaded = await params.event.preloadResponse;
-      } catch {
-        preloaded = null;                  // server unreachable: use the ladder
-      }
+      network = params.event.preloadResponse.catch(() => null);
+    } else {
+      network = html.handle(params).catch(() => null);
     }
-    if (preloaded) return preloaded;
-    return html.handle(params);
+
+    // No shell on this device yet (first ever visit): there is nothing to race
+    // with, so wait for the network and let the strategy own the failure path.
+    if (!shell) return (await network) || offlineShell(new URL(params.request.url));
+
+    let timer;
+    const stall = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), SHELL_RACE_MS);
+    });
+    try {
+      return (await Promise.race([network, stall])) || shell;
+    } finally {
+      clearTimeout(timer);
+    }
   },
   'GET',
 );

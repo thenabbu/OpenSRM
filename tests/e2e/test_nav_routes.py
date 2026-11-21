@@ -147,8 +147,14 @@ with sync_playwright() as p:
     check("F2: no stale '#dashboard' hash written by JS (at rest or on the route)",
           nav["hashAtRest"] == "" and nav["path"] == "/marks" and nav["hash"] == "",
           json.dumps(nav))
-    check("F2: the click was a real page load (switched DOM, one panel)",
-          not nav["alive"] and nav["marks"] and not nav["dash"] and nav["current"] == "marks",
+    # The route must have swapped, and it must be the ONLY route on the page. A
+    # `not alive` check used to stand in for that, because a full document load
+    # was the only way to change route. Soft navigation (web/src/nav/softNav.ts)
+    # swaps the region in place, so the document legitimately survives the click —
+    # asserting `not alive` now asserts the bug the swap exists to remove. The
+    # route identity is the real contract; `alive` is reported, not required.
+    check("F2: the click switched the route (marks only, no dashboard panel)",
+          nav["marks"] and not nav["dash"] and nav["current"] == "marks",
           json.dumps(nav))
 
     pg.close()

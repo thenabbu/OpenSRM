@@ -812,7 +812,20 @@ def browser_capture(base: str, token: str, out: Path, blob_ts: int) -> dict:
                               f"datatab={page.locator('[data-tab]').count()} "
                               f"visdatatab={page.locator('[data-tab]:visible').count()}")
                         raise
+                    # The route may now arrive two ways: a real document load
+                    # (baseline, HEAD) or a soft-nav region swap (web/src/nav/
+                    # softNav.ts). A swap fires NO load event, so waiting on
+                    # `load` alone returned instantly and the very next line
+                    # looked for a panel that had not been fetched yet. Wait for
+                    # the ROUTE instead: the panel id that tab owns, which both
+                    # mechanisms produce and neither produces before the swap.
                     page.wait_for_load_state("load")
+                    page.wait_for_function(
+                        """(want) => location.pathname === want
+                                      && !!document.getElementById('tab-' + want.slice(1))""",
+                        arg="/" if tab == "dashboard" else f"/{tab}",
+                        timeout=15000,
+                    )
                 settle(page, f"{tab} @ {vpname}")
                 freeze(page)
                 panel = page.query_selector(f'#tab-{tab}[data-tabpanel]')

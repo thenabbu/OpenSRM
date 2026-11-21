@@ -27,6 +27,8 @@ SRC = os.path.join(STATIC, 'icon-1024.png')
 BG = (17, 17, 17)          # #111111 = manifest background_color/theme_color
 SAFE_R = 0.345             # mark radius as a fraction of the canvas: inside the
                            # 40%-radius maskable safe circle with AA margin.
+                           # Used for the SPLASH/tile plates only — see plain() for
+                           # why the maskable icons are not clipped to it.
 SPLASH_FRAC = 0.40         # mark width on a splash, fraction of splash width
 TILE_WIDE_FRAC = 0.70      # mark height on a non-square Windows tile
 FAVICON = (16, 24, 32, 48)
@@ -67,6 +69,10 @@ def circle_clip(src: Image.Image, side: int) -> Image.Image:
     Built at the source resolution then resized, which is the treatment the
     shipped maskable pair already carries (reproduces icon-maskable-512.png to
     within 0.2% RMSE — verified when this script was written).
+
+    Used for the SPLASH screens only. The maskable icons use plain() instead:
+    clipping the mark to a disc inside a square plate is exactly what made the
+    installed icon look like the logo sat in a ring (see plain()).
     """
     n = src.size[0]
     mask = Image.new('L', (n, n), 0)
@@ -75,6 +81,25 @@ def circle_clip(src: Image.Image, side: int) -> Image.Image:
     composited = Image.new('RGB', (n, n), BG)
     composited.paste(src, (0, 0), mask)
     return composited.resize((side, side), Image.LANCZOS)
+
+
+def plain(src: Image.Image, side: int) -> Image.Image:
+    """The source tile at `side`, no clipping and no extra padding.
+
+    A maskable icon is a PICTURE THE LAUNCHER CROPS: the platform applies its own
+    shape (circle, squircle, rounded square) and only the inner 80% circle is
+    guaranteed to survive. The source mark is already the right shape for that —
+    it is a full-bleed tile whose artwork reaches all four canvas edges — so
+    resizing it is the whole job, and the launcher's mask becomes its outline.
+
+    What this file did FIRST, and what the installed icon looked like: clip the
+    mark into a 0.345-radius disc and paste that on a square #111 plate, to keep
+    every pixel inside the safe circle. Android then drew its own mask over the
+    plate, so the leftover plate corners showed as a thick border, and the logo
+    was cropped a second time into a disc inside it. Padding cannot fix that; the
+    padding is what made it.
+    """
+    return src.resize((side, side), Image.LANCZOS)
 
 
 def save(im: Image.Image, out: str, name: str) -> None:
@@ -93,11 +118,12 @@ def main() -> int:
         raise SystemExit(f'source is {src.size}, expected 1024x1024')
 
     print('apple-touch-icon (180, opaque - iOS paints transparency black):')
-    save(circle_clip(src, 180), args.out, 'apple-touch-icon.png')
+    save(plain(src, 180), args.out, 'apple-touch-icon.png')
 
-    print('maskable (circle-clipped mark, r=%.3f):' % SAFE_R)
-    save(circle_clip(src, 512), args.out, 'icon-maskable-512.png')
-    save(circle_clip(src, 1024), args.out, 'icon-maskable-1024.png')
+    print('maskable (full-bleed mark, no clip - the launcher supplies the mask):')
+    save(plain(src, 192), args.out, 'icon-maskable-192.png')
+    save(plain(src, 512), args.out, 'icon-maskable-512.png')
+    save(plain(src, 1024), args.out, 'icon-maskable-1024.png')
 
     print('windows tiles (full-bleed square / mark on #111 when not square):')
     for w, h in TILES:

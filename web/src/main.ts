@@ -31,6 +31,7 @@ import {
   registerServiceWorker,
 } from './data/pageChrome';
 import { bindPullToRefresh } from './data/pullToRefresh';
+import { bindSoftNav } from './nav/softNav';
 import { warn as logWarn } from './log';
 
 /**
@@ -563,3 +564,14 @@ const pull = window as unknown as { __osrmPull?: typeof bindPullToRefresh };
 pull.__osrmPull = bindPullToRefresh;
 // No-ops on a fine pointer (desktop mouse), so nothing to feature-detect here.
 bindPullToRefresh();
+
+// Soft navigation: a tab tap swaps the route in place instead of reloading the
+// document (see nav/softNav.ts for why). Bound LAST so the markers it looks for
+// — base.html's `route:start` / `route:end` and the ids above — are all present,
+// and so a soft-nav swap re-runs nothing that is about the document rather than
+// the route. The chrome binders (scroll indicator, beacon, copy, pull, outbox)
+// are delegated at document level and keep working across a swap; this is the
+// one behaviour the swap re-runs, with the fresh island markup as its root.
+bindSoftNav(document, window, {
+  hydrate: (root) => hydrateAll(root, Date.now() / 1000),
+});
