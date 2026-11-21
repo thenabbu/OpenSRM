@@ -116,9 +116,11 @@ TABS = ["dashboard", "attendance", "timetable", "marks",
         "campus", "academics", "fees", "tools", "settings"]
 VIEWPORTS = [("390x844", 390, 844), ("768x1024", 768, 1024), ("1440x900", 1440, 900)]
 DEFAULT_OUT = Path("/opt/data/missions/opensrm-preact/captures")
+# No /avatar entry: those two routes came from blobatar[flask] and are gone. The
+# avatar is rendered in the browser by @blobatar/preact, so there is no SVG URL
+# left to capture.
 API_GETS = ["/", "/login", "/healthz", "/api/marks", "/api/push/status",
-            "/api/scope/status", "/api/timetable", "/api/timetable/history",
-            "/avatar", "/avatar/" + NETID]
+            "/api/scope/status", "/api/timetable", "/api/timetable/history"]
 
 # ── scope payload: repo fixtures (read-only) + literals from repo tests ──
 # op -> repo fixture file holding that op's payload (JSON).
@@ -655,8 +657,11 @@ READY_JS = """() => {
   const lead = document.getElementById('push-lead');
   if (lead && !lead.options.length) return false;
   if (document.documentElement.dataset.perf === 'low') return true;
+  // getComputedStyle, not e.style: useGaze writes --mo-track-travel inline on
+  // the <svg> it was handed, and .mo-root (the inner <g>) only inherits it.
+  // e.style would read '' on the <g> forever and this would never become ready.
   return Array.from(document.querySelectorAll('.mo-root'))
-              .every(e => e.style.getPropertyValue('--mo-track-travel') !== '');
+              .every(e => getComputedStyle(e).getPropertyValue('--mo-track-travel') !== '');
 }"""
 
 READY_DIAG_JS = """() => {
@@ -666,7 +671,7 @@ READY_DIAG_JS = """() => {
                       .map(e => e.dataset.island),
           gaze: document.documentElement.dataset.perf === 'low' ? 'low-tier' :
                 Array.from(document.querySelectorAll('.mo-root'))
-                     .filter(e => e.style.getPropertyValue('--mo-track-travel') === '')
+                     .filter(e => getComputedStyle(e).getPropertyValue('--mo-track-travel') === '')
                      .length,
           pushLead: (() => { const l = document.getElementById('push-lead');
                              return l ? l.options.length : 'no-card'; })()};
