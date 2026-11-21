@@ -23,7 +23,7 @@
 9. **Borders, not shadows.** No gradients, glows, blur, glassmorphism, hover-lift, or colored shadows (§6).
 10. **Data is monospace.** Course codes, percentages, times, counts, dates, NetIDs → `font-mono`. Everything else uses the default sans (§3).
 11. **daisyUI 5 only.** `input-bordered`, `form-control`, and `label-text` do not exist in v5. Use `fieldset`, `floating-label`, `input`, `label`.
-12. **Pre-compiled CSS, strict CSP.** Tailwind (pinned CLI) + daisyUI are compiled ahead of time into `app/static/app.css` (committed; CI fails if it is stale vs the templates — §10.16). No runtime CDN, no inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
+12. **Pre-compiled CSS, strict CSP.** Tailwind + daisyUI are compiled ahead of time by Vite into `app/static/dist/assets/app-*.css` (committed; `ci_web.sh` rebuilds and fails on a diff — §10.16). No runtime CDN, no inline `<script>`, no other CDNs, no web fonts. After editing anything in `app/static/`, bump `CACHE_NAME` in `sw.js` (§10).
 
 ### Cheat sheet: what am I styling?
 
@@ -82,7 +82,7 @@ Anatomy of the dashboard:
 
 ### 2.1 How the theme reaches the page
 
-The theme is authored as a daisyUI 5 custom theme (Appendix A), but the runtime theme is **not built in the browser**. It ships as plain CSS variables under `html[data-theme="openSRM"]` in the shared partial `app/templates/partials/theme.html`, included by both `login.html` and `dashboard.html` (the compiled `app.css` supplies daisyUI component layer around it — §10.16). Do not use `@plugin "daisyui/theme"` in runtime files; it only works inside the pinned build.
+The theme is a real daisyUI 5 custom theme (Appendix A) declared with `@plugin "daisyui/theme"` in `web/tailwind.css`, so daisyUI emits the `[data-theme=openSRM]` variable block **and** wires it into every component layer from one place. `app/templates/partials/theme.html` no longer defines tokens; it keeps only the rules that must exist before the bundle parses (the navbar active cue, the scroll affordance, the pre-paint background).
 
 ### 2.2 Tokens and roles
 
@@ -704,7 +704,7 @@ Pinned by `tests/test_scope_academics.py` (CGPA math incl. ROUND_HALF_UP vs bank
 
 ## 10. Implementation constraints (silent-failure list)
 
-1. **CSS is compiled ahead of time, never at runtime.** `app/static/src.css` is the entry (Tailwind `@import`, the daisyUI `@plugin`, `@source` pointing at templates/views/safelist, then the hand-written sheets); `scripts/build-css.sh` compiles it with a version-pinned, sha256-verified Tailwind standalone CLI + daisyUI release into the committed `app/static/app.css`. There is no runtime CDN, no `tailwind.config.js`, and no `node_modules` in the runtime image — the build runs only on a developer machine or CI. Classes written in Jinja are picked up by the scanner **only if they appear literally in a scanned file**; families assembled at render time (grid spans, progress colors) live in `app/static/safelist/classes.html`. A CI check re-builds `app.css` and fails on `git diff --exit-code`, so the committed file can never go stale. `test_audit_findings` L47 pins the compiled build.
+1. **CSS is compiled ahead of time, never at runtime.** `web/tailwind.css` is the entry (Tailwind `@import`, the daisyUI `@plugin` plus the `openSRM` custom theme, `@source` pointing at templates/views/safelist/src, then the hand-written sheets and blobatar's own `motion.css`/`gaze.css`); Vite compiles it into the committed `app/static/dist/assets/app-*.css`. There is no runtime CDN and no `node_modules` in the runtime image — the build runs only on a developer machine or CI, through `pnpm`. Classes written in Jinja are picked up by the scanner **only if they appear literally in a scanned file**; families assembled at render time (grid spans, progress colors) live in `app/static/safelist/classes.html`. A CI check re-builds `app.css` and fails on `git diff --exit-code`, so the committed file can never go stale. `test_audit_findings` L47 pins the compiled build.
 2. **Strict CSP** (`_security_headers()` in `app/app.py`): `default-src 'self'`; scripts from `'self'` only, so **no inline `<script>`**; styles from `'self'` and `'unsafe-inline'` (the compiled `app.css` plus inline style attributes); images from `'self'` and `data:` only; no `font-src`, so fonts fall back to `'self'`. No third-party origin remains in the CSP — the jsDelivr entries left with the runtime CDN. Consequences: no Google Fonts, no icon libraries, no other CDNs, no remote images. JavaScript goes in `app/static/*.js`. To add a font, self-host it under `app/static/` and add it to the service worker's precache.
 3. **Service worker** (`app/static/sw.js`): HTML = network-first with navigation preload (offline gets the generic no-account page); **versioned assets (`?v=` from `asset()`) = cache-first** — the content hash means the bytes under a URL never change, so warm visits move zero CSS/JS bytes and a deploy is picked up through the new hash, not cache expiry; unversioned statics (icons, manifest) = network-first with cache fallback. If you edit anything under `app/static/`, bump `CACHE_NAME` (`opensrm-v14` → `opensrm-v15`) or installed PWAs keep serving the old file. Inline `<style>` in templates ships with the HTML and updates immediately.
 4. **The theme ships once** in `app/templates/partials/theme.html` (included by both pages). Change it there, and Appendix A.
@@ -726,7 +726,7 @@ Pinned by `tests/test_scope_academics.py` (CGPA math incl. ROUND_HALF_UP vs bank
 
 Front-end rules from the smoothness campaign (measured with `scripts/perf_baseline.py`, 6x CPU + Slow 4G; the committed baseline is `docs/perf/baseline.md`). The six that apply to everything written here:
 
-1. **No runtime CDN.** CSS is compiled ahead of time with a pinned Tailwind CLI and committed as `app/static/app.css` (§10.1); runtime CDN loading is not allowed anywhere.
+1. **No runtime CDN.** CSS is compiled ahead of time by Vite and committed as `app/static/dist/assets/app-*.css` (§10.1); runtime CDN loading is not allowed anywhere.
 2. **Hashed immutable assets.** Every `/static/` CSS/JS reference goes through the `asset()` Jinja global (`?v=<content-hash>`) and is served `Cache-Control: public, max-age=31536000, immutable`; HTML and `sw.js` stay uncached.
 3. **No full-page reloads for data updates.** New data updates the page in place; scroll position, focus, open panels and active tab must survive a sync.
 4. **`transform`/`opacity` only** for anything animated (§7); never animate layout properties, never broad `will-change`.

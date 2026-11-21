@@ -31,7 +31,7 @@ check("app.css carries the low-tier/offscreen avatar pause rule",
       "animation-play-state:paused" in css)
 
 AVATAR = """() => {
-  const wrap = document.querySelector('.blobatar-gaze');
+  const wrap = document.querySelector('.mo-root');
   if (!wrap) return -1;
   return [...document.getAnimations()].filter(a => {
     const t = a.effect && a.effect.target;
@@ -62,10 +62,11 @@ with sync_playwright() as p:
           }"""))
     n = pg.evaluate(AVATAR)
     check("low tier: 0 running avatar animations", n == 0, str(n))
-    check("low tier: gaze driver not started",
-          pg.evaluate("!document.querySelector('.blobatar-gaze')._blobatarGaze"))
+    # The official @blobatar/preact/gaze hook owns the driver now; it exposes no
+    # `_blobatarGaze` handle (the house port did), so the observable proof is
+    # that it never wrote the tracking vars it would write on mount.
     check("low tier: no gaze inline vars written",
-          pg.evaluate("""() => !document.querySelector('.blobatar-gaze')
+          pg.evaluate("""() => !document.querySelector('.mo-root')
                                .style.getPropertyValue('--mo-track-x')"""))
     # polyfill absent (editor archived)
     check("drag-drop polyfill NOT shipped when the editor is archived",

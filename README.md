@@ -292,7 +292,7 @@ documentation and every call is encrypted:
 | SCOPE access | Stdlib-only SOAP client (`urllib` + embedded AES-CBC), bounded 8-connection pool per sync |
 | Captcha | ddddocr (self-contained OCR, no external service) |
 | Database | SQLite with a versioned migration registry (18 migrations → schema v19) |
-| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/app.css` by a pinned, sha256-verified CLI — no runtime CDN. Vanilla JS, Jinja2 |
+| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/dist/assets/app-*.css` by Vite — no runtime CDN. Preact islands, Jinja2 SSR |
 | PWA | Service worker: navigation-preload HTML, cache-first `?v=` assets, network-first icons |
 | CI/CD | GitHub Actions — Lint · Tests (unit + docker + e2e) · Build & Push → `ghcr.io/thenabbu/opensrm` · report-only Scans |
 | Deployment | Docker on the lab host, Cloudflare Tunnel for HTTPS |

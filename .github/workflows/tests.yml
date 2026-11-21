@@ -80,14 +80,9 @@ jobs:
       # ability to fail on every run.
       - name: check_icons (manifest + template wiring + real IHDR sizes)
         run: PYTHONPATH=. .venv/bin/python scripts/check_icons.py
-      # Phase 2.3. Runs here as well as in gates.sh: the dist CSS is committed,
-      # so a rebuild that drops selectors or leaves a stale app-*.css hash
-      # behind must go red on the PR, not only on someone's laptop.
-      - name: css_parity (Vite CSS == committed app.css, one app-*.css in dist)
-        run: PYTHONPATH=. .venv/bin/python scripts/css_parity.py
-      # W7.3b. css_parity compares the two stylesheets to each other; a class
-      # neither of them contains (bottom-20, shadow-lg, btn-circle) passed it and
-      # shipped a button 2400px off-screen. This one starts from web/src.
+      # W7.3b. A class NEITHER stylesheet contains (bottom-20, shadow-lg,
+      # btn-circle) passed a stylesheet-vs-stylesheet diff and shipped a button
+      # 2400px off-screen. This one starts from web/src instead.
       - name: check_css_classes (every class web/src writes has a CSS rule)
         run: PYTHONPATH=. .venv/bin/python scripts/check_css_classes.py
       - name: test_app_factory (create_app isolation)

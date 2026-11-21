@@ -135,7 +135,7 @@ EXPECTED = {
     "/attendance", "/timetable", "/marks", "/campus",
     "/academics", "/fees", "/tools", "/settings",
 }
-got = {r.rule for r in a1.url_map.iter_rules()} - {"/avatar", "/avatar/<name>"}  # blobatar's routes
+got = {r.rule for r in a1.url_map.iter_rules()}
 check("factory: every app route registered", got == EXPECTED,
       f"missing={sorted(EXPECTED - got)} extra={sorted(got - EXPECTED)}")
 r_login = [r for r in a1.url_map.iter_rules() if r.rule == "/api/login"][0]
@@ -206,8 +206,6 @@ EXPECTED_EP = {
 }
 got_ep = {}
 for r in a1.url_map.iter_rules():
-    if r.rule in ("/avatar", "/avatar/<name>"):
-        continue
     v = a1.view_functions.get(r.endpoint)
     got_ep.setdefault(r.rule, set()).add((r.endpoint, getattr(v, "__name__", "-")))
 _bad_ep = sorted(k for k in set(got_ep) | set(EXPECTED_EP)

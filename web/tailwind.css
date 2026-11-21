@@ -11,6 +11,47 @@
 
 @plugin "daisyui" { themes: false; }
 
+/* The theme, where daisyUI 5 wants it: a real custom theme in the plugin
+   config (DESIGN Appendix A). Tokens live here once; daisyUI emits the
+   `[data-theme=openSRM]` variable block AND wires it into every component
+   layer. It used to be a hand-written `html[data-theme]` block in
+   partials/theme.html, which meant the components and the tokens were
+   maintained in two places. */
+@plugin "daisyui/theme" {
+  name: "openSRM";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(20% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(26% 0 0);
+  --color-base-content: oklch(100% 0 0);
+  --color-primary: oklch(0% 0 0);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(97% 0.014 343.198);
+  --color-accent: oklch(100% 0 0);
+  --color-accent-content: oklch(0% 0 0);
+  --color-neutral: oklch(26% 0 0);
+  --color-neutral-content: oklch(98% 0 0);
+  --color-info: oklch(58% 0.158 241.966);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(68% 0.162 75.834);
+  --color-warning-content: oklch(98% 0.026 102.212);
+  --color-error: oklch(57% 0.245 27.325);
+  --color-error-content: oklch(97% 0.013 17.38);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
 @source "../app/templates";
 @source "../app/views";
 @source "../app/app.py";
@@ -19,11 +60,13 @@
 @source "./src";
 
 /* Hand-written sheets in the SAME order as the old <link> tags
-   (framework first, then timetable, motion, gaze). They stay unlayered,
-   so they override layered framework rules exactly as before. */
+   (framework first, then timetable, then blobatar's own motion + gaze layers).
+   They stay unlayered, so they override layered framework rules exactly as
+   before. blobatar's two stylesheets come from the package itself — the copies
+   this repo used to vendor under app/static/ were byte-identical to these. */
 @import "../app/static/timetable.css";
-@import "../app/static/motion.css";
-@import "../app/static/gaze.css";
+@import "blobatar/motion.css";
+@import "blobatar/gaze.css";
 
 /* ── Phase 5: touch feel (DESIGN §7 / §10.16 rule 4) ──────────────────
    Press feedback is FAST down, slow up with a slight overshoot — that

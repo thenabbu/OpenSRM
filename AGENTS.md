@@ -26,8 +26,9 @@ most common red on this branch (6 of 27 merged PRs).
 ## Where things run
 
 - **Local dev**: repo at `/opt/data/opensrm-repo` on the hermes host, venv
-  `.venv` (managed by `uv`). Never npm at runtime — the CSS is compiled ahead
-  of time by `scripts/build-css.sh` into the committed `app/static/app.css`.
+  `.venv` (managed by `uv`). pnpm only in `web/` — never npm — and the CSS is
+  compiled ahead of time by Vite into the committed
+  `app/static/dist/assets/app-*.css`.
 - **Prod**: lab host, container `opensrm`, compose project `/docker/opensrm`,
   behind a Cloudflare tunnel at `https://srm.200871.xyz`. Operator detail:
   `docs/runbook.md`.
@@ -67,7 +68,7 @@ egress/               # CF Worker egress proxy + PoCs — NOT in the image (.doc
 edge/maintenance/     # CF Worker: branded maintenance page, survives a total lab outage
 ops/observability/    # OPTIONAL metrics stack beside the app (never in the image)
 docs/                 # runbook.md · audit/ · push.md · SCANS.md · perf/ · screenshots/
-scripts/              # build-css.sh · gates.sh · check_docs.py · check_architecture.py ·
+scripts/              # gates.sh · check_docs.py · check_architecture.py ·
                       # pr_preflight.sh · post_deploy.sh · url_map_dump.py · perf_baseline.py
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate) · build.yml · lint.yml ·
                       # scans.yml (report-only); SHA-pinned actions; `uv lock --check`
@@ -81,8 +82,9 @@ they went stale three times. If you need a number, derive it.
 ```bash
 cd /opt/data/opensrm-repo
 uvx --quiet ruff check app/     # scope ruff to the files you edited; never `ruff --fix`
-# scripts/build-css.sh          # after template edits that add utility classes;
-#                               # app.css is committed and CI fails if stale
+# bash scripts/build-web.sh     # after template/JSX edits that add utility
+#                               # classes; the dist CSS is committed and CI
+#                               # fails if it is stale
 bash scripts/gates.sh           # the bar
 ```
 

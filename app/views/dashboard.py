@@ -19,7 +19,6 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
-from blobatar.flask import blobatar_filter as _blobatar_svg
 from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
@@ -175,8 +174,7 @@ def dashboard_island_payload(vm, netid):
     """
     return _island_props(
         profile={"netid": netid, "name": vm["student_name"] or netid,
-                 "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"],
-                 "avatar": _blobatar_svg(netid, size=64, animate="always")},
+                 "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"]},
         ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
         budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
         exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],

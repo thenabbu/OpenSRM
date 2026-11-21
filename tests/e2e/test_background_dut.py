@@ -89,7 +89,7 @@ with sync_playwright() as p:
           str(pg.evaluate("() => window.__io.map(o => [o.tag, o.connected])")))
 
     root = pg.evaluate("""() => {
-        const wrap = document.querySelector('.blobatar-gaze');
+        const wrap = document.querySelector('.mo-root');
         const r = wrap && (wrap.querySelector('.mo-root') || wrap);
         return r ? r.classList.contains('is-offscreen') : null;
     }""")
@@ -98,7 +98,7 @@ with sync_playwright() as p:
     pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
     pg.wait_for_timeout(600)  # IO callbacks are async: this is the wait that proves it
     off = pg.evaluate("""() => {
-        const wrap = document.querySelector('.blobatar-gaze');
+        const wrap = document.querySelector('.mo-root');
         const r = wrap && (wrap.querySelector('.mo-root') || wrap);
         return r ? r.classList.contains('is-offscreen') : null;
     }""")
@@ -114,7 +114,7 @@ with sync_playwright() as p:
     pg.evaluate("() => window.scrollTo(0, 0)")
     pg.wait_for_timeout(600)
     back = pg.evaluate("""() => {
-        const wrap = document.querySelector('.blobatar-gaze');
+        const wrap = document.querySelector('.mo-root');
         const r = wrap && (wrap.querySelector('.mo-root') || wrap);
         return r ? r.classList.contains('is-offscreen') : null;
     }""")

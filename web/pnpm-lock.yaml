@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@blobatar/preact':
+        specifier: 2.7.0
+        version: 2.7.0(blobatar@2.7.0)(preact@10.29.8)
+      blobatar:
+        specifier: 2.7.0
+        version: 2.7.0
       dexie:
         specifier: ^4
         version: 4.4.7
@@ -581,6 +587,12 @@ packages:
   '@babel/types@7.29.11':
     resolution: {integrity: sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ==}
     engines: {node: '>=6.9.0'}
+
+  '@blobatar/preact@2.7.0':
+    resolution: {integrity: sha512-6B6Mc2d2Z8R+a8hqiTShjvw5TcJPAAA+KK/GThtNte106cWLm5DT8lTdUO3M4kXM4Wo9NfZe8Bj4OFDDabLZFw==}
+    peerDependencies:
+      blobatar: 2.x
+      preact: '>=10'
 
   '@csstools/color-helpers@5.1.0':
     resolution: {integrity: sha512-S11EXWJyy0Mz5SYvRmY8nJYTFFd1LCNV+7cXyAgQtOOuzb4EsgfqDufL+9esx72/eLhsRdGZwaldu/h+E4t4BA==}
@@ -1448,6 +1460,17 @@ packages:
     resolution: {integrity: sha512-GNk8KX52CHqeNKGk8+7tZnQab/2k1t/BgrUHPKNdijzpEhF1saPQZHVKb6m5loSAxB39gyrTYw34Qf9CQ3u1qQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  blobatar@2.7.0:
+    resolution: {integrity: sha512-tL1p2J3dXE/Z9U/ITwHqU7HBHmTH+Am+hif1J1hWAhvFT1VYC2HG+eXtN7081yuY+L2lrp9bs/VaF7dVH3S2jw==}
+    peerDependencies:
+      react: '>=18'
+      vue: '>=3'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      vue:
+        optional: true
 
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
@@ -3477,6 +3500,11 @@ snapshots:
       '@babel/helper-string-parser': 7.29.13
       '@babel/helper-validator-identifier': 7.29.7
 
+  '@blobatar/preact@2.7.0(blobatar@2.7.0)(preact@10.29.8)':
+    dependencies:
+      blobatar: 2.7.0
+      preact: 10.29.8
+
   '@csstools/color-helpers@5.1.0': {}
 
   '@csstools/css-calc@2.1.4(@csstools/css-parser-algorithms@3.0.5(@csstools/css-tokenizer@3.0.4))(@csstools/css-tokenizer@3.0.4)':
@@ -4105,6 +4133,8 @@ snapshots:
   balanced-match@4.0.4: {}
 
   baseline-browser-mapping@2.11.35: {}
+
+  blobatar@2.7.0: {}
 
   boolbase@1.0.0: {}
 

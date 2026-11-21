@@ -19,8 +19,8 @@
    (framework first, then timetable, motion, gaze). They stay unlayered,
    so they override layered framework rules exactly as before. */
 @import "./timetable.css";
-@import "./motion.css";
-@import "./gaze.css";
+@import "blobatar/motion.css";
+@import "blobatar/gaze.css";
 
 /* ── Phase 5: touch feel (DESIGN §7 / §10.16 rule 4) ──────────────────
    Press feedback is FAST down, slow up with a slight overshoot — that

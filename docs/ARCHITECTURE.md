@@ -225,7 +225,7 @@ privacy or correctness control.
 3. **Specificity is not the tool.** Prefer the right token or the right
    component variant over a more specific selector. A selector that needed
    `!important` to win is a design-system decision that has not been made yet.
-4. Tailwind + daisyUI are compiled ahead of time into `app/static/app.css`,
+4. Tailwind + daisyUI are compiled ahead of time into `app/static/dist/assets/app-*.css`,
    committed, and CI fails if it is stale against the templates. No runtime
    CDN, no inline `<script>`, no web fonts. After touching `app/static/dist/`
    or the worker, rebuild from `web/` — `CACHE_NAME` is stamped from the
@@ -242,7 +242,7 @@ privacy or correctness control.
 | Anything touching IndexedDB | `web/src/db/db.ts`, and nowhere else |
 | Offline behaviour | `web/src/sw-template.js`, `web/src/session/shell.ts` |
 | The shell scrub list | `app/blueprints/shell.py` |
-| Colours, type, spacing | `DESIGN.md`, then `app/static/app.css` |
+| Colours, type, spacing | `DESIGN.md`, then `app/static/dist/assets/app-*.css` |
 | This diagram | `scripts/build_arch_diagram.py` → `docs/architecture.html` |
 
 The architecture diagram is **generated**. Edit `scripts/build_arch_diagram.py`

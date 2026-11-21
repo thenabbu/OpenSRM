@@ -36,7 +36,7 @@ the running container: `docker inspect opensrm --format
 '{{json .Config.Labels}}'` → `org.opencontainers.image.version: 1.23.0`).
 A red suite therefore blocks the image; there is no build step in the image
 itself — the CSS is pre-compiled on the dev side and committed
-(`app/static/app.css`, CI re-builds it and fails if stale), so the runtime
+(`app/static/dist/assets/app-*.css`, CI re-builds it and fails if stale), so the runtime
 image carries no node/npm and no bundler.
 
 Deploy is **manual** — no watcher exists, by maintainer decision

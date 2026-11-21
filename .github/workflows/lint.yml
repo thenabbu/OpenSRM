@@ -43,10 +43,7 @@ jobs:
       - name: Lockfile freshness
         run: uv lock --check
 
-      # app.css is committed (DESIGN §10.1): rebuild it and fail if the
-      # result differs — a stale committed file can never ship. Downloads
-      # the pinned toolchain (~110 MB) into the runner's cache dir.
-      - name: Compiled CSS is current (build-css.sh + git diff)
-        run: |
-          bash scripts/build-css.sh
-          git diff --exit-code app/static/app.css
+      # The dist CSS is committed (DESIGN §10.1): scripts/ci_web.sh rebuilds it
+      # and fails on a diff, so a stale committed bundle can never ship. The old
+      # standalone build-css.sh + app/static/app.css pair is gone — the theme now
+      # lives in the daisyUI plugin config and Vite is the only CSS build.

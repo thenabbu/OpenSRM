@@ -23,5 +23,12 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: { input: { app: 'src/main.ts' } },
   },
-  test: { environment: 'jsdom', include: ['src/**/*.test.ts', 'src/**/*.test.tsx'] },
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // blobatar's gaze driver reads matchMedia (reduced motion) when it mounts.
+    // jsdom has no implementation, so every test that renders an avatar threw
+    // "matchMedia is not a function" out of a timer, after the assertions ran.
+    setupFiles: ['./src/test-setup.ts'],
+  },
 });

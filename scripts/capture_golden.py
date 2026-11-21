@@ -638,7 +638,7 @@ READY_JS = """() => {
   const isl = Array.from(document.querySelectorAll('[data-island]'));
   if (!isl.every(e => !!(e.dataset.hydrated || e.dataset.mountedAt))) return false;
   // Second marker, same reason: gaze.js publishes --mo-track-travel on every
-  // .blobatar-gaze from an osrm:island-mounted listener, which main.ts fires
+  // .mo-root from an osrm:island-mounted listener, which main.ts fires
   // AFTER stamping data-hydrated. Stopping at data-hydrated catches whichever
   // side of that tick the host happens to be on — measured: the laptop had the
   // attribute, a GH runner did not, 31 bytes of drift on dom/dashboard.html and
@@ -655,7 +655,7 @@ READY_JS = """() => {
   const lead = document.getElementById('push-lead');
   if (lead && !lead.options.length) return false;
   if (document.documentElement.dataset.perf === 'low') return true;
-  return Array.from(document.querySelectorAll('.blobatar-gaze'))
+  return Array.from(document.querySelectorAll('.mo-root'))
               .every(e => e.style.getPropertyValue('--mo-track-travel') !== '');
 }"""
 
@@ -665,7 +665,7 @@ READY_DIAG_JS = """() => {
           pending: isl.filter(e => !(e.dataset.hydrated || e.dataset.mountedAt))
                       .map(e => e.dataset.island),
           gaze: document.documentElement.dataset.perf === 'low' ? 'low-tier' :
-                Array.from(document.querySelectorAll('.blobatar-gaze'))
+                Array.from(document.querySelectorAll('.mo-root'))
                      .filter(e => e.style.getPropertyValue('--mo-track-travel') === '')
                      .length,
           pushLead: (() => { const l = document.getElementById('push-lead');
@@ -709,17 +709,19 @@ def freeze(page) -> None:
 
     Three sources of movement that are NOT wall-clock normalisable, because they
     change PIXELS and the bytes of the PNG:
-      1. gaze.js drives --mo-track-* through requestAnimationFrame forever, so
-         each screenshot catches the eyes somewhere else. Its controller exposes
-         stop(), and it is per-avatar (`_blobatarGaze`).
+      1. the gaze driver drives --mo-track-* through requestAnimationFrame
+         forever, so each screenshot catches the eyes somewhere else. The
+         official @blobatar/preact/gaze hook exposes no stop() handle, so the
+         page's rAF queue is drained by pinning every --mo-* to 0 AFTER the
+         frames are flushed (the loop below), which is what the pixels see.
       2. the idle blink/bob/breathe loops are CSS keyframes: pausing leaves them
          at an arbitrary elapsed offset, so they are switched off, not paused.
       3. any --mo-* value the driver wrote last is pinned to 0.
     No sleep anywhere: two rAFs is the frame flush.
     """
     page.evaluate("""() => {
-      document.querySelectorAll('.blobatar-gaze').forEach(s => {
-        try { if (s._blobatarGaze && s._blobatarGaze.stop) s._blobatarGaze.stop(); } catch (e) {}
+      document.querySelectorAll('.mo-root').forEach(s => {
+        s.style.setProperty('--mo-track-travel', '0px');
       });
       document.querySelectorAll('[style*="--mo-"]').forEach(el => {
         for (const name of Array.from(el.style)) {

@@ -77,7 +77,7 @@ Do not reuse your SRM password anywhere else.
   (`max-age=31536000; includeSubDomains`) on `cf-ray` responses only
 - **No third-party payload to integrity-check.** Tailwind and daisyUI are
   compiled ahead of time from a version-pinned, sha256-verified toolchain
-  (`scripts/build-css.sh`) into the committed `app/static/app.css`, so the
+  (Vite, via `pnpm`) into the committed `app/static/dist/assets/app-*.css`, so the
   browser never fetches third-party CSS or JS. The old SRI-on-CDN defence
   became unnecessary once the CDN itself was removed.
 
