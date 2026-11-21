@@ -26,5 +26,9 @@ if [ "${1:-}" = "--check" ]; then
     ${OPENSRM_PY:+--python "$OPENSRM_PY"}
 fi
 
+# Regen defaults to THIS checkout too: capture_golden.py's --repo default is the
+# canonical clone, so a regen from a worktree used to baseline that repo's HEAD
+# while writing the output here (silent, and it re-captured against a tree with
+# no built dist).
 exec "$PY" scripts/capture_golden.py --out "${1:-tests/golden/v3}" --port "${2:-18185}" \
-  ${3:+--repo "$3"} ${OPENSRM_PY:+--python "$OPENSRM_PY"}
+  --repo "${3:-$PWD}" ${OPENSRM_PY:+--python "$OPENSRM_PY"}

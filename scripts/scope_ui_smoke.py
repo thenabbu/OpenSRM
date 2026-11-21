@@ -94,7 +94,9 @@ check("every stored op is {data, ts}",
       all(isinstance(v, dict) and "data" in v and "ts" in v for v in blob.values()))
 
 # ── the Tools gate produces rows ───────────────────────────────────────────
-rows = A._tools_entries(NETID)
+# Built from the same view models the route renders, so this checks the rows the
+# page actually gets (a row exists only when its panel does).
+rows = A.panel_data(NETID, "tools")["tools"]
 slugs = sorted(r["slug"] for r in rows)
 check("_tools_entries yields SCOPE rows with data present", len(rows) >= 3, str(slugs))
 check("every Tools row names a real tab",
@@ -117,7 +119,8 @@ html = r.get_data(as_text=True)
 # disagree — the broken-link bug). The campus self-hide case is asserted below,
 # where there deliberately is no data.
 PANEL_ROUTES = {"tools": "/tools", "academics": "/academics",
-                "fees": "/fees", "attendance": "/attendance"}
+                "fees": "/fees", "attendance": "/attendance",
+                "settings": "/settings"}   # Tools row: "Personal details"
 PAGES = {}                      # tab -> its route's HTML, reused by the Tools check below
 for tab, route in PANEL_ROUTES.items():
     # ponytail: one GET per tab on top of `/`; fold into a loop over all nine if
