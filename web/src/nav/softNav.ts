@@ -243,7 +243,15 @@ export function bindSoftNav(doc: Document, win: Window, opts: SoftNavOptions): v
       // updateCallbackDone is the promise that says the DOM is actually swapped.
       const vts = (doc as Document & { startViewTransition?: (cb: () => void) => unknown })
         .startViewTransition;
-      if (typeof vts === 'function') {
+      // Honour prefers-reduced-motion. The default cross-fade is a full-page
+      // animation, which is exactly what that setting asks us not to do — and a
+      // screenshot taken mid-fade shows BOTH routes on top of each other, which
+      // is how the vision gate reported "Fees rendered over Tools" instead of a
+      // regression. Harnesses that capture with reduced motion get no transition
+      // at all, which is also the honest rendering for those users.
+      const reduceMotion = (win as Window & { matchMedia?: (q: string) => MediaQueryList })
+        .matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      if (typeof vts === 'function' && !reduceMotion) {
         const transition = vts.call(doc, apply) as { updateCallbackDone?: Promise<void> };
         await transition.updateCallbackDone?.catch(() => undefined);
       } else {

@@ -297,3 +297,29 @@ describe('bindSoftNav: route-swapped signal', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('bindSoftNav: prefers-reduced-motion', () => {
+  it('swaps without starting a view transition when the user asks for less motion', async () => {
+    const live = docWith('<main id="dash">dashboard</main>');
+    const next = docWith('<main id="marks">marks</main>');
+    live.body.insertAdjacentHTML('beforeend', '<a id="go" href="/marks">M</a>');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(next.documentElement.outerHTML, { status: 200 })));
+    const vts = vi.fn();
+    (live as Document & { startViewTransition?: unknown }).startViewTransition = vts;
+    const win = {
+      location: { ...HERE, assign: vi.fn() },
+      history: { pushState: vi.fn() },
+      scrollTo: vi.fn(),
+      addEventListener: vi.fn(),
+      matchMedia: (q: string) => ({ matches: q.includes('reduced-motion') }),
+    } as unknown as Window;
+    bindSoftNav(live, win, { hydrate: async () => {}, now: () => 0 });
+
+    live.getElementById('go')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    await vi.waitFor(() => expect(live.querySelector('#marks')).not.toBeNull());
+
+    expect(vts).not.toHaveBeenCalled();          // no full-page cross-fade
+    expect(live.querySelector('#dash')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
