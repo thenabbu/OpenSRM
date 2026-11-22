@@ -309,7 +309,11 @@ jobs:
   # :dev-<sha> tag beside it pins one exact build.
   merge-dev:
     needs: [meta-dev, build]
-    if: needs.meta-dev.outputs.sha_tag != ''
+    # always() is required, not decorative: `meta` (the main-only job) is skipped
+    # on a dev push, and a skipped ancestor propagates skip through the graph.
+    # Without always() this job reports "skipped", which GitHub counts as a
+    # green run - so the workflow looked successful while publishing no image.
+    if: always() && needs.meta-dev.outputs.sha_tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
