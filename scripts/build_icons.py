@@ -1,34 +1,49 @@
 #!/usr/bin/env python3
-"""Resample the OpenSRM mark into the PWA icon set.
+"""Render the OneSRM mark into the PWA icon set.
 
-Source of truth: ``app/static/icon-1024.png`` (1024x1024). Nothing here is
-redrawn — every output is a LANCZOS resample of that one file, or of the
-circle-clipped plate built from it. The rows this script writes are the rows in
-``notes/ICONS.md`` §3; ``scripts/check_icons.py`` proves the result (real IHDR
-sizes, template wiring, safe zone).
+Sources of truth are the SVGs in ``design/icons/``. Nothing is redrawn, and no
+raster is ever resized: every output is rendered from the vector at its own
+pixel size, so a 16px favicon is a 16px render, not a shrunken 512.
 
-Outputs are committed (assets are built ahead of time; the runtime image has no
-Node/Pillow). Run only when the mark changes:
+  onesrm-icon.svg                 full-art: big letters, square, opaque
+                                  -> icon-192/512/1024, Windows tiles, splashes
+  onesrm-icon-chamfer.svg         same art with 24px cut corners
+                                  -> favicon.svg, favicon.ico   (alpha KEPT:
+                                     a tab icon may be transparent)
+  icon-maskable.svg               letters scaled 1.25x about the centre, so the
+                                  farthest corner sits at 37.6% of the width,
+                                  inside the web 40% safe circle
+                                  -> icon-maskable-192/512/1024,
+                                     apple-touch-icon  (alpha DROPPED: iOS
+                                     paints transparency black)
+  onesrm-adaptive-*.svg           the two layers icon-maskable.svg is built from
 
-    python3 scripts/build_icons.py             # writes app/static/
-    python3 scripts/build_icons.py --out DIR   # preview into DIR, compare first
+Spec: ``notes/ICONS.md``. Proof: ``scripts/check_icons.py`` (IHDR sizes, alpha,
+safe zone, template wiring).
+
+Renderer: cairosvg in the repo venv. The runtime image has neither the renderer
+nor the SVGs, so outputs are committed. Run only when the mark changes:
+
+    python3 scripts/build_icons.py               # writes app/static/
+    python3 scripts/build_icons.py --out DIR     # preview into DIR
 """
 from __future__ import annotations
 
 import argparse
+import io
 import os
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(ROOT, 'app', 'static')
-SRC = os.path.join(STATIC, 'icon-1024.png')
+DESIGN = os.path.join(ROOT, 'design', 'icons')
+
+FULL = os.path.join(DESIGN, 'onesrm-icon.svg')          # square, big letters
+CHAMFER = os.path.join(DESIGN, 'onesrm-icon-chamfer.svg')  # cut corners, alpha
+MASK = os.path.join(DESIGN, 'icon-maskable.svg')        # safe-zone letters
 
 BG = (17, 17, 17)          # #111111 = manifest background_color/theme_color
-SAFE_R = 0.345             # mark radius as a fraction of the canvas: inside the
-                           # 40%-radius maskable safe circle with AA margin.
-                           # Used for the SPLASH/tile plates only — see plain() for
-                           # why the maskable icons are not clipped to it.
 SPLASH_FRAC = 0.40         # mark width on a splash, fraction of splash width
 TILE_WIDE_FRAC = 0.70      # mark height on a non-square Windows tile
 FAVICON = (16, 24, 32, 48)
@@ -49,57 +64,38 @@ TILES = [(44, 44), (50, 50), (71, 71), (150, 150), (310, 310),
          (310, 150), (620, 300)]
 
 
-def load_source() -> Image.Image:
-    return Image.open(SRC).convert('RGB')
+def render(svg: str, side: int, opaque: bool = True) -> Image.Image:
+    """Rasterise `svg` at exactly `side` px.
 
+    `opaque=True` flattens onto #111111 and returns RGB: the PWA and apple
+    icons must carry no alpha at all, because iOS paints transparency black.
+    `opaque=False` returns RGBA so a cut-corner favicon keeps its transparent
+    corners — a tab icon sits on the browser's own background.
+    """
+    import cairosvg
 
-def plate(size: tuple[int, int], src: Image.Image, frac: float) -> Image.Image:
-    """The mark circle-clipped at SAFE_R, scaled to `frac` of the short side."""
-    w, h = size
-    base = Image.new('RGB', (w, h), BG)
-    disc = int(round(min(w, h) * frac))
-    mark = circle_clip(src, disc)
-    base.paste(mark, ((w - disc) // 2, (h - disc) // 2))
+    png = cairosvg.svg2png(url=svg, output_width=side, output_height=side)
+    art = Image.open(io.BytesIO(png)).convert('RGBA')
+    if art.size != (side, side):
+        raise SystemExit(f'{svg} rendered {art.size}, expected {(side, side)}')
+    if not opaque:
+        return art
+    base = Image.new('RGB', (side, side), BG)
+    base.paste(art, (0, 0), art)
     return base
 
 
-def circle_clip(src: Image.Image, side: int) -> Image.Image:
-    """Clip the mark to a circle of radius SAFE_R x side, over an opaque plate.
+def plate(size: tuple[int, int], src: Image.Image, frac: float) -> Image.Image:
+    """The mark scaled to `frac` of the short side, centred on a #111 plate.
 
-    Built at the source resolution then resized, which is the treatment the
-    shipped maskable pair already carries (reproduces icon-maskable-512.png to
-    within 0.2% RMSE — verified when this script was written).
-
-    Used for the SPLASH screens only. The maskable icons use plain() instead:
-    clipping the mark to a disc inside a square plate is exactly what made the
-    installed icon look like the logo sat in a ring (see plain()).
+    Splashes and non-square tiles are pictures with margins, not tiles a
+    launcher crops, so they take a plate.
     """
-    n = src.size[0]
-    mask = Image.new('L', (n, n), 0)
-    c, r = n / 2, SAFE_R * n
-    ImageDraw.Draw(mask).ellipse([c - r, c - r, c + r, c + r], fill=255)
-    composited = Image.new('RGB', (n, n), BG)
-    composited.paste(src, (0, 0), mask)
-    return composited.resize((side, side), Image.LANCZOS)
-
-
-def plain(src: Image.Image, side: int) -> Image.Image:
-    """The source tile at `side`, no clipping and no extra padding.
-
-    A maskable icon is a PICTURE THE LAUNCHER CROPS: the platform applies its own
-    shape (circle, squircle, rounded square) and only the inner 80% circle is
-    guaranteed to survive. The source mark is already the right shape for that —
-    it is a full-bleed tile whose artwork reaches all four canvas edges — so
-    resizing it is the whole job, and the launcher's mask becomes its outline.
-
-    What this file did FIRST, and what the installed icon looked like: clip the
-    mark into a 0.345-radius disc and paste that on a square #111 plate, to keep
-    every pixel inside the safe circle. Android then drew its own mask over the
-    plate, so the leftover plate corners showed as a thick border, and the logo
-    was cropped a second time into a disc inside it. Padding cannot fix that; the
-    padding is what made it.
-    """
-    return src.resize((side, side), Image.LANCZOS)
+    w, h = size
+    base = Image.new('RGB', (w, h), BG)
+    side = int(round(min(w, h) * frac))
+    base.paste(src.resize((side, side), Image.LANCZOS), ((w - side) // 2, (h - side) // 2))
+    return base
 
 
 def save(im: Image.Image, out: str, name: str) -> None:
@@ -113,33 +109,45 @@ def main() -> int:
     ap.add_argument('--out', default=STATIC, help='output directory')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    src = load_source()
-    if src.size != (1024, 1024):
-        raise SystemExit(f'source is {src.size}, expected 1024x1024')
+    for svg in (FULL, CHAMFER, MASK):
+        if not os.path.exists(svg):
+            raise SystemExit(f'design source missing: {svg}')
+
+    print('manifest any (full-art mark, letters nearly fill the square):')
+    for side in (192, 512, 1024):
+        save(render(FULL, side), args.out, f'icon-{side}.png')
+
+    print('maskable (safe-zone letters, full-bleed - the launcher supplies the mask):')
+    for side in (192, 512, 1024):
+        save(render(MASK, side), args.out, f'icon-maskable-{side}.png')
 
     print('apple-touch-icon (180, opaque - iOS paints transparency black):')
-    save(plain(src, 180), args.out, 'apple-touch-icon.png')
+    save(render(MASK, 180), args.out, 'apple-touch-icon.png')
 
-    print('maskable (full-bleed mark, no clip - the launcher supplies the mask):')
-    save(plain(src, 192), args.out, 'icon-maskable-192.png')
-    save(plain(src, 512), args.out, 'icon-maskable-512.png')
-    save(plain(src, 1024), args.out, 'icon-maskable-1024.png')
+    print('favicon.svg (chamfered art, transparent corners kept):')
+    path = os.path.join(args.out, 'favicon.svg')
+    with open(CHAMFER, encoding='utf-8') as fh:
+        body = fh.read()
+    with open(path, 'w', encoding='utf-8') as fh:
+        fh.write(body)
+    print(f'  favicon.svg                      512x512    {os.path.getsize(path)}B')
+
+    print('favicon.ico (multi-frame, each frame its own render, alpha kept):')
+    frames = render(CHAMFER, max(FAVICON), opaque=False)
+    path = os.path.join(args.out, 'favicon.ico')
+    frames.save(path, sizes=[(s, s) for s in FAVICON])
+    print(f'  favicon.ico {FAVICON} frames  {os.path.getsize(path)}B')
 
     print('windows tiles (full-bleed square / mark on #111 when not square):')
     for w, h in TILES:
-        im = (src.resize((w, h), Image.LANCZOS) if w == h
-              else plate((w, h), src, TILE_WIDE_FRAC))
+        im = (render(FULL, w) if w == h
+              else plate((w, h), render(FULL, 512), TILE_WIDE_FRAC))
         save(im, args.out, f'icon-{w}x{h}.png' if w != h else f'icon-{w}.png')
 
     print('ios splash (mark on #111, portrait):')
+    small = render(FULL, 512)
     for w, h in SPLASHES:
-        save(plate((w, h), src, SPLASH_FRAC), args.out, f'apple-splash-{w}x{h}.png')
-
-    print('favicon (multi-frame):')
-    ico = src.resize((max(FAVICON), max(FAVICON)), Image.LANCZOS)
-    path = os.path.join(args.out, 'favicon.ico')
-    ico.save(path, sizes=[(s, s) for s in FAVICON])
-    print(f'  favicon.ico {FAVICON} frames  {os.path.getsize(path)}B')
+        save(plate((w, h), small, SPLASH_FRAC), args.out, f'apple-splash-{w}x{h}.png')
     return 0
 
 

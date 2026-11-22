@@ -95,7 +95,7 @@ def safe_zone(path: str) -> tuple[int, int, float]:
 
 
 def bleed(path: str) -> tuple[int, int]:
-    """(canvas side, art width in px) of the non-background content.
+    """(canvas side, art width in px) of the artwork that reaches the edges.
 
     A maskable icon is a picture the LAUNCHER crops: it applies its own shape and
     keeps only the inner 80% circle. So the artwork must FILL the canvas — the
@@ -103,12 +103,33 @@ def bleed(path: str) -> tuple[int, int]:
     floating in a field, and the field is what a user sees as a thick ring around
     the logo once Android draws its mask over it. That defect shipped: the mark
     was circle-clipped to 69% of the canvas and every installed icon had the ring.
+
+    "Fills the canvas" is measured as a bounding box over ALL four corners, not
+    as "pixels that differ from #111111". A two-tone split tile is half #111111
+    by design, so the differ-from-background test reported a full-bleed icon as
+    75% wide and would have forced us to pad the icon with the very plate this
+    rule exists to forbid. The ring defect still fails: a disc-clipped mark
+    leaves the plate colour in the corners.
     """
     im = Image.open(path).convert('RGB')
     side = im.size[0]
-    bbox = ImageChops.difference(im, Image.new('RGB', im.size, BG)).convert('L') \
+    corner = im.getpixel((0, 0))
+    bbox = ImageChops.difference(im, Image.new('RGB', im.size, corner)).convert('L') \
         .point(lambda v: 255 if v > 6 else 0).getbbox()
-    return side, (bbox[2] - bbox[0]) if bbox else 0
+    if bbox is None:
+        return side, 0
+    # A full-bleed tile paints every corner a background colour of its OWN art
+    # (here: white left, #111 right), so the box must be taken over all four
+    # corners, not one.
+    for corner in (im.getpixel((side - 1, 0)), im.getpixel((0, side - 1)),
+                   im.getpixel((side - 1, side - 1))):
+        other = ImageChops.difference(im, Image.new('RGB', im.size, corner)).convert('L') \
+            .point(lambda v: 255 if v > 6 else 0).getbbox()
+        if other is None:
+            continue
+        bbox = (min(bbox[0], other[0]), min(bbox[1], other[1]),
+                max(bbox[2], other[2]), max(bbox[3], other[3]))
+    return side, max(bbox[2] - bbox[0], bbox[3] - bbox[1])
 
 
 # ── every check, as a function of a root so the self-test can re-point it ────
