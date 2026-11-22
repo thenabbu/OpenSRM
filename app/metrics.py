@@ -14,6 +14,7 @@ _lock = threading.Lock()
 _counters = {}   # (name, ((label, value), ...)) -> int
 _hists = {}      # (name, labels) -> {"buckets": [...], "sum": float, "count": int}
 _gauges = {}     # name -> callable() -> float
+_gauge_fams = {}  # name -> callable() -> [((label, value), ...), ...] | None
 _provided_hists = {}   # name -> (callable() -> [cumulative counts] | None, buckets)
 
 # duration buckets (seconds): syncs run ~2s warm .. 150s (pipeline deadline)
@@ -113,6 +114,19 @@ def gauge(name, fn):
         _gauges[name] = fn
 
 
+def gauge_family(name, fn):
+    """Register a LABELLED gauge provider: fn() -> [((label, value), ...), ...].
+
+    Same contract as gauge(), one level up: fn runs once per scrape, must be
+    cheap, and must return None rather than an empty list when the source could
+    not be read. None renders nothing at all — publishing zero for every label
+    would read as "nobody was ever active at any hour", which is a lie shaped
+    like data.
+    """
+    with _lock:
+        _gauge_fams[name] = fn
+
+
 def histogram_provider(name, fn, buckets):
     """Register a render-time HISTOGRAM provider.
 
@@ -162,6 +176,7 @@ def render():
         for (name, labels), h in _hists.items():
             hist_groups.setdefault(name, []).append((labels, h))
         gauges = list(_gauges.items())
+        fams = list(_gauge_fams.items())
         provided = list(_provided_hists.items())
 
     def _typed(name, kind):
@@ -188,6 +203,19 @@ def render():
         except Exception:
             v = 0.0
         lines.append(f"{name} {v}")
+    for name, fn in fams:
+        # Evaluated outside the lock (already copied). None = unreadable source
+        # = render nothing, never a zero-per-label page of fake data.
+        try:
+            series = fn()
+        except Exception:
+            series = None
+        if not series:
+            continue
+        _typed(name, "gauge")
+        for item in series:
+            labels, v = item
+            lines.append(f"{name}{_labels(labels)} {v}")
     for name, (fn, buckets) in provided:
         # provider histograms are evaluated OUTSIDE the lock (already copied),
         # and a None answer renders nothing at all — an unreadable source must

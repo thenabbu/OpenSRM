@@ -215,6 +215,48 @@ def _db_stat(fn):
         return 0.0
 
 
+def _db_fam(fn):
+    """Same private-connection contract as _db_stat, for a LABELLED family.
+
+    Returns None (renders nothing) where _db_stat returns 0.0 — for a 24-label
+    family a 0.0 fallback would draw a flat empty day and read as real data.
+    """
+    try:
+        c = dbmod.connect()
+        try:
+            return fn(c)
+        finally:
+            c.close()
+    except Exception:
+        return None
+
+
+def _activity_by_hour(c):
+    """People active in each hour of the day, over the last 7 days, in IST.
+
+    The live counter cannot answer this: it resets on deploy and Prometheus
+    keeps every uid series it has ever seen, so counting series reports the
+    all-time user count forever (measured: panel said 11 while 3 people were
+    actually active). usage_events is the only honest source.
+
+    Buckets are hour-of-day, not wall-clock, because the question is "when do
+    people use it", not "was the site busy at 3pm last Tuesday". A fixed +19800
+    offset is correct here: India has one timezone and no DST, so naming
+    'Asia/Kolkata' in SQL would buy nothing.
+
+    Empty hours are absent rather than zero — a scrape with no window data
+    returns nothing, and a quiet 04:00 simply has no row.
+    """
+    rows = c.execute(
+        "SELECT CAST(strftime('%H', ts + 19800, 'unixepoch') AS INTEGER) AS h,"
+        " COUNT(DISTINCT user)"
+        " FROM usage_events"
+        f" WHERE user != '' AND ts >= {_now_sql()} - 7*86400"
+        f" AND ts <= {_now_sql()}"
+        " GROUP BY h").fetchall()
+    return [((("hour", f"{h:02d}"),), n) for h, n in rows]
+
+
 def _db_size_bytes(c):
     return c.execute("SELECT page_count * page_size FROM pragma_page_count(), "
                      "pragma_page_size()").fetchone()[0]
@@ -424,6 +466,10 @@ metrics.gauge("opensrm_users_active_7d", lambda: _db_stat(_active_users_7d))
 metrics.gauge("opensrm_users_new_24h", lambda: _db_stat(_new_users_24h))
 metrics.gauge("opensrm_users_new_7d", lambda: _db_stat(_new_users_7d))
 metrics.gauge("opensrm_users_returning_24h", lambda: _db_stat(_returning_users_24h))
+# Labelled family: one series per hour of the day ("00".."23"). Replaces the
+# counter-based "when are people using it" panel, which could only ever return
+# the all-time uid-series count. See app/observability/_activity_by_hour.
+metrics.gauge_family("opensrm_activity_by_hour", lambda: _db_fam(_activity_by_hour))
 metrics.gauge("opensrm_last_sync_age_seconds", lambda: _db_stat(_last_sync_age_seconds))
 metrics.gauge("opensrm_last_usage_event_age_seconds", lambda: _db_stat(_last_usage_event_age))
 
