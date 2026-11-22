@@ -201,8 +201,9 @@ def presentation(vm):
     # app.routes_push imports the app facade, which imports this module.
     from ..routes_push import push_ssr_state as _push_ssr_state
     # scope-filled copy of personal (portal values win, scope gaps only); the
-    # profile widget's avatar stays the generated blobatar. Read once: the
-    # template and the settings island must paint the same keys.
+    # profile widget's avatar is rendered in the browser from the netid and is
+    # not part of this merge. Read once: the template and the settings island
+    # must paint the same keys.
     personal = merge_personal(vm["personal_data"], vm["scope_fields"])
     group_key, monthly = vm["group_key"], vm["monthly"]
     hourwise = vm["hourwise"]
@@ -270,7 +271,7 @@ def presentation(vm):
         tt_fetched_at=_tt_fetched_at(vm["group_key"]),
         tt_editor_enabled=_tt_editor_enabled(),
         # scope-filled copy of personal (portal values win, scope gaps only);
-        # the profile widget's avatar stays the generated blobatar
+        # the profile widget's avatar is rendered in the browser from the netid
         personal=personal,
         settings_props=_shell_off(vm, settings_island.block(settings_island.props(personal))),
         # P6.8: the reminder state the server already knows, so the card is not

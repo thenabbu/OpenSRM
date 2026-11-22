@@ -17,10 +17,11 @@ from markupsafe import Markup
 def props(*, profile, ticker, week, budgets, marks_summary, exams, teach_groups, fb_plan):
     """The payload web/src/panels/dashboard/contract.ts validates.
 
-    `profile` is profile.html's identity box: name, institute email, register
-    number and the `blobatar` filter's OWN svg for this netid (a string). The
-    partial renders it unconditionally, so it is not nullable here — the island
-    has to paint the box the hydration used to delete.
+    `profile` is profile.html's identity box: name, institute email and
+    register number. It carries NO avatar: `@blobatar/preact` renders that from
+    the netid in the browser, so nothing server-side is serialised for it. The
+    partial still paints the box unconditionally, so it is not nullable here —
+    the island has to paint the box the hydration used to delete.
 
     `week` is dash["week"] — `today_absent` rides along because today.html:6
     reads dash.week.today_absent, so it is part of the today widget's inputs.
