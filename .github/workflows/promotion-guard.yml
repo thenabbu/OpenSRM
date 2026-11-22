@@ -1,0 +1,40 @@
+name: promotion-guard
+
+# main only receives promotions, hotfixes and release tooling. GitHub has no
+# native "this PR must come from branch X" rule, so this check is it: branch
+# protection requires the `source-is-dev` status on main.
+#
+# Not a `if:`-gated job and not behind a `paths:` filter: a skipped job reports
+# SUCCESS on GitHub, so a conditional guard asserts nothing.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  source-is-dev:
+    name: source-is-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse any head that is not dev, a hotfix, or a release bump
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -eu
+          echo "base=$BASE_REF head=$HEAD_REF"
+          [ "$BASE_REF" = "main" ] || { echo "::error::not a PR into main"; exit 1; }
+          case "$HEAD_REF" in
+            dev) exit 0 ;;
+            hotfix/*) exit 0 ;;
+            chore/release-v*) exit 0 ;;
+          esac
+          echo "::error::PRs into main may only come from dev, hotfix/<slug> or chore/release-v<X> (got '$HEAD_REF'). Retarget it at dev."
+          exit 1

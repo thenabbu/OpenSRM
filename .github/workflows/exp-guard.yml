@@ -1,0 +1,45 @@
+name: exp-guard
+
+# exp/<slug> branches are scratch space that only a human creates. This job
+# DETECTS an experiment reaching production; it does not PREVENT one, because
+# the repository owner is an admin and branch-protection rules simply do not
+# bind him. The real gate is the convention.
+#
+# What it cannot see: an exp/ branch squashed into a feat/ branch (the merge
+# subject is gone), or an agent that names its branch feat/x. Rely on the
+# convention, and treat this as a smoke alarm, not a lock.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  promotion-tree-clean:
+    name: promotion-tree-clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fail if an exp/ branch is being promoted or was merged in
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -eu
+          case "$HEAD_REF" in
+            exp/*)
+              echo "::error::an exp/ branch cannot be promoted. exp/* is a human-only scratch branch; land the result on a feat/ branch and promote through dev."
+              exit 1 ;;
+          esac
+          # A branch merged into dev keeps its merge commit, so this catches the
+          # "exp/ was merged into dev, then dev was promoted" shape.
+          if git log --format='%s%n%b' "origin/main..HEAD" | grep -qE '^Merge (branch|remote-tracking branch) .?exp/'; then
+            echo "::error::this promotion contains a merge of an exp/ branch. Land experiments on a feat/ branch before promoting."
+            exit 1
+          fi
+          echo "no exp/ branch in this promotion"

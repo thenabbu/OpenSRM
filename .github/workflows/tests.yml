@@ -22,7 +22,10 @@ on:
   # reusable job Build & Push gates on; a second standalone copy on the same
   # push was pure duplication.
   pull_request:
-    branches: [main]
+    # dev is the integration branch: every feature PR lands there first, so this
+    # workflow must run on PRs based on dev or staging gets no test coverage.
+    # This filter is the BASE branch, not the head.
+    branches: [main, dev]
   workflow_call:
 
 # audit: default token read-only for this workflow
