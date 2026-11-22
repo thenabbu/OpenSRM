@@ -12,7 +12,7 @@ DUT_BASE like the other browser DUTs).
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-touchfeel")
-from _seed import seed_rich, mint_token, require_own_server
+from _seed import seed_rich, mint_token, require_own_server, bundle_css
 
 seed_rich()  # rich: the dashboard must have real height to scroll (no notices feed pads it any more)
 TOK = mint_token()
@@ -24,10 +24,9 @@ def check(name, ok, detail=""):
     results.append((name, ok))
     print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
-# static: the phase-5 rules compiled into app.css
-here = os.path.dirname(os.path.abspath(__file__))
-css = open(os.path.join(here, "..", "..", "app", "static", "app.css")).read()
-check("app.css carries the pressable rule + spring easing",
+# static: the phase-5 rules compiled into the one Vite stylesheet
+css = bundle_css()
+check("the bundle carries the pressable rule + spring easing",
       ".pressable" in css and "--ease-spring" in css)
 check("app.css carries bottom-sheet classes for phones",
       ".modal-bottom" in css and "sm\\:modal-middle" in css)

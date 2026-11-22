@@ -194,8 +194,12 @@ for route in ROUTES:
     check(f"flag OFF: {route} no legacy script tags (dash/timetable/pull/drag-drop-touch)",
           not any(n in html_off for n in ("dash.js", "timetable.js", "pull.js",
                                           "drag-drop-touch.js")))
-    check(f"flag OFF: {route} the surviving KEEP scripts still load (gaze, push)",
-          "gaze.js" in html_off and "push.js" in html_off)
+    # gaze.js was a standalone served script from the house port; the gaze driver
+    # is now blobatar/gaze inside the module bundle, so push.js is the only KEEP
+    # script left with its own <script src>. Its continued presence is what proves
+    # the rollback did not gut the client layer wholesale.
+    check(f"flag OFF: {route} the surviving KEEP scripts still load (push)",
+          "push.js" in html_off and "gaze.js" not in html_off)
 
     # The two positions must differ by the module tag and NOTHING else. A route
     # whose OFF branch quietly dropped a section would render a shorter page in

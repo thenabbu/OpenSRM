@@ -180,7 +180,7 @@ with sync_playwright() as p:
     pg3.goto(BASE + "/?perf=low", wait_until="load")
     pg3.wait_for_timeout(1200)
     r = pg3.evaluate("""() => {
-      const wrap = document.querySelector('.blobatar-gaze');
+      const wrap = document.querySelector('.mo-root');
       return {present: !!wrap, perf: document.documentElement.dataset.perf || null,
               running: [...document.getAnimations()].filter(a => {
                 const t = a.effect && a.effect.target;

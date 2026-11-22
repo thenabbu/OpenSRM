@@ -11,7 +11,7 @@ Run:  python tests/e2e/test_lowtier_dut.py   (needs seeded server on DUT_BASE).
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-lowtier")
-from _seed import seed_rich, mint_token, require_own_server
+from _seed import seed_rich, mint_token, require_own_server, bundle_css
 
 seed_rich()  # rich: the dashboard must have real height to scroll (no notices feed pads it any more)
 TOK = mint_token()
@@ -23,15 +23,14 @@ def check(name, ok, detail=""):
     results.append((name, ok))
     print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
-here = os.path.dirname(os.path.abspath(__file__))
-css = open(os.path.join(here, "..", "..", "app", "static", "app.css")).read()
-check("app.css carries the low-tier/offscreen avatar pause rule",
+css = bundle_css()
+check("the bundle carries the low-tier/offscreen avatar pause rule",
       'data-perf=low] .mo-root' in css and          # minifier strips quotes
       ".mo-root.is-offscreen" in css and
       "animation-play-state:paused" in css)
 
 AVATAR = """() => {
-  const wrap = document.querySelector('.blobatar-gaze');
+  const wrap = document.querySelector('.mo-root');
   if (!wrap) return -1;
   return [...document.getAnimations()].filter(a => {
     const t = a.effect && a.effect.target;
@@ -62,10 +61,11 @@ with sync_playwright() as p:
           }"""))
     n = pg.evaluate(AVATAR)
     check("low tier: 0 running avatar animations", n == 0, str(n))
-    check("low tier: gaze driver not started",
-          pg.evaluate("!document.querySelector('.blobatar-gaze')._blobatarGaze"))
+    # The official @blobatar/preact/gaze hook owns the driver now; it exposes no
+    # `_blobatarGaze` handle (the house port did), so the observable proof is
+    # that it never wrote the tracking vars it would write on mount.
     check("low tier: no gaze inline vars written",
-          pg.evaluate("""() => !document.querySelector('.blobatar-gaze')
+          pg.evaluate("""() => !document.querySelector('.mo-root')
                                .style.getPropertyValue('--mo-track-x')"""))
     # polyfill absent (editor archived)
     check("drag-drop polyfill NOT shipped when the editor is archived",

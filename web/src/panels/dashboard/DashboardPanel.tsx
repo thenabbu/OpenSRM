@@ -1,4 +1,6 @@
 import type { ComponentChildren } from 'preact';
+import { Blobatar } from '@blobatar/preact';
+import { useGaze } from '@blobatar/preact/gaze';
 import { badge } from '../../design';
 import type { DashboardProps } from './contract';
 import { markHydrated, type HostProps } from '../../islands/contract';
@@ -10,24 +12,26 @@ type P = DashboardProps;
 /**
  * profile.html — the identity box (no `wlabel`: the identity is its own label).
  *
- * The avatar is the server's own `blobatar` SVG, serialised into the props: one
- * generator, two renderings, so `.blobatar-gaze` / `.mo-root` (gaze.js, the
- * low-tier pause CSS) exist on both paths. Nothing has to carry this node
- * across a sync any more: a repaint only rewrites the numbers, so the gaze
- * driver's inline `--mo-*` vars stay on the node they were written to.
+ * The avatar is `@blobatar/preact`'s own component: it renders the SVG from the
+ * netid in-process, so the server no longer ships a pre-rendered string and the
+ * island no longer re-injects it as HTML. `useGaze` is the official pointer
+ * driver (`blobatar/gaze`); the query moved out of the house line at
+ * `web/src/data/background.ts` because `@blobatar/preact/gaze` now owns it.
+ * The low-tier / offscreen pause CSS still keys on `.mo-root`, which is what the
+ * adapter emits.
  *
  * `#copyEmail` + `[data-copy]` stay document-delegated (dash.js), which is why
  * this component needs no click handler of its own.
  */
 function Profile({ p }: { p: P['profile'] }) {
+  const { ref } = useGaze({ travel: 3, lookAt: 'pointer' });
   return (
     <div class="wbox rounded-box p-4">
       <div class="flex items-center gap-3 min-w-0">
         <div class="avatar shrink-0">
-          <div
-            class="bg-base-300 w-16 h-16 rounded-full overflow-hidden blobatar-gaze"
-            dangerouslySetInnerHTML={{ __html: p.avatar }}
-          />
+          <div class="bg-base-300 w-16 h-16 rounded-full overflow-hidden flex items-center justify-center" data-avatar-well="">
+            <Blobatar elementRef={ref} name={p.netid} size={64} animate="always" />
+          </div>
         </div>
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold truncate">{p.name}</div>

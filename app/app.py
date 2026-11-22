@@ -195,8 +195,6 @@ DATA_DIR = _default_config.data_dir
 DB_PATH = _default_config.db_path
 
 
-from blobatar.flask import init_app as _init_blobatar
-
 setup_logging()
 log = logging.getLogger("opensrm")
 log_http = logging.getLogger("opensrm.http")
@@ -1220,7 +1218,6 @@ def create_app(config=None):
     # one request-scoped connection per request, closed when the app context
     # pops — including when a handler raises (app/db.py close_db).
     a.teardown_appcontext(close_db)
-    _init_blobatar(a)  # GET /avatar/<name> + `blobatar` Jinja filter
     # hooks in the order the decorators used to register them
     a.before_request(_log_request_start)
     a.before_request(_origin_host_guard)

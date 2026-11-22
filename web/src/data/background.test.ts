@@ -64,8 +64,12 @@ afterEach(() => {
 
 // ── dash-avatar-offscreen ─────────────────────────────────────────────────
 describe('dash-avatar-offscreen', () => {
-  const page = (): Document =>
-    fresh(`<div class="${AVATAR_SELECTOR.slice(1)}"><div class="mo-root"></div></div>`);
+  // The real shape after the migration: @blobatar/preact renders <svg>, and its
+  // <g> carries .mo-root — that <g> is the node the observer keys on AND the
+  // node the pause rule targets, so it is the one that gets the class.
+  const avatar = (): string =>
+    `<svg viewBox="0 0 100 100"><g class="${AVATAR_SELECTOR.slice(1)}"></g></svg>`;
+  const page = (): Document => fresh(avatar());
 
   it('observes the avatar at threshold 0 and pauses it while it is out of view', () => {
     const doc = page();
@@ -92,7 +96,7 @@ describe('dash-avatar-offscreen', () => {
     const doc = page();
     bindAvatarOffscreen(doc, window);
     // hydration replaces the server-rendered avatar with the island's own node
-    doc.body.innerHTML = `<div class="${AVATAR_SELECTOR.slice(1)}"><div class="mo-root"></div></div>`;
+    doc.body.innerHTML = avatar();
     doc.dispatchEvent(new Event('osrm:island-mounted'));
 
     expect(FakeIO.all.length).toBe(2);

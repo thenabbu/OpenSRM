@@ -84,11 +84,9 @@ if [ "${1:-}" = "--list" ]; then
   echo "  uv run --locked ruff check app/"
   echo "  uv run --locked actionlint"
   echo "  uv lock --check"
-  echo "  bash scripts/build-css.sh  + git diff --exit-code app/static/app.css"
   echo "-- static gates"
   echo "  scripts/check_architecture.py"
   echo "  scripts/check_docs.py"
-  echo "  scripts/css_parity.py"
   echo "  bash scripts/ci_promtool.sh"
   echo "  python3 scripts/build_dashboard.py --check"
   echo "  bash scripts/ci_web.sh"
@@ -124,12 +122,6 @@ fi
 if uv lock --check >/tmp/lock-$$.log 2>&1; then ok "uv lock --check"; else
   bad "uv lock --check (run: uv lock)"; sed -n '1,10p' /tmp/lock-$$.log | sed 's/^/         /'
 fi
-if bash scripts/build-css.sh >/tmp/css-$$.log 2>&1 && git diff --quiet app/static/app.css; then
-  ok "committed app.css is current"
-else
-  bad "app.css stale (run scripts/build-css.sh, commit app/static/app.css)"
-  sed -n '1,20p' /tmp/css-$$.log | sed 's/^/         /'
-fi
 
 # --- 2. Static gates -------------------------------------------------------
 step "static gates"
@@ -154,13 +146,10 @@ run_step "doc consistency (check_docs.py)"          env PYTHONPATH=. "$V/bin/pyt
 # Unit 8.2: the icon set. Manifest + template wiring + real IHDR pixels, with a
 # positive control inside the script so a green run proves the gate can go red.
 run_step "PWA icons (check_icons.py)"               env PYTHONPATH=. "$V/bin/python" scripts/check_icons.py
-# Phase 2.3: the Vite CSS must stay semantically equal to the committed
-# app/static/app.css, and exactly one app-*.css may exist in dist/ (a stale
-# build hash left behind is what once precached a 404 and killed offline).
-run_step "CSS parity (css_parity.py)"               env PYTHONPATH=. "$V/bin/python" scripts/css_parity.py
-# W7.3b: css_parity only proves legacy ⊆ dist — both entries could agree while
-# BOTH lack a class web/src writes (that is how the update banner rendered
-# 2400px off-screen). This reads the write sites and requires a rule.
+# W7.3b: a class web/src writes must have a rule. Reading the write sites is the
+# only direction that catches a class NEITHER stylesheet contains (bottom-20,
+# shadow-lg, btn-circle all passed a stylesheet-vs-stylesheet diff and shipped a
+# button 2400px off-screen).
 run_step "CSS classes for web/src (check_css_classes.py)" env PYTHONPATH=. "$V/bin/python" scripts/check_css_classes.py
 if command -v docker >/dev/null 2>&1; then
   run_step "promtool (observability config + rules)" bash scripts/ci_promtool.sh

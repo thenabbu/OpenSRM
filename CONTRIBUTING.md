@@ -27,7 +27,7 @@ DATA_DIR=./data gunicorn -w 1 --threads 8 -t 120 --worker-class gthread -b 0.0.0
 
 Python 3.11+ and [uv](https://docs.astral.sh/uv/) are the only toolchain
 requirements. There is no Node build: CSS is compiled ahead of time by
-`scripts/build-css.sh` and committed as `app/static/app.css`.
+`scripts/build-web.sh` (Vite) and committed as `app/static/dist/assets/app-*.css`.
 
 ## Submitting changes
 

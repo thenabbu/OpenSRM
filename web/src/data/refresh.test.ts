@@ -16,7 +16,7 @@ const ok = (data: unknown): typeof fetch =>
   vi.fn(async () => new Response(JSON.stringify({ ok: true, data }), { status: 200 }));
 
 const DASH = {
-  profile: { netid: A, name: 'T', email: 't@example.com', reg_no: 'R1', avatar: '<svg></svg>' },
+  profile: { netid: A, name: 'T', email: 't@example.com', reg_no: 'R1' },
   ticker: null,
   week: { days: 1, hours: 2, dates: [], marks: [], today_absent: false },
   budgets: [],

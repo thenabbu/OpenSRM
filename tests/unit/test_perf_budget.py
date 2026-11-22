@@ -74,14 +74,20 @@ check("CSP contains no CDN origin", "jsdelivr" not in csp and "cdn." not in csp,
 check("CSP script-src is self-only (no unsafe-inline/eval for scripts)",
       "script-src 'self'" in csp and "script-src 'unsafe" not in csp)
 
-# ── 2. app.css budget ─────────────────────────────────────────────────────
-css_path = os.path.join(REPO, "app", "static", "app.css")
+# ── 2. bundle CSS budget ──────────────────────────────────────────────────
+# The compiled sheet is Vite's, not scripts/build-css.sh's: the legacy
+# app/static/app.css and its build were deleted when the theme moved into the
+# daisyUI plugin config (web/tailwind.css). One stylesheet ships now.
+css_dir = os.path.join(REPO, "app", "static", "dist", "assets")
+css_path = sorted(
+    os.path.join(css_dir, f) for f in os.listdir(css_dir) if f.startswith("app-") and f.endswith(".css")
+)[0]
 raw = open(css_path, "rb").read()
 gz = len(gzip.compress(raw, 9))
-check("app.css gzipped <= 35 KB", gz <= 35 * 1024, f"{gz} bytes")
+check("bundle css gzipped <= 35 KB", gz <= 35 * 1024, f"{gz} bytes from {os.path.basename(css_path)}")
 
 # ── 3. cache headers ─────────────────────────────────────────────────────
-r = client.get("/static/gaze.js?v=deadbeef11")
+r = client.get("/static/timetable.css?v=deadbeef11")
 check("versioned static is immutable",
       "max-age=31536000" in r.headers.get("Cache-Control", "") and
       "immutable" in r.headers.get("Cache-Control", ""),

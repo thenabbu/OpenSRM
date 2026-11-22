@@ -90,8 +90,8 @@ Criterion wording is verbatim from `RECOVERY_PLAN.md` §2 (the panel copies it f
 | Unit | Delivered by | CI | Evidence |
 |---|---|---|---|
 | 2.1 Vite + TS strict scaffold | `c9c67ac` | — | `web/vite.config.ts`, `web/tsconfig.json` |
-| 2.2 Tailwind v4 through Vite | `c9c67ac` | — | `scripts/build-css.sh` |
-| 2.3 CSS parity, rule by rule | PR #171 wave | 13/13 (PR #171) | `scripts/css_parity.py`, `notes/CSS_PARITY_P23B.md` |
+| 2.2 Tailwind v4 through Vite | `c9c67ac` | — | (superseded: `scripts/build-web.sh`) |
+| 2.3 CSS parity, rule by rule | PR #171 wave | 13/13 (PR #171) | (gate retired; `notes/CSS_PARITY_P23B.md`) |
 | 2.4 committed artifact + CI guard | `scripts/build-web.sh --check` | 44593734069 | `app/static/dist/` committed byte-identical; fresh-clone proof rebuilds it |
 | 2.5 bundle budget gate | `76e8e95` onward | 44567883661 | `scripts/gates.sh` budget step; 26,849 B measured |
 

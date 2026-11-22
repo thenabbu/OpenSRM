@@ -35,7 +35,12 @@ import { showError } from './errorToast';
 import { triggerRefresh } from './refresh';
 
 // ─ 1. dash-avatar-offscreen ────────────────────────────────────────────────
-export const AVATAR_SELECTOR = '.blobatar-gaze';
+// `.mo-root` is the node blobatar itself animates, and the one the pause rule
+// in src.css targets (`.mo-root.is-offscreen { animation-play-state: paused }`).
+// It used to be `.blobatar-gaze`, a wrapper the house gaze port added: the
+// observer wrote the class onto the wrapper while the CSS paused `.mo-root`
+// inside it, so nothing ever paused.
+export const AVATAR_SELECTOR = '.mo-root';
 export const OFFSCREEN_CLASS = 'is-offscreen';
 /** Key on the WRAPPER, so a re-arm never stacks a second observer on one node. */
 export const OBSERVED_ATTR = 'offscreenObs';

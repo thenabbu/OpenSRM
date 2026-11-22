@@ -158,17 +158,25 @@ def t_feature_gate_off_settings_input_identical_to_today():
 
 def t_widget_renders_blobatar_name_email_regno_only():
     """The profile widget is the generated blobatar + name + email + register
-    number. No photo <img>, no course/semester/section line — the correction
-    that sent this PR back."""
+    number. No photo <img>, no course/semester/section line.
+
+    The avatar is now painted by the dashboard island from @blobatar/preact, so
+    the server template keeps the well and hands off; the island is the only
+    place an SVG is produced, and the server never generates one."""
     html = (REPO / "app/templates/partials/widgets/profile.html").read_text()
-    assert "blobatar(" in html, "blobatar is the only avatar source"
+    assert "blobatar(" not in html, "server still generates the avatar SVG"
+    assert "avatar" in html, "the pre-hydration avatar well must stay"
     assert "<img" not in html and "photo" not in html.lower(), "photo path must not exist"
     assert "oneliner" not in html and "dash.program" not in html, "no course line in the widget"
-    for need in ('{{ student_name or netid }}', 'dash.email', 'dash.reg_no'):
+    for need in ("{{ student_name or netid }}", "dash.email", "dash.reg_no"):
         assert need in html, f"widget lost: {need}"
+    # the island is the only renderer that produces SVG, and it does it officially
+    panel = (REPO / "web/src/panels/dashboard/DashboardPanel.tsx").read_text()
+    assert "<Blobatar" in panel, "official @blobatar/preact is not used"
+    assert "dangerouslySetInnerHTML" not in panel, "server SVG is being re-injected"
     # and the route hands it nothing else
-    app = (REPO / "app/app.py").read_text()
-    assert "profile_photo" not in app and "oneliner" not in app, \
+    app_src = (REPO / "app/app.py").read_text()
+    assert "profile_photo" not in app_src and "oneliner" not in app_src, \
         "route still computes a photo/one-liner input"
 
 

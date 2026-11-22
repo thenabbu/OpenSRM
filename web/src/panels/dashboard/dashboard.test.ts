@@ -24,8 +24,6 @@ const PROPS = {
     name: 'Test Student',
     email: 'zz9999@srmist.edu.in',
     reg_no: 'RA2500000000',
-    avatar:
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64"><g class="mo-root mo-always"></g></svg>',
   },
   ticker: null as null,
   week: {
@@ -173,7 +171,6 @@ describe('P6.2 dashboard island', () => {
     await hydrateAll(document, Date.now() / 1000);
     const el = grid();
     const av = el.querySelector('.avatar > div');
-    expect(av?.classList.contains('blobatar-gaze')).toBe(true);
     expect(av?.querySelector('.mo-root')).not.toBeNull();
     const btn = el.querySelector('#copyEmail');
     expect(btn?.getAttribute('data-email')).toBe('zz9999@srmist.edu.in');

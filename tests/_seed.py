@@ -13,6 +13,22 @@ PERSONAL = {"Program": "Computer Science and Engineering Cloud Computing [B.Tech
             "Batch": "2025", "Semester": "III SEMESTER", "Section": "A"}
 
 
+def bundle_css():
+    """The one compiled stylesheet, read as text.
+
+    Vite emits app/static/dist/assets/app-<hash>.css and that is the only sheet
+    now — the legacy app/static/app.css and its standalone build are gone. The
+    hash changes on every build, so callers must never hardcode a filename.
+    """
+    assets = os.path.join(REPO, "app", "static", "dist", "assets")
+    names = sorted(n for n in os.listdir(assets)
+                   if n.startswith("app-") and n.endswith(".css"))
+    if len(names) != 1:
+        raise SystemExit(f"expected exactly one app-*.css in {assets}, saw {names}")
+    with open(os.path.join(assets, names[0]), encoding="utf-8") as fh:
+        return fh.read()
+
+
 def seed(with_payload=True):
     from app import app as A
     c = A.db()

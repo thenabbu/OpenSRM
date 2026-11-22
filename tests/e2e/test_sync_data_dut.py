@@ -188,13 +188,13 @@ with sync_playwright() as p:
     # the dashboard repaints from /api/dashboard, and must keep the avatar's
     # inline gaze vars (they are the reason the old code hand-carried this node)
     dash = pg.evaluate("""() => {
-        const el = document.querySelector('.blobatar-gaze');
+        const el = document.querySelector('.mo-root');
         el.style.setProperty('--mo-test-marker', 'kept');
         return el.style.getPropertyValue('--mo-test-marker'); }""")
     pg.evaluate("async () => { await window.__osrmRefreshData(); }")
     pg.wait_for_timeout(600)
     check("dashboard repaint kept the avatar node and its inline gaze vars",
-          pg.evaluate("document.querySelector('.blobatar-gaze')"
+          pg.evaluate("document.querySelector('.mo-root')"
                       ".style.getPropertyValue('--mo-test-marker')") == dash,
           str(dash))
 

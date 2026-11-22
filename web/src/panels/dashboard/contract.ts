@@ -46,7 +46,6 @@ const profileProps = z.object({
   name: z.string(),
   email: z.string(),
   reg_no: z.string(),
-  avatar: z.string(),
 });
 
 export const dashboardProps = z.object({

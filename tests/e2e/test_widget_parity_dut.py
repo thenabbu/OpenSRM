@@ -6,7 +6,7 @@ ONE widget, TWO paints, ONE contract. The server paints
 (`main.ts` mountBounded -> `el.replaceChildren()`) and paints its own nodes from
 `web/src/panels/dashboard/DashboardPanel.tsx`. Both must produce the same
 element tree with the same attribute NAMES, in the same ORDER, with the same
-values — the four things the widget carries (name, email, `.blobatar-gaze`
+values — the four things the widget carries (name, email, `.mo-root`
 avatar, `#copyEmail`) all reach the browser through those attributes.
 
 Why attributes and not text: three bugs in this migration came from an island
@@ -80,7 +80,7 @@ WIDGETS = [
         "rearmed": [
             ("document.querySelector('#copyEmail').closest('.wbox').querySelector('[data-copy]')",
              "data-copy-ready"),
-            ("document.querySelector('.blobatar-gaze')", "data-offscreen-obs"),
+            ("document.querySelector('.mo-root')", "data-offscreen-obs"),
         ],
     },
 ]
@@ -99,7 +99,12 @@ SNAPSHOT = """([anchorSel, boxSel]) => {
       attrs: [...n.attributes].map(a => [a.name, a.value]),
       text: n.children.length ? '' : n.textContent.trim().slice(0, 80),
     });
-    for (const c of n.children) walk(c, depth + 1);
+    // The avatar well is the ONE island-owned subtree: the server has no SVG
+    // generator any more (@blobatar/preact does it in the browser), so it paints
+    // an empty well and the island fills it. Comparing the contents would fail
+    // by design, so the node itself is compared (tag + attrs) and the walk stops
+    // there. Everything around it is still compared exactly.
+    for (const c of n.children) if (!n.hasAttribute('data-avatar-well')) walk(c, depth + 1);
   };
   walk(box, 0);
   return out;

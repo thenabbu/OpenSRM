@@ -116,8 +116,17 @@ chk('M18', "SECURITY.md: root/--no-sandbox risk documented",
 chk('M19', "CI: actions SHA-pinned", bool(re.search(r'uses: \S+@[0-9a-f]{40}', rd('.github/workflows/build.yml'))) and bool(re.search(r'uses: \S+@[0-9a-f]{40}', rd('.github/workflows/lint.yml'))))
 chk('M20', "CI: default permissions read-only", has('.github/workflows/build.yml', r'permissions:\s*\n\s*contents: read') and has('.github/workflows/lint.yml', r'permissions:\s*\n\s*contents: read'))
 chk('M21', "Docker: image digests pinned (2 FROM + uv COPY)", rd('Dockerfile').count('@sha256:') >= 3)
-chk('M22', "blobatar pinned to commit (pyproject + lock)",
-    has('pyproject.toml', r'rev = "[0-9a-f]{40}"') and has('uv.lock', r'7fb1eed2'))
+# M22 used to pin a git dependency on the blobatar FORK, which only existed to
+# carry a Python SDK. The avatar is rendered client-side by @blobatar/preact now,
+# so the property to pin is inverted: no Python blobatar at all, and the JS
+# package pinned to an exact registry version (not a floating range, not a git
+# ref) in both the manifest and the lockfile.
+chk('M22', "blobatar: no Python dep, JS pinned to an exact version",
+    'blobatar' not in rd('pyproject.toml')
+    and 'blobatar' not in rd('uv.lock')
+    and has('web/package.json', r'"@blobatar/preact": "\d+\.\d+\.\d+"')
+    and has('web/package.json', r'"blobatar": "\d+\.\d+\.\d+"')
+    and has('web/pnpm-lock.yaml', r'@blobatar/preact@\d+\.\d+\.\d+'))
 _pyv = re.search(r'^version = "([^"]+)"', rd('pyproject.toml'), re.M).group(1)
 chk('M23', f"versions consistent (pyproject=lock=VERSION={_pyv})",
     has('uv.lock', rf'name = "opensrm"[\s\S]{{0,200}}?version = "{re.escape(_pyv)}"')
@@ -243,13 +252,22 @@ chk('L46', "manifest linked on dashboard",
 # migration: one compiled sheet per page, not the bundle plus the legacy
 # app.css. The toolchain + committed-output halves below are unchanged, and they
 # are what this finding is about.
-chk('L47', "compiled CSS: one compiled sheet linked, no CDN, toolchain pinned, output committed",
+# Same properties as before — one compiled sheet linked, no CDN, pinned deps,
+# committed output — but Vite is the only CSS build now. The legacy standalone
+# CLI + app/static/app.css pair was deleted; a second committed sheet was exactly
+# the 330 KB double-parse this check was written to catch.
+_l47_dist = sorted(pathlib.Path('app/static/dist/assets').glob('app-*.css'))
+chk('L47', "compiled CSS: one compiled sheet linked, no CDN, deps pinned, output committed",
     has('app/templates/partials/theme.html', r"asset_dist\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r'jsdelivr')
-    and has('scripts/build-css.sh', r'TW_VERSION=4\.3\.3')
-    and has('scripts/build-css.sh', r'DAISY_VERSION=5\.7\.46')
-    and has('app/static/app.css', r'lg\\:col-span-8'))
+    and not pathlib.Path('app/static/app.css').exists()
+    and not pathlib.Path('scripts/build-css.sh').exists()
+    and len(_l47_dist) == 1
+    and has('web/package.json', r'"tailwindcss": "4\.3\.3"')
+    and has('web/package.json', r'"daisyui": "5\.7\.46"')
+    and has(_l47_dist[0].as_posix(), r'lg\\:col-span-8'),
+    ev=f"dist={[p.name for p in _l47_dist]}")
 chk('L48', "entrypoint fails fast (set -eu)", has('entrypoint.sh', r'^set -eu', re.M))
 chk('L49', "VERDICT.md references solve_captcha_b64", has('egress/poc/VERDICT.md', r'solve_captcha_b64'))
 chk('L50', "CONTRIBUTING: shared playwright context note", has('CONTRIBUTING.md', r'context|shared', re.I))

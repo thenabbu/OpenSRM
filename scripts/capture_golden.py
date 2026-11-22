@@ -116,9 +116,11 @@ TABS = ["dashboard", "attendance", "timetable", "marks",
         "campus", "academics", "fees", "tools", "settings"]
 VIEWPORTS = [("390x844", 390, 844), ("768x1024", 768, 1024), ("1440x900", 1440, 900)]
 DEFAULT_OUT = Path("/opt/data/missions/opensrm-preact/captures")
+# No /avatar entry: those two routes came from blobatar[flask] and are gone. The
+# avatar is rendered in the browser by @blobatar/preact, so there is no SVG URL
+# left to capture.
 API_GETS = ["/", "/login", "/healthz", "/api/marks", "/api/push/status",
-            "/api/scope/status", "/api/timetable", "/api/timetable/history",
-            "/avatar", "/avatar/" + NETID]
+            "/api/scope/status", "/api/timetable", "/api/timetable/history"]
 
 # ── scope payload: repo fixtures (read-only) + literals from repo tests ──
 # op -> repo fixture file holding that op's payload (JSON).
@@ -638,7 +640,7 @@ READY_JS = """() => {
   const isl = Array.from(document.querySelectorAll('[data-island]'));
   if (!isl.every(e => !!(e.dataset.hydrated || e.dataset.mountedAt))) return false;
   // Second marker, same reason: gaze.js publishes --mo-track-travel on every
-  // .blobatar-gaze from an osrm:island-mounted listener, which main.ts fires
+  // .mo-root from an osrm:island-mounted listener, which main.ts fires
   // AFTER stamping data-hydrated. Stopping at data-hydrated catches whichever
   // side of that tick the host happens to be on — measured: the laptop had the
   // attribute, a GH runner did not, 31 bytes of drift on dom/dashboard.html and
@@ -655,8 +657,11 @@ READY_JS = """() => {
   const lead = document.getElementById('push-lead');
   if (lead && !lead.options.length) return false;
   if (document.documentElement.dataset.perf === 'low') return true;
-  return Array.from(document.querySelectorAll('.blobatar-gaze'))
-              .every(e => e.style.getPropertyValue('--mo-track-travel') !== '');
+  // getComputedStyle, not e.style: useGaze writes --mo-track-travel inline on
+  // the <svg> it was handed, and .mo-root (the inner <g>) only inherits it.
+  // e.style would read '' on the <g> forever and this would never become ready.
+  return Array.from(document.querySelectorAll('.mo-root'))
+              .every(e => getComputedStyle(e).getPropertyValue('--mo-track-travel') !== '');
 }"""
 
 READY_DIAG_JS = """() => {
@@ -665,8 +670,8 @@ READY_DIAG_JS = """() => {
           pending: isl.filter(e => !(e.dataset.hydrated || e.dataset.mountedAt))
                       .map(e => e.dataset.island),
           gaze: document.documentElement.dataset.perf === 'low' ? 'low-tier' :
-                Array.from(document.querySelectorAll('.blobatar-gaze'))
-                     .filter(e => e.style.getPropertyValue('--mo-track-travel') === '')
+                Array.from(document.querySelectorAll('.mo-root'))
+                     .filter(e => getComputedStyle(e).getPropertyValue('--mo-track-travel') === '')
                      .length,
           pushLead: (() => { const l = document.getElementById('push-lead');
                              return l ? l.options.length : 'no-card'; })()};
@@ -709,17 +714,19 @@ def freeze(page) -> None:
 
     Three sources of movement that are NOT wall-clock normalisable, because they
     change PIXELS and the bytes of the PNG:
-      1. gaze.js drives --mo-track-* through requestAnimationFrame forever, so
-         each screenshot catches the eyes somewhere else. Its controller exposes
-         stop(), and it is per-avatar (`_blobatarGaze`).
+      1. the gaze driver drives --mo-track-* through requestAnimationFrame
+         forever, so each screenshot catches the eyes somewhere else. The
+         official @blobatar/preact/gaze hook exposes no stop() handle, so the
+         page's rAF queue is drained by pinning every --mo-* to 0 AFTER the
+         frames are flushed (the loop below), which is what the pixels see.
       2. the idle blink/bob/breathe loops are CSS keyframes: pausing leaves them
          at an arbitrary elapsed offset, so they are switched off, not paused.
       3. any --mo-* value the driver wrote last is pinned to 0.
     No sleep anywhere: two rAFs is the frame flush.
     """
     page.evaluate("""() => {
-      document.querySelectorAll('.blobatar-gaze').forEach(s => {
-        try { if (s._blobatarGaze && s._blobatarGaze.stop) s._blobatarGaze.stop(); } catch (e) {}
+      document.querySelectorAll('.mo-root').forEach(s => {
+        s.style.setProperty('--mo-track-travel', '0px');
       });
       document.querySelectorAll('[style*="--mo-"]').forEach(el => {
         for (const name of Array.from(el.style)) {

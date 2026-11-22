@@ -36,7 +36,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # a CSS change — if one is fixed, delete its line here (the self-check below
 # fails on a stale entry, so this list cannot rot silently).
 DEAD_REFS = {
-    "acad-cat", "acad-sem", "acad-srow", "blobatar-gaze", "pct-75", "tt-cell-sel",
+    "acad-cat", "acad-sem", "acad-srow", "pct-75", "tt-cell-sel",
 }
 
 # Where a class token may legitimately be written. Everything else (prose in
@@ -108,8 +108,10 @@ def source_tokens(src_root: str) -> dict[str, set[str]]:
 
 
 def known_classes() -> tuple[set[str], list[str]]:
-    files = [os.path.join(REPO, "app", "static", "app.css")]
-    files += sorted(glob.glob(os.path.join(REPO, "app", "static", "dist", "assets", "app-*.css")))
+    # One stylesheet ships: the Vite bundle. The legacy app/static/app.css and
+    # its standalone build were deleted when the theme moved into the daisyUI
+    # plugin config, so only dist/assets/app-*.css is a source of truth.
+    files = sorted(glob.glob(os.path.join(REPO, "app", "static", "dist", "assets", "app-*.css")))
     known: set[str] = set()
     for f in files:
         known |= class_names(open(f, encoding="utf-8").read())
