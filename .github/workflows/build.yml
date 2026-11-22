@@ -2,7 +2,7 @@ name: Build & Push
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       republish:
@@ -110,6 +110,40 @@ jobs:
             type=raw,value=latest,enable=${{ steps.version.outputs.released == 'true' }}
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.released == 'true' }}
 
+  # A dev push publishes a STAGING image. Deliberately a separate job from
+  # `meta`: that one is main-only and gates the release tags, so reusing it would
+  # mean a dev push either publishes :latest or publishes nothing at all.
+  #
+  # The tag carries the short sha, so two dev builds minutes apart never collide
+  # and a staging deploy can pin an exact build. VERSION is NOT touched: the dev
+  # build says what it is through the tag, and the branch's VERSION still belongs
+  # to the next release.
+  meta-dev:
+    needs: [tests]
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha_tag: ${{ steps.tag.outputs.sha_tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve the dev image tags
+        id: tag
+        run: |
+          set -eu
+          SHORT="$(git rev-parse --short=7 HEAD)"
+          V="$(cat VERSION)"
+          echo "sha_tag=dev-$SHORT" >> "$GITHUB_OUTPUT"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "staging image: ghcr.io/thenabbu/opensrm:dev-$SHORT (VERSION $V, not bumped)"
+
   # One leg per CPU architecture, each on a NATIVE runner, then a manifest list
   # that points at both. Without this the package is amd64-only and
   # `docker pull ghcr.io/thenabbu/opensrm:<tag>` on the arm64 oclab VPS dies with
@@ -120,7 +154,10 @@ jobs:
   # private one it is billable. QEMU emulation was the alternative and was
   # rejected: the Dockerfile runs apt-get upgrade, which stalls badly emulated.
   build:
-    needs: [meta]
+    needs: [meta, meta-dev]
+    # One of the two must have run: `meta` on main, `meta-dev` on dev. If the
+    # test suite failed both are skipped, so this also stops a red build.
+    if: always() && (needs.meta.result == 'success' || needs.meta-dev.result == 'success')
     strategy:
       fail-fast: true
       matrix:
@@ -151,7 +188,9 @@ jobs:
         id: out
         run: |
           set -eu
-          if [ "${{ needs.meta.outputs.released }}" = "true" ]; then
+          # A dev push has no `released` output at all (meta did not run), so it
+          # publishes whenever meta-dev resolved tags.
+          if [ "${{ needs.meta.outputs.released }}" = "true" ] || [ -n "${{ needs.meta-dev.outputs.sha_tag }}" ]; then
             echo "mode=type=image,name=ghcr.io/thenabbu/opensrm,push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
           else
             echo "mode=type=cacheonly" >> "$GITHUB_OUTPUT"
@@ -180,7 +219,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: ${{ steps.out.outputs.mode }}
           labels: |
-            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}${{ needs.meta-dev.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           provenance: mode=max
           sbom: true
@@ -189,14 +228,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Export digest
-        if: needs.meta.outputs.released == 'true'
+        if: needs.meta.outputs.released == 'true' || needs.meta-dev.outputs.sha_tag != ''
         run: |
           set -eu
           mkdir -p /tmp/digests
           echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}"
 
       - name: Upload digest
-        if: needs.meta.outputs.released == 'true'
+        if: needs.meta.outputs.released == 'true' || needs.meta-dev.outputs.sha_tag != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: digest-${{ matrix.arch }}
@@ -262,3 +301,59 @@ jobs:
             | tee /tmp/platforms.txt
           grep -q amd64 /tmp/platforms.txt || { echo "::error::amd64 missing from :$REF"; exit 1; }
           grep -q arm64 /tmp/platforms.txt || { echo "::error::arm64 missing from :$REF"; exit 1; }
+
+  # The dev arm of `merge`. Kept separate on purpose: the prod merge job above
+  # names :latest and :VERSION and must never be reachable from a dev build.
+  #
+  # :dev is repointed every build so a staging deploy can pull :dev; the
+  # :dev-<sha> tag beside it pins one exact build.
+  merge-dev:
+    needs: [meta-dev, build]
+    if: needs.meta-dev.outputs.sha_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the dev manifest list
+        working-directory: /tmp/digests
+        env:
+          SHA_TAG: ${{ needs.meta-dev.outputs.sha_tag }}
+        run: |
+          set -eu
+          SRCARGS=""
+          for f in *; do
+            [ -f "$f" ] || continue
+            SRCARGS="$SRCARGS ghcr.io/thenabbu/opensrm@$(cat "$f")"
+          done
+          echo "sources:$SRCARGS"
+          # shellcheck disable=SC2086  # deliberate: a list of arguments
+          docker buildx imagetools create -t "ghcr.io/thenabbu/opensrm:$SHA_TAG" -t "ghcr.io/thenabbu/opensrm:dev" $SRCARGS
+
+      - name: Verify the dev image carries both architectures
+        env:
+          SHA_TAG: ${{ needs.meta-dev.outputs.sha_tag }}
+        run: |
+          set -eu
+          docker buildx imagetools inspect "ghcr.io/thenabbu/opensrm:$SHA_TAG" --format '{{range .Manifest.Manifests}}{{.Platform.Architecture}} {{end}}' | tee /tmp/platforms.txt
+          grep -q amd64 /tmp/platforms.txt || { echo "::error::amd64 missing from :$SHA_TAG"; exit 1; }
+          grep -q arm64 /tmp/platforms.txt || { echo "::error::arm64 missing from :$SHA_TAG"; exit 1; }
+
