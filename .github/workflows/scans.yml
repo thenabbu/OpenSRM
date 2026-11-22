@@ -12,7 +12,8 @@ name: Scans
 
 on:
   pull_request:
-    branches: [main]
+    # base-branch filter: PRs into dev need the security scans too
+    branches: [main, dev]
   push:
     branches: [main]
   workflow_dispatch:
