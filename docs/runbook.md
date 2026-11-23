@@ -1,33 +1,51 @@
 # Runbook — build, deploy, rollback, restore, rotate, damp
 
-Operator guide for a self-hosted OpenSRM. Every lab/infrastructure claim was
-verified live on 2026-10-16 with the command shown next to it; re-run the
-command before trusting the claim after any infra change. Code claims are read
-from `main` at 4ef16cb (v1.25.0).
+Operator guide for a self-hosted OpenSRM. The infrastructure claims below were
+re-verified live on **2026-11-22** against the oclab VPS (`ssh oracle`); re-run
+the command next to a claim before trusting it after any infra change.
+
+**The homelab is gone.** On 2026-11-19 the database, the keys and the hostname
+moved to oclab; the lab container is stopped with `restart=no` and its volume is
+kept for rollback only. Any `ssh lab` command in older notes returns empty and
+reads as "nothing wrong".
+
+**Read this before running any command below:** sections that still show
+`ssh lab` were written for the homelab. The host is now `ssh oracle`, and the
+`/data/ssd120/...` backup paths no longer exist on the production box — the
+per-deploy snapshots live in `/docker/opensrm/snapshots/`. Do not run those
+lines verbatim; translate the host first and re-verify the path.
+Count them with `grep -c 'ssh lab' docs/runbook.md` rather than assuming this
+note caught every one.
 
 ## Where things live
 
 | Thing | Where | Verified by |
 |---|---|---|
-| Repo | `github.com/thenabbu/OpenSRM`, `main` only | `gh pr list` / `git log origin/main` |
-| Compose project | `/docker/opensrm/` on the lab host — `docker-compose.yml` + project env file `.env` (the ONLY env file compose interpolates for this project) | `ssh lab 'ls -la /docker/opensrm/'` |
-| Container | `opensrm`, bound `127.0.0.1:8083` + `172.31.0.1:8083` (cloudflared gateway) → container 8080; never 0.0.0.0 — CF-only access | `ssh lab 'docker port opensrm'` |
-| Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh lab 'docker exec opensrm ls /app/data'` |
-| Daily snapshots | `/data/ssd120/backups/opensrm/srm.YYYYMMDD.snapshot.db.gz`, taken ~03:0x IST, 7 kept | `ssh lab 'ls -1t /data/ssd120/backups/opensrm/'` |
+| Repo | `github.com/thenabbu/OpenSRM` — `dev` integrates, `main` is production | `git log origin/main`, `git log origin/dev` |
+| Compose project | `/docker/opensrm/` on **oclab** — `docker-compose.yml` + project env file `.env` (the ONLY env file compose interpolates for this project). Six services: `opensrm`, `opensrm-dev`, prometheus, alertmanager, grafana, node | `ssh oracle 'ls -la /docker/opensrm/'` |
+| Container | `opensrm`, **no published port**; Caddy at `/docker/caddy` reaches `opensrm:8080` over the external `node` network. Ingress is Cloudflare → Caddy, gated by a Cloudflare-IP allowlist and `X-Edge-Secret` | `ssh oracle 'docker port opensrm'` (prints nothing) |
+| Staging container | `opensrm-dev`, same compose project and `.env`, `expose: 8080`, own volume `opensrm-dev-data`, serves `srm-dev.200871.xyz` | `ssh oracle 'docker compose -f /docker/opensrm/docker-compose.yml ps opensrm-dev'` |
+| Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh oracle 'docker inspect opensrm --format "{{range .Mounts}}{{.Name}} {{end}}"'` |
+| Deploy snapshots | `/docker/opensrm/snapshots/srm.predeploy-YYYYMMDD-HHMMSS.db`, one per gated deploy | `ssh oracle 'ls -1t /docker/opensrm/snapshots \| head -3'` |
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
 | Observability stack (optional) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
-| Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
+| Edge | Cloudflare (proxied, Full) → Caddy → `opensrm:8080`. **No tunnel** — the box has its own public IP, which is why Caddy carries the Cloudflare-only guard | `curl -sSI https://srm.200871.xyz/healthz \| grep -iE 'cf-ray\|strict-transport'` |
 | Edge outage page | Worker `srm-maintenance` on route `srm.200871.xyz/*`, in front of the tunnel — serves the branded maintenance page when the origin is unreachable (incl. the whole host being off). Source + reproduce script: `edge/maintenance/` (`./deploy.sh`) | `curl -sI https://srm.200871.xyz/ \| grep -i x-opensrm` (`-edge: pass` up, `-maintenance: 1` down) |
 
-Note the two env files: the lab also keeps a master secret registry at
+Note the two env files: the host also keeps a master secret registry at
 `/docker/.env`, but **compose never reads it for this project** — a `${VAR}`
 that exists only there arrives empty. Every knob below goes into
 `/docker/opensrm/.env`.
 
+`OPENSRM_TAG` in that file pins production and must never be written by a
+staging path. A staging deploy names `opensrm-dev` and passes `--no-deps`, or
+compose reconciles the whole project and recreates prod from `OPENSRM_TAG`.
+
 ## Build
 
-CI builds every green `main` push: `lint` + `tests` (unit/docker/e2e) gate the
-publish job (`.github/workflows/build.yml`, `needs: [lint, tests]`), which
+CI builds every green `main` push: the `tests` job (unit/docker/e2e) gates the
+publish path (`.github/workflows/build.yml`, `build` needs `[meta, meta-dev]`),
+which
 pushes `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` (from the
 `VERSION` file) — and only on the push that moved `VERSION`, so a version tag
 names one immutable artifact — with OCI `version`/`revision` labels

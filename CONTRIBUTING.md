@@ -142,10 +142,11 @@ that catch people out first:
 - **Build** — on push to `main`: the image is built every time but pushed to
   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` only when that push
   moved `VERSION` (a manually dispatched run builds without publishing unless
-  `republish` is set), gated on `needs: [lint, tests]` so a red suite never publishes
+  `republish` is set), gated on the `tests` job through `build`'s `needs: [meta, meta-dev]`, so a red suite never publishes
   `:latest`. The shipped image omits the browser fallback; build with
   `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
   `OPENSRM_TAG` (see AGENTS.md "Prod deploy").
+
 - **Scans** — gitleaks / pip-audit / trivy in
   `.github/workflows/scans.yml`, **blocking**. A leaked secret, a vulnerable
   dependency or a fixable HIGH/CRITICAL CVE fails the run.
@@ -166,6 +167,22 @@ that catch people out first:
   lab workflow, no `production` environment and no watcher. Do not add one back.
   To roll back, point the `srm` record at the lab tunnel, start the container, and
   copy back any rows oclab accepted. See [docs/runbook.md](docs/runbook.md).
+
+### Branches and environments
+
+`dev` is the integration branch; `main` is production. Feature work branches off
+`origin/dev` and PRs into `dev`. `main` receives only a promotion from `dev`, a
+`hotfix/<slug>`, or release tooling, and `promotion-guard` enforces that by check
+name. Promotion is a merge commit, then `dev` fast-forwards onto `main`
+(`git checkout -B dev origin/main && git push origin dev`); never delete `dev`,
+because doing so re-targets every open PR at `main`.
+
+A green `dev` push publishes `:dev-<shortsha>` and `:dev`, then
+`cd-oclab-dev.yml` deploys `srm-dev.200871.xyz` through the box's
+`deploy-dev <sha>` verb. That verb recreates only `opensrm-dev` with
+`--no-deps`; prod and staging share one compose file and one `.env`, so a bare
+`docker compose up -d` would recreate production. `exp/<slug>` branches are
+created only by a human, and `exp-guard` fails a promotion carrying one.
 
 ## Portal rate limits
 
