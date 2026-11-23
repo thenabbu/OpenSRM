@@ -15,6 +15,7 @@ and the parsers. Re-exported from app.app, so the blueprints and tests that
 import these view functions by name are unchanged.
 """
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -375,6 +376,33 @@ def persist_sync(netid, res, password=None):
                     time.monotonic() - t_persist, phase="persist")
 
 
+def _scope_only_credential_check(netid, password):
+    """Verify the password in SCOPE-only mode, where nothing upstream does.
+
+    `app/scope/client.py:login()` authenticates on NetID ALONE — it
+    deliberately sends an empty password because the SCOPE backend rejects
+    any non-empty one. The portal was therefore the ONLY credential check,
+    so with PORTAL_LOGIN=off every password would be accepted and a session
+    handed out for any NetID: typing a classmate's NetID would open their
+    stored attendance, marks and personal details.
+
+    Verify against the credential already stored for the account instead.
+    An account with no stored row cannot be verified without the portal, so
+    it is refused until portal auth returns.
+    Returns None when the password is good, else a (payload, status) tuple.
+    """
+    row = user_password(netid)
+    stored = decrypt_pw(row["password"]) if row and row["password"] else None
+    if not stored:
+        return ({"ok": False,
+                 "error": "Portal login is paused — only accounts that have "
+                          "signed in before can use the app right now."}, 401)
+    # constant-time: this is the only password check left standing
+    if not hmac.compare_digest(stored, password):
+        return {"ok": False, "error": "invalid credentials — check your NetID/password"}, 401
+    return None
+
+
 def api_login():
     # audit: no force=True — require real application/json content-type
     d = request.get_json(silent=True)
@@ -413,6 +441,17 @@ def api_login():
         return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
 
     login_t0 = time.monotonic()
+    # SCOPE-only mode: nothing upstream verifies a password, so do it here
+    # BEFORE any work or session. Without this, PORTAL_LOGIN=off accepts any
+    # password for any NetID and hands out their stored data.
+    from .scraper import portal_login_enabled
+    if not portal_login_enabled():
+        bad = _scope_only_credential_check(netid, password)
+        if bad:
+            log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid,
+                        ip=_client_ip(), error="portal_off bad credential")
+            _track("login_fail", detail="portal_off_bad_cred", user=netid)
+            return bad
     res = fetch_attendance(netid, password, attempt=attempt)
     login_ms = int((time.monotonic() - login_t0) * 1000)
     if not res["ok"]:

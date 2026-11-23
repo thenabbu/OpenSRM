@@ -27,9 +27,9 @@ _td = tempfile.TemporaryDirectory()          # test_audit_findings forbids in-tr
 os.environ["DATA_DIR"] = _td.name
 os.environ["SCOPE_FEATURES"] = "off"         # no SCOPE network either
 
-from app import scraper as S                  # noqa: E402
-from app import db as D                       # noqa: E402
-from app import app as A                      # noqa: E402  (init_db lives here)
+from app import app as A  # noqa: E402  (init_db lives here)
+from app import db as D  # noqa: E402
+from app import scraper as S  # noqa: E402
 
 
 def _portal_touched():
@@ -104,10 +104,49 @@ def test_scope_write_lands_on_a_created_row():
     assert row["scope_fetched_at"] == 999
 
 
+def test_scope_only_rejects_wrong_password():
+    """SCOPE-mode login must verify the password itself. The SCOPE backend
+    authenticates on NetID alone, and the portal (the only real check) is
+    off, so without this every password works for every NetID."""
+    A.init_db()
+    from app.crypto import encrypt_pw
+    D.ensure_user_row("ef9012", encrypt_pw("the-real-pw"))
+
+    os.environ["PORTAL_LOGIN"] = "off"
+    c = A.app.test_client()
+    try:
+        r = c.post("/api/login", json={"netid": "ef9012", "password": "wrong-pw"})
+        assert r.status_code == 401, f"wrong password accepted: {r.status_code}"
+        assert "invalid credentials" in r.get_json()["error"], r.get_json()
+
+        r = c.post("/api/login", json={"netid": "ef9012", "password": "the-real-pw"})
+        assert r.status_code == 200, f"correct password rejected: {r.status_code} {r.get_json()}"
+    finally:
+        os.environ.pop("PORTAL_LOGIN", None)
+
+
+def test_scope_only_rejects_unknown_account():
+    """An account with no stored credential cannot be verified without the
+    portal, so it must be refused rather than handed a session."""
+    from app.crypto import encrypt_pw  # noqa: F401  (documents the intent)
+    A.init_db()
+    os.environ["PORTAL_LOGIN"] = "off"
+    c = A.app.test_client()
+    try:
+        r = c.post("/api/login", json={"netid": "zz0000", "password": "anything"})
+        assert r.status_code == 401, f"unknown account got in: {r.status_code}"
+        assert "paused" in r.get_json()["error"].lower(), r.get_json()
+    finally:
+        os.environ.pop("PORTAL_LOGIN", None)
+
+
 if __name__ == "__main__":
     test_knob_parsing()
     test_fetch_attendance_makes_no_portal_call()
     test_ensure_user_row_creates_then_preserves()
     test_scope_write_lands_on_a_created_row()
+    test_scope_only_rejects_wrong_password()
+    test_scope_only_rejects_unknown_account()
     _td.cleanup()
-    print("OK — SCOPE-only mode: knob, no portal traffic, row created, SCOPE writes land")
+    print("OK — SCOPE-only mode: knob, no portal traffic, row created, SCOPE writes land, "
+          "wrong/unknown credentials refused")
