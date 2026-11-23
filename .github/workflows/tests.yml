@@ -105,6 +105,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_metrics.py
       - name: test_observability_assets (ops stack guard rails)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_observability_assets.py
+      - name: test_activity_by_hour (people per hour-of-day, not series)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_activity_by_hour.py
       - name: test_sync_cache (refresh cache window + per-netid single flight)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sync_cache.py
       - name: test_sync_queue (bounded wait + priority + budget buckets)

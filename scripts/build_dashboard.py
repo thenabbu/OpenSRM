@@ -100,6 +100,17 @@ def add(title, desc, targets, kind="timeseries", w=12, h=8, unit="short",
                 "orientation": "auto", "textMode": "auto",
                 "colorMode": "background" if kind == "stat" else "value",
                 "graphMode": "none"}
+    elif kind == "barchart":
+        # Hour-of-day answers want a clock face, not a timeline: bars standing on
+        # a category axis read as "this hour is busy", a line over time reads as
+        # "the site was busy on Tuesday". No time axis, so no relative time —
+        # the panel is one instant query.
+        opts = {"xField": "hour", "orientation": "vertical",
+                "showValue": "auto", "barWidth": 0.8,
+                "legend": {"showLegend": False, "displayMode": "list",
+                           "placement": "bottom", "calcs": []},
+                "tooltip": {"mode": "single", "sort": "none"}}
+        custom["lineWidth"] = 0
     p = {"id": _nid(), "type": kind, "title": title, "description": desc,
          "gridPos": {"h": h, "w": w, "x": used, "y": y},
          "datasource": DS, "fieldConfig": {"defaults": defaults, "overrides": []},
@@ -162,15 +173,19 @@ add("How many are active?", "Distinct people in three windows. The sources diffe
     "'right now' is live in-process activity, while the 24h and 7d numbers are read from the event "
     "table. Right after a deploy the live count can briefly read lower than 'active in 24h' — that is "
     "a restart artefact, not a contradiction.",
-    [("count(count by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m])))", "active right now (5 min)"),
+    [("count((sum by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m]))) > 0)",
+      "active right now (5 min)"),
      ("opensrm_users_active_24h", "active in the last 24h"),
      ("opensrm_users_active_7d", "active in the last 7 days")],
     kind="stat", w=6, h=4, stat_calc="lastNotNull")
 
-add("When are people using it?", "How many distinct people were active each hour. The shape of this "
-    "curve decides when to run a sync, a push, or a deploy without annoying anyone.",
-    [("count(count by (uid) (rate(opensrm_active_users_total[1h])))", "people active")],
-    w=12, h=8)
+add("When are people using it?", "Distinct people active in each hour of the day, over the last 7 days, "
+    "in IST. Read it as a clock face: the tall bars are when a sync, a push or a deploy costs the "
+    "fewest people their time. Counted from the usage log, not the live counter — the counter resets "
+    "on deploy and Prometheus keeps every user series forever, so counting series reported the "
+    "all-time signup count instead of who was actually around.",
+    [("opensrm_activity_by_hour", "{{hour}}:00")],
+    kind="barchart", w=12, h=8, instant=True)
 add("What are people doing?", "Every event the app records, split by type, named in plain words "
     "rather than by the internal event id.",
     [(_PLAIN_EVENTS, "{{event}}")],
