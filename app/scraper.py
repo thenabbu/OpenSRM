@@ -546,8 +546,38 @@ def _pw_fallback_enabled():
     return os.environ.get("PLAYWRIGHT_FALLBACK", "").strip().lower() in ("enabled", "1", "true")
 
 
+def portal_login_enabled():
+    """Portal (student-portal) login is ON unless PORTAL_LOGIN is an off word.
+
+    Read per call like the other knobs, so ops flips it with no rebuild.
+    When it is off the app serves SCOPE data only and makes no portal
+    request at all — the portal-only sources (attendance/marks/timetable
+    scrapes) pause and every stored value keeps being served.
+    """
+    return os.environ.get("PORTAL_LOGIN", "").strip().lower() not in (
+        "off", "0", "false", "disabled", "no")
+
+
 def fetch_attendance(netid, password, authorized=False, attempt=None):
     t_sync = time.monotonic()   # observability: sync outcome + duration anchor
+    # PORTAL_LOGIN=off (SCOPE-only mode): this function is the single place
+    # EVERY portal scrape enters (/api/login and /api/refresh both route
+    # here, plus the background stale-refresh), so one guard here stops all
+    # portal traffic. It returns before admission, the cooldown check and the
+    # rate budget, so no portal token, quota or counter is spent either.
+    # The caller still creates the user row and triggers the SCOPE sync, so
+    # SCOPE data keeps landing while portal-only data pauses on its last
+    # stored value.
+    if not portal_login_enabled():
+        log.info("portal login disabled (PORTAL_LOGIN) — SCOPE-only, skipping portal netid=%s", netid)
+        # Empty fetch keys are the documented preserve-nothing-to-merge case:
+        # _merge_fetch_result keeps every stored column when a key is empty,
+        # so attendance/marks/timetable keep serving their last real value
+        # instead of being wiped. `fetched` must still be present —
+        # persist_sync reads it directly.
+        return _sync_result("portal_off",
+                            {"ok": True, "fetched": {}, "portal_disabled": True},
+                            t_sync)
     loop = future = None  # except block references both; may not be reached
     pw_held = False       # Playwright fallback lock; released in finally below
     # audit 2026-09-30: admission comes FIRST. _check_rate() used to run above
