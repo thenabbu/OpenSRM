@@ -32,6 +32,7 @@ from .db import (
     append_edit_log,
     clear_official_stamp,
     edit_log_entries,
+    ensure_user_row,
     group_id,
     group_slots,
     group_subjects,
@@ -435,7 +436,17 @@ def api_login():
     # (single shared contract — see _merge_fetch_result); the one copy of
     # the upsert now lives in persist_sync, password passed so the row is
     # created/rotated exactly as before
-    persist_sync(netid, res, password=password)
+    if res.get("portal_disabled"):
+        # SCOPE-only mode: fetch_attendance skipped the portal, so
+        # write_user_sync never ran and this account may have no row at all
+        # (every SCOPE writer is UPDATE-only). Create/rotate it here first,
+        # or the whole SCOPE payload below lands on zero rows.
+        ensure_user_row(netid, encrypt_pw(password))
+        log_with_kv(log_auth, logging.INFO, "login ok (portal disabled)", netid=netid,
+                    ip=_client_ip(), duration_ms=login_ms)
+        _track("login_ok", detail="portal_off", user=netid)
+    else:
+        persist_sync(netid, res, password=password)
     # SCOPE is BACKGROUND work (each SOAP op is 4-8s upstream) — it must never
     # sit in the login response. The dashboard reloads once when it lands.
     _scope_sync_trigger(netid, password)
@@ -605,7 +616,13 @@ def _refresh_core(netid, password, source="request"):
             return {"ok": False, "error": res["error"]}, sync_status(res)
         # same single persistence path as login — no password arg: refresh
         # never rotates the stored credential
-        persist_sync(netid, res)
+        if res.get("portal_disabled"):
+            # SCOPE-only: nothing to persist from the portal, and this is an
+            # UPDATE-only path on a row that login already created. Skip it
+            # and let the SCOPE trigger below do the real work.
+            _track("sync_ok", user=netid)
+        else:
+            persist_sync(netid, res)
         # same rule as login: the SCOPE fetch runs in the background, never
         # inside the refresh response
         _scope_sync_trigger(netid, password)
@@ -681,6 +698,14 @@ def _run_preflight(netid):
 
 def api_login_preflight():
     d = request.get_json(silent=True)
+    # PORTAL_LOGIN=off: the warm login exists only to pre-solve the portal
+    # captcha and session, which this mode never uses. It reaches the portal
+    # through http_scraper.preflight() — a path that does NOT pass through
+    # fetch_attendance — so it needs its own guard, or the browser would keep
+    # hitting the portal on every password-field focus.
+    from .scraper import portal_login_enabled
+    if not portal_login_enabled():
+        return {"ok": True}, 204
     netid = ((d.get("netid") or "").strip().lower().split("@")[0]
              if isinstance(d, dict) and isinstance(d.get("netid"), str) else "")
     if not netid or not NETID_RE.match(netid):

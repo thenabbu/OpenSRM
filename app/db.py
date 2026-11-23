@@ -281,6 +281,24 @@ def write_user_sync(netid, pw_blob, attendance_json, fetched, personal_json,
                        marks_json, subjects_json, exams_json, faculty_json, fb_open))
 
 
+def ensure_user_row(netid, pw_blob):
+    """Create the users row (or rotate the stored password) WITHOUT a portal
+    sync. Only the SCOPE-only mode needs this.
+
+    Every other writer here is UPDATE-only (write_scope_data,
+    save_scope_session), and write_user_sync — the sole INSERT — is reached
+    only from the portal pipeline. So when the portal is disabled, a
+    first-time account would have no row and every one of its SCOPE writes
+    would silently affect 0 rows: the app would look like it worked and store
+    nothing. The other columns are left at their defaults on insert and never
+    touched on conflict, so stored attendance/marks survive.
+    """
+    with transaction() as c:
+        c.execute("INSERT INTO users(netid, password) VALUES(?,?) "
+                  "ON CONFLICT(netid) DO UPDATE SET password=excluded.password",
+                  (netid, pw_blob))
+
+
 def user_marks(netid):
     return _read("SELECT marks_json FROM users WHERE netid=?", (netid,), one=True)
 

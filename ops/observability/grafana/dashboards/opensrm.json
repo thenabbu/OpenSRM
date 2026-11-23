@@ -257,7 +257,7 @@
       },
       "targets": [
         {
-          "expr": "count(count by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m])))",
+          "expr": "count((sum by (uid) (rate(opensrm_active_users_total{uid!=\"anonymous\"}[5m]))) > 0)",
           "legendFormat": "active right now (5 min)",
           "refId": "A",
           "datasource": {
@@ -293,9 +293,9 @@
     },
     {
       "id": 6,
-      "type": "timeseries",
+      "type": "barchart",
       "title": "When are people using it?",
-      "description": "How many distinct people were active each hour. The shape of this curve decides when to run a sync, a push, or a deploy without annoying anyone.",
+      "description": "Distinct people active in each hour of the day, over the last 7 days, in IST. Read it as a clock face: the tall bars are when a sync, a push or a deploy costs the fewest people their time. Counted from the usage log, not the live counter \u2014 the counter resets on deploy and Prometheus keeps every user series forever, so counting series reported the all-time signup count instead of who was actually around.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -311,7 +311,7 @@
           "unit": "short",
           "custom": {
             "drawStyle": "line",
-            "lineWidth": 1,
+            "lineWidth": 0,
             "fillOpacity": 8,
             "showPoints": "never"
           }
@@ -319,29 +319,32 @@
         "overrides": []
       },
       "options": {
+        "xField": "hour",
+        "orientation": "vertical",
+        "showValue": "auto",
+        "barWidth": 0.8,
         "legend": {
-          "displayMode": "table",
+          "showLegend": false,
+          "displayMode": "list",
           "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ]
+          "calcs": []
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "single",
+          "sort": "none"
         }
       },
       "targets": [
         {
-          "expr": "count(count by (uid) (rate(opensrm_active_users_total[1h])))",
-          "legendFormat": "people active",
+          "expr": "opensrm_activity_by_hour",
+          "legendFormat": "{{hour}}:00",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ]
     },
