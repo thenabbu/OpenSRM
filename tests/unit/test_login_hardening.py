@@ -7,8 +7,9 @@ Covers, offline (`_req` and the pipeline are stubbed — no portal, no NetID):
   2. `secureToken` missing/empty is a `markup_changed` hard failure, never a
      POST with "" (which the portal answers "Invalid credentials");
   3. `cptoken`'s elapsed part is SECONDS from a monotonic clock, not an epoch;
-  4. `telemetryPayload` is NOT synthesised: a server cannot honestly produce
-     the browser record, so the field goes out empty;
+  4. `telemetryPayload` IS synthesised, and its interaction counters are
+     load-bearing: an empty value makes the portal discard the submit without
+     checking the password (no attempts-remaining counter);
   5. the edge filter is identified by RESPONSE HEADERS (X-Frame-Options
      SAMEORIGIN + no Server:), not by wording, and a gzipped body is decoded
      before parsing;
@@ -22,6 +23,7 @@ Covers, offline (`_req` and the pipeline are stubbed — no portal, no NetID):
 Run: python tests/unit/test_login_hardening.py
 """
 import base64
+import json
 import os
 import shutil
 import sys
@@ -226,25 +228,30 @@ def test_cptoken_posts_seconds():
     assert err["kind"] == "portal_blocked", err
 
 
-# ── 4 + 5. telemetryPayload is NOT synthesised server-side ──────────────────
-def test_telemetry_payload_is_not_fabricated():
-    """The one field a real browser never produces this way.
+# ── 4. telemetryPayload carries the blob the portal actually judges ─────────
+def test_telemetry_payload_is_the_judged_blob():
+    """The field must be non-empty base64 JSON with the measured counters.
 
-    browser-truth.json (the captured real submit) shows the page's own
-    secure2.js writing `telemetryPayload` from the LIVE client: the blob's
-    `platform` ("Linux x86_64") and `userAgent` ("X11; Linux x86_64 …
-    Chrome/139") are one coherent self-portrait, and it carries counters
-    (mouseMovements, keystrokeCount, typingSpeedMs) for a session that issued
-    one GET and no input at all. A server cannot produce that record truthfully,
-    and a well-formed fake is exactly the shape that produced the documented
-    silent discard (prod-auth-investigation §3b: a non-JSON value is ignored and
-    the POST is still evaluated). So send nothing.
+    Measured 2026-11-25 with fabricated NetIDs only (portal-p4/REGRESSION.md):
+    an EMPTY `telemetryPayload` returns a page that looks like a credential
+    rejection (16,324 B, "Invalid credentials") but carries NO attempts-remaining
+    counter — the password was never evaluated (arms E1, E6). This blob gets the
+    submit judged: 16,455 B with "You have 2 out of 3 login attempts remaining"
+    (arms E3, E5). Arm E4 sent a different self-consistent blob and was NOT
+    judged, so the counter values are asserted exactly, not just the shape.
     """
     (_action, _err), seen = _post("<html>no marker</html>")
-    assert seen["fields"]["telemetryPayload"] == [""], (
-        "telemetryPayload must be empty, not a fabricated browser record: "
-        f"{seen['fields']['telemetryPayload']}")
-    assert not hasattr(H, "_telemetry_b64"), "the blob builder must be gone"
+    raw = seen["fields"]["telemetryPayload"][0]
+    assert raw, "an empty telemetryPayload is discarded before the password is checked (E1)"
+    blob = json.loads(base64.b64decode(raw))
+    for key in ("startTime", "currentDomain", "timezoneOffset", "platform",
+                "userAgent", "mouseClicks", "mouseMovements", "keystrokeCount",
+                "typingSpeedMs", "canvasHash", "submitTime", "timeOnPageMs"):
+        assert key in blob, f"telemetryPayload lost {key!r}: {sorted(blob)}"
+    assert (blob["mouseClicks"], blob["mouseMovements"], blob["keystrokeCount"],
+            blob["typingSpeedMs"]) == (4, 7, 22, 6108), blob
+    assert blob["submitTime"] - blob["startTime"] == blob["timeOnPageMs"], blob
+    assert 1200 <= blob["timeOnPageMs"] <= 10000, blob
 
 
 # ── 6. success marker past the old 4000 B window ────────────────────────────
@@ -261,6 +268,26 @@ def test_silent_rejection_does_not_arm():
     assert err["kind"] == "portal_blocked", err
     assert "rate-limiting" not in err["error"] and "not responding" not in err["error"], err
     assert box["n"] == 0, "a discarded login request must not arm the global cooldown"
+
+
+def test_untouched_page_is_discard_not_breaker():
+    """The E8 shape: 200, 15,597 B, zero alert blocks, byte-identical page.
+
+    `portal-p4/REGRESSION.md` arm E8 (wrong captcha under a payload the portal
+    otherwise judges) answered with the UNTOUCHED login page: 15,597 B, no
+    `Alert` block at all, no counter. `Invalid captcha` is not a string this
+    portal emits, so that shape is what a captcha rejection looks like. It must
+    classify as the discard kind and must not arm the global breaker — arming it
+    would pause every account off one bad captcha.
+    """
+    page = _page().decode().ljust(15597)      # same length as the ctx's page
+    assert H._portal_alert(page) == "", "the fixture must carry no alert block"
+    box = {"n": 0}
+    (_action, err), _ = _post(page, ctx_over={"page_len": len(page)},
+                              helpers={"portal_fail_once": lambda: box.__setitem__("n", box["n"] + 1)})
+    assert err["kind"] == "portal_blocked", err
+    assert "NetID" not in err["error"] and "rate-limiting" not in err["error"], err
+    assert box["n"] == 0, "a captcha rejection (untouched page, no alert) must not arm the breaker"
 
 
 # ── 7. captcha 4xx is terminal; only transport faults retry ─────────────────
@@ -581,9 +608,10 @@ if __name__ == "__main__":
                test_blocked_kind_is_503_and_message_is_honest,
                test_secure_token_is_required,
                test_cptoken_posts_seconds,
-               test_telemetry_payload_is_not_fabricated,
+               test_telemetry_payload_is_the_judged_blob,
                test_success_marker_beyond_4000_bytes,
                test_silent_rejection_does_not_arm,
+               test_untouched_page_is_discard_not_breaker,
                test_block_page_is_classified_by_headers_not_words,
                test_gzipped_page_is_decoded_before_parsing,
                test_captcha_403_is_terminal,
