@@ -64,7 +64,51 @@ MAX_CAPTCHA_RETRIES = 3
 
 
 class HttpScraperError(Exception):
-    """Unexpected transport/code failure — caller falls back to Playwright."""
+    """Unexpected transport/code failure — caller falls back to Playwright.
+
+    ``kind`` is the typed sync-failure vocabulary from app/errors.py that the
+    caller maps to a status + user message; ``arms_breaker`` says whether this
+    failure may count towards the GLOBAL portal cooldown. A definite answer
+    from the portal (a 403, a changed login form) is not an outage, so it must
+    not pause every account (prod 2026-11-23: a WAF stub on the login page
+    armed the 5-min cooldown for all users)."""
+
+    kind = "portal_down"
+    arms_breaker = True
+
+    def __init__(self, msg="", *, kind=None, arms_breaker=None, retry_after=None):
+        super().__init__(msg)
+        if kind is not None:
+            self.kind = kind
+        if arms_breaker is not None:
+            self.arms_breaker = arms_breaker
+        self.retry_after = retry_after
+
+
+class PortalBlocked(HttpScraperError):
+    """The portal (or the WAF in front of it) answered with a stub page, not
+    the login form. Retrying is pointless within this attempt and it is NOT an
+    outage of the portal."""
+    kind = "portal_blocked"
+    arms_breaker = False
+
+
+class PortalThrottled(HttpScraperError):
+    """The portal is deliberately refusing us (captcha GET 403/429). Distinct
+    from bad credentials and from a dead portal; carries Retry-After."""
+    kind = "portal_throttled"
+    arms_breaker = False
+
+
+class PortalHttpError(HttpScraperError):
+    """The portal answered with an HTTP error status (not a transport fail).
+    Keeps the status and Retry-After so callers can tell a 403 from a 503."""
+
+    def __init__(self, status, retry_after=None):
+        super().__init__(f"HTTP {status} from portal",
+                         kind="portal_blocked" if 400 <= status < 500 else "portal_down",
+                         arms_breaker=status >= 500, retry_after=retry_after)
+        self.status = status
 
 
 class FeedbackWindowClosed(HttpScraperError):
@@ -121,7 +165,11 @@ def _req(opener, url, headers, data=None, timeout=25):
         resp = opener.open(r, timeout=timeout)
     except urllib.error.HTTPError as e:
         log.warning("portal http_error url=%s status=%s", url[:80], e.code)
-        raise HttpScraperError(f"HTTP {e.code} from portal") from e
+        try:
+            retry_after = int(str(e.headers.get("Retry-After", "")).strip() or 0) or None
+        except (TypeError, ValueError):
+            retry_after = None
+        raise PortalHttpError(e.code, retry_after=retry_after) from e
     except Exception as e:
         log.warning("portal transport_error url=%s err=%r", url[:80], e)
         raise HttpScraperError(f"transport: {e!r}") from e
@@ -171,7 +219,9 @@ _TEL_CANVAS = "563dae46"
 
 
 def _telemetry_interactions():
-    return _TEL_CLICKS + _TEL_KEYS
+    # The portal's own JS counts mousemove + keydown + touchstart
+    # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + interactCount)`).
+    return _TEL_MOVES + _TEL_KEYS
 
 
 def _telemetry_b64(t0):
@@ -189,11 +239,14 @@ def _telemetry_b64(t0):
     because it is free, not because it is load-bearing.
     """
     now_ms = int(time.time() * 1000)
-    on_page = min(10000, max(1200, int((time.time() - t0) * 1000)))
+    # t0 is time.monotonic() (see _prepare). Mixing clocks here pinned this at
+    # exactly 10000 on every login — a constant a bot check reads. Clamp to a
+    # plausible dwell (1.2s..2min) instead.
+    on_page = min(120000, max(1200, int((time.monotonic() - t0) * 1000)))
     return base64.b64encode(json.dumps({
         "startTime": now_ms - on_page, "currentDomain": PORTAL_HOST,
         "timezoneOffset": 0, "screenWidth": 1366, "screenHeight": 900,
-        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Linux x86_64",
+        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Win32",
         "userAgent": UA, "language": "en-US", "hardwareConcurrency": 2,
         "deviceMemory": 8, "touchSupport": False, "webdriver": False,
         "mouseClicks": _TEL_CLICKS, "mouseMovements": _TEL_MOVES,
@@ -261,6 +314,26 @@ def take_preflight(netid, max_age=150):
     return p
 
 
+def _blocked_page(body, html):
+    """Reason string when the response is NOT the login form.
+
+    The F5 BIG-IP ASM in front of the portal intermittently answers the login
+    page with a 245 B "Request Rejected" stub (also a ~5.5 KB variant, and a
+    JS challenge). That has no `ph_` input, so the old code raised
+    'honeypot field missing' and the caller told the user the portal was down
+    while arming the GLOBAL cooldown. Detect it here and say what happened."""
+    low = html.lower()
+    if "request rejected" in low or "support id" in low:
+        return f"edge filter answered {len(body)}B instead of the login form"
+    if "bobcmn" in low:
+        # F5 TSPD JS challenge (4,943 B): no form, so the honeypot parse would
+        # call it a portal outage and arm the global cooldown.
+        return f"edge served a JS challenge ({len(body)}B) instead of the login form"
+    if len(body) < 1200 and 'name="ph_' not in low:
+        return f"login form absent ({len(body)}B response)"
+    return ""
+
+
 def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     """Fetch login page + parse tokens + fetch captcha + OCR.
     Returns ctx dict for _post_login. Raises HttpScraperError."""
@@ -272,6 +345,10 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     html = body.decode("utf-8", errors="replace")
     log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
     if on_step: on_step("Opening login page…", 15)
+    blocked = _blocked_page(body, html)
+    if blocked:
+        log.warning("login attempt=%d blocked_page %s", attempt, blocked)
+        raise PortalBlocked(f"portal_blocked: {blocked}")
 
     def g(p, _html=html):
         m = re.search(p, _html)
@@ -281,22 +358,31 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     dfield = g(r"domainFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
     cfield = g(r"captchaFieldName\s*[=:]\s*['\"]([^'\"]+)['\"]")
     rdelim = g(r"randomDelimiter\s*[=:]\s*['\"]([^'\"]+)['\"]")
-    hp = re.search(r'name=\"(ph_[^\"]+)\"', html)
+    hp = re.search(r'name="(ph_[^"]+)"', html)
     if not hp:
-        raise HttpScraperError("honeypot field missing")
+        # Reached only for a page that is neither a WAF stub nor a challenge
+        # (both caught above): the form itself changed. Never a portal outage,
+        # or one reworded form pauses every account.
+        raise HttpScraperError("honeypot field missing",
+                               kind="markup_changed", arms_breaker=False)
     img = re.search(r'<img[^>]*id="secure_captcha"[^>]*>', html)
     src = re.search(r'data-src="([^"]+)"', img.group(0)) if img else None
     # secureToken: a hidden input the page ships on load, bound to this
     # request's fpNonce + the captcha's own ts. Nothing client-side computes
-    # it, so the only correct move is to forward it verbatim (see
-    # docs/audit/2026-11-19-securetoken.md). Empty is tolerated by the parse
-    # path so a page without it degrades to the old behaviour.
+    # it, so the only correct move is to forward it verbatim. It is LOAD-
+    # BEARING: a POST without it answers "Invalid credentials" (2026-11-19
+    # bisect), which the classifier would report as a wrong password. Missing
+    # here therefore means the form changed — fail loudly, do not POST "".
     sec = re.search(r'<input[^>]*name="secureToken"[^>]*value="([^"]*)"', html) \
         or re.search(r'<input[^>]*value="([^"]*)"[^>]*name="secureToken"', html)
+    if not sec or not sec.group(1):
+        raise HttpScraperError("login form missing secureToken",
+                               kind="markup_changed", arms_breaker=False)
     if not all([nonce, dfield, cfield, rdelim, src]):
         log.warning("login page missing tokens nonce=%s dfield=%s cfield=%s",
                     bool(nonce), bool(dfield), bool(cfield))
-        raise HttpScraperError("login page tokens missing")
+        raise HttpScraperError("login page tokens missing",
+                               kind="markup_changed", arms_breaker=False)
 
     # Captcha: the page's OWN image (data-src) with Domain-Proof
     img_path = src.group(1)
@@ -314,8 +400,29 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
                 # which used to reach ddddocr as "cannot identify image file"
                 # and crash the whole http pipeline into the Playwright fallback.
                 raise HttpScraperError("captcha image empty (200, 0 bytes)")
+            if img_bytes.lstrip()[:1] == b"{":
+                # The captcha servlet's own throttle answers a tiny JSON body.
+                # Handing that to ddddocr reads as "bad captcha" and spends one
+                # of the portal's 3 login attempts for nothing.
+                raise PortalThrottled("captcha endpoint returned JSON, not an image",
+                                      retry_after=60)
             break
-        except HttpScraperError as e:
+        except PortalHttpError as e:
+            if 400 <= e.status < 500:
+                # TERMINAL for this login. The captcha endpoint now throttles
+                # per IP (403 + Retry-After, and observed sticky for hours), so
+                # retrying the image or POSTing anyway deepens the ban — and
+                # every user shares this egress IP.
+                log.warning("captcha fetch refused status=%s retry_after=%s",
+                            e.status, e.retry_after)
+                raise PortalThrottled(f"captcha endpoint answered {e.status}",
+                                      retry_after=e.retry_after or 60) from e
+            log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
+            if _img_try == 1:
+                raise
+        except PortalThrottled:
+            raise
+        except HttpScraperError as e:  # transport / empty body only
             log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
             if _img_try == 1:
                 raise
@@ -356,14 +463,21 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     from app.app import sync_error  # deferred: app.app imports this module lazily
     # POST login
     dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
-    elapsed = str(max(5, int(time.time() - ctx["t0"])))
+    # Seconds since the page load, like the portal's own JS
+    # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + count)`). t0 is
+    # time.monotonic(); the old `time.time() - t0` posted a 10-digit epoch.
+    elapsed = str(max(1, int(time.monotonic() - ctx["t0"])))
     # cptoken's third part must be the same interaction total the telemetry
-    # claims (measured: real logins carry clicks+keystrokes here). Sending a
-    # hardcoded 3 against fabricated counters is a mismatch the portal reads.
+    # claims. Sending a hardcoded 3 against fabricated counters is a mismatch
+    # the portal reads.
     cptoken = base64.b64encode(
         f"{elapsed}{ctx['rdelim']}{_telemetry_interactions()}".encode()).decode()
     fields = {ctx["hp"]: "", "username": netid, "password": password,
-              "captcha": ctx["ocr"], "fpPayload": "", "fpToken": "",
+              "captcha": ctx["ocr"],
+              # fpPayload/fpToken are filled in at runtime by the portal's own
+              # fingerprint JS; nothing on the page carries a value to scrape,
+              # so they stay empty (browser-filled, unmodelled).
+              "fpPayload": "", "fpToken": "",
               # Server-minted on page load and bound to this attempt's fpNonce
               # and the captcha ts; a real browser posts it and we did not.
               "secureToken": ctx.get("secure", ""),
@@ -375,7 +489,9 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
                      "Origin": f"https://{PORTAL_HOST}"}, referer=LOGIN_PAGE)
     final_url, body = _req(opener, post_url, headers, data=data)
     rhtml = body.decode("utf-8", errors="replace")
-    ok = "HRDSystem" in final_url or "HRDSystem" in rhtml[:4000]
+    # Whole body: a JS-redirect success can put the marker past 4000 B, and
+    # reading that as a silent rejection used to arm the global cooldown.
+    ok = "HRDSystem" in final_url or "HRDSystem" in rhtml
     if on_step: on_step("Verifying credentials…", 55)
     log.debug("login attempt=%d step=post final=%s hrdsystem=%s bytes=%d",
               attempt, final_url.split("/")[-1][:40], ok, len(rhtml))
@@ -412,15 +528,15 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     # body is the UNTOUCHED login page (same byte length as the page this ctx
     # was prepared from): that means LoginServlet discarded the request as a
     # bot instead of evaluating the credentials, which is a payload problem,
-    # not the portal rate-limiting us as the message claims.
+    # not the portal rate-limiting us. It is NOT a portal outage either, so it
+    # must not touch the GLOBAL cooldown (one bad body must not pause everyone).
     same_page = bool(ctx.get("page_len")) and len(rhtml) == ctx["page_len"]
     log.warning("login attempt=%d silent_rejection (no HRDSystem, no error text) "
                 "portal_alert=%r bytes=%d untouched_login_page=%s",
                 attempt, alert, len(rhtml), same_page)
-    helpers["portal_fail_once"]()
-    return "fail", sync_error("portal_cooldown",
-                              "SRM portal rejected the login without an error (likely "
-                              "rate-limiting). Try again in a few minutes.")
+    return "fail", sync_error("portal_blocked",
+                              "SRM portal did not accept the login request — try again "
+                              "in a few minutes.")
 
 
 def _login_done(ok, err, attempts):

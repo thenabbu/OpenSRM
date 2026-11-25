@@ -59,7 +59,7 @@ from .portal_control import (
 from .reqctx import _client_ip
 from .scope_sync import _scope_sync_state, _scope_sync_trigger
 from .security import require_login
-from .state import _check_ip_rate, _ip_retry_text, _portal_cooldown_remaining, progress, rate_limiter
+from .state import _admit_ip, _charge_ip, _ip_retry_text, _portal_cooldown_remaining, progress, rate_limiter
 
 
 def _push_conf():
@@ -374,6 +374,17 @@ def persist_sync(netid, res, password=None):
                     time.monotonic() - t_persist, phase="persist")
 
 
+# Kinds that mean the attempt never left our own code (sync busy, cooldown,
+# per-netid cap, portal disabled). No portal request happened, so none of them
+# may spend one of the 10-per-hour per-IP login tokens.
+_IP_FREE_KINDS = frozenset({"busy", "rate_limited", "portal_cooldown", "portal_off"})
+
+
+def _ip_attempt_counts(res):
+    """Did this attempt actually reach the portal (so it spends a token)?"""
+    return bool(res.get("ok")) or res.get("kind") not in _IP_FREE_KINDS
+
+
 def api_login():
     # audit: no force=True — require real application/json content-type
     d = request.get_json(silent=True)
@@ -407,21 +418,33 @@ def api_login():
     # Previously 11 trivial `{}` POSTs (valid JSON dict, no credentials) burned
     # the 10/hour budget and 429'd the rest of the hour — a cheap self-DoS on
     # shared campus NAT that never even reached the portal.
-    if not _check_ip_rate(_client_ip()):
-        log_with_kv(log_auth, logging.WARNING, "login ip limited", ip=_client_ip())
-        return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(_client_ip())}."}, 429
+    # 2026-11-25: check-only here; the token is spent below, and only when the
+    # attempt actually reached the portal. Ten failed logins used to lock a
+    # user out for an hour while the portal was healthy.
+    ip = _client_ip()
+    if not _admit_ip(ip):
+        log_with_kv(log_auth, logging.WARNING, "login ip limited", ip=ip)
+        return {"ok": False, "error": f"Too many login attempts from this device (10/hour). Try again in {_ip_retry_text(ip)}."}, 429
 
     login_t0 = time.monotonic()
-    res = fetch_attendance(netid, password, attempt=attempt)
+    try:
+        res = fetch_attendance(netid, password, attempt=attempt)
+    except Exception:
+        # The request got as far as the pipeline; charge conservatively so an
+        # internal crash cannot become a free brute-force channel.
+        _charge_ip(ip)
+        raise
+    if _ip_attempt_counts(res):
+        _charge_ip(ip)
     login_ms = int((time.monotonic() - login_t0) * 1000)
     if not res["ok"]:
-        log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=_client_ip(),
+        log_with_kv(log_auth, logging.WARNING, "login failed", netid=netid, ip=ip,
                     error=res["error"][:80], duration_ms=login_ms)
         _track("login_fail", detail=res["error"][:60], user=netid)
         # audit F4: auth failures are 401; busy/rate are 429/503
         code = sync_status(res)
         return {"ok": False, "error": res["error"]}, code
-    log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=_client_ip(),
+    log_with_kv(log_auth, logging.INFO, "login ok", netid=netid, ip=ip,
                 duration_ms=login_ms, subjects=len(res.get("marks", [])))
     _track("login_ok", detail=f"{login_ms}ms", user=netid)
     # The wait a FIRST-TIME user actually feels. Kept out of the shared sync

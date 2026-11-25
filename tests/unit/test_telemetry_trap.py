@@ -58,12 +58,18 @@ def test_post_login_forwards_secure_token():
 
 def test_telemetry_stays_self_consistent():
     # cosmetic, but free: a blob whose timing contradicts itself is the sort of
-    # detail a bot check may start using, so keep it honest
-    p = json.loads(base64.b64decode(H._telemetry_b64(time.time() - 3)))
+    # detail a bot check may start using, so keep it honest.
+    # t0 is time.monotonic() (as _prepare sets it) — the old test fed a
+    # time.time() value, which is exactly the clock mix that pinned this field.
+    p = json.loads(base64.b64decode(H._telemetry_b64(time.monotonic() - 3)))
     assert p["currentDomain"] == H.PORTAL_HOST
     assert p["timeOnPageMs"] == p["submitTime"] - p["startTime"]
-    assert 1200 <= p["timeOnPageMs"] <= 10000
-    assert H._telemetry_interactions() == H._TEL_CLICKS + H._TEL_KEYS
+    # 1200..120000 is the plausible dwell clamp; 10000 was the old always-value
+    assert 1200 <= p["timeOnPageMs"] <= 120000
+    assert p["timeOnPageMs"] != 10000, "timeOnPageMs is pinned at the old constant"
+    assert p["platform"].startswith("Win"), "platform must agree with the Windows UA"
+    # the portal's own JS counts mousemove + keydown + touchstart
+    assert H._telemetry_interactions() == H._TEL_MOVES + H._TEL_KEYS
 
 
 if __name__ == "__main__":
