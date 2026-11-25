@@ -60,33 +60,60 @@ def _page(secure="sec-abc123", extra=""):
             + extra + "</html>").encode()
 
 
-def _prepare(page_body, captcha=None, calls=None):
-    """Run the real _prepare over a stubbed _req; return (result, calls)."""
+def _prepare(page_body, captcha=None, calls=None, page=None, sentinel=None):
+    """Run the real _prepare over a stubbed _req; return (result, calls).
+
+    `page` raises instead of returning the page, so a 4xx on the PAGE GET can
+    be exercised. When `sentinel` is given, assert the SAME opener object
+    reaches the page GET, the captcha GET and the POST — one cookie jar is
+    what keeps JSESSIONID/secureToken in one session."""
     calls = [] if calls is None else calls
+    openers = []
     orig = H._req
 
-    def fake(_opener, url, _headers, data=None, timeout=25):
+    def fake(opener, url, _headers, data=None, timeout=25):
         calls.append(url)
+        openers.append(opener)
         if "SCaptchaServlet" in url:
             if isinstance(captcha, Exception):
                 raise captcha
             return url, (captcha if captcha is not None else b"\x89PNG\r\n\x1a\nfake")
+        if isinstance(page, Exception):
+            raise page
         return url, page_body
 
     H._req = fake
     try:
-        return H._prepare(None, BASE, {}), calls
+        res = H._prepare(sentinel, BASE, {})
+        if sentinel is not None:
+            assert openers and all(o is sentinel for o in openers), \
+                f"page GET, captcha GET and POST must share one opener/jar: {openers}"
+        return res, calls
     finally:
         H._req = orig
 
 
-def _post(body, ctx_over=None, helpers=None):
+def _http_error(status, body=b"", headers=None):
+    """A real urllib HTTPError, as the opener raises it — body readable once."""
+    import email.message
+    import io
+    import urllib.error
+    hdrs = email.message.Message()
+    for k, v in (headers or {}).items():
+        hdrs[k] = v
+    err = urllib.error.HTTPError(f"{BASE}/x", status, "Forbidden", hdrs,
+                                 io.BytesIO(body))
+    return err
+
+
+def _post(body, ctx_over=None, helpers=None, opener=None):
     """Run the real _post_login classifier over a canned response body."""
     seen = {}
     orig = H._req
 
     def fake(_opener, url, _headers, data=None, timeout=25):
         seen["url"] = url
+        seen["opener"] = _opener
         seen["fields"] = urllib.parse.parse_qs(data.decode()) if data else {}
         return url, body.encode() if isinstance(body, str) else body
 
@@ -99,7 +126,7 @@ def _post(body, ctx_over=None, helpers=None):
         helpers = {"portal_fail_once": lambda: (_ for _ in ()).throw(
             AssertionError("this branch must not arm the global cooldown"))}
     try:
-        return H._post_login(None, ctx, "zzhard", "pw", BASE, {}, helpers, None, attempt=1), seen
+        return H._post_login(opener, ctx, "zzhard", "pw", BASE, {}, helpers, None, attempt=1), seen
     finally:
         H._req = orig
 
@@ -218,11 +245,13 @@ def test_silent_rejection_does_not_arm():
     assert box["n"] == 0, "a discarded login request must not arm the global cooldown"
 
 
-# ── 7. captcha 403 is terminal; only transport faults retry ─────────────────
+# ── 7. captcha 4xx is terminal; only transport faults retry ─────────────────
 def test_captcha_403_is_terminal():
     calls = []
+    throttle = H.PortalHttpError(403, retry_after=60,
+                                 body=b'{"error":"Too many requests. Please try again later."}')
     try:
-        _prepare(_page(), captcha=H.PortalHttpError(403, retry_after=60), calls=calls)
+        _prepare(_page(), captcha=throttle, calls=calls)
         raise AssertionError("a 403 from the captcha endpoint must abort the attempt")
     except H.PortalThrottled as e:
         assert e.kind == "portal_throttled", e.kind
@@ -311,6 +340,119 @@ def test_login_route_charges_only_reached_attempts():
         A._ip_attempts.pop(ip, None)
 
 
+def test_captcha_4xx_is_classified_by_body_not_status():
+    """B1 regression: the 403 body decides the kind, never a fabricated window.
+
+    Measured shapes (w4-captcha-contract): an EMPTY body is the app rejecting
+    a request with no session (our bug); a 54 B JSON body is the real IP
+    throttle. Both are status 403 — only the body separates them."""
+    throttle_body = b'{"error":"Too many requests. Please try again later."}'
+    cases = [
+        # (captcha error as _req raises it, expected kind, expected retry_after, why)
+        (H.PortalHttpError(403, body=b""), "portal_blocked", None,
+         "0 B = session rejected, not a throttle"),
+        (H.PortalHttpError(403, retry_after=60, body=throttle_body), "portal_throttled", 60,
+         "JSON body + header = the real throttle"),
+        (H.PortalHttpError(403, body=throttle_body), "portal_throttled", None,
+         "no Retry-After = None, never a fabricated 60"),
+    ]
+    for err, kind, retry_after, why in cases:
+        calls = []
+        try:
+            _prepare(_page(), captcha=err, calls=calls)
+            raise AssertionError(f"a captcha 4xx must abort the attempt ({why})")
+        except H.PortalThrottled as e:
+            assert kind == "portal_throttled", f"{why} — but got throttled: {e}"
+            assert e.retry_after == retry_after, \
+                f"{why}: retry_after must be {retry_after!r}, got {e.retry_after!r}"
+        except H.PortalBlocked as e:
+            assert kind == "portal_blocked", f"{why} — but got blocked: {e}"
+            assert e.retry_after is None, f"{why}: a blocked response has no window, {e.retry_after!r}"
+            assert e.arms_breaker is False
+            low = str(e).lower()
+            assert "throttl" not in low and "rate" not in low, \
+                f"a session rejection must not be sold as a throttle: {e}"
+            assert "session" in low and "cookie" in low, \
+                f"the message must name the session/cookie cause: {e}"
+        assert sum("SCaptchaServlet" in u for u in calls) == 1, f"no retry after a 4xx ({why})"
+        assert not any("LoginServlet" in u for u in calls), f"no POST after a 4xx ({why})"
+
+
+def test_captcha_403_body_is_carried_by_req():
+    """The discriminator must survive _req: the body is read and carried."""
+    class _Opener:
+        def __init__(self, err):
+            self.err = err
+
+        def open(self, _req, timeout=None):
+            raise self.err
+
+    throttle = b'{"error":"Too many requests."}'
+    for body in (b"", throttle):
+        try:
+            H._req(_Opener(_http_error(403, body)), f"{BASE}/x", {})
+            raise AssertionError("a 403 must raise")
+        except H.PortalHttpError as e:
+            assert e.status == 403, e.status
+            assert e.body == body, f"body discarded: {e.body!r} != {body!r}"
+
+
+def test_http_error_body_read_failure_is_tolerated():
+    """A body we cannot read must not crash the error path — it becomes empty."""
+    class _Opener:
+        def open(self, _req, timeout=None):
+            e = _http_error(403, b"x")
+
+            def _boom(n=-1):
+                raise OSError("connection reset while reading the error body")
+
+            e.read = _boom   # HTTPError.read is the tempfile's, so patch the instance
+            raise e
+
+    try:
+        H._req(_Opener(), f"{BASE}/x", {})
+        raise AssertionError("a 403 must raise")
+    except H.PortalHttpError as e:
+        assert e.status == 403 and e.body == b"", (e.status, e.body)
+
+
+def test_page_get_4xx_does_not_arm_breaker():
+    """B2: the case this PR exists for — a WAF answers the PAGE GET with 4xx.
+
+    Never counted as a portal outage (that armed the 5-min cooldown for every
+    account), and never sold as a throttle."""
+    _reset()
+    try:
+        _prepare(_page(), page=H.PortalHttpError(403))
+        raise AssertionError("a 4xx on the page GET must abort the attempt")
+    except H.PortalHttpError as e:
+        assert e.kind == "portal_blocked", e.kind
+        assert e.arms_breaker is False
+    res = _pipeline_raises(H.PortalHttpError(403))
+    assert res["kind"] == "portal_blocked", res
+    for wrong in ("throttl", "not responding", "rate-limiting"):
+        assert wrong not in res["error"], f"a page-GET 403 must not read as {wrong!r}: {res}"
+    assert A.portal_health.consecutive_fails == 0, \
+        "a 4xx on the page GET must not count towards the GLOBAL cooldown"
+    # a 5xx still IS an outage: the breaker must not be dead code
+    assert H.PortalHttpError(503).arms_breaker is True
+
+
+def test_one_opener_across_page_captcha_and_post():
+    """The shared-cookie-jar contract: one opener, so one JSESSIONID/secureToken.
+
+    page GET -> captcha GET -> POST must all see the SAME opener object; a
+    second opener would carry a different cookie jar and a different session."""
+    sentinel = object()
+    page, calls = _prepare(_page(), sentinel=sentinel)   # asserts page+captcha share it
+    assert page["secure"] == "sec-abc123", page
+    assert any("youLogin.jsp" in u for u in calls), calls
+    assert any("SCaptchaServlet" in u for u in calls), calls
+    (_action, _err), seen = _post("ok", opener=sentinel,
+                                  helpers={"portal_fail_once": lambda: None})
+    assert seen["opener"] is sentinel, "the POST must reuse the login's opener/jar"
+
+
 if __name__ == "__main__":
     for fn in (test_waf_stub_is_typed_blocked,
                test_blocked_kind_is_503_and_message_is_honest,
@@ -322,6 +464,11 @@ if __name__ == "__main__":
                test_captcha_403_is_terminal,
                test_captcha_retry_only_for_transport,
                test_captcha_json_body_is_throttle_not_captcha,
+               test_captcha_4xx_is_classified_by_body_not_status,
+               test_captcha_403_body_is_carried_by_req,
+               test_http_error_body_read_failure_is_tolerated,
+               test_page_get_4xx_does_not_arm_breaker,
+               test_one_opener_across_page_captcha_and_post,
                test_throttled_and_markup_kinds_end_to_end,
                test_ip_budget_charge_rules,
                test_login_route_charges_only_reached_attempts):

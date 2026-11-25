@@ -102,13 +102,18 @@ class PortalThrottled(HttpScraperError):
 
 class PortalHttpError(HttpScraperError):
     """The portal answered with an HTTP error status (not a transport fail).
-    Keeps the status and Retry-After so callers can tell a 403 from a 503."""
 
-    def __init__(self, status, retry_after=None):
+    Keeps the status, Retry-After and the (bounded) response BODY: two very
+    different 403s look identical by status alone — `Content-Length: 0` is the
+    app rejecting a request with no session, a tiny JSON body is the real IP
+    throttle — so callers must classify by shape, not by status."""
+
+    def __init__(self, status, retry_after=None, body=b""):
         super().__init__(f"HTTP {status} from portal",
                          kind="portal_blocked" if 400 <= status < 500 else "portal_down",
                          arms_breaker=status >= 500, retry_after=retry_after)
         self.status = status
+        self.body = body
 
 
 class FeedbackWindowClosed(HttpScraperError):
@@ -153,6 +158,10 @@ def _hdrs(extra=None, referer=None):
 # scrape lock is held (32MB/28s drip reproduced under the old unbounded read).
 _MAX_BODY = 8 * 1024 * 1024   # portal pages are KB-scale; raise if a real one exceeds
 _MAX_READ_SECS = 60           # total wall clock per response — drip-proof on top of timeout=25
+_MAX_ERR_BODY = 8 * 1024      # only need enough of a 4xx body to tell JSON from nothing
+# ponytail: no Accept-Encoding is ever sent, so no body can arrive gzipped and
+# _blocked_page's `len(body) < 1200` lower bound stays honest. Add gunzip here
+# the day a compressed body becomes possible, before touching that threshold.
 
 
 def _req(opener, url, headers, data=None, timeout=25):
@@ -169,7 +178,15 @@ def _req(opener, url, headers, data=None, timeout=25):
             retry_after = int(str(e.headers.get("Retry-After", "")).strip() or 0) or None
         except (TypeError, ValueError):
             retry_after = None
-        raise PortalHttpError(e.code, retry_after=retry_after) from e
+        # Carry the body: a 403 with no body (app rejects a session-less
+        # request) and a 403 with a 54 B JSON throttle are the SAME status.
+        # Bounded so a hostile error body cannot grow RSS; unreadable -> b"".
+        try:
+            body = e.read(_MAX_ERR_BODY) or b""
+        except Exception as re_:
+            log.debug("portal http_error body unreadable status=%s err=%r", e.code, re_)
+            body = b""
+        raise PortalHttpError(e.code, retry_after=retry_after, body=body) from e
     except Exception as e:
         log.warning("portal transport_error url=%s err=%r", url[:80], e)
         raise HttpScraperError(f"transport: {e!r}") from e
@@ -334,6 +351,32 @@ def _blocked_page(body, html):
     return ""
 
 
+def _captcha_refusal(e):
+    """(kind, message) for a captcha-endpoint 4xx — classified by BODY SHAPE.
+
+    Measured on the real endpoint: `403 + Content-Length: 0` is the app
+    rejecting a request that carried no session (our cookie jar — our bug),
+    while the genuine per-IP throttle answers a ~54 B JSON body and usually
+    Retry-After. The status is identical, so the body is the only signal. An
+    ambiguous body reports BLOCKED: a false "the portal is throttling you" is
+    the costlier lie, because it invents a penalty window never sent."""
+    raw = (e.body or b"").decode("utf-8", errors="replace").strip()
+    throttle = "too many requests" in raw.lower()
+    if not throttle and raw.startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            parsed = None
+        throttle = isinstance(parsed, dict) and "error" in parsed
+    if throttle:
+        return PortalThrottled, f"captcha endpoint is throttling this server ({e.status})"
+    if not raw:
+        return PortalBlocked, (f"portal refused the captcha request without a session "
+                               f"({e.status}) — cookie jar or token missing")
+    return PortalBlocked, (f"portal refused the captcha request ({e.status}, "
+                           f"{len(raw)}B unexpected body) — cookie jar or token missing")
+
+
 def _prepare(opener, base, xheaders, on_step=None, attempt=1):
     """Fetch login page + parse tokens + fetch captcha + OCR.
     Returns ctx dict for _post_login. Raises HttpScraperError."""
@@ -404,19 +447,20 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
                 # The captcha servlet's own throttle answers a tiny JSON body.
                 # Handing that to ddddocr reads as "bad captcha" and spends one
                 # of the portal's 3 login attempts for nothing.
-                raise PortalThrottled("captcha endpoint returned JSON, not an image",
-                                      retry_after=60)
+                raise PortalThrottled("captcha endpoint returned JSON, not an image")
             break
         except PortalHttpError as e:
             if 400 <= e.status < 500:
-                # TERMINAL for this login. The captcha endpoint now throttles
-                # per IP (403 + Retry-After, and observed sticky for hours), so
-                # retrying the image or POSTing anyway deepens the ban — and
-                # every user shares this egress IP.
-                log.warning("captcha fetch refused status=%s retry_after=%s",
-                            e.status, e.retry_after)
-                raise PortalThrottled(f"captcha endpoint answered {e.status}",
-                                      retry_after=e.retry_after or 60) from e
+                # TERMINAL for this login: retrying the image or POSTing anyway
+                # deepens a real throttle, and every user shares this egress IP.
+                # The KIND comes from the body (see _captcha_refusal), and the
+                # retry window ONLY from the header — never fabricated.
+                kind, msg = _captcha_refusal(e)
+                log.warning("captcha fetch refused status=%s kind=%s body=%dB retry_after=%s",
+                            e.status, kind.kind, len(e.body), e.retry_after)
+                if kind is PortalThrottled:
+                    raise PortalThrottled(msg, retry_after=e.retry_after) from e
+                raise PortalBlocked(msg) from e
             log.warning("captcha fetch try=%d failed (%r)", _img_try + 1, e)
             if _img_try == 1:
                 raise
