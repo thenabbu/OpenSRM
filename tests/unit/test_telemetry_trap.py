@@ -16,13 +16,10 @@ labelled as cosmetic.
 
 Offline: no network, no credentials.
 """
-import base64
-import json
 import os
 import re
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -56,18 +53,24 @@ def test_post_login_forwards_secure_token():
     )
 
 
-def test_telemetry_stays_self_consistent():
-    # cosmetic, but free: a blob whose timing contradicts itself is the sort of
-    # detail a bot check may start using, so keep it honest
-    p = json.loads(base64.b64decode(H._telemetry_b64(time.time() - 3)))
-    assert p["currentDomain"] == H.PORTAL_HOST
-    assert p["timeOnPageMs"] == p["submitTime"] - p["startTime"]
-    assert 1200 <= p["timeOnPageMs"] <= 10000
-    assert H._telemetry_interactions() == H._TEL_CLICKS + H._TEL_KEYS
+def test_telemetry_payload_is_not_synthesised():
+    # The real submit writes telemetryPayload from the LIVE client (see
+    # browser-truth.json: platform "Linux x86_64" with UA "X11; Linux x86_64 …
+    # Chrome/139" — one coherent self-portrait, plus mouse/key counters). A
+    # server cannot produce that record truthfully, so we send none: an empty
+    # (non-JSON) value is ignored by the portal and the credentials are still
+    # evaluated, while a well-formed fake is the shape that produced the
+    # documented silent discard.
+    assert not hasattr(H, "_telemetry_b64"), "the fabricated blob builder must be gone"
+    src = Path(__file__).resolve().parent.parent.parent / "app" / "http_scraper.py"
+    assert '"telemetryPayload": ""' in src.read_text(), \
+        "the login POST must send an EMPTY telemetryPayload, never a fake record"
+    # the portal's own JS counts mousemove + keydown + touchstart
+    assert H._telemetry_interactions() == H._TEL_MOVES + H._TEL_KEYS
 
 
 if __name__ == "__main__":
     test_login_page_parses_secure_token()
     test_post_login_forwards_secure_token()
-    test_telemetry_stays_self_consistent()
+    test_telemetry_payload_is_not_synthesised()
     print("login secureToken contract checks OK")

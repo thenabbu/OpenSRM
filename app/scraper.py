@@ -649,10 +649,27 @@ def fetch_attendance(netid, password, authorized=False, attempt=None):
                         log.debug("cold_fetch update failed err=%r", e)
                 return _sync_result("http", res, t_sync)
             except http_scraper.HttpScraperError as e:
-                _portal_fail_once()
+                # Only a real transport/5xx failure may count towards the
+                # GLOBAL cooldown. A WAF stub, a changed form or a 403 is a
+                # definite answer — arming 5..30 min for every account off one
+                # of those is what turned a 245 B stub into a site-wide outage.
+                if getattr(e, "arms_breaker", True):
+                    _portal_fail_once()
                 if not _pw_fallback_enabled():
                     log.warning("http pipeline failed (%r) — playwright fallback archived "
                                 "(PLAYWRIGHT_FALLBACK unset)", e)
+                    if e.kind == "portal_blocked":
+                        return _sync_result("http", sync_error("portal_blocked",
+                            "SRM portal blocked this request — try again in a few minutes."),
+                            t_sync)
+                    if e.kind == "portal_throttled":
+                        return _sync_result("http", sync_error("portal_throttled",
+                            "SRM portal is throttling requests from this server — try again "
+                            "later.", retry_after=e.retry_after), t_sync)
+                    if e.kind == "markup_changed":
+                        return _sync_result("http", sync_error("markup_changed",
+                            "SRM portal login page changed — we are fixing it. Try again "
+                            "later."), t_sync)
                     return _sync_result("http", sync_error("portal_down",
                                         "SRM portal is not responding — try again in a few minutes."),
                                         t_sync)

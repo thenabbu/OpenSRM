@@ -83,22 +83,50 @@ class RateLimiter:
                                           if now - t < 600]
             self.login_attempts[netid].append(now)
 
+    def _ip_kept(self, ip, now):
+        """This IP's live window, pruned in place (caller holds the lock)."""
+        if len(self.ip_attempts) > _RATE_CAP:
+            # audit: same as login_attempts — prune stale keys, don't reset everyone
+            for k in [k for k, v in self.ip_attempts.items()
+                      if not v or now - max(v) >= 3600]:
+                self.ip_attempts.pop(k, None)      # prune expired ip keys
+            if len(self.ip_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard
+                self.ip_attempts.clear()
+        attempts = self.ip_attempts.get(ip, [])
+        self.ip_attempts[ip] = [t for t in attempts if now - t < 3600]
+        return self.ip_attempts[ip]
+
     def check_ip(self, ip):
+        """Admit AND charge in one step (the old contract, kept for callers
+        that cannot defer). Prefer admit_ip() + charge_ip() on a login path."""
         now = time.time()
         with self.lock:
-            if len(self.ip_attempts) > _RATE_CAP:
-                # audit: same as login_attempts — prune stale keys, don't reset everyone
-                for k in [k for k, v in self.ip_attempts.items()
-                          if not v or now - max(v) >= 3600]:
-                    self.ip_attempts.pop(k, None)      # prune expired ip keys
-                if len(self.ip_attempts) > _RATE_CAP * 2:  # ponytail: blowout guard
-                    self.ip_attempts.clear()
-            attempts = self.ip_attempts.get(ip, [])
-            self.ip_attempts[ip] = [t for t in attempts if now - t < 3600]
-            if len(self.ip_attempts[ip]) >= 10:
+            if len(self._ip_kept(ip, now)) >= 10:
                 return False
             self.ip_attempts[ip].append(now)
             return True
+
+    def admit_ip(self, ip):
+        """Check-only: may this IP start a login? Never appends.
+
+        An attempt that never reaches the portal (sync busy, portal cooldown,
+        per-netid cap, portal disabled, pre-flight rejection) must not spend
+        the 10-per-hour budget — 10 failed logins used to lock a user out for
+        an hour while the portal was healthy, with a message naming a rate
+        limit. The caller charges with charge_ip() once the attempt has
+        actually been sent to the portal."""
+        now = time.time()
+        with self.lock:
+            return len(self._ip_kept(ip, now)) < 10
+
+    def charge_ip(self, ip):
+        """Spend one per-IP login token — only for attempts that reached the
+        portal. ponytail: admit+charge is not atomic, so N concurrent logins
+        can overshoot by N-1; one gunicorn worker and minute-scale real logins
+        make that irrelevant."""
+        now = time.time()
+        with self.lock:
+            self._ip_kept(ip, now).append(now)
 
     def oldest(self, key, which="netid"):
         """Oldest in-window timestamp behind a countdown text — reads the
@@ -258,6 +286,16 @@ def _charge_rate(netid):
 
 def _check_ip_rate(ip):
     return rate_limiter.check_ip(ip)
+
+
+def _admit_ip(ip):
+    """Check-only per-IP admission (no token spent)."""
+    return rate_limiter.admit_ip(ip)
+
+
+def _charge_ip(ip):
+    """Spend one per-IP login token once the attempt reached the portal."""
+    rate_limiter.charge_ip(ip)
 
 
 def _retry_text(oldest, window):
