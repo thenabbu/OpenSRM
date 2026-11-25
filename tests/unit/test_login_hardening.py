@@ -7,8 +7,11 @@ Covers, offline (`_req` and the pipeline are stubbed — no portal, no NetID):
   2. `secureToken` missing/empty is a `markup_changed` hard failure, never a
      POST with "" (which the portal answers "Invalid credentials");
   3. `cptoken`'s elapsed part is SECONDS from a monotonic clock, not an epoch;
-  4. `timeOnPageMs` is the real dwell, not the old pinned 10000;
-  5. the telemetry platform agrees with the Windows UA;
+  4. `telemetryPayload` is NOT synthesised: a server cannot honestly produce
+     the browser record, so the field goes out empty;
+  5. the edge filter is identified by RESPONSE HEADERS (X-Frame-Options
+     SAMEORIGIN + no Server:), not by wording, and a gzipped body is decoded
+     before parsing;
   6. the success marker is searched in the whole body, not the first 4000 B;
   7. a captcha GET 403 is TERMINAL (one GET, no POST, Retry-After honoured,
      distinct `portal_throttled` kind) and a JSON throttle body never reaches
@@ -19,7 +22,6 @@ Covers, offline (`_req` and the pipeline are stubbed — no portal, no NetID):
 Run: python tests/unit/test_login_hardening.py
 """
 import base64
-import json
 import os
 import shutil
 import sys
@@ -60,20 +62,24 @@ def _page(secure="sec-abc123", extra=""):
             + extra + "</html>").encode()
 
 
-def _prepare(page_body, captcha=None, calls=None, page=None, sentinel=None):
+def _prepare(page_body, captcha=None, calls=None, page=None, sentinel=None, hdrs=None):
     """Run the real _prepare over a stubbed _req; return (result, calls).
 
     `page` raises instead of returning the page, so a 4xx on the PAGE GET can
-    be exercised. When `sentinel` is given, assert the SAME opener object
-    reaches the page GET, the captcha GET and the POST — one cookie jar is
-    what keeps JSESSIONID/secureToken in one session."""
+    be exercised. `hdrs` is the RESPONSE header set the page GET answers with
+    (the edge filter is identified by headers, not by body wording). When
+    `sentinel` is given, assert the SAME opener object reaches the page GET,
+    the captcha GET and the POST — one cookie jar is what keeps
+    JSESSIONID/secureToken in one session."""
     calls = [] if calls is None else calls
     openers = []
     orig = H._req
 
-    def fake(opener, url, _headers, data=None, timeout=25):
+    def fake(opener, url, _headers, data=None, timeout=25, hdrs_out=None):
         calls.append(url)
         openers.append(opener)
+        if hdrs_out is not None and hdrs is not None and "SCaptchaServlet" not in url:
+            hdrs_out.update(hdrs)
         if "SCaptchaServlet" in url:
             if isinstance(captcha, Exception):
                 raise captcha
@@ -106,15 +112,17 @@ def _http_error(status, body=b"", headers=None):
     return err
 
 
-def _post(body, ctx_over=None, helpers=None, opener=None):
+def _post(body, ctx_over=None, helpers=None, opener=None, hdrs=None):
     """Run the real _post_login classifier over a canned response body."""
     seen = {}
     orig = H._req
 
-    def fake(_opener, url, _headers, data=None, timeout=25):
+    def fake(_opener, url, _headers, data=None, timeout=25, hdrs_out=None):
         seen["url"] = url
         seen["opener"] = _opener
-        seen["fields"] = urllib.parse.parse_qs(data.decode()) if data else {}
+        seen["fields"] = urllib.parse.parse_qs(data.decode(), keep_blank_values=True) if data else {}
+        if hdrs_out is not None and hdrs is not None:
+            hdrs_out.update(hdrs)
         return url, body.encode() if isinstance(body, str) else body
 
     H._req = fake
@@ -218,15 +226,25 @@ def test_cptoken_posts_seconds():
     assert err["kind"] == "portal_blocked", err
 
 
-# ── 4 + 5. telemetry dwell is real, platform matches the UA ─────────────────
-def test_telemetry_dwell_and_platform():
-    p = json.loads(base64.b64decode(H._telemetry_b64(time.monotonic() - 30)))
-    assert 29000 <= p["timeOnPageMs"] <= 31000, p["timeOnPageMs"]
-    assert p["timeOnPageMs"] == p["submitTime"] - p["startTime"], p
-    floor = json.loads(base64.b64decode(H._telemetry_b64(time.monotonic())))
-    assert 1200 <= floor["timeOnPageMs"] <= 1200 + 100, floor["timeOnPageMs"]
-    assert p["platform"].startswith("Win"), "platform must agree with the Windows UA"
-    assert "Windows" in p["userAgent"], p["userAgent"]
+# ── 4 + 5. telemetryPayload is NOT synthesised server-side ──────────────────
+def test_telemetry_payload_is_not_fabricated():
+    """The one field a real browser never produces this way.
+
+    browser-truth.json (the captured real submit) shows the page's own
+    secure2.js writing `telemetryPayload` from the LIVE client: the blob's
+    `platform` ("Linux x86_64") and `userAgent` ("X11; Linux x86_64 …
+    Chrome/139") are one coherent self-portrait, and it carries counters
+    (mouseMovements, keystrokeCount, typingSpeedMs) for a session that issued
+    one GET and no input at all. A server cannot produce that record truthfully,
+    and a well-formed fake is exactly the shape that produced the documented
+    silent discard (prod-auth-investigation §3b: a non-JSON value is ignored and
+    the POST is still evaluated). So send nothing.
+    """
+    (_action, _err), seen = _post("<html>no marker</html>")
+    assert seen["fields"]["telemetryPayload"] == [""], (
+        "telemetryPayload must be empty, not a fabricated browser record: "
+        f"{seen['fields']['telemetryPayload']}")
+    assert not hasattr(H, "_telemetry_b64"), "the blob builder must be gone"
 
 
 # ── 6. success marker past the old 4000 B window ────────────────────────────
@@ -453,14 +471,121 @@ def test_one_opener_across_page_captcha_and_post():
     assert seen["opener"] is sentinel, "the POST must reuse the login's opener/jar"
 
 
+# ── 9. the edge filter is identified by HEADERS, not by its wording ─────────
+# Measured 2026-11-25 (37 paced GETs from the prod box): every one of the 8
+# block pages carried `X-Frame-Options: SAMEORIGIN` and NO `Server:` header,
+# while all 29 healthy pages carried `X-Frame-Options: DENY` +
+# `Server: Apache/2.4.58 (Ubuntu)`.
+EDGE_HDRS = {"X-Frame-Options": "SAMEORIGIN", "Content-Type": "text/html"}
+PORTAL_HDRS = {"Server": "Apache/2.4.58 (Ubuntu)", "X-Frame-Options": "DENY"}
+# A stub whose wording is NOT the one we already grep for: this is the case a
+# text-only classifier calls "the login form changed".
+REWORDED_STUB = (b"<html><head><title>Access Denied</title></head><body>"
+                 b"<h1>Access Denied</h1><p>Your request was blocked by the "
+                 b"security policy of this server. Incident 8812.</p>"
+                 + b" " * 1400 + b"</body></html>")
+
+
+def test_block_page_is_classified_by_headers_not_words():
+    for body in (WAF_STUB, REWORDED_STUB):
+        try:
+            _prepare(body, hdrs=EDGE_HDRS)
+            raise AssertionError(f"a {len(body)} B block page must not parse")
+        except H.PortalBlocked as e:
+            assert e.kind == "portal_blocked", e.kind
+            assert e.arms_breaker is False, "an edge answer must never arm the global cooldown"
+            assert "edge filter" in str(e), f"the cause must be named: {e}"
+    # the 245 B stub: the header must name the cause, not "form absent"
+    try:
+        _prepare(WAF_STUB, hdrs={"X-Frame-Options": "SAMEORIGIN"})
+        raise AssertionError("a 245 B stub must not parse")
+    except H.PortalBlocked as e:
+        assert "SAMEORIGIN" in str(e), str(e)
+    # ... and a healthy page with the PORTAL's headers is NOT flagged
+    ctx, _ = _prepare(_page(), hdrs=PORTAL_HDRS)
+    assert ctx["secure"] == "sec-abc123", ctx
+    # end to end: the real exception must not touch the GLOBAL breaker
+    _reset()
+    try:
+        _prepare(WAF_STUB, hdrs=EDGE_HDRS)
+        raise AssertionError("a 245 B stub must not parse")
+    except H.PortalBlocked as e:
+        res = _pipeline_raises(e)
+    assert res["kind"] == "portal_blocked", res
+    assert A.portal_health.consecutive_fails == 0, \
+        "one edge stub must not pause every account"
+    # the same filter can answer the SUBMIT (item 4): still a block, never an
+    # outage and never a credentials verdict
+    box = {"n": 0}
+    (_a, err), _ = _post(REWORDED_STUB.decode(), hdrs=EDGE_HDRS,
+                         helpers={"portal_fail_once": lambda: box.__setitem__("n", box["n"] + 1)})
+    assert err["kind"] == "portal_blocked", err
+    assert "not responding" not in err["error"] and "credentials" not in err["error"], err
+    assert box["n"] == 0, "a POST-side stub must not arm the global cooldown"
+
+
+# ── 10. a gzipped body is decoded, never parsed as mojibake ─────────────────
+def _resp(body, headers=None):
+    """A minimal urllib response: .read(65536) chunks, .url, .status, headers."""
+    class _R:
+        url = f"{BASE}/x"
+        status = 200
+
+        def __init__(self):
+            self.headers = dict(headers or {})
+            self._left = body
+
+        def read(self, n=-1):
+            if n is None or n < 0:
+                out, self._left = self._left, b""
+                return out
+            out, self._left = self._left[:n], self._left[n:]
+            return out
+    return _R()
+
+
+def test_gzipped_page_is_decoded_before_parsing():
+    """A 3,522 B body is the healthy 15,597 B page gzipped — not a challenge.
+
+    Measured: urllib asks for `identity`, so gzip only arrives through the CF
+    egress hop (SRM_EGRESS_URL). Undecoded, the parser sees no honeypot and the
+    caller reports a portal outage.
+    """
+    import gzip
+    plain = _page()
+    wire = gzip.compress(plain)
+    assert wire[:2] == b"\x1f\x8b" and len(wire) < len(plain), (len(wire), len(plain))
+
+    class _Opener:
+        def open(self, _req, timeout=None):
+            return _resp(wire, {"Content-Encoding": "gzip"})
+
+    _u, body = H._req(_Opener(), f"{BASE}/x", {})
+    assert body == plain, f"gzip body not decoded: {body[:8]!r}"
+    # the plain path is untouched: uncompressed bytes pass through byte-for-byte
+    class _Plain:
+        def open(self, _req, timeout=None):
+            return _resp(plain)
+    _u, body = H._req(_Plain(), f"{BASE}/x", {})
+    assert body == plain, "identity body must pass through unchanged"
+    # why _req has to decode: raw gzip bytes are not a login page
+    try:
+        _prepare(wire)
+        raise AssertionError("raw gzip bytes must not parse as the login form")
+    except H.HttpScraperError:
+        pass
+
+
 if __name__ == "__main__":
     for fn in (test_waf_stub_is_typed_blocked,
                test_blocked_kind_is_503_and_message_is_honest,
                test_secure_token_is_required,
                test_cptoken_posts_seconds,
-               test_telemetry_dwell_and_platform,
+               test_telemetry_payload_is_not_fabricated,
                test_success_marker_beyond_4000_bytes,
                test_silent_rejection_does_not_arm,
+               test_block_page_is_classified_by_headers_not_words,
+               test_gzipped_page_is_decoded_before_parsing,
                test_captcha_403_is_terminal,
                test_captcha_retry_only_for_transport,
                test_captcha_json_body_is_throttle_not_captcha,

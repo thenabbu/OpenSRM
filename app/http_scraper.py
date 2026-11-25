@@ -18,6 +18,7 @@ Deferred imports from .app avoid circularity (app imports this module the
 same way inside fetch_attendance).
 """
 import base64
+import gzip
 import http.cookiejar
 import json
 import logging
@@ -159,13 +160,20 @@ def _hdrs(extra=None, referer=None):
 _MAX_BODY = 8 * 1024 * 1024   # portal pages are KB-scale; raise if a real one exceeds
 _MAX_READ_SECS = 60           # total wall clock per response — drip-proof on top of timeout=25
 _MAX_ERR_BODY = 8 * 1024      # only need enough of a 4xx body to tell JSON from nothing
-# ponytail: no Accept-Encoding is ever sent, so no body can arrive gzipped and
-# _blocked_page's `len(body) < 1200` lower bound stays honest. Add gunzip here
-# the day a compressed body becomes possible, before touching that threshold.
+# urllib sends `Accept-Encoding: identity` by itself, so the portal answers
+# uncompressed. The CF egress hop (SRM_EGRESS_URL) can re-compress what it
+# proxies, and measured 2026-11-25 a healthy 15,597 B page arrived as 3,522 B
+# of gzip: /\x1f\x8b/ magic bytes and no honeypot input, which the parser read
+# as a changed login form. Decode on the magic bytes, never on the header.
 
 
-def _req(opener, url, headers, data=None, timeout=25):
-    """GET/POST; returns (final_url, body_bytes). Raises HttpScraperError on transport fail."""
+def _req(opener, url, headers, data=None, timeout=25, hdrs_out=None):
+    """GET/POST; returns (final_url, body_bytes). Raises HttpScraperError on transport fail.
+
+    When `hdrs_out` (a dict) is passed it is filled with the RESPONSE headers.
+    Only the login GET and the login POST ask for them, because the edge filter
+    is identified there by headers, not by body wording.
+    """
     t0 = time.monotonic()
     try:
         r = urllib.request.Request(url, data=data, method="POST" if data else "GET")
@@ -216,61 +224,33 @@ def _req(opener, url, headers, data=None, timeout=25):
         log.warning("portal transport_error url=%s err=%r", url[:80], e)
         raise HttpScraperError(f"transport: {e!r}") from e
     body = b"".join(parts)
+    if hdrs_out is not None:
+        hdrs_out.update(resp.headers.items())
+    if body[:2] == b"\x1f\x8b":
+        try:
+            body = gzip.decompress(body)
+        except Exception as e:  # noqa: BLE001 — corrupt stream is a transport fault
+            raise HttpScraperError(f"gzip body undecodable: {e!r}") from e
+        log.info("portal gunzipped url=%s -> %dB", url[:60], len(body))
     log.debug("portal %s %s -> %s %dB %dms", "POST" if data else "GET",
               url.replace("https://", "")[:60], resp.status, len(body),
               int((time.monotonic() - t0) * 1000))
     return resp.url, body
 
 
-# Interaction counters. NOTE: measured 2026-11-20 — these magnitudes are NOT
-# what the portal checks. With a valid account, the OLD fabricated values
-# (5 clicks / 32 moves / 10 keys / 8500 ms) and a cptoken interaction total of
-# 3 both logged in fine once secureToken was present. They are kept only
-# because they mirror what a real browser reports, which is the safer default
-# for a bot-defended form. Do not cite them as the fix.
-_TEL_CLICKS = 4
+# cptoken's third part must be the same interaction total a browser would
+# count. NOTE: measured 2026-11-20 — the magnitude is NOT what the portal
+# checks. With a valid account, the OLD fabricated values (5 clicks / 32 moves
+# / 10 keys) and a cptoken interaction total of 3 both logged in fine once
+# secureToken was present. Kept only because the token must carry SOME total.
 _TEL_MOVES = 7
 _TEL_KEYS = 22
-_TEL_TYPING_MS = 6108
-_TEL_CANVAS = "563dae46"
 
 
 def _telemetry_interactions():
     # The portal's own JS counts mousemove + keydown + touchstart
     # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + interactCount)`).
     return _TEL_MOVES + _TEL_KEYS
-
-
-def _telemetry_b64(t0):
-    """Browser-shaped telemetry, mirroring what a real login sends.
-
-    Shape captured from a genuine browser submit that SUCCEEDED (2026-11-19):
-      currentDomain "sp.srmist.edu.in", platform "Linux x86_64",
-      timezoneOffset 0, 1366x900, hardwareConcurrency 2, deviceMemory 8,
-      mouseClicks 4, mouseMovements 7, keystrokeCount 22, typingSpeedMs 6108,
-      canvasHash 563dae46, timeOnPageMs == submitTime - startTime.
-
-    This shape is NOT the thing that unblocked login. The load-bearing field is
-    `secureToken` (see _prepare); the bot check accepts these counters as they
-    are and also accepted the old fabricated ones. Keep the blob realistic
-    because it is free, not because it is load-bearing.
-    """
-    now_ms = int(time.time() * 1000)
-    # t0 is time.monotonic() (see _prepare). Mixing clocks here pinned this at
-    # exactly 10000 on every login — a constant a bot check reads. Clamp to a
-    # plausible dwell (1.2s..2min) instead.
-    on_page = min(120000, max(1200, int((time.monotonic() - t0) * 1000)))
-    return base64.b64encode(json.dumps({
-        "startTime": now_ms - on_page, "currentDomain": PORTAL_HOST,
-        "timezoneOffset": 0, "screenWidth": 1366, "screenHeight": 900,
-        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Win32",
-        "userAgent": UA, "language": "en-US", "hardwareConcurrency": 2,
-        "deviceMemory": 8, "touchSupport": False, "webdriver": False,
-        "mouseClicks": _TEL_CLICKS, "mouseMovements": _TEL_MOVES,
-        "keystrokeCount": _TEL_KEYS, "typingSpeedMs": _TEL_TYPING_MS,
-        "canvasHash": _TEL_CANVAS,
-        "submitTime": now_ms, "timeOnPageMs": on_page,
-    }).encode()).decode()
 
 
 # ── Login preflight: page fetch + captcha OCR done while the user is
@@ -331,16 +311,28 @@ def take_preflight(netid, max_age=150):
     return p
 
 
-def _blocked_page(body, html):
+def _blocked_page(body, html, headers=None):
     """Reason string when the response is NOT the login form.
 
     The F5 BIG-IP ASM in front of the portal intermittently answers the login
     page with a 245 B "Request Rejected" stub (also a ~5.5 KB variant, and a
     JS challenge). That has no `ph_` input, so the old code raised
     'honeypot field missing' and the caller told the user the portal was down
-    while arming the GLOBAL cooldown. Detect it here and say what happened."""
+    while arming the GLOBAL cooldown. Detect it here and say what happened.
+
+    Headers decide it, wording only backs them up: measured 2026-11-25 over 37
+    paced GETs, all 8 block pages carried `X-Frame-Options: SAMEORIGIN` and NO
+    `Server:` header, all 29 healthy pages carried `DENY` +
+    `Server: Apache/2.4.58 (Ubuntu)`. A new stub wording therefore still gets
+    named as a filter answer instead of as a changed login form.
+    """
     low = html.lower()
-    if "request rejected" in low or "support id" in low:
+    h = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+    if h.get("x-frame-options", "").upper() == "SAMEORIGIN" and "server" not in h:
+        return (f"edge filter answered {len(body)}B with X-Frame-Options SAMEORIGIN "
+                f"and no Server header")
+    if ("request rejected" in low or "support id" in low
+            or "the requested url was rejected" in low):
         return f"edge filter answered {len(body)}B instead of the login form"
     if "bobcmn" in low:
         # F5 TSPD JS challenge (4,943 B): no form, so the honeypot parse would
@@ -384,11 +376,12 @@ def _prepare(opener, base, xheaders, on_step=None, attempt=1):
 
     t0 = time.monotonic()
     page_url = f"{base}{BASE_PATH}/students/loginManager/youLogin.jsp"
-    _url, body = _req(opener, page_url, _hdrs(xheaders))
+    hdrs = {}
+    _url, body = _req(opener, page_url, _hdrs(xheaders), hdrs_out=hdrs)
     html = body.decode("utf-8", errors="replace")
     log.debug("login attempt=%d step=get_page bytes=%d", attempt, len(html))
     if on_step: on_step("Opening login page…", 15)
-    blocked = _blocked_page(body, html)
+    blocked = _blocked_page(body, html, hdrs)
     if blocked:
         log.warning("login attempt=%d blocked_page %s", attempt, blocked)
         raise PortalBlocked(f"portal_blocked: {blocked}")
@@ -525,13 +518,24 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
               # Server-minted on page load and bound to this attempt's fpNonce
               # and the captcha ts; a real browser posts it and we did not.
               "secureToken": ctx.get("secure", ""),
-              "telemetryPayload": _telemetry_b64(ctx["t0"]),
+              # NOT synthesised. A real submit's telemetryPayload is written by
+              # the page's own secure2.js from the live client — one coherent
+              # record whose platform AND userAgent both describe that machine
+              # (browser-truth.json: platform "Linux x86_64" with UA "X11; Linux
+              # x86_64 … Chrome/139"), plus mouse/key counters for input this
+              # client never produced. A server cannot emit that truthfully, and
+              # a well-formed fake is the shape that produced the documented
+              # silent discard (prod-auth-investigation §3b). An empty value is
+              # non-JSON: the portal ignores it and still evaluates the
+              # credentials, which is all we can honestly claim.
+              "telemetryPayload": "",
               ctx["dfield"]: dtoken, ctx["cfield"]: cptoken}
     post_url = f"{base}{BASE_PATH}/LoginServlet"
     data = urllib.parse.urlencode(fields).encode()
     headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded",
                      "Origin": f"https://{PORTAL_HOST}"}, referer=LOGIN_PAGE)
-    final_url, body = _req(opener, post_url, headers, data=data)
+    hdrs = {}
+    final_url, body = _req(opener, post_url, headers, data=data, hdrs_out=hdrs)
     rhtml = body.decode("utf-8", errors="replace")
     # Whole body: a JS-redirect success can put the marker past 4000 B, and
     # reading that as a silent rejection used to arm the global cooldown.
@@ -544,6 +548,11 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
         # solver got RIGHT. Scoped: nothing is staged outside a scrape scope.
         captcha_dataset.commit()
         return "ok", None
+    # The same edge filter can answer the SUBMIT. Named AFTER the portal's own
+    # alert phrases: a real rejection page is the re-rendered login form and can
+    # be short, while a filter stub carries neither phrase — checking here keeps
+    # a genuine "invalid credentials" a credentials verdict and still stops a
+    # stub from reading as a silent rejection (or, before this branch, an outage).
     low = rhtml.lower()
     alert = _portal_alert(rhtml)
     # Classify on the portal's OWN alert text, captured live 2026-09-30:
@@ -568,6 +577,16 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
         if attempt < MAX_CAPTCHA_RETRIES:
             return "retry", None
         return "fail", sync_error("bad_credentials", "login failed after 3 attempts — captcha unreadable")
+    # An edge-filter stub instead of the login page: name it, so a filter answer
+    # is never logged (or sold) as a discarded payload or an outage. Checked
+    # after the portal's own alert phrases, because a real rejection page is the
+    # re-rendered form and can be short, while a stub carries neither phrase.
+    blocked = _blocked_page(body, rhtml, hdrs)
+    if blocked:
+        log.warning("login attempt=%d post blocked_page %s", attempt, blocked)
+        return "fail", sync_error("portal_blocked",
+                                  "SRM portal did not accept the login request — try again "
+                                  "in a few minutes.")
     # Silent rejection: login page again, no error text. Record whether the
     # body is the UNTOUCHED login page (same byte length as the page this ctx
     # was prepared from): that means LoginServlet discarded the request as a
