@@ -102,3 +102,36 @@ export function __resetInstall(): void {
   // single `beforeinstallprompt` notified every subscriber twice. Module state
   // and DOM state must not disagree.
 }
+
+/**
+ * True when the page is ALREADY running as an installed app: the Android/desktop
+ * `display-mode` media query, or iOS's `navigator.standalone`, which is the only
+ * signal Safari gives. Checked alongside `canInstall()` so a device that installed
+ * from the browser menu (a path that fires no event we can catch) never gets the
+ * install card again.
+ */
+export function isInstalled(): boolean {
+  if (installed) return true;
+  if (typeof window === 'undefined') return false;
+  const nav = navigator as Navigator & { standalone?: boolean };
+  if (nav.standalone === true) return true;
+  try {
+    return window.matchMedia('(display-mode: standalone)').matches;
+  } catch {
+    return false;                       // no matchMedia (unit env): treat as browser
+  }
+}
+
+/**
+ * True on a touch-only device. The card is phone-and-tablet only, so a desktop
+ * browser — including a touch laptop — must not see it: `pointer: coarse` alone
+ * matches touchscreens, and `hover: none` is what excludes a mouse or trackpad.
+ */
+export function isPhone(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  try {
+    return window.matchMedia('(pointer: coarse) and (hover: none)').matches;
+  } catch {
+    return false;
+  }
+}

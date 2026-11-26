@@ -137,8 +137,9 @@ def main() -> int:
     # positive control: the extractor must find the exact string that started
     # this card, and the CSS must know the utilities around it. Without this a
     # broken extractor would report "0 missing" forever.
+    # `alert-info` = the update strip, `bottom-20`/`max-w-sm` = the card host.
     check("extractor finds the banner class string",
-          {"bottom-20", "shadow-lg", "alert-info"} <= written.keys(),
+          {"bottom-20", "max-w-sm", "alert-info"} <= written.keys(),
           f"files={sorted(written.get('bottom-20', []))}")
     check("positive control: 'fixed' is defined in the served CSS", "fixed" in known)
 

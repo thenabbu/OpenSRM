@@ -117,3 +117,46 @@ W7.3c's `refreshOnVisible()` call — visible only in the diff, and it would hav
 looked like a passing change because nothing tests that call's absence. The branch
 re-applies this card's delta instead, so W7.3c's worker guard and visibility poll
 are intact.
+
+## 2026-11-26 — the install card was the annoyance, not the affordance
+
+Reported on `dev`: the install popup is "very annoying and persistent". Measured
+cause, not a guess:
+
+| what the user met | why |
+|---|---|
+| the popup on a **desktop** | `mountBanner` painted it whenever `beforeinstallprompt` fired, and Chromium fires that on desktop Edge/Chrome too |
+| the popup again on **every session** | dismissal was `sessionStorage`, and it shared ONE key with the update notice |
+| no way back after dismissing | the cross was the end of the road: nothing replaced it |
+| a popup that did not look like the app | `alert alert-info` + `btn-ghost`: a flat strip, not the `bg-base-200` + border card every other surface uses |
+
+**What it is now** (`web/src/pwa/banner.ts`):
+
+- **Phone only.** `isPhone()` = `(pointer: coarse) and (hover: none)` — the
+  `hover` half is what keeps a touchscreen laptop out. No card on a desktop.
+- **Only when not installed.** `isInstalled()` = `display-mode: standalone` OR
+  iOS `navigator.standalone`, checked in addition to `canInstall()`, because a
+  user who installed from the browser menu fires no event we can see.
+- **A card, not a strip** (DESIGN §2.3, §4.7): app icon, `text-sm font-semibold`
+  title, `text-xs /60` body, one `btn-accent` action (white = the one emphasis
+  action, §0.5), 44px close (§5). Offset is
+  `calc(4rem + env(safe-area-inset-bottom) + 1rem)`, so the notched-phone home
+  indicator cannot push the dock into the card.
+- **One answer per device.** The cross writes `pwa-install-dismissed` to
+  **localStorage** (per device, not per session) and hands the job to an install
+  icon button in the phone navbar (`#mobile-navbar .navbar-end`, added in
+  `base.html`). The update notice keeps its own session key — a later version is
+  a new message.
+- **No dead buttons.** The card shows the Install action only while the browser
+  still holds the prompt. Refused, or absent (iOS, iPadOS reporting a Mac UA),
+  repaints as the manual route: Share → Add to Home Screen, or the browser menu.
+
+**Evidence** — `banner.test.ts` (14 tests; break-proved: dropping the phone gate
+turns 1 red, dropping the installed gate 1, dropping the persist write 2,
+dropping the navbar handoff 2) and a Playwright DUT at iPhone 13 / Pixel 7 /
+1280×900 (25 checks): card above the dock with a 16px gap, 44×44 targets, no card
+on desktop, card absent after reload, navbar button present after reload.
+
+**Ceiling:** logout wipes localStorage (`session.ts`), so a logout/login cycle
+shows the card once more. That wipe is a privacy property, not a bug — the card
+is one line of code to re-add if it ever matters.
