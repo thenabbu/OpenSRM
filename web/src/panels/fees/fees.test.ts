@@ -73,8 +73,8 @@ describe('fees island', () => {
   it('hydrates: marks itself and repaints the blocks in server order', async () => {
     await hydrate();
     expect(mount().getAttribute('data-hydrated')).toBe('1');
-    // Owed sum · charge cards · pay line · Paid header · year list · receipts
-    expect(kids().map((k) => k.tagName)).toEqual(['DIV', 'DIV', 'P', 'DIV', 'DIV', 'DETAILS']);
+    // Owed sum · charge cards · pay line · Paid card · receipts
+    expect(kids().map((k) => k.tagName)).toEqual(['DIV', 'DIV', 'P', 'DIV', 'DETAILS']);
   });
 
   it('prints the server-formatted amount verbatim, never a reparsed one', async () => {
@@ -83,7 +83,12 @@ describe('fees island', () => {
     expect(kids()[0].querySelector('.font-mono')!.textContent).toBe('₹8,650');
     // and the display string survives all the way through — Indian grouping
     // and its comma placement are the server's, not the client's
-    expect(kids()[3].querySelector('.font-mono')!.textContent).toBe('₹2,00,000');
+    const head = kids()[3];
+    expect(head.textContent).toContain('Paid');
+    // last .font-mono in the header ROW is the total (the first is the year
+    // label; the rows below carry their own amounts)
+    expect([...head.firstElementChild!.querySelectorAll('.font-mono')].pop()!.textContent)
+      .toBe('₹2,00,000');
   });
 
   it('keeps the server threshold class on the number', async () => {
@@ -104,9 +109,13 @@ describe('fees island', () => {
     await hydrate({ ...PROPS, due_disp: '', due_sum: '', level: '', dues: [], ledger: [] });
     expect(mount().textContent).not.toContain('Pay through the SRM portal.');
     expect(mount().textContent).toContain('Nothing due.');
-    expect(kids().map((k) => k.tagName)).toEqual(['P', 'DIV', 'DIV']);
+    // the sentence, then the Paid card (no receipts: PROPS.ledger was emptied)
+    expect(kids().map((k) => k.tagName)).toEqual(['P', 'DIV']);
     expect(kids()[0].textContent).toBe('Nothing due.');
-    expect(kids()[1].querySelector('.font-mono')!.textContent).toBe('₹2,00,000');
+    const card = kids()[1];
+    expect(card.className).toContain('rounded-box');
+    expect([...card.firstElementChild!.querySelectorAll('.font-mono')].pop()!.textContent)
+      .toBe('₹2,00,000');
   });
 
   it('names each charge and states its deadline, late-fee and no-deadline cases', async () => {
@@ -139,11 +148,11 @@ describe('fees island', () => {
 
   it('keeps year headers only when there are 2+ years', async () => {
     await hydrate();
-    const years = kids()[4];
-    expect(Array.from(years.children).map((s) => s.tagName)).toEqual(['SECTION', 'SECTION']);
-    expect(years.children[0].querySelector('h2')!.textContent).toBe('2026');
+    const years = Array.from(kids()[3].querySelectorAll('section'));
+    expect(years).toHaveLength(2);
+    expect(years[0].querySelector('h2')!.textContent).toBe('2026');
     expect(
-      Array.from(years.children[0].querySelectorAll('.grid')).map((r) => r.children[1].textContent),
+      Array.from(years[0].querySelectorAll('.grid')).map((r) => r.children[1].textContent),
     ).toEqual(['Semester fee', 'Exam fee']);
   });
 
@@ -157,16 +166,17 @@ describe('fees island', () => {
     const head = kids()[3];
     expect(head.textContent).toContain('Paid');
     expect(head.textContent).toContain('2026');
-    // the year header row is gone: no h2 anywhere under the year list
-    expect(kids()[4].querySelector('h2')).toBeNull();
+    // the year header row is gone: no h2 anywhere inside the Paid card
+    expect(head.querySelector('h2')).toBeNull();
     // ...and the total appears once, on the heading, exactly as it did before
     // [0] is the year label on the heading, [1] the total
     expect(head.querySelectorAll('.font-mono')[1].textContent).toBe('₹2,00,000');
+    expect(head.className).toContain('rounded-box');
   });
 
   it('paints receipts with the divider only between them, and the voucher only when present', async () => {
     await hydrate();
-    const box = kids()[5];
+    const box = kids()[4];
     expect(box.querySelector('summary')!.textContent).toContain('Payment receipts');
     expect(box.querySelector('summary')!.textContent).toContain('(2)');
     const rcpts = Array.from(box.querySelectorAll('.fees-rcpt')) as HTMLElement[];

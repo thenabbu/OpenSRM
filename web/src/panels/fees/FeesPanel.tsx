@@ -137,20 +137,22 @@ export default function FeesPanel({ el, props }: FeesHost) {
         <p class={`text-sm ${text('60')}`}>Nothing due.</p>
       ) : null}
       {p.years.length ? (
-        <>
-          <div class={`flex items-baseline justify-between gap-3${p.dues.length ? ' mt-6' : ''}`}>
+        /* a card, like every other block on the page: bare rows on the page
+           background read as an unfinished list (§4.19) */
+        <div class={`${CARD}${p.dues.length ? ' mt-6' : ' mt-4'}`}>
+          <div class="flex items-baseline justify-between gap-3">
             <h1 class="text-base font-semibold">
               Paid
               {p.year_label ? <span class={`font-mono text-xs font-normal ${text('60')}`}> {p.year_label}</span> : null}
             </h1>
             <span class="font-mono text-sm font-semibold tabular-nums">{rupee(p.paid_total)}</span>
           </div>
-          <div class="flex flex-col gap-5 mt-3">
+          <div class="flex flex-col gap-5 mt-4">
             {p.years.map((y) => (
               <Year key={y.year} y={y} showHeader={p.multi_year} />
             ))}
           </div>
-        </>
+        </div>
       ) : p.dues.length ? (
         <p class={`text-xs ${text('50')} mt-4`}>No payments recorded yet.</p>
       ) : null}

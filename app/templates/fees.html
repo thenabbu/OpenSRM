@@ -58,11 +58,14 @@
        header carrying the same total as the heading above it is the same
        number twice. Two or more: year headers earn their place. #}
     {% if fees.years %}
-    <div class="flex items-baseline justify-between gap-3{% if fees.dues %} mt-6{% endif %}">
+    {# a card, like every other block on the page: bare rows on the page
+       background read as an unfinished list (§4.19) #}
+    <div class="bg-base-200 border border-base-300 rounded-box p-4{% if fees.dues %} mt-6{% else %} mt-4{% endif %}">
+    <div class="flex items-baseline justify-between gap-3">
       <h1 class="text-base font-semibold">Paid{% if fees.year_label %} <span class="font-mono text-xs font-normal text-base-content/60">{{ fees.year_label }}</span>{% endif %}</h1>
       <span class="font-mono text-sm font-semibold tabular-nums">₹{{ fees.paid_total }}</span>
     </div>
-    <div class="flex flex-col gap-5 mt-3">
+    <div class="flex flex-col gap-5 mt-4">
       {% for y in fees.years %}
       <section>
         {% if fees.multi_year %}
@@ -82,6 +85,7 @@
         </div>
       </section>
       {% endfor %}
+    </div>
     </div>
     {% elif fees.dues %}
     <p class="text-xs text-base-content/50 mt-4">No payments recorded yet.</p>

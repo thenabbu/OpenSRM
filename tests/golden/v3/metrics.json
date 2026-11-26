@@ -273,11 +273,7 @@
     "/static/sw.js": {
       "bytes": 30703,
       "content_type": "text/javascript; charset=utf-8",
-<<<<<<< HEAD
-      "gzip_bytes": 9805,
-=======
-      "gzip_bytes": 9809,
->>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
+      "gzip_bytes": 9807,
       "status": 200
     }
   },
@@ -293,11 +289,7 @@
         "/static/push.js",
         "/static/sw.js"
       ],
-<<<<<<< HEAD
-      "js_gzip_bytes": 15491,
-=======
-      "js_gzip_bytes": 15495,
->>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
+      "js_gzip_bytes": 15493,
       "script_tags": 5
     },
     "/login": {
@@ -311,19 +303,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-<<<<<<< HEAD
-      "js_gzip_bytes": 12521,
+      "js_gzip_bytes": 12523,
       "script_tags": 3
     }
   },
-  "revision": "965483b",
-=======
-      "js_gzip_bytes": 12525,
-      "script_tags": 3
-    }
-  },
-  "revision": "44e2e65",
->>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
+  "revision": "46fb608",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -346,9 +330,9 @@
       "panel_html_gzip_bytes": 3743
     },
     "fees": {
-      "panel_dom_nodes": 63,
-      "panel_html_bytes": 5471,
-      "panel_html_gzip_bytes": 1129
+      "panel_dom_nodes": 64,
+      "panel_html_bytes": 5541,
+      "panel_html_gzip_bytes": 1131
     },
     "marks": {
       "panel_dom_nodes": 60,
@@ -372,23 +356,13 @@
     }
   },
   "totals": {
-<<<<<<< HEAD
     "api_bytes": 603402,
-    "api_gzip_bytes": 194097,
-    "dom_nodes_all_panels": 2070,
-=======
-    "api_bytes": 603383,
-    "api_gzip_bytes": 194093,
-    "dom_nodes_all_panels": 2061,
->>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
+    "api_gzip_bytes": 194099,
+    "dom_nodes_all_panels": 2062,
     "dom_nodes_page": 357,
     "html_bytes": 72245,
     "html_gzip_bytes": 18213,
     "js_bytes": 51142,
-<<<<<<< HEAD
-    "js_gzip_bytes": 17285
-=======
-    "js_gzip_bytes": 17289
->>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
+    "js_gzip_bytes": 17287
   }
 }
