@@ -33,6 +33,9 @@ class AppConfig:
     db_path: str
     secret_path: str
     prewarm_ocr: bool = True
+    # P10.1 rollback: False stops the Preact islands from hydrating. The
+    # server-rendered panels are the whole app then (legacy path never left).
+    preact_islands: bool = True
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -42,4 +45,5 @@ class AppConfig:
             db_path=os.path.join(data_dir, "srm.db"),
             secret_path=os.path.join(data_dir, "secret"),
             prewarm_ocr=_flag(os.environ.get("OCR_PREWARM"), True),
+            preact_islands=_flag(os.environ.get("PREACT_ISLANDS"), True),
         )

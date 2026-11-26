@@ -1,0 +1,8 @@
+{
+  "body": "/**\n * Perf tier detection (phase 6) — runs as a BLOCKING script at the top of\n * <head> so html[data-perf] is set before the first paint and the low-tier\n * CSS pause rules (app.css) apply from frame one. Inline scripts are banned\n * by the CSP, hence an external file loaded via asset().\n * Override for testing: ?perf=low or ?perf=high (persisted in localStorage).\n */\n(function () {\n  var d = document.documentElement, n = navigator, forced = null;\n  try { forced = new URLSearchParams(location.search).get('perf') || localStorage.getItem('perf'); } catch (e) {}\n  var low = (n.deviceMemory && n.deviceMemory <= 3) ||\n            (n.hardwareConcurrency && n.hardwareConcurrency <= 4) ||\n            (n.connection && n.connection.saveData);\n  d.dataset.perf = forced === 'low' || forced === 'high' ? forced : (low ? 'low' : 'high');\n})();\n",
+  "bytes": 844,
+  "content_type": "text/javascript; charset=utf-8",
+  "gzip_bytes": 511,
+  "path": "/static/perf.js",
+  "status": 200
+}

@@ -1,0 +1,15 @@
+{
+  "route": "academics",
+  "device": "mobile",
+  "viewport": "390x844",
+  "verdict": "MATCH",
+  "broken_class": null,
+  "defects": [],
+  "confidence": "high",
+  "model": "gemini-3.1-flash-lite",
+  "corroboration": [],
+  "golden_sha": "eb8ef789a459d4ff",
+  "fresh_sha": "eb8ef789a459d4ff",
+  "revision": "3a43760",
+  "verified_at": "2026-11-18T09:21:50Z"
+}

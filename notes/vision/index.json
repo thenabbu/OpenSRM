@@ -1,0 +1,158 @@
+{
+  "revision": "3a43760",
+  "pairs": 18,
+  "matched": 18,
+  "failed": 0,
+  "devices": [
+    "mobile",
+    "desktop"
+  ],
+  "coverage": "route list from v3/routes.json",
+  "pairs_detail": [
+    {
+      "route": "dashboard",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "dashboard",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "attendance",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "attendance",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "timetable",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "timetable",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "marks",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "marks",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "campus",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "campus",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "academics",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "academics",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "fees",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "fees",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "tools",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "tools",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "settings",
+      "device": "mobile",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    },
+    {
+      "route": "settings",
+      "device": "desktop",
+      "verdict": "MATCH",
+      "model": "gemini-3.1-flash-lite",
+      "confidence": "high",
+      "broken_class": null
+    }
+  ],
+  "verified_at": "2026-11-18T09:24:24Z"
+}

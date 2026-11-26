@@ -1,0 +1,428 @@
+/* OpenSRM service worker — GENERATED. Do not edit app/static/sw.js by hand.
+ *
+ * Source: web/src/sw-template.js · built by web/workbox-config.js (workbox-build
+ * injectManifest) during `pnpm build`. Edit the template, then rebuild.
+ *
+ * P8.2 is a parity swap: this file performs exactly the policies the previous
+ * hand-written worker did, now expressed as Workbox routes.
+ */
+
+import { CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { clientsClaim } from 'workbox-core';
+import { cleanupOutdatedCaches, matchPrecache, precacheAndRoute } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { ExpirationPlugin } from 'workbox-expiration';
+
+// The name is written as a single-quoted literal by the build (see
+// web/workbox-config.js:stampCacheName). Three Python gates regex it —
+// tests/e2e/test_sw.py, tests/test_audit_findings L37, scripts/check_docs.py D1 —
+// and a template literal would read as `?` to all of them.
+//
+// The build suffix is derived from the FULL injected manifest (urls + revisions,
+// not revisions alone: Workbox sets revision:null for content-hashed files, so
+// revisions alone are near-constant across builds). A bundle change therefore
+// changes the cache name, which is the property the ?v= generations relied on.
+const CACHE_NAME = '__CACHE_NAME__';
+
+// Precache the built bundle. The WB manifest below is the injection point:
+// Workbox replaces that token at build time with the file list derived from
+// app/static/dist. The list comes from the build (web/workbox-config.js
+// globs app/static/dist), never hand-written. Workbox also installs a route that
+// serves these entries cache-first and cleans superseded revisions on activate.
+precacheAndRoute(self.__WB_MANIFEST);
+cleanupOutdatedCaches();
+
+// Take over immediately, but only on a FIRST install. Without skipWaiting a new
+// worker installs and then sits in `waiting` until every tab of the old one
+// closes — so on a fresh profile the registration never reaches `activate` and
+// `navigator.serviceWorker.controller` stays null. Measured symptom: `__shellWarm`
+// reported stored=8 (the page wrote the shells itself) while the gate failed
+// `[FAIL] online: service worker is controlling the page`.
+//
+// That measurement is about a first install, and ONLY that. Generalising it to
+// updates is a silent swap: `registration.active` is non-null exactly when an
+// outgoing worker exists, so an update that skips the wait activates and claims
+// the clients while the page is still running the previous bundle — and the
+// `activate` below then deletes the caches that page is fetching its chunks
+// from. Worst on the first load after a deploy, where a not-yet-imported chunk
+// answers 404 and the island never hydrates.
+//
+// An update therefore WAITS in `waiting` until the page asks for it (the
+// update banner's Reload posts SKIP_WAITING, handled below). activate — and the
+// cache wipe inside it — then runs on that reload, when nothing is still being
+// served from the caches it deletes. clientsClaim() below stays: a first install
+// needs it, and after a SKIP_WAITING the claim is what fires `controllerchange`.
+self.addEventListener('install', () => {
+  if (self.registration.active === null) void self.skipWaiting();
+});
+
+// The page's side of a waiting update: postMessage({type:'SKIP_WAITING'}).
+// Without this listener the Reload button would message a worker that ignores
+// it — the banner would dismiss nothing and the page would never swap.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') void self.skipWaiting();
+});
+
+// Navigation preload: the HTML request starts while the worker boots, so a
+// controlled page does not pay worker startup latency on its document.
+//
+// BUT NOT ON FIREFOX. With preload enabled, Firefox refuses the navigation
+// outright once the origin is unreachable: the preload request fails at the
+// network layer and Firefox surfaces that failure as the navigation result,
+// never reaching the handler that would have served the cached shell. Measured
+// on the same profile, same dead server, single reload: preload ON → 1st
+// navigation OK, 2nd throws NS_ERROR_CONNECTION_REFUSED; preload OFF → 1st,
+// 2nd and 3rd all answer from the shell cache. Chromium and WebKit answer
+// every navigation either way, and this app never serves HTML from its cache
+// (the html route's cacheWillUpdate returns null by design), so preload only
+// overlaps the worker's startup here — it is not what makes HTML respond.
+const PRELOAD_ENGLISH = /\bFirefox\/\d/.test(self.navigator.userAgent || '');
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    if (self.registration.navigationPreload) {
+      try {
+        const st = await self.registration.navigationPreload.getState();
+        // Disable (not merely skip enabling) on Firefox: a profile that ran an
+        // earlier build still has preload switched on, and the enabled state
+        // lives in the registration, not in this script.
+        if (PRELOAD_ENGLISH) {
+          if (st.enabled) await self.registration.navigationPreload.disable();
+        } else if (!st.enabled) {
+          await self.registration.navigationPreload.enable();
+        }
+      } catch (err) { /* preload unsupported: the HTML route just fetches */ }
+    }
+    // Drop every cache from an earlier generation. Precache entries are
+    // repopulated by precacheAndRoute's install step, which ran before this.
+    // The SHELL cache must survive. `opensrm-shell` is written by warmShells()
+    // (web/src/session/shell.ts) and is the ONLY source of the offline panel
+    // shells — the precache list covers dist assets only. An allow-list of
+    // "CACHE_NAME or workbox-precache" deleted it on every activation, which
+    // presented as "offline never works" while __shellWarm still said stored=8.
+    // Measured: after a normal authenticated load the only cache left was
+    // workbox-precache, with zero shell keys.
+    const keys = await caches.keys();
+    const keep = (k) => k === CACHE_NAME || k.startsWith('workbox-precache') || k === 'opensrm-shell';
+    await Promise.all(keys.filter((k) => !keep(k)).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
+});
+clientsClaim();
+
+// ── /logout: wipe the cache and this device's push subscription ─────────────
+// Cached HTML holds personal data (attendance, marks, profile) and must not
+// stay readable on the device after logout. /logout is a plain navigation, so
+// this is the only hook we get; server-side the UNIQUE endpoint rebind is the
+// safety net if this never runs.
+registerRoute(
+  ({ url }) => url.pathname === '/logout',
+  async ({ request }) => {
+    try {
+      return await fetch(request);
+    } finally {
+      // Drop every cache this origin wrote, not just CACHE_NAME. The shells live
+      // in 'opensrm-shell' (web/src/session/shell.ts:30) and the precache in a
+      // workbox-precache-* key — deleting only CACHE_NAME left a logged-out
+      // device able to load the app's panels offline. The shells carry no PII
+      // (shell() renders them for every user identically, settings excluded),
+      // but 'logout leaves no trace' has to mean all of it, or it is not true.
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      self.registration.pushManager.getSubscription()
+        .then((s) => (s ? s.unsubscribe().catch(() => {}) : null))
+        .catch(() => {});
+    }
+  },
+  'GET',
+);
+
+// ── Versioned assets (?v=<content-hash> from asset()): cache-first ──────────
+// The hash guarantees the bytes under this URL never change, so the cache can
+// answer without touching the network — warm visits move zero CSS/JS bytes.
+// On store, older ?v= generations of the same pathname are dropped so the
+// cache never piles up deploy generations.
+const versioned = new CacheFirst({
+  cacheName: 'opensrm-versioned',
+  matchOptions: { ignoreSearch: false },
+  plugins: [
+    {
+      cachedResponseWillBeUsed: async ({ cacheName, request, cachedResponse }) => cachedResponse,
+      // Evict the other ?v= generations of this pathname after a store.
+      cacheDidUpdate: async ({ cacheName, request }) => {
+        const cache = await caches.open(cacheName);
+        const target = new URL(request.url);
+        for (const key of await cache.keys()) {
+          const u = new URL(key.url);
+          if (u.pathname === target.pathname && u.search !== target.search) await cache.delete(key);
+        }
+      },
+    },
+    new ExpirationPlugin({ maxEntries: 200, purgeOnQuotaError: true }),
+  ],
+});
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/') && url.searchParams.get('v'),
+  versioned,
+  'GET',
+);
+
+// ── Vite's content-hashed chunks: cache-first, drop older hashes ─────��──────
+// Immutable by construction (the hash IS the content) and the DYNAMIC IMPORTS
+// every island loads lazily. They carry no ?v=, so falling through to
+// network-first meant every island failed offline with "Failed to fetch
+// dynamically imported module".
+const HASHLESS = /-[A-Za-z0-9_-]{8,}\.(js|css)$/;
+const hashed = new CacheFirst({
+  cacheName: 'opensrm-hashed',
+  plugins: [
+    {
+      // Same policy as the ?v= assets: on store, drop older hashes of the same
+      // basename so a deploy does not pile generations up.
+      cacheDidUpdate: async ({ cacheName, request }) => {
+        const cache = await caches.open(cacheName);
+        const target = new URL(request.url);
+        const base = target.pathname.replace(HASHLESS, '');
+        for (const key of await cache.keys()) {
+          const u = new URL(key.url);
+          if (u.pathname.replace(HASHLESS, '') === base && u.pathname !== target.pathname) await cache.delete(key);
+        }
+      },
+    },
+    new ExpirationPlugin({ maxEntries: 200, purgeOnQuotaError: true }),
+  ],
+});
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/dist/assets/') && HASHLESS.test(url.pathname),
+  hashed,
+  'GET',
+);
+
+// ── Unversioned statics (icons, manifest): network-first, cache fallback ────
+// Cache-first once served pre-deploy JS with post-deploy HTML → dead navbar
+// until a hard refresh. Network-first keeps HTML and JS from the same deploy;
+// the cache still serves offline. Workbox only caches 2xx by default.
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/static/'),
+  new NetworkFirst({ cacheName: 'opensrm-static' }),
+  'GET',
+);
+
+// ── HTML: network-first; offline gets the SHELL, never a rendered page ──────
+// Personal data may live on the device (that is what makes offline work), but
+// a rendered page must never be one of the places it lives. The shell is the
+// panel's own markup with every personal value blanked server-side, so it is
+// the same bytes for every student.
+//
+// Offline ladder: /shell/<panel> → /shell/dashboard → /shell/ → generic 503.
+const OFFLINE_503 = new Response(
+  '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this device has no saved copy yet.</p><p>Connect to the internet and open the site once to enable offline access.</p></div></body></html>',
+  { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+);
+
+/** The shell cache keys for a URL, in preference order. */
+function shellPaths(url) {
+  const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+  return ['/shell/' + panel, '/shell/dashboard', '/shell/'];
+}
+
+/** The shell this URL's panel owns, or null. `exact` refuses the ladder: a
+ *  fallback shell carries ANOTHER panel's markup (the /shell route swaps a gated
+ *  panel for the dashboard and says so in X-Shell-Panel), which is fine as an
+ *  offline last resort and wrong as a first paint — a tap on /tools would show
+ *  the dashboard. */
+async function cachedShell(url, exact = false) {
+  const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+  for (const path of shellPaths(url)) {
+    const hit = await caches.match(path);
+    if (!hit) continue;
+    if (!exact || hit.headers.get('X-Shell-Panel') === panel) return hit;
+  }
+  return null;
+}
+
+/** Copy a response with X-Osrm-Path naming the branch that produced it. */
+function tag(res, branch) {
+  try {
+    const out = new Response(res.body, res);
+    out.headers.set('X-Osrm-Path', branch);
+    return out;
+  } catch {
+    return res;                     // opaque or already-consumed: leave it alone
+  }
+}
+
+async function offlineShell(url) {
+  return (await cachedShell(url)) || OFFLINE_503;
+}
+
+// A cold PWA launch is this route's worst case: the browser process is new, the
+// radio may still be attaching, and `await preloadResponse` has NO timeout of its
+// own — it settles when the fetch does, or when the platform gives up on it
+// (measured on Chrome: ~10 s against a connection that accepts and then stalls).
+// Nothing paints in the meantime, so every launch on a bad link opens to a blank
+// screen for ~10 s and THEN shows the dashboard. NetworkFirst alone cannot fix
+// that: it had no networkTimeoutSeconds, and even with one, its timeout path
+// matches 'opensrm-html' — a cache this route deliberately never writes.
+//
+// So the shell becomes a real first-paint candidate, not only the offline
+// fallback: if this device has one cached, race the network against it and paint
+// whichever arrives first. A healthy load is unchanged (the network wins inside
+// the window and the fresh server HTML is used); a stalled one paints the
+// PII-free shell, and the islands repaint it from Dexie.
+const SHELL_RACE_MS = 2000;
+
+const html = new NetworkFirst({
+  cacheName: 'opensrm-html',
+  // Offline must reach the shell ladder, not a cached rendered page: nothing
+  // here is ever written to the cache, so a cached response cannot be served.
+  plugins: [
+    {
+      cacheWillUpdate: async () => null,
+      handlerDidError: async ({ request }) => tag(await offlineShell(new URL(request.url)), 'offline-ladder'),
+    },
+  ],
+});
+
+registerRoute(
+  // Navigations ONLY. A page-initiated `fetch(route, {accept: text/html})` is how
+  // soft navigation swaps a route in place (web/src/nav/softNav.ts): routing that
+  // through here would hand it a shell instead of the page it asked for.
+  ({ request }) => request.mode === 'navigate',
+  async (params) => {
+    // Exact panel only, and only for the RACE: a shell that belongs to another
+    // route is not a valid first paint. The offline ladder below still takes any
+    // shell (a wrong-panel shell beats an error page when there is no network).
+    const shell = await cachedShell(new URL(params.request.url), true);
+
+    // Navigation preload starts the request while the worker boots, so a
+    // controlled page does not pay worker-startup latency. With the server DEAD
+    // the promise REJECTS — and an uncaught rejection escapes the handler, so
+    // neither the strategy nor its offline ladder ever runs and the navigation
+    // dies with net::ERR_FAILED. A rejected or absent preload therefore falls
+    // through to the strategy exactly as before.
+    // A preload that resolves FALSY must fall through to the strategy, not be
+    // treated as "no answer": Firefox implements no navigation preload, and a
+    // preload promise that resolves `undefined` made the handler skip the
+    // network entirely and go straight to the ladder — measured as /tools and
+    // /settings returning the DASHBOARD shell on firefox while the server was
+    // serving them fine. It is not awaited here: awaiting it is the unbounded
+    // hang this route exists to avoid (see SHELL_RACE_MS).
+    const preload = params.event && params.event.preloadResponse;
+    const viaStrategy = () => html.handle(params).catch(() => null);
+    const network = preload
+      ? preload.then((r) => (r || viaStrategy())).catch(viaStrategy)
+      : viaStrategy();
+
+    // No shell for THIS panel on this device: nothing to race with, so wait for
+    // the network and let the strategy own the failure path. X-Osrm-Path says
+    // which branch answered — a harness that only sees "a page arrived" cannot
+    // otherwise tell a shell from a real render.
+    if (!shell) {
+      const res = (await network) || offlineShell(new URL(params.request.url));
+      return tag(res, res ? 'network-or-ladder' : 'none');
+    }
+
+    let timer;
+    const stall = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), SHELL_RACE_MS);
+    });
+    try {
+      const raced = await Promise.race([network, stall]);
+      return tag(raced || shell, raced ? 'network' : 'shell-race');
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  'GET',
+);
+
+// ── Web push ──────────────────────────────────────────────────────────
+
+function urlB64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(raw);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Every push MUST produce a visible notification (Chrome userVisibleOnly,
+// Safari revokes permission otherwise). Test pushes additionally report a
+// receipt so the server can prove on-device arrival — the receipt runs
+// AFTER showNotification starts, never instead of it.
+async function handlePush(event) {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (err) {
+    data = { title: 'OpenSRM', body: event.data ? event.data.text() : '' };
+  }
+  const opts = {
+    body: data.body || '',
+    tag: data.tag || 'opensrm-reminder',
+    renotify: true,                       // updated reminder re-alerts (Android)
+    icon: '/static/icon-192.png',         // large icon (brand tile)
+    badge: '/static/icon-badge.png',      // Android small icon: white mark,
+                                          // alpha-defined, circle-mask safe
+    data: { url: data.url || '/' }
+  };
+  const shown = self.registration.showNotification(data.title || 'OpenSRM', opts);
+  let receipt = null;
+  if (data.test_id) {
+    receipt = shown.then(() => fetch('/api/push/receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ test_id: data.test_id })
+    }).catch(() => {}));
+  }
+  event.waitUntil(receipt ? Promise.all([shown, receipt]) : shown);
+}
+
+async function handleNotificationClick(event) {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const c of windows) {
+    if ('focus' in c) {
+      // focus() can throw InvalidAccessError (window not focusable) — fall
+      // through to openWindow instead of failing the whole click.
+      try {
+        await c.focus();
+        if (url && url !== '/' && 'navigate' in c) {
+          try { await c.navigate(url); } catch (err) { /* focus alone is fine */ }
+        }
+        return;
+      } catch (err) { /* open a fresh window below */ }
+    }
+  }
+  // openWindow needs user activation — real notificationclick has it; if the
+  // browser refuses anyway there is nothing left to do, don't fail the handler.
+  try { await self.clients.openWindow(url); } catch (err) { /* done */ }
+}
+
+// Browser invalidated the subscription (rotation/expiry): re-subscribe with
+// the same VAPID key and re-register server-side. Best effort — the
+// dashboard also re-syncs on load.
+self.addEventListener('pushsubscriptionchange', e => {
+  e.waitUntil((async () => {
+    try {
+      const st = await (await fetch('/api/push/status')).json();
+      if (!st.ok || !st.vapid_public_key) return;
+      const sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(st.vapid_public_key)
+      });
+      const payload = sub.toJSON();
+      payload.ua_label = 'resubscribed';
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) { /* best effort */ }
+  })());
+});
+
+self.addEventListener('push', e => handlePush(e));
+self.addEventListener('notificationclick', e => e.waitUntil(handleNotificationClick(e)));

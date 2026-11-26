@@ -213,16 +213,6 @@ wheels = [
 ]
 
 [[package]]
-name = "blobatar"
-version = "2.0.0"
-source = { git = "https://github.com/thenabbu/blobatar?subdirectory=packages%2Fpython&rev=7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb#7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb" }
-
-[package.optional-dependencies]
-flask = [
-    { name = "flask" },
-]
-
-[[package]]
 name = "boolean-py"
 version = "5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1456,10 +1446,9 @@ wheels = [
 
 [[package]]
 name = "opensrm"
-version = "2.12.4"
+version = "3.0.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "blobatar", extra = ["flask"] },
     { name = "cryptography" },
     { name = "ddddocr" },
     { name = "flask" },
@@ -1481,7 +1470,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blobatar", extras = ["flask"], git = "https://github.com/thenabbu/blobatar?subdirectory=packages%2Fpython&rev=7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb" },
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "ddddocr", specifier = "==1.6.1" },
     { name = "flask", specifier = "==3.1.3" },

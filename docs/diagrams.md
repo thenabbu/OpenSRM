@@ -21,6 +21,7 @@ grid, font and arrow control and render identically everywhere.
 | `docs/architecture.html` | Generated source of truth — self-contained, viewable in any browser, header comment carries the regen commands. |
 | `docs/architecture.png` | The asset README embeds (`@2`, 1920×1200 for the 960×600 canvas). |
 | `README.md` → Architecture | Embeds the PNG (`width="100%"`). |
+| `docs/ARCHITECTURE.md` | The prose companion: server, Preact islands, offline shell, privacy rules. |
 
 ## Workflow
 
@@ -106,7 +107,7 @@ floats inside the diagram area.
 3. Vision review at **1920 and 890px** — SHIP verdict, no label/arrow
    complaints; 890 is the README display width, check it explicitly.
 4. `test_audit_findings.py` still 73/73 (it pins README doc claims —
-   e.g. `opensrm-v40` must stay exactly once, in the PWA bullet).
+   e.g. `opensrm-v69` must stay exactly once, in the PWA bullet).
 5. Commit `architecture.html` + `architecture.png` + generator changes
    together; if README copy changed, refresh
    `docs/screenshots/readme/after-branch-readme-render.png` evidence.

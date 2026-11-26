@@ -51,8 +51,11 @@ boot "$OLD_NAME" "$OLD_IMAGE" "$PORT"
 # seed a user + mint a session with the OLD release's own code, so the schema
 # and the token are whatever that release actually produced
 TOK=$(docker exec -i -u 10001 "$OLD_NAME" python - <<'PY'
-import json, sys, time
+import json, os, sys, time
 sys.path.insert(0, "/app")
+# token one-shot: keep onnxruntime's stdout warning out of the value captured
+# by the caller (same trap that made test_canary_sync flake in CI)
+os.environ["OCR_PREWARM"] = "0"
 from app import app as A
 c = A.db()
 c.execute(

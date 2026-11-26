@@ -13,13 +13,14 @@
 @source "../app.py";
 @source "./*.js";
 @source "./safelist";
+@source "../../web/src";
 
 /* Hand-written sheets in the SAME order as the old <link> tags
    (framework first, then timetable, motion, gaze). They stay unlayered,
    so they override layered framework rules exactly as before. */
 @import "./timetable.css";
-@import "./motion.css";
-@import "./gaze.css";
+@import "blobatar/motion.css";
+@import "blobatar/gaze.css";
 
 /* ── Phase 5: touch feel (DESIGN §7 / §10.16 rule 4) ──────────────────
    Press feedback is FAST down, slow up with a slight overshoot — that
@@ -44,6 +45,17 @@
 html { overscroll-behavior-y: contain; }   /* contains scroll chains; pairs with pull.js (phase 7) */
 button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; user-select: none; }
 
+/* ── Focus ring, one rule for every focus stop ────────────────────────────
+   `<summary>` is natively focusable, so a keyboard user lands on the fees
+   receipt rows and the hourly accordion headings. Chromium draws no default
+   ring for them, and only .hw-mrow had one (timetable.css) — every other
+   summary was a focus stop with nothing on screen. Written once here rather
+   than per-template: a new disclosure must not silently become invisible. */
+:where(a, button, summary, label, [role=tab], input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .pressable { transition: transform 220ms var(--ease-spring), background-color 150ms; }
 .pressable:active { transform: scale(.97); transition-duration: var(--t-press); }
 
@@ -54,6 +66,7 @@ button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; u
 /* ── Phase 6: avatar idle loops pause on weak devices and offscreen ──
    Pausing preserves the resolved pose (motion.css explains why). The tier
    is set by perf.js before first paint; .is-offscreen is toggled by the
-   IntersectionObserver in dash.js. */
+   IntersectionObserver in web/src/data/background.ts (W5.4: this comment
+   used to name dash.js, which no longer exists). */
 html[data-perf="low"] .mo-root, html[data-perf="low"] .mo-root *,
 .mo-root.is-offscreen, .mo-root.is-offscreen * { animation-play-state: paused; }

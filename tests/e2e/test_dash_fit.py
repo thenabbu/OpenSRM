@@ -73,6 +73,21 @@ try:
             fails.append(name)
 
 
+
+    # A route change is now a soft swap (web/src/nav/softNav.ts): no document
+    # load fires and the new panel appears a beat later. Wait for the panel
+    # itself instead of sleeping, so a route click can never be read as the
+    # previous route.
+    ROUTE_JS = """(tab) => {
+  return new Promise((resolve) => {
+    const ok = () => !!document.getElementById('tab-' + tab);
+    if (ok()) return resolve(true);
+    const t0 = Date.now();
+    const tick = () => (ok() || Date.now() - t0 > 12000) ? resolve(ok()) : setTimeout(tick, 25);
+    tick();
+  });
+}"""
+
     def set_fb_open(v):
         import sqlite3
         con = sqlite3.connect(os.path.join(DATA, "srm.db"))
@@ -184,20 +199,42 @@ try:
                   navPos: getComputedStyle(nav).position, navZ: getComputedStyle(nav).zIndex}; }""")
         check("desktop: scrollbar is an overlay (no gutter, no reserved width)",
               sc["gutter"] == "auto" and sc["width"] == "auto", json.dumps(sc))
+        # Order matters after a viewport change: Playwright resizes asynchronously,
+        # and a soft swap starts its scroll reset when the swap lands. Resize, wait
+        # for the layout to settle, click, wait for the route, and only THEN scroll —
+        # scroll before the swap and the swap's own scrollTo(0, 0) undoes it.
         pg.set_viewport_size({"width": 1280, "height": 520})
+        pg.wait_for_function("() => innerHeight === 520 && innerWidth === 1280", timeout=10000)
+        pg.wait_for_timeout(150)
         pg.evaluate("() => [...document.querySelectorAll('[data-tab=attendance]')]"
                     ".filter(e => e.getBoundingClientRect().height > 0).pop().click()")
-        pg.wait_for_timeout(300)
+        pg.evaluate(ROUTE_JS, "attendance")
+        pg.wait_for_function("() => document.documentElement.scrollHeight > innerHeight", timeout=10000)
         pg.evaluate("() => window.scrollTo(0, 250)")
         pg.wait_for_timeout(120)   # the scroll event fires after the call returns
-        slip = pg.evaluate("""() => {
-          const de = document.documentElement;
-          const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
-          const nr = nav.getBoundingClientRect();
-          const top = document.elementFromPoint(innerWidth / 2, nr.height / 2);
-          return {y: window.scrollY, sh: de.scrollHeight, ch: de.clientHeight,
-                  navTop: Math.round(nr.top), navCovers: nav.contains(top) || top === nav,
-                  scrolling: de.classList.contains('is-scrolling')}; }""")
+        # The scroll itself must be SETTLED before measuring: after a swap the page
+        # is briefly shorter (the new panel is not in yet), so scrollTo(0, 250) can
+        # land at y=100 and keep moving. Wait for a stable, non-zero scrollY first.
+        pg.wait_for_function("() => window.scrollY > 0", timeout=10000)
+        pg.wait_for_timeout(150)
+        # navCovers is RETRIED, not sampled once. elementFromPoint at the navbar
+        # centre answers with whatever is on top AT THAT INSTANT, and in CI it
+        # sometimes answered "not the navbar" at y=100/sh=620 with every other
+        # value already correct — one sample that disagrees with itself between
+        # runs. The assertion is unchanged; a real overlap keeps failing.
+        slip = {"navCovers": False}
+        for _ in range(20):
+            slip = pg.evaluate("""() => {
+              const de = document.documentElement;
+              const nav = [...document.querySelectorAll('.navbar')].find(n => getComputedStyle(n).display !== 'none');
+              const nr = nav.getBoundingClientRect();
+              const top = document.elementFromPoint(innerWidth / 2, nr.height / 2);
+              return {y: window.scrollY, sh: de.scrollHeight, ch: de.clientHeight,
+                      navTop: Math.round(nr.top), navCovers: nav.contains(top) || top === nav,
+                      scrolling: de.classList.contains('is-scrolling')}; }""")
+            if slip["navCovers"]:
+                break
+            pg.wait_for_timeout(100)
         check("desktop: navbar stays fixed over the scrolling page, bar shows on use",
               slip["y"] > 0 and slip["sh"] > slip["ch"] and slip["navTop"] == 0
               and slip["navCovers"] and slip["scrolling"], json.dumps(slip))
@@ -208,7 +245,7 @@ try:
         pg.evaluate("() => [...document.querySelectorAll('[data-tab=dashboard]')]"
                     ".filter(e => e.getBoundingClientRect().height > 0).pop().click()")
         pg.set_viewport_size({"width": 1280, "height": 900})
-        pg.wait_for_timeout(300)
+        pg.evaluate(ROUTE_JS, "dashboard")
 
         # ---- widgets auto-adjust to the cell (v1.20): the two squeeze
         # viewports where the old fixed-height widgets made cards scroll while
@@ -226,17 +263,17 @@ try:
         pg.wait_for_timeout(300)
 
         # ---- a sync must not shift the card frame (v1.31.1) ----------------
-        # softRefresh used an idiomorph innerHTML morph of <main>; on the real
-        # device that left the dashboard panel offset by one extra edge after a
-        # sync — card x and the top gutter doubled 15px -> 30px and stayed that
-        # way across tab switches. The morph also has to KEEP the open tab.
+        # The old markup swap left the dashboard panel offset by one extra edge
+        # after a sync (card x / top gutter 15px -> 30px, and it stayed that way);
+        # a data repaint cannot move the frame at all, and this check keeps it
+        # that way. It still has to KEEP the page it is on.
         tab_before = pg.evaluate("() => [...document.querySelectorAll('[data-tabpanel]')]"
                                  ".map(p => p.id + ':' + p.style.display).join('|')")
         geo_before = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');
           const c = g.querySelector(':scope > .card').getBoundingClientRect();
           return {x: Math.round(c.x), y: Math.round(c.y)}; }""")
-        pg.evaluate("async () => { await softRefresh(); }")
+        pg.evaluate("async () => { await window.__osrmRefreshData(); }")
         geo_after = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');
           const c = g.querySelector(':scope > .card').getBoundingClientRect();
@@ -248,8 +285,10 @@ try:
         check("sync keeps the open tab", tab_after == tab_before,
               f"before={tab_before} after={tab_after}")
         pg.evaluate("() => [...document.querySelectorAll('[data-tab=marks]')].find(e => e.offsetParent !== null).click()")
+        pg.evaluate(ROUTE_JS, "marks")
         pg.wait_for_timeout(300)
         pg.evaluate("() => [...document.querySelectorAll('[data-tab=dashboard]')].find(e => e.offsetParent !== null).click()")
+        pg.evaluate(ROUTE_JS, "dashboard")
         pg.wait_for_timeout(300)
         geo_trip = pg.evaluate("""() => {
           const g = document.querySelector('#tab-dashboard > .grid');

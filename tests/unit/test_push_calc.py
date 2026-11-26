@@ -103,6 +103,11 @@ day_lab = {1: dict(LAB), 2: dict(LAB)}
 m3 = due(at(9, 25), tt={"G": {"Monday": day_lab}})[0].message(at(9, 25))
 check("room printed when known", m3["body"].endswith(" · Lab C-6/7") and m3["title"].startswith("Operating Systems - Lab"), m3["body"])
 check("tag is per block", m["tag"] == "cls-2026-10-05-" + str(int(at(9, 30).timestamp())) + "-21CSC202J", m["tag"])
+# The tap target must be a real route: `/#timetable` is the dashboard with a
+# fragment that selects nothing (hashes are gone since P3.1), and opening a
+# class reminder onto the dashboard is the bug this guards.
+check("deep link opens the timetable route, not a dead hash",
+      m["url"] == "/timetable", m["url"])
 
 print("ok  push calc" if not fails else f"FAILURES: {fails}")
 sys.exit(1 if fails else 0)

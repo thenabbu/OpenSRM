@@ -1,0 +1,14 @@
+{
+  "criterion": "E2",
+  "tier": "machine",
+  "statement": "`bash scripts/gates.sh` exits 0, nothing skipped, on a **fresh clone**.",
+  "verdict": "PASS",
+  "note": "gates.sh --fast green on a clean tree",
+  "evidence": [
+    "   PASS  CSS parity (css_parity.py)\n   PASS  CSS classes for web/src (check_css_classes.py)\n   PASS  promtool (observability config + rules)\n   PASS  dashboard JSON is current (build_dashboard.py --check)\n   PASS  web/ (tsc + design tsc + vitest via ci_web.sh)\n== GATES GREEN - push is safe",
+    "static tier green; browser tier is E8's judge, not duplicated here"
+  ],
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:47:52+00:00"
+}

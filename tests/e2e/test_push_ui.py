@@ -31,10 +31,29 @@ def b64url(b):
     return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
 
 def open_settings(page, base):
+    """Reach /settings the way a user does: from the dashboard, CLICK the real
+    navigation link. At >=lg that is the navbar tab (#tab-settings-tab); on a
+    phone the dock no longer carries Settings, so the navbar gear
+    (#tab-settings-mobile) is the only route to it. A user action beats
+    page.goto here: the whole point of the card is that a real user can reach the
+    notification surface.
+
+    The link is a plain <a href>, and since soft navigation (web/src/nav/
+    softNav.ts) the page swaps the route in place — no document load fires, so
+    there is no `networkidle` to wait for and the card's own async boot (status
+    fetch, then render) decides when the state line stops saying "Loading…".
+    Wait for that text, not for a network event: networkidle is already
+    unsatisfiable in this app (the /shell/* warmers never settle).
+    """
     page.goto(f"{base}/", wait_until="networkidle")
-    # desktop tablist (hidden below lg) and mobile dock (lg:hidden) both carry
-    # data-tab; click whichever is visible at this viewport
-    page.locator('button[data-tab="settings"]:visible').first.click()
+    page.locator('a[data-tab="settings"]:visible').first.click()
+    page.wait_for_selector("#push-card", state="visible", timeout=10000)
+    page.wait_for_function(
+        """() => { const s = document.getElementById('push-state');
+                  return !!s && s.textContent.trim() !== '' && s.textContent.trim() !== 'Loading…'; }""",
+        timeout=10000,
+    )
+    page.wait_for_load_state("networkidle")
     page.wait_for_selector('#push-card', state='visible', timeout=5000)
 
 def new_ctx(pw, viewport, ua=None):
@@ -53,12 +72,15 @@ with sync_playwright() as p:
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     errs = []
     page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+    # The console message names no request ("Failed to load resource"), so a
+    # failing run must say WHICH url/status produced it.
+    page.on("response", lambda r: print(f"  DIAG >=400: {r.status} {r.url}") if r.status >= 400 else None)
     open_settings(page, BASE_UNCONF)
     state = page.text_content('#push-state')
-    check("card renders in Settings tab", page.is_visible('#push-card'), "")
-    check("card NOT inside the Timetable tab (consolidated to one surface)",
-          page.evaluate("() => !document.getElementById('tab-timetable')"
-                        ".contains(document.getElementById('push-card'))"), "")
+    check("card renders in the Settings panel", page.is_visible('#push-card'), "")
+    check("card lives inside #tab-settings, not loose in the page",
+          page.evaluate("() => { const p = document.getElementById('tab-settings');"
+                        " return !!p && p.contains(document.getElementById('push-card')); }"), "")
     check("unconfigured state is honest", 'not set up' in (state or ''), str(state))
     check("controls hidden when unconfigured", not page.is_visible('#push-controls'), "")
     overflow = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")

@@ -1,0 +1,15 @@
+{
+  "criterion": "E10",
+  "tier": "machine",
+  "statement": "Rollback proven in both directions per amendment A2.",
+  "verdict": "PASS",
+  "note": "flag on hydrates, flag off renders",
+  "evidence": [
+    "2026-11-19T20:24:27 WARNING opensrm stored password unreadable \u2014 user must re-login: InvalidToken()",
+    "2026-11-19T20:24:27 WARNING opensrm stored password unreadable \u2014 user must re-login: InvalidToken()",
+    "2026-11-19T20:24:27 INFO opensrm.http request method=GET path=/settings status=200 duration_ms=30"
+  ],
+  "sha": "b675bd78e77c0744f815ad602a2eb68d9b0302fb",
+  "round": 4,
+  "judged_at": "2026-11-19T20:24:27+00:00"
+}

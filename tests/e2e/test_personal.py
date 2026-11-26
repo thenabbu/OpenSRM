@@ -5,7 +5,10 @@ header + 4 checkbox collapse groups, responsive group defaults — all open on
 desktop / first on mobile, label-above-value grid with the 0<8<12 spacing
 ladder, click-to-copy wiring, WCAG contrast sweep), plus logout placement:
 exactly one /logout link, inside Settings, none in the navbar.
-Server under test: AGENTS.md."""
+Server under test: AGENTS.md.
+
+Needs a LIVE seeded gunicorn on DUT_BASE sharing DATA_DIR (see
+scripts/dut_server.sh); with no server listening it ABORTS — an abort is not a pass."""
 import json, math, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('DATA_DIR', '/tmp/osrm-personal')
@@ -219,9 +222,11 @@ with sync_playwright() as p:
                         permissions=['clipboard-read', 'clipboard-write'])
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.goto(f'{BASE}/settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(900)
+    check('desktop: /settings route serves the Settings panel', page.url.endswith('/settings')
+          and page.evaluate("() => !!document.getElementById('tab-settings')"), page.url)
     s = page.evaluate(STRUCT)
 
     check('desktop: Settings = personal row + Notifications card + Log out row + Delete my data row',
@@ -278,9 +283,11 @@ with sync_playwright() as p:
     ctx = b.new_context(viewport={'width': 393, 'height': 851}, device_scale_factor=2.75)
     ctx.add_cookies([{'name': 'srm_session', 'value': TOK, 'url': BASE}])
     page = ctx.new_page()
-    page.goto(f'{BASE}/#settings', wait_until='networkidle')
+    page.goto(f'{BASE}/settings', wait_until='networkidle')
     page.reload(wait_until='networkidle')
     page.wait_for_timeout(900)
+    check('mobile: /settings route serves the Settings panel', page.url.endswith('/settings')
+          and page.evaluate("() => !!document.getElementById('tab-settings')"), page.url)
     s = page.evaluate(STRUCT)
     check('mobile: personal row collapsed by default', s['rowChecked'] is False, str(s['rowChecked']))
     check('mobile: same Settings row list, logout only there',

@@ -25,6 +25,8 @@ def _now():
 
 from html import escape as _hesc
 
+from markupsafe import Markup
+
 from .. import static_data as _sd
 from ..db import (
     day_slots,
@@ -39,15 +41,13 @@ from ..db import (
     upsert_group,
     upsert_subject,
     user_personal,
-    user_scope_data,
-)
-from ..db import (
-    jload as _jload,
 )
 from ..portal.parsers.common import _group_key, _semester_int
 from ..portal.parsers.timetable import DAY_ORDER
-from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS, TOOLS
+from ..static_data import SLOTS, TIMETABLE_TIME_OFFSETS
+from . import timetable_island
 from .attendance import _join_attendance, _title_case
+from .campus import tools_campus_rows
 from .ticker import _now_next_from_slots
 
 log = __import__("logging").getLogger("opensrm")
@@ -83,40 +83,34 @@ def _budget_rows(courses):
 
 
 # ── Tools tab (SCOPE-sourced surfaces) ──────────────────────────────
-# One entry per SCOPE surface. A row renders ONLY when its feature slug is
-# enabled AND its representative op landed a non-empty answer; nothing
-# qualifying = empty list = no entry, no tab (zero footprint — the mission
-# toggle contract, and the same self-hiding rule the dashboard widgets obey).
-# `tab` is the panel that surface's own PR mounts: the row navigates there
-# when that panel exists today and renders inert otherwise, so this stays a
-# landing surface for the SCOPE rotation instead of a duplicate of it.
+# One row per SCOPE-sourced surface, gated on the panel that renders it: the
+# fees/academics/hourwise view models (None/empty when off or empty) and the
+# cards campus_view() itself built. A row therefore cannot link to a page that
+# hides itself, and with nothing qualifying there is no list, no tab, no route
+# (the panel 404s). `op` is carried for the API contract, not as a gate.
 
 
-def _tools_entries(netid):
-    """Rows for the Tools panel: [{"slug","label","hint","op"}].
+def _tools_entries(campus, fees, academics, hourwise):
+    """Rows for the Tools panel: [{"slug","label","hint","op","tab"}].
 
-    Two gates, both required: SCOPE_FEATURES enables the slug (the ops
-    contract) and the cold blob holds a non-empty answer for the op (an
-    enabled surface with nothing behind it must not advertise itself).
-    Costs one users-row read, and only when a feature is enabled at all.
+    Takes the already-built panel view models — no second read of the cold
+    blob. Each argument is the data its destination renders, so None/falsy
+    means "that surface has nothing" and the row would be a dead link.
     """
-    from app.scope.ops import enabled_features  # lazy: app.scope imports app.db
-    on = enabled_features()
-    if not on:
-        return []
-    row = user_scope_data(netid)
-    # shape guard on both levels: a corrupt/foreign scope_json must degrade to
-    # "no tools", never 500 the dashboard (same rule as _stored in scope.sync
-    # and _jload's wrong-shape branch — audit B10).
-    blob = _jload(row["scope_json"] if row else None, {})
     rows = []
-    for feat, label, hint, op, tab in TOOLS:
-        if feat not in on:
-            continue
-        entry = blob.get(op)
-        if isinstance(entry, dict) and entry.get("data"):
-            rows.append({"slug": feat, "label": label, "hint": hint,
-                         "op": op, "tab": tab})
+    if fees is not None:
+        rows.append({"slug": "fees", "label": "Fees", "hint": "Dues, payments and receipts",
+                     "op": "getFeeDetails", "tab": "fees"})
+    if academics is not None:
+        rows.append({"slug": "academics", "label": "Academics",
+                     "hint": "Results, grades and credits",
+                     "op": "getExamDetails", "tab": "academics"})
+    # hourwise renders inside the Attendance tab, not a panel of its own.
+    if hourwise:
+        rows.append({"slug": "hourwise", "label": "Attendance by hour",
+                     "hint": "Every period, joined to your timetable",
+                     "op": "getHourwiseAttendance", "tab": "attendance"})
+    rows.extend(tools_campus_rows((campus or {}).get("cards")))
     return rows
 
 
@@ -475,6 +469,16 @@ def timetable_html(group_key, attendance=None):
         panels.append("<div class=day-panel id=panel-{0}>{1}</div>".format(
             d, "".join(rows)))
 
-    return ("<div class=tt-wrap>" + radios + hero
-            + "<div class=tt-days>" + tabs + "</div>"
-            + "<div class=panels>" + "".join(panels) + "</div></div>")
+    # ── Panels + the island payload (P6.4) ───────────────────────────────
+    # Returns the SAME string as before, plus the inert props block appended
+    # after it — existing callers that only grep the markup are untouched.
+    grid_html = ("<div class=tt-wrap>" + radios + hero
+                 + "<div class=tt-days>" + tabs + "</div>"
+                 + '<div class="panels" data-island="timetable" data-props="#island-timetable">'
+                 + "".join(panels) + "</div></div>")
+    payload = timetable_island.props(day_slots, grid, today)
+    # Markup + str escapes the str: `Markup.__add__` treats a plain str operand as
+    # text to be escaped, which turned every `class="tt-row"` into `&#34;tt-row&#34;`
+    # and destroyed the rows for any caller reading the markup. Wrap the html
+    # side so both operands are already-safe Markup.
+    return Markup(grid_html) + timetable_island.block(payload)

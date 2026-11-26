@@ -21,6 +21,31 @@ def region(p, start, end):
     if i < 0: return ''
     j = t.find(end, i + len(start))
     return t[i:j if j > 0 else i + 8000]
+def hsts_gated():
+    """HSTS is emitted, and emitted only behind the verified CF edge.
+
+    Scans every module in the app/ package rather than one pinned filename: the
+    header moved app/app.py -> app/edge.py (f17be19) and a file-pinned check
+    then failed on code that was still correct. What must not change is the
+    GATE — audit #18: the header hangs off _behind_cf() (edge-secret verified),
+    never a bare cf-ray test, because cf-ray is client-assertable.
+    """
+    pat = re.compile(r'if _behind_cf\(\):[^\n]*\n\s*\w+\.headers\.setdefault\(\s*["\']Strict-Transport-Security["\']')
+    return any(pat.search(p.read_text()) for p in sorted((R / 'app').rglob('*.py')))
+
+def _meters_ok(tpl):
+    """Every progress bar in a template carries a real accessible name.
+
+    The bars are inert <i> stacks, so a screen reader gets nothing from their
+    geometry: the name has to ride on the bar itself (an aria-label on the
+    meter, or a nested labelled <progress>). A count of aria-labels anywhere
+    in the file proves nothing — the nav/dock icons alone used to satisfy it."""
+    t = rd('app/templates/' + tpl)
+    bars = re.findall(r'class="meter"(?:\s[^\n>]*)?>', t)
+    if len(bars) < 1:
+        return False, f'no .meter in {tpl}'
+    unlabelled = [b for b in bars if 'aria-label=' not in b]
+    return not unlabelled, f'{len(bars)} meter tag(s), {len(unlabelled)} unlabelled'
 
 # ---------- CRITICAL ----------
 chk('C1a', "migrations: @migration(version=1) on m001_base", has('app/migrations.py', r'@migration\(version=1'))
@@ -73,8 +98,15 @@ chk('M14', "aggregate portal budget wired into preflight+login",
 # ---------- MEDIUM: frontend/SW ----------
 chk('M15', "SW: logout clears caches (caches.delete)",
     has('app/static/sw.js', r'caches\.delete'))
-chk('M16', "SW: resp.ok checked before caching",
-    has('app/static/sw.js', r'resp\.ok'))
+chk('M16', "SW: only 2xx responses are cached",
+    # The worker is a generated Workbox build now. `resp.ok` was the hand-written
+    # worker's guard; Workbox's NetworkFirst/CacheFirst cache only 2xx by
+    # default (documented in web/src/sw-template.js). Assert the property either
+    # way: an explicit guard, or reliance on Workbox's documented default with
+    # the HTML route refusing to cache at all.
+    has('app/static/sw.js', r'resp\.ok')
+    or (has('web/src/sw-template.js', r'Workbox only caches 2xx')
+        and has('web/src/sw-template.js', r'cacheWillUpdate:\s*async\s*\(\)\s*=>\s*null')))
 
 # ---------- MEDIUM: deployment/supply-chain ----------
 compose = rd('docker-compose.yml')
@@ -84,8 +116,17 @@ chk('M18', "SECURITY.md: root/--no-sandbox risk documented",
 chk('M19', "CI: actions SHA-pinned", bool(re.search(r'uses: \S+@[0-9a-f]{40}', rd('.github/workflows/build.yml'))) and bool(re.search(r'uses: \S+@[0-9a-f]{40}', rd('.github/workflows/lint.yml'))))
 chk('M20', "CI: default permissions read-only", has('.github/workflows/build.yml', r'permissions:\s*\n\s*contents: read') and has('.github/workflows/lint.yml', r'permissions:\s*\n\s*contents: read'))
 chk('M21', "Docker: image digests pinned (2 FROM + uv COPY)", rd('Dockerfile').count('@sha256:') >= 3)
-chk('M22', "blobatar pinned to commit (pyproject + lock)",
-    has('pyproject.toml', r'rev = "[0-9a-f]{40}"') and has('uv.lock', r'7fb1eed2'))
+# M22 used to pin a git dependency on the blobatar FORK, which only existed to
+# carry a Python SDK. The avatar is rendered client-side by @blobatar/preact now,
+# so the property to pin is inverted: no Python blobatar at all, and the JS
+# package pinned to an exact registry version (not a floating range, not a git
+# ref) in both the manifest and the lockfile.
+chk('M22', "blobatar: no Python dep, JS pinned to an exact version",
+    'blobatar' not in rd('pyproject.toml')
+    and 'blobatar' not in rd('uv.lock')
+    and has('web/package.json', r'"@blobatar/preact": "\d+\.\d+\.\d+"')
+    and has('web/package.json', r'"blobatar": "\d+\.\d+\.\d+"')
+    and has('web/pnpm-lock.yaml', r'@blobatar/preact@\d+\.\d+\.\d+'))
 _pyv = re.search(r'^version = "([^"]+)"', rd('pyproject.toml'), re.M).group(1)
 chk('M23', f"versions consistent (pyproject=lock=VERSION={_pyv})",
     has('uv.lock', rf'name = "opensrm"[\s\S]{{0,200}}?version = "{re.escape(_pyv)}"')
@@ -149,29 +190,84 @@ chk('L35', "progress endpoint: POST, netid not in query",
     has('app/blueprints/auth.py', r'"/api/login/progress", methods=\["POST"\]') and has('app/static/login.js', r'method:\s*"POST"'))
 chk('L36', "static route no longer hardcodes /app/app/static (code, not comments)",
     not any('/app/app/static' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
-_sw_cache = re.search(r"CACHE_NAME = '([^']+)'", rd('app/static/sw.js')).group(1)
-chk('L37', f"README diagram cache name matches sw.js ({_sw_cache}), no stale name",
-    has('README.md', re.escape(_sw_cache))
-    and not re.search(r'opensrm-v\d+', rd('README.md').replace(_sw_cache, '')))
+# Match both the hand-written form (CACHE_NAME = 'name') and the minified form
+# terser emits (CACHE_NAME='name'). Requiring the spaces made this raise
+# AttributeError on .group(1) once the worker became a generated, minified
+# build — the assertion was checking the source's formatting, not its value.
+_sw_src = rd('app/static/sw.js')
+# The cache name may be referenced through the identifier CACHE_NAME or, after
+# minification inlining, as the bare literal. My logout fix removed the only
+# remaining use of CACHE_NAME from the worker, so matching the identifier alone
+# crashed here — assert on the VALUE, which is what actually matters.
+_sw_cache = (
+    re.search(r"'(opensrm-v\d+-[0-9a-f]+)'", _sw_src)
+    or re.search(r"CACHE_NAME\s*=\s*['\"]([^'\"]+)['\"]", _sw_src)
+)
+if _sw_cache is None:
+    raise SystemExit("L37/D58 cannot run: no cache name found in app/static/sw.js")
+_sw_cache = _sw_cache.group(1)
+# The cache name is now content-derived (opensrm-v69-<sha>) and changes on every
+# build, so a README that pins it is stale within one commit. The rule that still
+# holds: the README must not name ANY specific cache generation — not the current
+# one (stale tomorrow) and not an old one (already wrong today).
+chk('L37', f"README names no specific sw cache version (sw.js is {_sw_cache})",
+    not re.search(r'opensrm-v\d+', rd('README.md')))
 chk('L38', "docs say Flask 3.1", not has('README.md', r'Flask 3\.0') and not has('DESIGN.md', r'Flask 3\.0'))
 chk('L39', "HSTS header present (edge-secret gated, not bare cf-ray — audit #18)",
-    bool(re.search(r'if _behind_cf\(\):\s*\n\s*resp\.headers\.setdefault\("Strict-Transport', rd('app/app.py'))))
+    hsts_gated())
 chk('L40', "rate dict: prune stale keys, no full clear()",
     not bool(re.search(r'\.clear\(\)', region('app/state.py', 'def check', 'def charge'))) or has('app/state.py', r'prune'))
 chk('L41', "dead code: no duplicate threading alias", miss('app/app.py', r'import threading as _tw'))
 chk('L42', "dead code: photo_b64 gone from users SQL (comments excepted)",
     not any('photo_b64' in l and not l.strip().startswith('#') for l in rd('app/app.py').splitlines()))
 chk('L43', "dead code: dataset.copyFlash gone", not grep_repo('copyFlash', 'app'))
-chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown)",
-    has('app/static/dash.js', r"setAttribute\('role', 'button'\)") and has('app/static/dash.js', r"setAttribute\('tabindex', '0'\)") and has('app/static/dash.js', r'keydown'))
-chk('L45', "a11y: progress bars have aria-label", len(re.findall(r'aria-label', rd('app/templates/dashboard.html'))) >= 5)
-chk('L46', "manifest linked on dashboard", has('app/templates/dashboard.html', r'rel="manifest"'))
-chk('L47', "compiled CSS: asset(app.css) linked, no CDN, toolchain pinned, output committed",
-    has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
+# L44: the copy cluster is the page's keyboard path (role/tabindex, Enter/Space).
+# W5.2b moved it out of dash.js into web/src/data/copy.ts, which now owns the
+# attribute contract too (the islands only EMIT data-copy). Both halves are
+# asserted: the module must carry the a11y attributes and the keyboard handler,
+# AND main.ts must bind it — an unbound module is dead code that reads green —
+# AND dash.js must no longer implement it, or the page has two copy paths.
+# Positive control for that absence: the module checks above it.
+_COPY = 'web/src/data/copy.ts'
+chk('L44', "a11y: copy targets keyboard-accessible (role/tabindex/keydown), bound by the bundle",
+    has(_COPY, r"role:\s*'button'") and has(_COPY, r'tabindex:\s*0')
+    and has(_COPY, r"setAttribute\('role'") and has(_COPY, r"setAttribute\('tabindex'")
+    and has(_COPY, r"addEventListener\('keydown'")
+    and has('web/src/main.ts', r'bindCopyTargets\(')
+    # W5.4: "dash.js must no longer implement it" is now "dash.js is gone".
+    # miss() on a deleted file returns False (rd raises -> has() returns None),
+    # so the absence has to be asserted as a file fact, not a regex miss.
+    and not (R / 'app/static/dash.js').exists())
+chk('L45', "a11y: attendance progress meters carry an accessible name", *_meters_ok('attendance.html'))
+# L46: the dashboard must render the manifest link. It lived in home.html until
+# base.html took over the <head>; both now take the icon/manifest block from
+# partials/pwa_head.html, so the link is asserted where it is WRITTEN and that
+# base.html pulls that partial in and the dashboard inherits base - dropping
+# either half would let the link vanish from every page.
+chk('L46', "manifest linked on dashboard",
+    has('app/templates/partials/pwa_head.html', r'rel="manifest"')
+    and has('app/templates/base.html', r'include "partials/pwa_head\.html"')
+    and has('app/templates/home.html', r'extends "base\.html"'))
+# The linked sheet is the Vite bundle (asset_dist('app.css')) since the preact
+# migration: one compiled sheet per page, not the bundle plus the legacy
+# app.css. The toolchain + committed-output halves below are unchanged, and they
+# are what this finding is about.
+# Same properties as before — one compiled sheet linked, no CDN, pinned deps,
+# committed output — but Vite is the only CSS build now. The legacy standalone
+# CLI + app/static/app.css pair was deleted; a second committed sheet was exactly
+# the 330 KB double-parse this check was written to catch.
+_l47_dist = sorted(pathlib.Path('app/static/dist/assets').glob('app-*.css'))
+chk('L47', "compiled CSS: one compiled sheet linked, no CDN, deps pinned, output committed",
+    has('app/templates/partials/theme.html', r"asset_dist\('app\.css'\)")
+    and not has('app/templates/partials/theme.html', r"asset\('app\.css'\)")
     and not has('app/templates/partials/theme.html', r'jsdelivr')
-    and has('scripts/build-css.sh', r'TW_VERSION=4\.3\.3')
-    and has('scripts/build-css.sh', r'DAISY_VERSION=5\.7\.46')
-    and has('app/static/app.css', r'lg\\:col-span-8'))
+    and not pathlib.Path('app/static/app.css').exists()
+    and not pathlib.Path('scripts/build-css.sh').exists()
+    and len(_l47_dist) == 1
+    and has('web/package.json', r'"tailwindcss": "4\.3\.3"')
+    and has('web/package.json', r'"daisyui": "5\.7\.46"')
+    and has(_l47_dist[0].as_posix(), r'lg\\:col-span-8'),
+    ev=f"dist={[p.name for p in _l47_dist]}")
 chk('L48', "entrypoint fails fast (set -eu)", has('entrypoint.sh', r'^set -eu', re.M))
 chk('L49', "VERDICT.md references solve_captcha_b64", has('egress/poc/VERDICT.md', r'solve_captcha_b64'))
 chk('L50', "CONTRIBUTING: shared playwright context note", has('CONTRIBUTING.md', r'context|shared', re.I))
@@ -189,8 +285,8 @@ chk('D54', "docs2 SECURITY healthcheck claim true (compose has healthcheck+loggi
 chk('D55', "docs3 README gunicorn -t 120", '-t 120' in README_T)
 chk('D56', "docs4 DESIGN shared partial theme", ('partials/theme.html' in DESIGN_T) or ('shared partial' in DESIGN_T.lower()))
 chk('D57', "docs5 README PWA network-first", 'network-first' in README_T)
-chk('D58', f"docs6 README diagram cache name current ({_sw_cache}, no stale name)",
-    (_sw_cache in README_T) and not re.search(r'opensrm-v\d+', README_T.replace(_sw_cache, '')))
+chk('D58', f"docs6 README names no specific sw cache version (sw.js is {_sw_cache})",
+    not re.search(r'opensrm-v\d+', README_T))
 chk('D59', "docs7 DESIGN network-first documented", 'network-first' in DESIGN_T)
 chk('D60', "docs8 no false remote-image-host claim (img-src matches code)",
     ('dicebear' not in DESIGN_T.lower()) and ("allows no remote image hosts" in DESIGN_T))

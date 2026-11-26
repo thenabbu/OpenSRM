@@ -1,0 +1,17 @@
+{
+  "criterion": "E4",
+  "tier": "machine",
+  "statement": "**No legacy client code:** `dash.js`, `timetable.js`, `vendor/idiomorph.min.js`, `softRefresh`/`ref`/`showError` globals, the 60 s caption loop, the 9 dead CSS rules \u2014 gone, with a CI grep gate.",
+  "verdict": "PASS",
+  "note": "legacy names unusable; gate runs in CI",
+  "evidence": [
+    "PASS dash.js, timetable.js and the vendored morph library do not exist",
+    "PASS positive control: timetable.json is still a live reference in app/app.py",
+    "PASS the timetable pattern does NOT match timetable.json",
+    "TOTAL: 7 checks | PASS 7 | FAIL 0",
+    "CI references to test_legacy_gone: 2"
+  ],
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:47:53+00:00"
+}

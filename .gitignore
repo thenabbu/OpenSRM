@@ -12,6 +12,13 @@ core.*
 *.egg-info/
 dist/
 build/
+# ...except the mission's written notes: notes/build/ is documentation, not output
+!notes/build/
+# committed build output (served statically; see scripts/build-web.sh)
+!app/static/dist/
+!app/static/dist/**
+# pnpm install in web/ (builds run on the laptop, never commit)
+web/node_modules/
 .vscode/
 .idea/
 requirements.txt
@@ -24,3 +31,10 @@ ops/observability/proof/
 /node_modules/
 .venv/
 .venv
+
+# dev-lan.sh bind-mount
+.dev-lan-data/
+
+# worktree artifact: a one-line absolute core.hooksPath. Leaked into a commit once
+# (aff25a4) and all 4 CI jobs passed with it in the tree - green CI will not catch it.
+.hookdir

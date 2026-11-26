@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% set active_tab = "academics" %}
+{% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
+  {% if academics %}
+  <div id="tab-academics" role="tabpanel" aria-labelledby="tab-academics-tab" data-tabpanel class="max-w-3xl mx-auto" style=""
+       data-island="academics" data-props="#island-academics">
+    <div class="flex flex-col gap-3">
+      {% if academics.cgpa %}
+      <!-- 1. Hero: CGPA + earned credits, then one dropdown per semester.
+           Label is plainly "CGPA" — it is a calculation, not an estimate. -->
+      <div class="bg-base-200 border border-base-300 rounded-box p-5">
+        <h3 class="text-sm font-semibold">CGPA</h3>
+        <div class="mt-1 font-mono font-bold text-[22px] leading-none tabular-nums">{{ academics.cgpa.value }}</div>
+        <div class="mt-2 font-mono text-sm text-base-content/60 tabular-nums">{{ academics.cgpa.credits_disp }}</div>
+
+        {% if academics.cgpa.sems %}
+        <div class="mt-4 pt-3 border-t border-base-300 flex flex-col">
+          {% for s in academics.cgpa.sems %}
+          <details class="acad-sem{% if s.provisional or s.revaluation %} acad-sem-x{% endif %}" data-track-item="academics-transcript">
+            <summary class="flex items-center justify-between gap-2 min-h-11 py-2 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
+              {# Summary keeps the semester on the left and the released month-year on
+                 the right only; SGPA lives in the expanded body with the credits and
+                 subject rows (review: the summary is a header, not a stat row). #}
+              <span class="flex items-baseline gap-2 min-w-0">
+                <span class="text-sm font-medium">Semester <span class="font-mono tabular-nums">{{ s.sem }}</span></span>
+              </span>
+              <span class="flex items-baseline gap-2 shrink-0">
+                <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ s.credits }} cr</span>
+                <span class="font-mono text-xs text-base-content/60 tabular-nums uppercase">{% if s.label and s.label != '-' %}{{ s.label }}{% endif %}</span>
+                <svg class="acad-chev w-4 h-4 text-base-content/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+            </summary>
+            {# expanded body: SGPA + released credits, then the subject rows #}
+            <div class="flex items-baseline gap-3 pb-2 pt-1 text-xs">
+              <span class="font-mono text-base-content/60 tabular-nums">SGPA {{ s.sgpa }}</span>
+              <span class="font-mono text-base-content/60 tabular-nums">{{ s.credits }} credits</span>
+            </div>
+            <ul class="pb-2 flex flex-col">
+              {% for r in s.rows %}
+              <li class="acad-srow flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span>{{ r.title }}</span>
+                </span>
+                <span class="shrink-0 font-mono text-sm tabular-nums{% if r.tint_o or r.tint_f %}acad-g {% endif %}{% if r.tint_o %}acad-g-o{% endif %}{% if r.tint_f %}acad-g-f{% endif %}{% if not r.completed %} text-base-content/50{% endif %}">{{ r.grade if r.grade else '-' }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            {% if s.provisional %}
+            <div class="pb-2 pl-0 text-xs">
+              <div class="text-base-content/60 font-medium mb-1">Provisional</div>
+              {% for r in s.provisional %}
+              <div class="flex items-baseline gap-2 py-1">
+                <span class="min-w-0 flex-1 break-words">{% if r.code %}<span class="font-mono text-base-content/60">{{ r.code }}</span> <span class="text-base-content/50" aria-hidden="true">|</span> {% endif %}{{ r.title }}{% for kv in r.meta %} <span class="text-base-content/50">{{ kv[0] }} {{ kv[1] }}</span>{% endfor %}</span>
+                {% if r.grade %}<span class="shrink-0 font-mono">{{ r.grade }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if s.revaluation %}
+            <div class="pb-2 text-xs">
+              <div class="text-base-content/60 font-medium mb-1">Revaluation</div>
+              {% for r in s.revaluation %}
+              <div class="flex items-baseline gap-2 py-1">
+                <span class="min-w-0 flex-1 break-words">{% if r.code %}<span class="font-mono text-base-content/60">{{ r.code }}</span> <span class="text-base-content/50" aria-hidden="true">|</span> {% endif %}{{ r.title }}{% for kv in r.meta %} <span class="text-base-content/50">{{ kv[0] }} {{ kv[1] }}</span>{% endfor %}</span>
+                {% if r.grade %}<span class="shrink-0 font-mono">{{ r.grade }}</span>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </details>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if academics.courses %}
+      <!-- 2. Credits & Subjects, ONE card: a dropdown per degree category.
+           Summary = required/acquired credits + the §4.15 meter (neutral fill,
+           success fill ONLY at 100% — no attendance thresholds here);
+           expanded = that category's subjects, PENDING FIRST and the
+           completed ones LAST. -->
+      <div class="bg-base-200 border border-base-300 rounded-box p-4">
+        <div class="flex items-baseline justify-between gap-2">
+          <h3 class="text-base font-semibold">Credits &amp; subjects</h3>
+          <span class="font-mono text-xs text-base-content/50 tabular-nums">{{ academics.courses.overall.acq }}/{{ academics.courses.overall.req }}</span>
+        </div>
+        <div class="mt-1 font-mono text-xs text-base-content/50 tabular-nums">{{ academics.courses.pending }} of {{ academics.courses.total }} subjects pending</div>
+        <div class="mt-2 flex flex-col">
+          {% for c in academics.courses.cats %}
+          <details class="acad-cat">
+            <summary class="py-2 min-h-11 cursor-pointer list-none [&amp;::-webkit-details-marker]:hidden">
+              <span class="flex items-center justify-between gap-2">
+                <span class="min-w-0 flex-1 text-sm" title="{{ c.name }}">{{ c.name }}</span>
+                <span class="shrink-0 flex items-baseline gap-2">
+                  <span class="font-mono text-xs tabular-nums text-base-content/60">{{ c.acq }}/{{ c.req }}</span>
+                  <svg class="acad-chev w-4 h-4 text-base-content/50" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </span>
+              {% if c.req %}
+              <div class="meter" role="img" aria-label="{{ c.name }}: {{ c.acq }} of {{ c.req }} credits{% if c.done %}, complete{% endif %}">
+                <i class="mz" style="{{ c.fill }}"></i>
+              </div>
+              {% endif %}
+            </summary>
+            <ul class="pb-2 flex flex-col">
+              {% for r in c.pending %}
+              <li class="flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span class="text-base-content/60">{{ r.title }}</span>
+                </span>
+                <span class="shrink-0 font-mono text-xs text-base-content/50 tabular-nums" title="Not completed yet">-</span>
+              </li>
+              {% endfor %}
+              {% for r in c.completed %}
+              <li class="acad-srow flex items-baseline gap-2 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words">
+                  <span class="font-mono text-xs text-base-content/60">{{ r.code }}</span>
+                  <span class="text-base-content/50 px-0.5" aria-hidden="true">|</span>
+                  <span>{{ r.title }}</span>
+                  {% if r.month %}<span class="font-mono text-xs text-base-content/50 tabular-nums whitespace-nowrap">{{ r.month }}</span>{% endif %}
+                  {% if r.attempts %}<span class="text-xs text-base-content/50 whitespace-nowrap">&middot; {{ r.attempts }} attempts</span>{% endif %}
+                </span>
+                <span class="shrink-0 font-mono text-sm tabular-nums{% if r.tint_o or r.tint_f %}acad-g {% endif %}{% if r.tint_o %}acad-g-o{% endif %}{% if r.tint_f %}acad-g-f{% endif %}">{{ r.grade }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+            {% if not c.pending and not c.completed %}
+            <div class="pb-2 text-xs text-base-content/50">No subjects listed for this category.</div>
+            {% endif %}
+          </details>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}
+{% block after_main %}{{ academics_props|safe }}
+{{ sync_age_props|safe }}
+
+<div id="offline-banner" role="status" aria-live="polite"></div>
+{% if fb_plan %}<dialog id="fb-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="fb-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 id="fb-modal-title" class="font-bold text-base mb-2">Auto-fill mid-sem feedback</h3>
+    <p class="text-xs text-base-content/70">Opt-in — nothing is submitted until you confirm.</p>
+    <ol class="mt-3 space-y-1 text-sm leading-relaxed text-base-content/80 list-decimal list-inside">
+      <li>Every teacher of every subject gets 5 = EXCELLENT on all 14 questions — one form per teacher</li>
+      <li>Each form's comment is "none" (optional field)</li>
+      <li>Each submission is re-verified live; already-filled ones are skipped honestly</li>
+    </ol>
+    <ul class="mt-3 space-y-2 max-h-48 overflow-y-auto">
+      {% for p in fb_plan %}
+      <li class="text-xs leading-relaxed">
+        <span class="block font-semibold text-base-content">{{ p.subject }}</span>
+        <span class="block text-base-content/70">{{ p.teacher }} · 5 = EXCELLENT on all 14 questions · comment “{{ p.comment }}”</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <div id="fb-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <button id="fb-submit" class="btn btn-primary btn-sm min-h-11">Fill feedback for {{ fb_plan|length }} teachers</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>{% endif %}
+<!-- Delete my data: same opt-in shape as the feedback modal — explainer
+     lists exactly what goes and what stays, one confirm button, status in
+     the modal, redirect to /login on success (the bundle: web/src/data/userActions.ts). -->
+<dialog id="delete-account-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="del-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 id="del-modal-title" class="font-bold text-base mb-2">Delete my data</h3>
+    <p class="text-xs text-base-content/70">Opt-in — nothing is removed until you confirm. This cannot be undone.</p>
+    <p class="text-sm font-semibold mt-3">Erased from this app</p>
+    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
+      <li>Your account, saved attendance, marks, timetable and personal details</li>
+      <li>Every login session, on every device</li>
+      <li>Your portal session stored here (the cookies this app saved)</li>
+      <li>Reminder subscriptions, the sent-reminder log and delivery receipts</li>
+      <li>Your usage/telemetry rows and your timetable edit-history entries</li>
+      <li>Your name on class-wide exam-tag confirmations — the shared confirmation stays</li>
+    </ul>
+    <p class="text-sm font-semibold mt-3">Never touched</p>
+    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
+      <li>The SRM portal itself — nothing is deleted on SRM's servers</li>
+      <li>Shared timetables and class-wide data other students rely on</li>
+      <li>Any other student's account</li>
+    </ul>
+    <p class="mt-3 text-xs text-base-content/60">Afterwards you are signed out and returned to the login page.</p>
+    <div id="del-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <!-- text-base-content: the default error-content label measures 4.43:1
+           on the error fill (AA needs 4.5 for 16px); pure white clears it at 4.85:1 -->
+      <button id="del-confirm" class="btn btn-error btn-sm min-h-11 text-base-content">Delete permanently</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="add-subject-modal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <fieldset class="fieldset">
+      <label class="label" for="subj-code"><span class="fieldset-legend">Subject code</span></label>
+      <input type="text" id="subj-code" class="input w-full" placeholder="e.g. 21XYZ123" maxlength="20">
+    </fieldset>
+    <fieldset class="fieldset mt-3">
+      <label class="label" for="subj-name"><span class="fieldset-legend">Subject name</span></label>
+      <input type="text" id="subj-name" class="input w-full" placeholder="e.g. Cloud Computing" maxlength="100">
+    </fieldset>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+      <button id="subj-confirm-btn" class="btn btn-accent btn-sm">Add</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert" aria-live="assertive"></div>
+{% endblock %}

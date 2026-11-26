@@ -1,0 +1,30 @@
+{
+  "sha": "59f8a92f0c1f716e42dd3b8629c79811feaab348",
+  "round": 2,
+  "judged_at": "2026-11-19T18:53:28+00:00",
+  "pass": [
+    "E1",
+    "E10",
+    "E11",
+    "E13",
+    "E14",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "E8",
+    "E9"
+  ],
+  "fail": [
+    "E12"
+  ],
+  "error": [],
+  "fail_cards": [
+    {
+      "criterion": "E12",
+      "statement": "`FINAL_REPORT.md` with an evidence handle for every unit; `decisions.md` complete."
+    }
+  ]
+}

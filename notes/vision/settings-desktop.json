@@ -1,0 +1,15 @@
+{
+  "route": "settings",
+  "device": "desktop",
+  "viewport": "1440x900",
+  "verdict": "MATCH",
+  "broken_class": null,
+  "defects": [],
+  "confidence": "high",
+  "model": "gemini-3.1-flash-lite",
+  "corroboration": [],
+  "golden_sha": "ea9d7f8a0dcb4107",
+  "fresh_sha": "ea9d7f8a0dcb4107",
+  "revision": "3a43760",
+  "verified_at": "2026-11-18T09:24:24Z"
+}

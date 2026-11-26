@@ -1,0 +1,16 @@
+{
+  "criterion": "E8",
+  "tier": "machine",
+  "statement": "Hardening executed and in CI: Panel of Judges verdicts committed; a11y incl. keyboard/focus; stress incl. slow-3G + offline flapping; pip-audit + pnpm audit + trivy (image label == HEAD SHA) + gitleaks; **DUT 10/10** on the built artifact; Chromium + WebKit + Firefox.",
+  "verdict": "PASS",
+  "note": "all 7 hardening steps reach CI",
+  "evidence": [
+    "build.yml: - cd-oclab.yml: - deploy.yml: - lint.yml: - release.yml: - scans.yml: pip-audit, pnpm audit, trivy, gitleaks tests.yml: dut_suite",
+    "tests/e2e/a11y.py <- scripts/a11y_stress.sh: ci_runs=True driver_runs_suite=True",
+    "tests/e2e/stress.py <- scripts/a11y_stress.sh: ci_runs=True driver_runs_suite=True",
+    "committed PoJ summaries: 1"
+  ],
+  "sha": "59f8a92f0c1f716e42dd3b8629c79811feaab348",
+  "round": 2,
+  "judged_at": "2026-11-19T18:53:16+00:00"
+}

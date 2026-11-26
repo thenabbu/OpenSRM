@@ -1,0 +1,368 @@
+{
+  "api": {
+    "/": {
+      "bytes": 54251,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 13083,
+      "status": 200
+    },
+    "/api/marks": {
+      "bytes": 380,
+      "content_type": "application/json",
+      "gzip_bytes": 230,
+      "status": 200
+    },
+    "/api/push/status": {
+      "bytes": 173,
+      "content_type": "application/json",
+      "gzip_bytes": 146,
+      "status": 200
+    },
+    "/api/scope/status": {
+      "bytes": 37,
+      "content_type": "application/json",
+      "gzip_bytes": 54,
+      "status": 200
+    },
+    "/api/timetable": {
+      "bytes": 304,
+      "content_type": "application/json",
+      "gzip_bytes": 208,
+      "status": 200
+    },
+    "/api/timetable/history": {
+      "bytes": 25,
+      "content_type": "application/json",
+      "gzip_bytes": 45,
+      "status": 200
+    },
+    "/healthz": {
+      "bytes": 16,
+      "content_type": "application/json",
+      "gzip_bytes": 36,
+      "status": 200
+    },
+    "/internal/metrics": {
+      "bytes": 21058,
+      "content_type": "text/plain; version=0.0.4",
+      "gzip_bytes": 1460,
+      "status": 200
+    },
+    "/login": {
+      "bytes": 17975,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 5122,
+      "status": 200
+    },
+    "/logout": {
+      "bytes": null,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": null,
+      "status": 302
+    },
+    "/static/apple-splash-1080x2340.png": {
+      "bytes": 14673,
+      "content_type": "image/png",
+      "gzip_bytes": 4866,
+      "status": 200
+    },
+    "/static/apple-splash-1125x2436.png": {
+      "bytes": 15221,
+      "content_type": "image/png",
+      "gzip_bytes": 4738,
+      "status": 200
+    },
+    "/static/apple-splash-1170x2532.png": {
+      "bytes": 16265,
+      "content_type": "image/png",
+      "gzip_bytes": 5066,
+      "status": 200
+    },
+    "/static/apple-splash-1179x2556.png": {
+      "bytes": 16952,
+      "content_type": "image/png",
+      "gzip_bytes": 5530,
+      "status": 200
+    },
+    "/static/apple-splash-1206x2622.png": {
+      "bytes": 16943,
+      "content_type": "image/png",
+      "gzip_bytes": 4999,
+      "status": 200
+    },
+    "/static/apple-splash-1242x2208.png": {
+      "bytes": 15344,
+      "content_type": "image/png",
+      "gzip_bytes": 5142,
+      "status": 200
+    },
+    "/static/apple-splash-1242x2688.png": {
+      "bytes": 17761,
+      "content_type": "image/png",
+      "gzip_bytes": 5184,
+      "status": 200
+    },
+    "/static/apple-splash-1260x2736.png": {
+      "bytes": 18254,
+      "content_type": "image/png",
+      "gzip_bytes": 5324,
+      "status": 200
+    },
+    "/static/apple-splash-1284x2778.png": {
+      "bytes": 19145,
+      "content_type": "image/png",
+      "gzip_bytes": 5815,
+      "status": 200
+    },
+    "/static/apple-splash-1290x2796.png": {
+      "bytes": 19182,
+      "content_type": "image/png",
+      "gzip_bytes": 5587,
+      "status": 200
+    },
+    "/static/apple-splash-1320x2868.png": {
+      "bytes": 19566,
+      "content_type": "image/png",
+      "gzip_bytes": 5513,
+      "status": 200
+    },
+    "/static/apple-splash-1488x2266.png": {
+      "bytes": 20932,
+      "content_type": "image/png",
+      "gzip_bytes": 6795,
+      "status": 200
+    },
+    "/static/apple-splash-1536x2048.png": {
+      "bytes": 19862,
+      "content_type": "image/png",
+      "gzip_bytes": 6796,
+      "status": 200
+    },
+    "/static/apple-splash-1620x2160.png": {
+      "bytes": 21463,
+      "content_type": "image/png",
+      "gzip_bytes": 7316,
+      "status": 200
+    },
+    "/static/apple-splash-1640x2360.png": {
+      "bytes": 23160,
+      "content_type": "image/png",
+      "gzip_bytes": 7698,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2224.png": {
+      "bytes": 22673,
+      "content_type": "image/png",
+      "gzip_bytes": 7722,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2388.png": {
+      "bytes": 23895,
+      "content_type": "image/png",
+      "gzip_bytes": 7857,
+      "status": 200
+    },
+    "/static/apple-splash-1668x2420.png": {
+      "bytes": 24126,
+      "content_type": "image/png",
+      "gzip_bytes": 7877,
+      "status": 200
+    },
+    "/static/apple-splash-2048x2732.png": {
+      "bytes": 31751,
+      "content_type": "image/png",
+      "gzip_bytes": 10099,
+      "status": 200
+    },
+    "/static/apple-splash-2064x2752.png": {
+      "bytes": 30671,
+      "content_type": "image/png",
+      "gzip_bytes": 10256,
+      "status": 200
+    },
+    "/static/apple-splash-640x1136.png": {
+      "bytes": 7388,
+      "content_type": "image/png",
+      "gzip_bytes": 4460,
+      "status": 200
+    },
+    "/static/apple-splash-750x1334.png": {
+      "bytes": 8854,
+      "content_type": "image/png",
+      "gzip_bytes": 4777,
+      "status": 200
+    },
+    "/static/apple-splash-828x1792.png": {
+      "bytes": 10848,
+      "content_type": "image/png",
+      "gzip_bytes": 4780,
+      "status": 200
+    },
+    "/static/apple-touch-icon.png": {
+      "bytes": 1441,
+      "content_type": "image/png",
+      "gzip_bytes": 1382,
+      "status": 200
+    },
+    "/static/dist/assets/app-HASH.css": {
+      "bytes": 207,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 173,
+      "status": 404
+    },
+    "/static/dist/assets/app-HASH.js": {
+      "bytes": 207,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 173,
+      "status": 404
+    },
+    "/static/favicon.ico": {
+      "bytes": 4353,
+      "content_type": "image/vnd.microsoft.icon",
+      "gzip_bytes": 4258,
+      "status": 200
+    },
+    "/static/favicon.svg": {
+      "bytes": 1032,
+      "content_type": "image/svg+xml; charset=utf-8",
+      "gzip_bytes": 441,
+      "status": 200
+    },
+    "/static/icon-192.png": {
+      "bytes": 1340,
+      "content_type": "image/png",
+      "gzip_bytes": 1270,
+      "status": 200
+    },
+    "/static/icon-512.png": {
+      "bytes": 2359,
+      "content_type": "image/png",
+      "gzip_bytes": 1196,
+      "status": 200
+    },
+    "/static/login.js": {
+      "bytes": 4877,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 1794,
+      "status": 200
+    },
+    "/static/logo-rect.png": {
+      "bytes": 9438,
+      "content_type": "image/png",
+      "gzip_bytes": 2890,
+      "status": 200
+    },
+    "/static/manifest.json": {
+      "bytes": 2923,
+      "content_type": "application/json",
+      "gzip_bytes": 613,
+      "status": 200
+    },
+    "/static/perf.js": {
+      "bytes": 1281,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 749,
+      "status": 200
+    },
+    "/static/push.js": {
+      "bytes": 14074,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 4764,
+      "status": 200
+    },
+    "/static/sw.js": {
+      "bytes": 30703,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 9808,
+      "status": 200
+    }
+  },
+  "pages": {
+    "/": {
+      "dom_nodes": 357,
+      "html_bytes": 54251,
+      "html_gzip_bytes": 13083,
+      "js_bytes": 46265,
+      "js_files": [
+        "/static/dist/assets/app-HASH.js",
+        "/static/perf.js",
+        "/static/push.js",
+        "/static/sw.js"
+      ],
+      "js_gzip_bytes": 15494,
+      "script_tags": 5
+    },
+    "/login": {
+      "dom_nodes": null,
+      "html_bytes": 17975,
+      "html_gzip_bytes": 5122,
+      "js_bytes": 37068,
+      "js_files": [
+        "/static/dist/assets/app-HASH.js",
+        "/static/login.js",
+        "/static/perf.js",
+        "/static/sw.js"
+      ],
+      "js_gzip_bytes": 12524,
+      "script_tags": 3
+    }
+  },
+  "revision": "2532612",
+  "tabs": {
+    "academics": {
+      "panel_dom_nodes": 623,
+      "panel_html_bytes": 43720,
+      "panel_html_gzip_bytes": 2725
+    },
+    "attendance": {
+      "panel_dom_nodes": 825,
+      "panel_html_bytes": 109062,
+      "panel_html_gzip_bytes": 5987
+    },
+    "campus": {
+      "panel_dom_nodes": 92,
+      "panel_html_bytes": 6885,
+      "panel_html_gzip_bytes": 1054
+    },
+    "dashboard": {
+      "panel_dom_nodes": 172,
+      "panel_html_bytes": 16327,
+      "panel_html_gzip_bytes": 3743
+    },
+    "fees": {
+      "panel_dom_nodes": 72,
+      "panel_html_bytes": 6102,
+      "panel_html_gzip_bytes": 1189
+    },
+    "marks": {
+      "panel_dom_nodes": 60,
+      "panel_html_bytes": 5537,
+      "panel_html_gzip_bytes": 1400
+    },
+    "settings": {
+      "panel_dom_nodes": 117,
+      "panel_html_bytes": 11291,
+      "panel_html_gzip_bytes": 2493
+    },
+    "timetable": {
+      "panel_dom_nodes": 54,
+      "panel_html_bytes": 3628,
+      "panel_html_gzip_bytes": 1120
+    },
+    "tools": {
+      "panel_dom_nodes": 55,
+      "panel_html_bytes": 5588,
+      "panel_html_gzip_bytes": 1114
+    }
+  },
+  "totals": {
+    "api_bytes": 603383,
+    "api_gzip_bytes": 194092,
+    "dom_nodes_all_panels": 2070,
+    "dom_nodes_page": 357,
+    "html_bytes": 72226,
+    "html_gzip_bytes": 18205,
+    "js_bytes": 51142,
+    "js_gzip_bytes": 17288
+  }
+}

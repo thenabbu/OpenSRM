@@ -1,0 +1,15 @@
+{
+  "route": "marks",
+  "device": "mobile",
+  "viewport": "390x844",
+  "verdict": "MATCH",
+  "broken_class": null,
+  "defects": [],
+  "confidence": "high",
+  "model": "gemini-3.1-flash-lite",
+  "corroboration": [],
+  "golden_sha": "c295fbeca5fd92ec",
+  "fresh_sha": "c295fbeca5fd92ec",
+  "revision": "3a43760",
+  "verified_at": "2026-11-18T09:21:30Z"
+}

@@ -119,8 +119,23 @@ EXPECTED = {
     "/api/push/unsubscribe", "/api/push/settings", "/api/push/test", "/api/push/receipt",
     "/api/account/delete", "/logout",
     "/api/track/tab",
+    # P50: the four read APIs behind the data-gated panels
+    "/api/attendance", "/api/fees", "/api/campus", "/api/academics",
+    # P7: island-shaped feeds for the panels whose legacy endpoints carry a
+    # different payload (raw JSON / the write API the user POSTs through)
+    "/api/attendance/island", "/api/marks/island", "/api/timetable/island", "/api/tools/island",
+    # W5.1b: the dashboard grid's own slice, so a sync repaints it from data
+    # instead of re-fetching "/" and swapping <main> out
+    "/api/dashboard",
+    # offline shell: the PII-free markup the service worker caches
+    "/shell/", "/shell/dashboard", "/shell/attendance", "/shell/timetable", "/shell/marks",
+    "/shell/campus", "/shell/academics", "/shell/fees", "/shell/tools",
+    "/shell/settings",
+    # P3.1: nine real panel routes
+    "/attendance", "/timetable", "/marks", "/campus",
+    "/academics", "/fees", "/tools", "/settings",
 }
-got = {r.rule for r in a1.url_map.iter_rules()} - {"/avatar", "/avatar/<name>"}  # blobatar's routes
+got = {r.rule for r in a1.url_map.iter_rules()}
 check("factory: every app route registered", got == EXPECTED,
       f"missing={sorted(EXPECTED - got)} extra={sorted(got - EXPECTED)}")
 r_login = [r for r in a1.url_map.iter_rules() if r.rule == "/api/login"][0]
@@ -157,13 +172,40 @@ EXPECTED_EP = {
     "/api/push/test": {("push_test", "push_test")},
     "/api/push/receipt": {("push_receipt", "push_receipt")},
     "/api/track/tab": {("track_tab", "track_tab")},
+    # P50: one endpoint per read API, views in app/blueprints/panels.py
+    "/api/attendance": {("api_attendance", "api_attendance")},
+    "/api/fees": {("api_fees", "api_fees")},
+    "/api/campus": {("api_campus", "api_campus")},
+    "/api/academics": {("api_academics", "api_academics")},
+    "/api/dashboard": {("api_dashboard", "api_dashboard")},
+    "/api/attendance/island": {("api_attendance_island", "api_attendance_island")},
+    "/api/marks/island": {("api_marks_island", "api_marks_island")},
+    "/api/timetable/island": {("api_timetable", "api_timetable")},
+    "/api/tools/island": {("api_tools", "api_tools")},
+    "/shell/": {("shell_dashboard", "shell_dashboard")},
+    "/shell/dashboard": {("shell_dashboard", "shell_dashboard")},
+    "/shell/attendance": {("shell_attendance", "shell_attendance")},
+    "/shell/timetable": {("shell_timetable", "shell_timetable")},
+    "/shell/marks": {("shell_marks", "shell_marks")},
+    "/shell/campus": {("shell_campus", "shell_campus")},
+    "/shell/academics": {("shell_academics", "shell_academics")},
+    "/shell/fees": {("shell_fees", "shell_fees")},
+    "/shell/tools": {("shell_tools", "shell_tools")},
+    "/shell/settings": {("shell_settings", "shell_settings")},
     "/api/account/delete": {("account_delete", "account_delete")},
     "/logout": {("logout", "logout")},
+    # P3.1: nine real panel routes (each endpoint == its view __name__)
+    "/attendance": {("attendance", "attendance")},
+    "/timetable": {("timetable", "timetable")},
+    "/marks": {("marks", "marks")},
+    "/campus": {("campus", "campus")},
+    "/academics": {("academics", "academics")},
+    "/fees": {("fees", "fees")},
+    "/tools": {("tools", "tools")},
+    "/settings": {("settings", "settings")},
 }
 got_ep = {}
 for r in a1.url_map.iter_rules():
-    if r.rule in ("/avatar", "/avatar/<name>"):
-        continue
     v = a1.view_functions.get(r.endpoint)
     got_ep.setdefault(r.rule, set()).add((r.endpoint, getattr(v, "__name__", "-")))
 _bad_ep = sorted(k for k in set(got_ep) | set(EXPECTED_EP)

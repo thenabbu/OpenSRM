@@ -1,0 +1,8 @@
+{
+  "body": "{\"ok\":true,\"ops\":27,\"state\":\"stale\"}\n",
+  "bytes": 37,
+  "content_type": "application/json",
+  "gzip_bytes": 54,
+  "path": "/api/scope/status",
+  "status": 200
+}

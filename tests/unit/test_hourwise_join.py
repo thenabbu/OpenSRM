@@ -77,7 +77,7 @@ def _get(env=None):
     else:
         os.environ["SCOPE_FEATURES"] = env
     try:
-        return CLIENT.get("/").get_data(as_text=True)
+        return CLIENT.get("/attendance").get_data(as_text=True)
     finally:
         if prev is None:
             os.environ.pop("SCOPE_FEATURES", None)
@@ -236,7 +236,7 @@ def t_feature_off_no_join():
     os.environ["SCOPE_FEATURES"] = "off"
     try:
         assert _hourwise_data(NETID, GK) is None, "feature off -> no join data"
-        html = CLIENT.get("/").get_data(as_text=True)
+        html = CLIENT.get("/attendance").get_data(as_text=True)
     finally:
         if prev is None:
             os.environ.pop("SCOPE_FEATURES", None)

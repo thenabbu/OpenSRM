@@ -18,11 +18,17 @@ a partial run is not a push bar. Exit 0 (`GATES GREEN`) means nothing was skippe
 `.github/workflows/tests.yml`, so a suite added to CI is picked up
 automatically — **never hand-maintain a second list of suites in this file.**
 
+`--fast` is for iteration only. Anything that touches templates, CSS or JS needs
+the full `bash scripts/gates.sh` before you push: `--fast` skips the golden-drift
+step (`capture_golden.sh --check`, ~2.5 min), and a stale golden is the single
+most common red on this branch (6 of 27 merged PRs).
+
 ## Where things run
 
 - **Local dev**: repo at `/opt/data/opensrm-repo` on the hermes host, venv
-  `.venv` (managed by `uv`). Never npm at runtime — the CSS is compiled ahead
-  of time by `scripts/build-css.sh` into the committed `app/static/app.css`.
+  `.venv` (managed by `uv`). pnpm only in `web/` — never npm — and the CSS is
+  compiled ahead of time by Vite (`bash scripts/build-web.sh`) into the committed
+  `app/static/dist/assets/app-*.css`.
 - **Prod**: oclab VPS (`ssh oracle`), container `opensrm`, compose project
   `/docker/opensrm`, at `https://srm.200871.xyz` behind Cloudflare + Caddy.
   Operator detail: `docs/runbook.md`. It deploys itself after a green build of
@@ -60,14 +66,14 @@ app/views/            # dashboard view models: attendance budgets, marks derivat
 app/http_scraper.py   # pure-HTTP portal pipeline (archived Playwright fallback)
 app/migrations.py     # versioned schema; runs inside create_app()
                       # Count them: grep -c '@migration(version=' app/migrations.py
-app/templates|static/ # daisyUI v5, pre-compiled app.css, theme tokens in partials/theme.html
+app/templates|static/ # daisyUI v5, pre-compiled dist CSS (app/static/dist/), theme tokens in partials/theme.html
 tests/unit/           # no-server suites
 tests/e2e/            # Playwright DUTs
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
 edge/maintenance/     # CF Worker: branded maintenance page, survives a total lab outage
 ops/observability/    # OPTIONAL metrics stack beside the app (never in the image)
 docs/                 # runbook.md · audit/ · push.md · SCANS.md · perf/ · screenshots/
-scripts/              # build-css.sh · gates.sh · check_docs.py · check_architecture.py ·
+scripts/              # gates.sh · check_docs.py · check_architecture.py ·
                       # pr_preflight.sh · post_deploy.sh · url_map_dump.py · perf_baseline.py
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate) · build.yml · lint.yml ·
                       # scans.yml (blocking); SHA-pinned actions; `uv lock --check`
@@ -81,8 +87,9 @@ they went stale three times. If you need a number, derive it.
 ```bash
 cd /opt/data/opensrm-repo
 uvx --quiet ruff check app/     # scope ruff to the files you edited; never `ruff --fix`
-# scripts/build-css.sh          # after template edits that add utility classes;
-#                               # app.css is committed and CI fails if stale
+# bash scripts/build-web.sh     # after template/JSX edits that add utility
+#                               # classes; the dist CSS is committed and CI
+#                               # fails if it is stale
 bash scripts/gates.sh           # the bar
 ```
 
@@ -106,7 +113,7 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
   pre-commit hook that refuses a commit in the canonical checkout. If you commit
   by hand, pass `-c user.email=128571614+thenabbu@users.noreply.github.com`; the
   wrong one does not link the commit to the account.
-- CI jobs: **Lint** (`ruff` + `uv lock --check` + app.css freshness) · **Tests**
+- CI jobs: **Lint** (`ruff` + `uv lock --check` + dist CSS freshness) · **Tests**
   (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>`, and
   nothing else — published only on the push that moves `VERSION`,
   `build` needs `[meta, meta-dev]` on `main`) · **Scans** (blocking). No `:<sha>` tag:
@@ -182,3 +189,26 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
 with `python3 scripts/build_arch_diagram.py`, which asserts the grid/label rules and fails
 on an off-edge port, a crossing segment, or a label collision. Read `docs/diagrams.md`
 before touching it. Ship html + png + generator together.
+
+## Finishing a card
+
+When the work is done, complete the kanban card **with a result**. A card closed with an empty result
+is indistinguishable from a card whose worker gave up: it cannot be audited later, it gets respawned
+because nobody can see the work already landed, and the orchestrator has to rebuild the evidence from
+`git log` and `gh` after the fact.
+
+```
+hermes kanban complete <id> --result "DELIVERED: PR #N merged as <sha>. Tests <run-url> SUCCESS.
+What changed, in two lines. What you could NOT verify, said plainly."
+```
+
+Evidence means a pushed SHA plus a CI run URL — not "tests pass". If a completion contract is a PR URL
+the gate checks every required check on the **PR head**, so the PR has to be green before you complete,
+not after.
+
+**Checkpoint, don't hoard.** A run can die at its time cap with the work finished but unpushed - and a dead
+worker takes its worktree with it. `git add -A && git commit && git push -u origin <branch>` within about 20
+minutes of starting, then again whenever a test passes; do not wait for the whole suite to be green. A pushed
+red branch is recoverable and a retry resumes from it; an unpushed green worktree is gone. Skip
+`git add -A` if `.hookdir` or `web/node_modules` are untracked (`.hookdir` is gitignored now, node_modules is
+not) - prefer naming the files you changed.

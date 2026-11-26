@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% set active_tab = "settings" %}
+{% block head_extra %}<style>
+/* Card/widget engine styles — the approved mockup's computed values, ported
+   verbatim (spec: engine-spec.md). CSP style-src allows 'unsafe-inline'. */
+.wlabel{font-size:11px;line-height:1.5;margin-bottom:8px;
+  color:color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  text-transform:uppercase;letter-spacing:.05em}
+.wbox{background:color-mix(in oklab, var(--color-base-300) 60%, transparent);
+  border-radius:var(--radius-box)}
+.att-neg{color:color-mix(in oklab, var(--color-error) 70%, white)}
+/* scroll affordance for the teachers list (universal scrollbar pattern) */
+.widget-scroll{max-height:320px;overflow-y:auto;padding-right:4px;
+  scrollbar-width:thin;
+  scrollbar-color:color-mix(in oklab, var(--color-base-content) 25%, transparent) transparent}
+.widget-scroll::-webkit-scrollbar{width:6px}
+.widget-scroll::-webkit-scrollbar-track{background:transparent}
+.widget-scroll::-webkit-scrollbar-thumb{border-radius:9999px;
+  background:color-mix(in oklab, var(--color-base-content) 25%, transparent)}
+/* Uniform edge (v1.21): every shell — both navbars, main, the card grid —
+   shares one 15px inset. There is no reserved scrollbar strip any more
+   (theme.html draws a self-hiding overlay bar over the content instead), so
+   the frame is a literal 15px and the navbar can run edge to edge. */
+@media (min-width:1024px){
+  :root{--edge:15px}
+  main.edge-x,.navbar.edge-x{padding-left:var(--edge);padding-right:var(--edge)}
+  #tab-dashboard>.grid{gap:var(--edge)}
+}
+/* Widgets auto-adjust to their cell (v1.20): card-body is a flex column on
+   desktop; wboxes hug their content, but a wbox carrying a .widget-scroll
+   list YIELDS to the cell — the list shrinks and scrolls inside the widget
+   instead of the whole card growing a scrollbar (measured before: the people
+   card resid +26px at 1920x944, +228px at 1366x768, while the teachers list
+   already scrolled internally). card-body keeps overflow-y-auto as the last
+   resort for content with no list under pathological squeeze. */
+@media (min-width:1024px){
+  #tab-dashboard .card-body{display:flex;flex-direction:column}
+  #tab-dashboard .card-body>.wbox{flex:0 0 auto}
+  #tab-dashboard .card-body>.wbox:has(.widget-scroll){flex:0 1 auto;min-height:0}
+  #tab-dashboard .card-body>.grid{flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr)}
+  #tab-dashboard .wbox{display:flex;flex-direction:column}
+  #tab-dashboard .wbox>*{flex-shrink:0}
+  #tab-dashboard .wbox>.widget-scroll{flex:0 1 auto;min-height:0}
+  #tab-dashboard .card-body .grid>.wbox{min-height:0}
+}
+/* Faint recent-update ring: a marks chip whose portal "Entered on" is today
+   (grayscale lift — hue stays reserved for the alert states, DESIGN §2.7) */
+.mark-recent{box-shadow:0 0 0 1px color-mix(in oklab, var(--color-base-content) 35%, transparent)}
+/* Academics grade tints — measured against the card's base-200 surface.
+   A fail is the DESIGN-approved faint red (the §4.15 fill value, NOT the
+   full-saturation --color-error, which pulls the eye); O is the info hue at
+   the same faint level, as a wash behind the letter. The grade letter itself
+   always renders, so neither hue is ever the only cue. Measured ratios live
+   in the PR body table. */
+.acad-g{display:inline-block;min-width:2.75rem;padding:0 0.375rem;border-radius:0.25rem;text-align:center}
+.acad-g-f{background:oklch(58% 0.115 25 / 0.22);color:oklch(88% 0.06 25)}
+.acad-g-o{background:oklch(58% 0.158 241.966 / 0.24);color:oklch(88% 0.075 242)}
+/* Accordion chevron: rotate on open (transform only, §7). */
+.acad-chev{transition:transform .2s var(--ease-out, ease)}
+details[open]>summary .acad-chev{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.acad-chev{transition:none}}
+/* audit a11y: a copy target is a keyboard control (tabindex=0 + Enter/Space), so
+   it must show where focus is. Same ring as the timetable's focusable rows. */
+[data-copy]:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
+</style>{% endblock %}
+{% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
+  <div id="tab-settings" role="tabpanel" aria-labelledby="tab-settings-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
+    {% set groups = [("Academic", ["Register No.", "Institution", "Batch", "Semester", "Section", "ABC NUMBER",
+                                   "University", "Program (Full)",
+                                   "Faculty Advisor", "Academic Advisor"]),
+                     ("Personal", ["Date of Birth", "Gender", "Religion", "Nationality", "Blood Group", "Admitted On"]),
+                     ("Family", ["Father Name", "Mother Name", "Parent Contact No.", "Parent Email ID"]),
+                     ("Contact", ["Address", "Pincode", "District", "State", "Personal Email ID",
+                                  "Student Mobile No.", "Alternative Student Mobile No."])] %}
+    {% set nd = namespace(n=0) %}
+    {% if personal %}
+      {% for title, keys in groups %}{% for key in keys %}{% if key in personal %}{% set nd.n = nd.n + 1 %}{% endif %}{% endfor %}{% endfor %}
+      {% if personal.get('Student Name') %}{% set nd.n = nd.n + 1 %}{% endif %}
+      {% if personal.get('Program') %}{% set nd.n = nd.n + 1 %}{% endif %}
+    {% endif %}
+    <div class="flex flex-col gap-3">
+      <!-- Personal details: one settings row that opens the old Personal tab's
+           identity header + grouped detail list (row collapsed by default). -->
+      <div class="collapse collapse-arrow bg-base-200 border border-base-300" id="personal-details"
+           data-island="settings" data-props="#island-settings">
+        <input type="checkbox" aria-label="Toggle personal details" />
+        <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+          <span>Personal details</span>
+          {% if personal %}<span class="badge badge-sm">{{ nd.n }}</span>{% endif %}
+        </div>
+        <div class="collapse-content">
+          {% if personal %}
+          <div class="flex flex-col gap-3">
+            {% if personal.get('Student Name') or personal.get('Program') %}
+            <div class="card bg-base-200 border border-base-300">
+              <div class="card-body p-4">
+                {% if personal.get('Student Name') %}
+                <div class="text-lg font-semibold" data-copy="{{ personal['Student Name'] }}">{{ personal['Student Name'] }}</div>
+                {% endif %}
+                {% if personal.get('Program') %}
+                <div class="text-sm font-mono text-base-content/60 break-words mt-1" data-copy="{{ personal['Program'] }}">{{ personal['Program'] }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endif %}
+            {% for title, keys in groups %}
+              {% set ns = namespace(n=0) %}
+              {% for key in keys %}{% if key in personal %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+              {% if ns.n %}
+              <div class="collapse collapse-arrow bg-base-200 border border-base-300">
+                <input type="checkbox" aria-label="Toggle {{ title }}" />
+                <div class="collapse-title text-sm font-semibold flex items-center justify-between gap-2">
+                  <span>{{ title }}</span><span class="badge badge-sm">{{ ns.n }}</span>
+                </div>
+                <div class="collapse-content">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-2">
+                    {% for key in keys %}
+                      {% if key in personal %}
+                      <div{% if key in ['Institution', 'Address'] %} class="sm:col-span-2"{% endif %}>
+                        <div class="text-xs uppercase tracking-wide text-base-content/50">{{ key }}</div>
+                        {# addresses are prose -> wrap as text; other values are data (DESIGN §3 mono) #}
+                        <div class="text-sm{% if key != 'Address' %} font-mono{% endif %} break-words" data-copy="{{ personal[key] }}">{{ personal[key] }}</div>
+                      </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="alert alert-soft alert-info">No personal details available.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Notifications (Web Push): the ONE place the whole notification
+           mechanism lives — card, lead time, per-type preferences, test send.
+           Was scattered across the Timetable tab. All states rendered by push.js. -->
+      <div class="card bg-base-200 border border-base-300" id="push-card">
+        <div class="card-body p-4 gap-3">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <h3 class="text-base font-semibold">Notifications</h3>
+            <input type="checkbox" id="push-toggle" class="toggle" hidden
+                   aria-label="Turn notifications on or off">
+          </div>
+          {# Server paints the states it can decide (no VAPID / switched off /
+             not allowlisted); "Loading…" stays only for the ones the browser
+             must answer. push.js repaints the same sentence, so no flash. #}
+          <p class="text-sm text-base-content/60" id="push-state">{{ push_state or 'Loading…' }}</p>
+          <div id="push-controls" hidden>
+            <div class="flex flex-col gap-3">
+              <label class="flex items-center justify-between gap-3 text-sm" for="push-lead">
+                <span>Remind me</span>
+                <select id="push-lead" class="select select-sm w-auto"></select>
+              </label>
+              <!-- plain div + [hidden]: a display class here would beat the
+                   hidden attribute and show prefs before a subscription exists -->
+              <div id="push-types" hidden>
+                <div class="flex flex-col gap-2">
+                  <div class="text-sm font-semibold">Notify me about</div>
+                  <label class="flex items-center justify-between gap-3 text-sm" for="push-type-reminders">
+                    <span>Class reminders</span>
+                    <input type="checkbox" id="push-type-reminders" class="toggle">
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-sm" for="push-type-exams">
+                    <span>Exam updates</span>
+                    <input type="checkbox" id="push-type-exams" class="toggle">
+                  </label>
+                </div>
+              </div>
+              <div class="flex gap-2 flex-wrap items-center">
+                <button id="push-enable" class="btn btn-accent btn-sm">Enable reminders</button>
+                <button id="push-test" class="btn btn-outline btn-sm" hidden>Send test notification</button>
+              </div>
+              <p class="text-sm" id="push-feedback" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+          <!-- hint lives OUTSIDE #push-controls: the iOS-not-installed and
+               permission-denied states hide the controls but must show it -->
+          <p class="text-sm text-base-content/60" id="push-hint" hidden></p>
+        </div>
+      </div>
+
+      <!-- Log out: moved out of the navbars — a session action belongs with
+           settings, not next to the sync caption. Server-side Sec-Purpose
+        prefetch guard on /logout still applies. -->
+      <a href="/logout"
+         class="pressable flex items-center justify-between bg-base-200 border border-base-300 rounded-box px-4 py-3.5 text-sm font-semibold hover:bg-base-300 transition-colors">
+        <span>Log out</span>
+        <svg class="w-4 h-4 text-base-content/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+        </svg>
+      </a>
+
+      <!-- Delete my data: destructive actions sit LAST, below Log out —
+           same row anatomy as the logout row (grayscale, one row = one
+           action). Opens the explainer modal; nothing is removed until
+           the modal's confirm button POSTs /api/account/delete. -->
+      <button type="button" id="delete-account-btn"
+              class="pressable flex items-center justify-between w-full text-left bg-base-200 border border-base-300 rounded-box px-4 py-3.5 text-sm font-semibold hover:bg-base-300 transition-colors">
+        <span>Delete my data</span>
+        <svg class="w-4 h-4 text-base-content/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
+  </div>
+</main>
+{% endblock %}
+{% block after_main %}{{ settings_props|safe }}
+{{ sync_age_props|safe }}
+
+<div id="offline-banner" role="status" aria-live="polite"></div>
+{% if fb_plan %}<dialog id="fb-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="fb-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 id="fb-modal-title" class="font-bold text-base mb-2">Auto-fill mid-sem feedback</h3>
+    <p class="text-xs text-base-content/70">Opt-in — nothing is submitted until you confirm.</p>
+    <ol class="mt-3 space-y-1 text-sm leading-relaxed text-base-content/80 list-decimal list-inside">
+      <li>Every teacher of every subject gets 5 = EXCELLENT on all 14 questions — one form per teacher</li>
+      <li>Each form's comment is "none" (optional field)</li>
+      <li>Each submission is re-verified live; already-filled ones are skipped honestly</li>
+    </ol>
+    <ul class="mt-3 space-y-2 max-h-48 overflow-y-auto">
+      {% for p in fb_plan %}
+      <li class="text-xs leading-relaxed">
+        <span class="block font-semibold text-base-content">{{ p.subject }}</span>
+        <span class="block text-base-content/70">{{ p.teacher }} · 5 = EXCELLENT on all 14 questions · comment “{{ p.comment }}”</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <div id="fb-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <button id="fb-submit" class="btn btn-primary btn-sm min-h-11">Fill feedback for {{ fb_plan|length }} teachers</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>{% endif %}
+<!-- Delete my data: same opt-in shape as the feedback modal — explainer
+     lists exactly what goes and what stays, one confirm button, status in
+     the modal, redirect to /login on success (the bundle: web/src/data/userActions.ts). -->
+<dialog id="delete-account-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="del-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <h3 id="del-modal-title" class="font-bold text-base mb-2">Delete my data</h3>
+    <p class="text-xs text-base-content/70">Opt-in — nothing is removed until you confirm. This cannot be undone.</p>
+    <p class="text-sm font-semibold mt-3">Erased from this app</p>
+    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
+      <li>Your account, saved attendance, marks, timetable and personal details</li>
+      <li>Every login session, on every device</li>
+      <li>Your portal session stored here (the cookies this app saved)</li>
+      <li>Reminder subscriptions, the sent-reminder log and delivery receipts</li>
+      <li>Your usage/telemetry rows and your timetable edit-history entries</li>
+      <li>Your name on class-wide exam-tag confirmations — the shared confirmation stays</li>
+    </ul>
+    <p class="text-sm font-semibold mt-3">Never touched</p>
+    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
+      <li>The SRM portal itself — nothing is deleted on SRM's servers</li>
+      <li>Shared timetables and class-wide data other students rely on</li>
+      <li>Any other student's account</li>
+    </ul>
+    <p class="mt-3 text-xs text-base-content/60">Afterwards you are signed out and returned to the login page.</p>
+    <div id="del-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <!-- text-base-content: the default error-content label measures 4.43:1
+           on the error fill (AA needs 4.5 for 16px); pure white clears it at 4.85:1 -->
+      <button id="del-confirm" class="btn btn-error btn-sm min-h-11 text-base-content">Delete permanently</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<dialog id="add-subject-modal" class="modal modal-bottom sm:modal-middle">
+  <div class="modal-box bg-base-200 border border-base-300">
+    <fieldset class="fieldset">
+      <label class="label" for="subj-code"><span class="fieldset-legend">Subject code</span></label>
+      <input type="text" id="subj-code" class="input w-full" placeholder="e.g. 21XYZ123" maxlength="20">
+    </fieldset>
+    <fieldset class="fieldset mt-3">
+      <label class="label" for="subj-name"><span class="fieldset-legend">Subject name</span></label>
+      <input type="text" id="subj-name" class="input w-full" placeholder="e.g. Cloud Computing" maxlength="100">
+    </fieldset>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+      <button id="subj-confirm-btn" class="btn btn-accent btn-sm">Add</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<div id="error-toast" class="alert alert-soft alert-error fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto text-sm hidden" role="alert" aria-live="assertive"></div>
+{% endblock %}

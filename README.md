@@ -149,9 +149,13 @@ Two promises shape everything:
   (5/10/15/30 min), a test button with delivery receipts.
 
 - **Installable PWA** — Add to Home Screen on Android, iOS and Windows. The
-  service worker keeps an offline shell (`opensrm-v40` cache): HTML is
-  network-first with navigation preload, versioned assets are cache-first,
-  so warm visits move zero bytes and deploys never serve stale files.
+  service worker keeps the app usable offline (a content-hashed cache, bumped
+  on every build): panel
+  pages are network-first with navigation preload, and offline the worker
+  serves a PII-free shell (`/shell/<panel>`) that boots the app so each island
+  can paint its own rows from IndexedDB. Versioned and content-hashed assets are
+  cache-first, so warm visits move zero bytes and deploys never serve stale
+  files. Rendered account pages are never cached; logout clears every store.
 
 - **Hot and cold data** — attendance, marks, the official timetable and exams
   refresh on every sync; personal details and course lists are reused until
@@ -241,7 +245,7 @@ One Flask process, one SQLite file, **two** fetch pipelines — the whole data
 path, from SRM to pixel:
 
 <p align="center">
-  <img src="docs/architecture.png" alt="OpenSRM architecture — PWA → Cloudflare edge → Flask container (sessions, portal pipeline + optional egress proxy, SCOPE SOAP client, parsers, data access, SQLite) → view models, with the SRM student portal and the SCOPE backend as two independent external sources" width="100%">
+  <img src="docs/architecture.png" alt="OpenSRM architecture — a Preact-island PWA → Cloudflare edge → gunicorn serving Flask routes and views (sessions, rate limits, portal pipeline + optional egress proxy, SCOPE SOAP client, parsers, data access, SQLite), with the SRM student portal and the SCOPE backend as two independent external sources" width="100%">
 </p>
 
 A sync starts at your browser, crosses the tunnel as a normal HTTP
@@ -265,7 +269,7 @@ app/
   views/              per-tab view models (attendance, marks, academics, fees, campus, …)
   blueprints/         auth, dashboard, marks, timetable, feedback, push, internal (metrics)
   db.py               the one data-access layer for all SQL
-  migrations.py       versioned schema registry (18 migrations → schema v18)
+  migrations.py       versioned schema registry (18 migrations → schema v19)
 ```
 
 ### The SCOPE client
@@ -287,8 +291,8 @@ documentation and every call is encrypted:
 | Portal access | Pure HTTP (urllib) pipeline; an archived Playwright fallback stays off unless `PLAYWRIGHT_FALLBACK=enabled` |
 | SCOPE access | Stdlib-only SOAP client (`urllib` + embedded AES-CBC), bounded 8-connection pool per sync |
 | Captcha | ddddocr (self-contained OCR, no external service) |
-| Database | SQLite with a versioned migration registry (18 migrations → schema v18) |
-| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/app.css` by a pinned, sha256-verified CLI — no runtime CDN. Vanilla JS, Jinja2 |
+| Database | SQLite with a versioned migration registry (18 migrations → schema v19) |
+| Frontend | Tailwind CSS 4.3.3 + daisyUI 5.7.46, **pre-compiled** into `app/static/dist/assets/app-*.css` by Vite — no runtime CDN. Preact islands, Jinja2 SSR |
 | PWA | Service worker: navigation-preload HTML, cache-first `?v=` assets, network-first icons |
 | CI/CD | GitHub Actions — Lint · Tests (unit + docker + e2e) · Build & Push → `ghcr.io/thenabbu/opensrm` · report-only Scans |
 | Deployment | Docker on the lab host, Cloudflare Tunnel for HTTPS |
@@ -363,6 +367,7 @@ Full details, including the key-rotation runbook: [SECURITY.md](SECURITY.md).
 ## Documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, PR flow, portal rate limits
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the server, the Preact islands, the offline shell and the privacy rules
 - [SECURITY.md](SECURITY.md) — threat model, protections, key rotation
 - [docs/privacy.md](docs/privacy.md) — what is stored, what "Delete my data" erases
 - [AGENTS.md](AGENTS.md) — quickstart for coding agents: dev loop, test matrix, gotchas

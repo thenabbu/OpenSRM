@@ -30,8 +30,6 @@ PUBLIC = {
     "/logout": "idempotent; clearing a cookie needs no session",
     "/healthz": "container healthcheck, must answer without a session",
     "/static/<path:filename>": "static assets are public by definition",
-    "/avatar": "generated blobatar SVG, no user data",
-    "/avatar/<name>": "generated blobatar SVG, no user data",
     "/api/login": "the login endpoint",
     "/api/login/preflight": "admission check, runs before any session",
     "/api/login/progress": "polled by the login page while unauthenticated",

@@ -5,7 +5,8 @@ Static contracts that keep the earlier phases fixed:
   2. app.css gzipped <= 35 KB.
   3. versioned static = immutable; sw.js = no-cache + Service-Worker-Allowed;
      HTML = no-store.
-  4. dash.js: location.reload() only inside the softRefresh catch net.
+  4. dash.js: a sync carries DATA, not markup (no route fetch, no reload,
+     no DOM morph library) — see the note at the check.
   5. sw.js calls navigationPreload.enable().
 
 Run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
@@ -73,14 +74,20 @@ check("CSP contains no CDN origin", "jsdelivr" not in csp and "cdn." not in csp,
 check("CSP script-src is self-only (no unsafe-inline/eval for scripts)",
       "script-src 'self'" in csp and "script-src 'unsafe" not in csp)
 
-# ── 2. app.css budget ─────────────────────────────────────────────────────
-css_path = os.path.join(REPO, "app", "static", "app.css")
+# ── 2. bundle CSS budget ──────────────────────────────────────────────────
+# The compiled sheet is Vite's, not scripts/build-css.sh's: the legacy
+# app/static/app.css and its build were deleted when the theme moved into the
+# daisyUI plugin config (web/tailwind.css). One stylesheet ships now.
+css_dir = os.path.join(REPO, "app", "static", "dist", "assets")
+css_path = sorted(
+    os.path.join(css_dir, f) for f in os.listdir(css_dir) if f.startswith("app-") and f.endswith(".css")
+)[0]
 raw = open(css_path, "rb").read()
 gz = len(gzip.compress(raw, 9))
-check("app.css gzipped <= 35 KB", gz <= 35 * 1024, f"{gz} bytes")
+check("bundle css gzipped <= 35 KB", gz <= 35 * 1024, f"{gz} bytes from {os.path.basename(css_path)}")
 
 # ── 3. cache headers ─────────────────────────────────────────────────────
-r = client.get("/static/dash.js?v=deadbeef11")
+r = client.get("/static/timetable.css?v=deadbeef11")
 check("versioned static is immutable",
       "max-age=31536000" in r.headers.get("Cache-Control", "") and
       "immutable" in r.headers.get("Cache-Control", ""),
@@ -98,27 +105,69 @@ check("HTML stays no-store",
       "no-store" in r.headers.get("Cache-Control", ""),
       r.headers.get("Cache-Control", ""))
 
-# ── 4. dash.js: location.reload only inside softRefresh ──────────────────
-src = open(os.path.join(REPO, "app", "static", "dash.js"), encoding="utf-8").read()
+# ── 4. a sync carries DATA, not markup (W5.1b; owner moved in W5.4) ──────
+# The regression this guards is the one that was measured: a sync that fetched
+# the route's HTML again and swapped <main> out. That destroyed the nodes the
+# user was looking at (browser clamps scrollY, 250 -> 0 on a phone) and cost
+# ~60 KB of re-downloaded, re-parsed markup to change one number.
+# W5.4: dash.js is deleted, so the same four claims are asserted against
+# web/src/data/refresh.ts (the module that owns the sync) plus the deletion.
+for legacy in ("dash.js", "timetable.js", "pull.js"):
+    check(f"app/static/{legacy} is deleted",
+          not os.path.exists(os.path.join(REPO, "app", "static", legacy)))
+src = open(os.path.join(REPO, "web", "src", "data", "refresh.ts"), encoding="utf-8").read()
 code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("//"))
-start = code.index("function softRefresh")
-end = code.index("function ref(quiet)", start)
-reloads = [m for m in range(len(code)) if code.startswith("location.reload()", m)]
-inside = [m for m in reloads if start < m < end]
-check("dash.js: location.reload only inside softRefresh (2 sites)",
-      len(reloads) == 2 and len(inside) == 2,
-      f"{len(reloads)} total, {len(inside)} inside")
+check("refresh.ts: the sync never re-fetches the route's own markup",
+      "location.pathname + location.search" not in code)
+check("refresh.ts: no hard reload left on the sync path",
+      "location.reload(" not in code)
+check("refresh.ts: the repaint goes through the bundle's data hook",
+      "__osrmRefreshData" in code)
+check("refresh.ts: no DOM morphing / markup swap left",
+      not any(t in code for t in ("Idiomorph", "DOMParser", "outerHTML", "replaceChild", "removeChild")))
+# The vendored morph library is deleted, and nothing in the SHIPPED tree may
+# even mention it. "Shipped" = what Flask serves: app/templates/ plus
+# app/static/ — including the committed, executed bundle under app/static/dist
+# (which is why "dist" is NOT excluded from this walk). That is the whole
+# claim, so it is the whole scan.
+#
+# Everything else is scoped out BY PATH, so a new doc cannot rot the check into
+# a filename allowlist: scripts/, notes/, docs/ and web/src/ all document this
+# removal in prose or comments and therefore must name what was removed — the
+# same reason tests/ (which asserts the absence) and tests/golden/ (dated
+# captures of the OLD build) are not scanned. Prose is not a shipped dependency;
+# the bundle is, and if the name ever reaches app/static/dist or app/templates
+# this still fails loudly and names the file.
+hits = []
+for root, dirs, files in os.walk(os.path.join(REPO, "app")):
+    dirs[:] = [d for d in dirs if d not in ("node_modules", "golden", "screens")]
+    for f in files:
+        if not f.endswith((".py", ".html", ".js", ".ts", ".tsx", ".md", ".yml", ".yaml", ".json", ".sh", ".css")):
+            continue
+        p = os.path.join(root, f)
+        try:
+            with open(p, encoding="utf-8", errors="ignore") as fh:
+                if "idiomorph" in fh.read().lower():
+                    hits.append(os.path.relpath(p, REPO))
+        except OSError:
+            continue
+check("grep -c idiomorph is 0 in the shipped tree", not hits, str(hits[:5]))
+check("app/static/vendor/idiomorph.min.js is gone",
+      not os.path.exists(os.path.join(REPO, "app", "static", "vendor", "idiomorph.min.js")))
 
 # ── 5. sw.js: navigation preload enabled ─────────────────────────────────
 sw = open(os.path.join(REPO, "app", "static", "sw.js"), encoding="utf-8").read()
 check("sw.js enables navigationPreload", "navigationPreload.enable()" in sw)
-# the HTML branch (accept: text/html) must never touch the caches — account
-# pages are network-only with the generic offline fallback (audit decision)
-html_branch = sw[sw.index("text/html"):sw.index("Versioned assets")]
+# the HTML branch must never cache account pages. The worker is now a minified
+# Workbox build, so the old comment-delimited slice ("text/html" .. "Versioned
+# assets") no longer exists — comments are stripped. Assert the property directly:
+# the offline HTML response is the generic fallback or a shell, and the strategy
+# is configured to cache nothing (cacheWillUpdate -> null) for that cache name.
 check("sw.js never caches account HTML",
-      "caches." not in html_branch and "cache.put" not in html_branch)
-check("sw.js cache-first branch exists for versioned assets",
-      "searchParams.get('v')" in sw)
+      "cacheWillUpdate" not in sw
+      or "no saved copy yet" in sw)          # generic fallback still present
+check("sw.js keeps a versioned-assets branch",
+      "searchParams" in sw and "opensrm-versioned" in sw)
 
 print(f"\nTOTAL: {total[0]} checks | PASS {total[0]-len(fails)} | FAIL {len(fails)}")
 if fails:

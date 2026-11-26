@@ -1,0 +1,6 @@
+{
+  "//": "The design-token module's compile-time guard. The root tsconfig excludes *.test.ts because not every existing suite is type-clean; this one compiles ONLY the design tests, so their @ts-expect-error directives are real checks ('an invalid variant must not compile') instead of dead comments. Run by `pnpm run typecheck:design`, which `pnpm build` calls.",
+  "extends": "./tsconfig.json",
+  "include": ["src/design/design.test.ts"],
+  "exclude": []
+}

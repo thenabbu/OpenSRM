@@ -1,6 +1,6 @@
 [project]
 name = "opensrm"
-version = "2.12.4"
+version = "3.0.0"
 description = "Self-hosted attendance dashboard for the SRM Student Portal"
 readme = "README.md"
 license = "MIT"
@@ -10,7 +10,6 @@ dependencies = [
     "ddddocr==1.6.1",
     "gunicorn==27.0.0",
     "cryptography>=50.0.1",
-    "blobatar[flask]",
     "pywebpush==2.5.0",
 ]
 
@@ -32,7 +31,3 @@ dev = [
 ]
 
 [project.scripts]
-
-[tool.uv.sources]
-# audit: was a floating branch — pin the exact commit (feat/python-sdk @ 7fb1eed2)
-blobatar = { git = "https://github.com/thenabbu/blobatar", subdirectory = "packages/python", rev = "7fb1eed2b57593dbd5dd9fd5abeccbed2b1405fb" }

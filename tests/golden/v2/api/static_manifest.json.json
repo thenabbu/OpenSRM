@@ -1,0 +1,8 @@
+{
+  "body": "{\n  \"name\": \"OpenSRM \\u2014 Student Attendance\",\n  \"short_name\": \"OpenSRM\",\n  \"description\": \"Self-hosted attendance dashboard for the SRM Student Portal\",\n  \"start_url\": \"/\",\n  \"scope\": \"/\",\n  \"display\": \"standalone\",\n  \"orientation\": \"portrait-primary\",\n  \"background_color\": \"#111111\",\n  \"theme_color\": \"#111111\",\n  \"icons\": [\n    {\n      \"src\": \"/static/icon-192.png\",\n      \"sizes\": \"192x192\",\n      \"type\": \"image/png\",\n      \"purpose\": \"any\"\n    },\n    {\n      \"src\": \"/static/icon-512.png\",\n      \"sizes\": \"512x512\",\n      \"type\": \"image/png\",\n      \"purpose\": \"any\"\n    },\n    {\n      \"src\": \"/static/icon-1024.png\",\n      \"sizes\": \"1024x1024\",\n      \"type\": \"image/png\",\n      \"purpose\": \"any\"\n    },\n    {\n      \"src\": \"/static/icon-maskable-512.png\",\n      \"sizes\": \"512x512\",\n      \"type\": \"image/png\",\n      \"purpose\": \"maskable\"\n    }\n  ],\n  \"id\": \"/\",\n  \"categories\": [\n    \"education\",\n    \"productivity\"\n  ],\n  \"lang\": \"en\",\n  \"dir\": \"ltr\",\n  \"prefer_related_applications\": false\n}",
+  "bytes": 999,
+  "content_type": "application/json",
+  "gzip_bytes": 380,
+  "path": "/static/manifest.json",
+  "status": 200
+}

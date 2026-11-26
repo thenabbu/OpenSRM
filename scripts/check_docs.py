@@ -12,8 +12,10 @@ the CODE, not against a literal in this file.
 Run: .venv/bin/python scripts/check_docs.py
 Exit: 0 all pass, 1 any fail.
 """
+import os
 import pathlib
 import re
+import subprocess
 import sys
 
 R = pathlib.Path(__file__).resolve().parents[1]
@@ -93,7 +95,14 @@ _LINK = re.compile(r"!?\[[^\]]*\]\(([^)#:]+)\)")
 # slash and ends in a known file extension, so prose like `tests/unit/` is skipped.
 _TICK = re.compile(r"`([A-Za-z0-9_./-]+/(?:[A-Za-z0-9_.-]+\.(?:md|py|sh|yml|json|html|css|js|png)))`")
 _checked = 0
-for md in ["AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md"]:
+# Every markdown file in the tree, not a hand-picked four. The sweep also reads
+# docs/ -- a runbook step pointing at a deleted file is the same broken claim
+# wherever it lives. CHANGELOG.md is excluded: its links are historical.
+_md_files = sorted(
+    [p.name for p in R.glob("*.md") if p.name != "CHANGELOG.md"]
+    + [str(p.relative_to(R)) for p in (R / "docs").glob("*.md")]
+)
+for md in _md_files:
     p = R / md
     if not p.exists():
         continue
@@ -104,8 +113,17 @@ for md in ["AGENTS.md", "README.md", "CONTRIBUTING.md", "SECURITY.md"]:
         if tgt.startswith(("http", "mailto", "#", "/")):
             continue
         _checked += 1
-        if not (R / tgt).exists() and not (p.parent / tgt).exists():
-            _broken.append(f"{md}->{tgt}")
+        # Exact path first. If that misses, accept the same BASENAME resolved
+        # anywhere in the repo: DESIGN.md writes `partials/theme.html` for
+        # app/templates/partials/theme.html and `safelist/classes.html` for
+        # app/static/safelist/classes.html, which is the house shorthand and not a
+        # broken claim. A file that was deleted outright matches neither, which is
+        # the failure this check exists for.
+        if (R / tgt).exists() or (p.parent / tgt).exists():
+            continue
+        if any(R.glob(f"**/{tgt.split('/')[-1]}")):
+            continue
+        _broken.append(f"{md}->{tgt}")
 chk("D6", "doc links + backticked paths resolve", not _broken and _checked > 0,
     f"checked={_checked} broken={_broken[:6]}")
 
@@ -209,6 +227,148 @@ if _rpd.exists():
 _e2e_unarmed = sorted(_e2e_disk - _e2e_armed - set(re.findall(r"(test_[a-z_0-9]+)\|", _LOCAL_ONLY)))
 chk("D9", "every tests/e2e suite runs in CI or is LOCAL_ONLY",
     not _e2e_unarmed, f"unarmed={_e2e_unarmed}")
+
+# D10 — D9 above globs `test_*.py`, so a DRIVER (a11y.py, stress.py of the
+# a11y/stress gate, route_paint.py and offline_paint.py of the offline proof)
+# is invisible to it. That is exactly how the a11y+stress suite ended up wired
+# into gates.sh but absent from CI: locally green, never executed on a runner.
+# Resolve the single hop that matters — driver -> a .sh that CI names.
+_DRIVERS_MANUAL = {
+    # Not a gate: prints console/SW diagnostics for a failing offline run, has
+    # no PASS/FAIL and no exit code. Run by hand while triaging.
+    "probe_sw.py",
+}
+_scripts = list((R / "scripts").glob("*.sh")) + list((R / "tests/e2e").glob("*.sh"))
+_ci_scripts = [s for s in _scripts if s.name in _wf]
+_drivers_idle = []
+for _d in sorted(p.name for p in (R / "tests/e2e").glob("*.py")
+                 if not p.name.startswith(("_", "test_"))):
+    if _d in _DRIVERS_MANUAL or _d in _wf:
+        continue
+    if not any(_d in s.read_text(errors="replace") for s in _ci_scripts):
+        _drivers_idle.append(_d)
+chk("D10", "every tests/e2e driver script reaches CI through a CI-run .sh",
+    not _drivers_idle, f"unreachable={_drivers_idle}")
+
+# D11 — a suite's check count quoted in prose equals the count the suite RUNS.
+#
+# This is the class that was actually stale: DESIGN.md said test_layout.py runs 25
+# checks when it runs 26.
+#
+# Counting `check(` call sites statically does NOT work -- the number depends on
+# loops over viewports and on `if label == ...` guards that execute one branch, and
+# a heuristic that guessed wrong reported a correct doc as stale. So the count is
+# taken from the run: a suite that prints its own total is run, and its last
+# "N checks" / "N/N PASS" line is the truth. A suite that needs a browser or a
+# server is SKIPPED and reported as skipped, never as a pass -- an unverified
+# claim must not look verified.
+#
+# Only claims written as "`<path>` ... N checks" are checked. A doc that says
+# "the suite" with no number is not a claim, so a growing suite changes no prose.
+# The path may sit INSIDE a longer backtick span -- "`DATA_DIR=/tmp .venv/bin/python
+# tests/unit/test_layout.py` still passes (25 checks)" is the exact line the stale
+# count lived in, and anchoring the closing backtick right after ".py" missed it.
+_CLAIM = re.compile(r"`[^`\n]*?([A-Za-z0-9_./-]+\.py)[^`\n]*`[^\n`]*?\b(\d+)\s+checks\b")
+_TOTAL = re.compile(r"(?:TOTAL:\s*(\d+)\s+checks|(\d+)/(\d+) PASS)")
+_count_bad, _count_ok, _count_skipped = [], [], []
+_seen_pairs = set()
+for _md in _md_files:
+    _p = R / _md
+    if not _p.exists():
+        continue
+    for _m in _CLAIM.finditer(_p.read_text(errors="replace")):
+        _path, _quoted = _m.group(1), int(_m.group(2))
+        _cand = [R / _path, _p.parent / _path]
+        _cand += list(R.glob(f"**/{_path.split('/')[-1]}"))
+        _src_p = next((c for c in _cand if c.is_file()), None)
+        if _src_p is None or (_src_p, _quoted) in _seen_pairs:
+            continue
+        _seen_pairs.add((_src_p, _quoted))
+        _rel = str(_src_p.relative_to(R))
+        # Run it. Only unit suites are cheap and self-contained; anything else is
+        # declared skipped so the gap is visible instead of silently green.
+        if not _rel.startswith("tests/unit/"):
+            _count_skipped.append(f"{_rel} (needs browser/server)")
+            continue
+        try:
+            _r = subprocess.run(
+                [sys.executable, str(_src_p)], cwd=str(R), timeout=300,
+                capture_output=True, text=True,
+                env={**os.environ, "PYTHONPATH": str(R),
+                     "DATA_DIR": os.environ.get("DATA_DIR", "/tmp/osrm-check-docs")},
+            )
+            _out = _r.stdout + _r.stderr
+            _t = _TOTAL.findall(_out)
+            _actual = None
+            for _g in _t:
+                _actual = int(_g[0]) if _g[0] else int(_g[2])
+            if _r.returncode != 0 or _actual is None:
+                _count_skipped.append(f"{_rel} (exited {_r.returncode}, no total)")
+                continue
+        except Exception as _e:  # a suite that cannot run must not fail the doc gate
+            _count_skipped.append(f"{_rel} ({type(_e).__name__})")
+            continue
+        if _actual == _quoted:
+            _count_ok.append(f"{_rel}={_actual}")
+        else:
+            _count_bad.append(f"{_md} says {_quoted}, {_rel} runs {_actual}")
+chk("D11", "suite check counts quoted in docs == the count the suite runs",
+    not _count_bad,
+    f"verified={_count_ok} skipped={_count_skipped} mismatch={_count_bad[:4]}")
+# A skipped claim is not a verified claim. Print it on PASS too, so "D11 PASS"
+# never reads as "every count in every doc was checked".
+if _count_skipped:
+    print(f"      note: not verified (cannot run in a static gate): {_count_skipped}")
+
+# D12 — the migration count quoted in prose equals the registry, docstring excluded.
+# D7 only reads AGENTS.md and only when it states the count; README.md quotes
+# "18 migrations -> schema v18", where 18 is the max VERSION and not the count of
+# migrations. Those are two different numbers and the sentence means the second.
+_mig_doc = rd("app/migrations.py")
+_mig_end = _mig_doc.find('"""', _mig_doc.find('"""') + 3)
+_mig_list = [int(v) for v in re.findall(r"@migration\(version=(\d+)", _mig_doc[_mig_end:])]
+_mig_n, _mig_max = len(_mig_list), max(_mig_list)
+_mig_bad, _mig_seen = [], []
+for _md in _md_files:
+    _p = R / _md
+    if not _p.exists():
+        continue
+    for _m in re.finditer(r"\b(\d+) migrations\b", _p.read_text(errors="replace")):
+        _q = int(_m.group(1))
+        _mig_seen.append(f"{_md}={_q}")
+        if _q != _mig_n:
+            _mig_bad.append(f"{_md} says {_q} migrations, registry has {_mig_n}")
+chk("D12", "migration count quoted in docs == registry (docstring excluded)",
+    not _mig_bad,
+    f"registry={_mig_n} maxv={_mig_max} quoted={_mig_seen} mismatch={_mig_bad[:4]}"
+    if _mig_seen else f"not quoted; registry={_mig_n} maxv={_mig_max}")
+
+# D13 — no doc names a script in THIS repo's scripts/ that does not exist. This is
+# the exact failure the mission hit: prose said scripts/capture.py when the file is
+# capture_golden.py.
+#
+# Anchored to a bare or repo-relative `scripts/` on purpose:
+#   - a bare filename (sw.js, app.css) is shorthand for app/static/ and is not resolved;
+#   - an ABSOLUTE path (`/opt/data/scripts/push-tick.sh`) is a host path, belongs to
+#     the lab, and is not this repo's file -- matching inside it reported a documented
+#     cron script as missing;
+#   - a placeholder (`<diagram-design-skill>/scripts/x.py`) belongs to another skill.
+# Widening these three would red on correct docs, which is how a sweep gets deleted.
+_scr_bad, _scr_seen = [], set()
+for _md in _md_files:
+    _p = R / _md
+    if not _p.exists():
+        continue
+    _body = _p.read_text(errors="replace")
+    for _m in re.finditer(r"(?:^|[\s`(\[\"'])(?:\.[/])?scripts/([A-Za-z0-9_.-]+\.(?:py|sh))\b",
+                          _body):
+        _name = _m.group(1)
+        _scr_seen.add(_name)
+        if not (R / "scripts" / _name).exists():
+            _scr_bad.append(f"{_md}->scripts/{_name}")
+chk("D13", "every scripts/<file> named in docs exists",
+    not _scr_bad and bool(_scr_seen),
+    f"checked={len(_scr_seen)} missing={_scr_bad[:6]}")
 
 fails = [r for r in results if not r[2]]
 for cid, desc, ok, ev in results:

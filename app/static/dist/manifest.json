@@ -1,0 +1,140 @@
+{
+  "_design-m1uS3-4X.js": {
+    "file": "assets/design-m1uS3-4X.js",
+    "name": "design"
+  },
+  "_jsxRuntime.module-CvFAvRqt.js": {
+    "file": "assets/jsxRuntime.module-CvFAvRqt.js",
+    "name": "jsxRuntime.module",
+    "imports": [
+      "src/main.ts"
+    ]
+  },
+  "src/islands/sync-age.tsx": {
+    "file": "assets/sync-age-CWcEpX4i.js",
+    "name": "sync-age",
+    "src": "src/islands/sync-age.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ]
+  },
+  "src/main.ts": {
+    "file": "assets/app-41lnV_7S.js",
+    "name": "app",
+    "src": "src/main.ts",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/islands/sync-age.tsx",
+      "src/panels/academics/AcademicsPanel.tsx",
+      "src/panels/attendance/AttendancePanel.tsx",
+      "src/panels/campus/CampusPanel.tsx",
+      "src/panels/dashboard/DashboardPanel.tsx",
+      "src/panels/fees/FeesPanel.tsx",
+      "src/panels/marks/MarksPanel.tsx",
+      "src/panels/settings/SettingsPanel.tsx",
+      "src/panels/timetable/TimetablePanel.tsx",
+      "src/panels/tools/ToolsPanel.tsx"
+    ],
+    "css": [
+      "assets/app-BESjLc_X.css"
+    ]
+  },
+  "src/panels/academics/AcademicsPanel.tsx": {
+    "file": "assets/AcademicsPanel-CIUP1ksf.js",
+    "name": "AcademicsPanel",
+    "src": "src/panels/academics/AcademicsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/attendance/AttendancePanel.tsx": {
+    "file": "assets/AttendancePanel-DoJMq05Q.js",
+    "name": "AttendancePanel",
+    "src": "src/panels/attendance/AttendancePanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/campus/CampusPanel.tsx": {
+    "file": "assets/CampusPanel-CK7cGpbq.js",
+    "name": "CampusPanel",
+    "src": "src/panels/campus/CampusPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/dashboard/DashboardPanel.tsx": {
+    "file": "assets/DashboardPanel-lMkOBBcO.js",
+    "name": "DashboardPanel",
+    "src": "src/panels/dashboard/DashboardPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js",
+      "_design-m1uS3-4X.js"
+    ]
+  },
+  "src/panels/fees/FeesPanel.tsx": {
+    "file": "assets/FeesPanel-hlU2wKGg.js",
+    "name": "FeesPanel",
+    "src": "src/panels/fees/FeesPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/marks/MarksPanel.tsx": {
+    "file": "assets/MarksPanel-BaRRqd3R.js",
+    "name": "MarksPanel",
+    "src": "src/panels/marks/MarksPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/settings/SettingsPanel.tsx": {
+    "file": "assets/SettingsPanel-V6cKkBCk.js",
+    "name": "SettingsPanel",
+    "src": "src/panels/settings/SettingsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/timetable/TimetablePanel.tsx": {
+    "file": "assets/TimetablePanel-CTc9WtxS.js",
+    "name": "TimetablePanel",
+    "src": "src/panels/timetable/TimetablePanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  },
+  "src/panels/tools/ToolsPanel.tsx": {
+    "file": "assets/ToolsPanel-CnXjQiLO.js",
+    "name": "ToolsPanel",
+    "src": "src/panels/tools/ToolsPanel.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_design-m1uS3-4X.js",
+      "src/main.ts",
+      "_jsxRuntime.module-CvFAvRqt.js"
+    ]
+  }
+}

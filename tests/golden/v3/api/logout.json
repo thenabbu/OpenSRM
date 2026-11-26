@@ -1,0 +1,8 @@
+{
+  "content_type": "text/html; charset=utf-8",
+  "location": "/login",
+  "method": "GET",
+  "path": "/logout",
+  "set_cookie": "srm_session=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Path=/; SameSite=Lax",
+  "status": 302
+}

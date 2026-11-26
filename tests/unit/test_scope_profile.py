@@ -11,7 +11,7 @@ Checks (mission contract):
     empty facultyadvisor/academicadvisor -> the label is ABSENT (never ""),
     and any portal value beats the scope value (scope fills gaps only).
   - the merge never invents or overwrites template group keys: every scope
-    label already exists in dashboard.html's Settings groups (no row that the
+    label already exists in settings.html's Settings groups (no row that the
     template would silently drop), and the portal's header slots (Program,
     Semester, Section as the portal names them) are untouched.
   - feature gate off -> the Settings template input is today's personal dict.
@@ -125,10 +125,10 @@ def t_family_academic_group_rows_and_empty_advisor_absent():
 
 def t_every_scope_label_lands_in_a_settings_group():
     """A scope label the template does not list is a silent no-op — pin the
-    contract: every FIELDS value appears in dashboard.html's groups list."""
-    html = (REPO / "app/templates/dashboard.html").read_text()
+    contract: every FIELDS value appears in settings.html's groups list."""
+    html = (REPO / "app/templates/settings.html").read_text()
     block = re.search(r"\{% set groups = \[(.*?)\] %\}", html, re.S)
-    assert block, "Settings groups list not found in dashboard.html"
+    assert block, "Settings groups list not found in settings.html"
     for label in FIELDS.values():
         assert f'"{label}"' in block.group(1), f"Settings group missing scope label: {label}"
 
@@ -158,18 +158,89 @@ def t_feature_gate_off_settings_input_identical_to_today():
 
 def t_widget_renders_blobatar_name_email_regno_only():
     """The profile widget is the generated blobatar + name + email + register
-    number. No photo <img>, no course/semester/section line — the correction
-    that sent this PR back."""
+    number. No photo <img>, no course/semester/section line.
+
+    The avatar is now painted by the dashboard island from @blobatar/preact, so
+    the server template keeps the well and hands off; the island is the only
+    place an SVG is produced, and the server never generates one."""
     html = (REPO / "app/templates/partials/widgets/profile.html").read_text()
-    assert "blobatar(" in html, "blobatar is the only avatar source"
+    assert "blobatar(" not in html, "server still generates the avatar SVG"
+    assert "avatar" in html, "the pre-hydration avatar well must stay"
     assert "<img" not in html and "photo" not in html.lower(), "photo path must not exist"
     assert "oneliner" not in html and "dash.program" not in html, "no course line in the widget"
-    for need in ('{{ student_name or netid }}', 'dash.email', 'dash.reg_no'):
+    for need in ("{{ student_name or netid }}", "dash.email", "dash.reg_no"):
         assert need in html, f"widget lost: {need}"
+    # the island is the only renderer that produces SVG, and it does it officially
+    panel = (REPO / "web/src/panels/dashboard/DashboardPanel.tsx").read_text()
+    assert "<Blobatar" in panel, "official @blobatar/preact is not used"
+    assert "dangerouslySetInnerHTML" not in panel, "server SVG is being re-injected"
     # and the route hands it nothing else
-    app = (REPO / "app/app.py").read_text()
-    assert "profile_photo" not in app and "oneliner" not in app, \
+    app_src = (REPO / "app/app.py").read_text()
+    assert "profile_photo" not in app_src and "oneliner" not in app_src, \
         "route still computes a photo/one-liner input"
+
+
+# ── island props (P6.8) ────────────────────────────────────────────────────
+def t_settings_island_props_match_the_template_groups():
+    """The island payload carries exactly the rows the template would paint —
+    same group order, same wide/mono flags — and the badge count the template
+    counted. settings.html is the source of truth; this pins the copy."""
+    from app.views import settings_island as si
+
+    html = (REPO / "app/templates/settings.html").read_text()
+    # the island's GROUPS list is the template's, key for key
+    block = re.search(r"\{% set groups = \[(.*?)\] %\}", html, re.S).group(1)
+    for _title, keys in si.GROUPS:
+        for k in keys:
+            assert f'"{k}"' in block, f"island group lists a key the template dropped: {k}"
+    assert sum(len(keys) for _, keys in si.GROUPS) == len(re.findall(r'"[^"]+"', block)) - 4, \
+        "island groups and the template's differ"
+
+    fields = SCOPE_STORE["getPersonalDetails"]["data"]
+    # Institution/Semester only arrive from the portal; Family/Contact from scope
+    personal = merge_personal({"Student Name": "Aarav Mehta", "Program": "CSE [B.Tech]",
+                               "Institution": "SRMIST Delhi-NCR", "Register No.": "RA1"}, fields)
+    payload = si.props(personal)
+    # identity header + groups in the template's order, only present keys
+    assert payload["personal"]["name"] == "Aarav Mehta"
+    assert payload["personal"]["program"] == "CSE [B.Tech]"
+    groups = {g["title"]: [i["key"] for i in g["items"]] for g in payload["personal"]["groups"]}
+    assert list(groups) == ["Academic", "Personal", "Family", "Contact"]
+    assert "Faculty Advisor" not in groups["Academic"], "empty advisor rendered"
+    # count = every cell + the two header slots (settings.html:188 nd.n)
+    cells = sum(len(v) for v in groups.values())
+    assert payload["count"] == cells + 2
+    # the two template branches the island must reproduce
+    flat = {i["key"]: i for g in payload["personal"]["groups"] for i in g["items"]}
+    assert flat["Institution"]["wide"] is True and flat["Address"]["wide"] is True
+    assert flat["Address"]["mono"] is False, "Address is prose, not mono"
+    assert flat["Register No."]["mono"] is True and flat["Register No."]["wide"] is False
+    # empty portal -> the template's alert branch
+    assert si.props({}) == {"personal": None, "count": 0}
+    assert si.props(None) == {"personal": None, "count": 0}
+    # '<' escaped so a payload value can never unbalance the script block
+    assert r"\u003c" in si.block({"personal": None, "count": 0, "x": "<"})
+
+
+def t_settings_page_mounts_the_island_over_its_own_markup():
+    """JS off: the server paints the whole collapse AND the mount rides the
+    same node; the props block parses back to the same rows."""
+    import json as _json
+
+    html = (REPO / "app/templates/settings.html").read_text()
+    assert 'id="personal-details"\n           data-island="settings" data-props="#island-settings"' in html, \
+        "the mount is not #personal-details itself"
+    assert '{{ settings_props|safe }}' in html, "props block not rendered"
+    # the server markup the island replaces is still there (fallback)
+    for chrome in ('collapse collapse-arrow bg-base-200 border border-base-300',
+                   'collapse-title text-sm font-semibold flex items-center justify-between gap-2',
+                   'No personal details available.'):
+        assert chrome in html, chrome
+    from app.views import settings_island as si
+    payload = si.props(merge_personal({"Register No.": "RA1"}, {}))
+    blk = si.block(payload)
+    raw = re.search(r'id="island-settings">(.*?)</script>', blk).group(1)
+    assert _json.loads(raw) == payload
 
 
 TESTS = [
@@ -179,6 +250,10 @@ TESTS = [
     ("settings: every scope label lands in a group", t_every_scope_label_lands_in_a_settings_group),
     ("settings: portal keys intact, section/batch gap-fill", t_settings_copy_leaves_portal_keys_intact),
     ("feature gate off -> settings input identical to today", t_feature_gate_off_settings_input_identical_to_today),
+    ("island props mirror the template groups + flags",
+     t_settings_island_props_match_the_template_groups),
+    ("settings page mounts the island over its own markup",
+     t_settings_page_mounts_the_island_over_its_own_markup),
     ("widget: blobatar + name + email + reg no, no photo, no course line", t_widget_renders_blobatar_name_email_regno_only),
 ]
 

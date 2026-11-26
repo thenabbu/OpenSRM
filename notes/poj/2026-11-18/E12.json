@@ -1,0 +1,13 @@
+{
+  "criterion": "E12",
+  "tier": "llm",
+  "statement": "`FINAL_REPORT.md` with an evidence handle for every unit; `decisions.md` complete.",
+  "verdict": "FAIL",
+  "note": "no final report (plan says W10.4 writes it)",
+  "evidence": [
+    "FINAL_REPORT.md MISSING"
+  ],
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:48:06+00:00"
+}

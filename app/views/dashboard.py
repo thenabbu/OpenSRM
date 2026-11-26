@@ -1,9 +1,11 @@
-"""The dashboard page: one route, one view model, everything it renders.
+"""The dashboard page: one view model, one presentation, nine routes.
 
-Extracted from app/app.py (facade pump, cycle E). `index` is the app's main
-screen — it gathers attendance, marks, timetable, exams, fees, academics,
-campus and the ticker, then hands one flat dict to the template. It lives here
-because it is a VIEW: it only reads, joins and shapes.
+Extracted from app/app.py (facade pump, cycle E). `panel_data` is the app's
+main data screen — attendance, marks, timetable, exams, fees, academics,
+campus, the ticker — as one dict; `index` renders a panel from it, and the
+/api/<panel> endpoints (P50) serve slices of the SAME dict as JSON, so the
+page and the offline store cannot disagree. It lives here because it is a
+VIEW: it only reads, joins and shapes.
 
 `_load_component_tags`, `_week_marks` and `_exams_view` travel with it: nothing
 outside the dashboard renders those three, so they are part of this page's view
@@ -17,11 +19,11 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
-from flask import redirect, render_template
+from flask import abort, redirect, render_template
 
 from ..auth import get_current_user
 from ..auto_sync import auto_sync_kick_if_stale
-from ..db import component_tags, day_slots, group_id, group_subjects, user_dashboard, user_scope_data
+from ..db import component_tags, day_slots, group_id, group_slots, group_subjects, user_dashboard, user_password, user_scope_data
 from ..db import jload as _jload
 from ..portal.parsers.common import _class_key, _group_key
 from ..portal.parsers.feedback import _fb_plan
@@ -29,22 +31,33 @@ from ..scope.ops import enabled_features
 from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
 from ..security import require_login
 from ..usage_metrics import _track
+from . import academics_island, campus_island, fees_island, settings_island, tools_island
 from .academics import academics_view
 from .attendance import (
     _absences_view,
     _attendance_budgets,
     _attendance_index,
     _course_view,
+    _join_attendance,
     _month_view,
     _title_case,
     _weekly_slots,
     hourwise_view,
 )
+from .attendance_island import block as _attendance_block
+from .attendance_island import label as _att_label
+from .attendance_island import nudge as _att_nudge
+from .attendance_island import pole as _att_pole
 from .campus import campus_view
+from .dashboard_island import block as _island_block
+from .dashboard_island import props as _island_props
 from .fees import _fees_view
-from .layout import LAYOUT, WIDGETS
+from .layout import LAYOUT, WIDGETS, session_netid
 from .marks import _marks_summary, _marks_view
+from .marks_island import block as _marks_block
 from .profile import merge_personal, scope_profile
+from .sync_age import caption as _sync_age_caption
+from .sync_age import island_props as _sync_age_props
 from .ticker import _today_brief, _today_ticker, _week_updates
 from .timetable import (
     _budget_rows,
@@ -60,13 +73,253 @@ with open(os.path.join(os.path.dirname(__file__), "..", "..", "VERSION")) as _vf
 
 
 @require_login
-def index():
+def index(active_panel="dashboard"):
     netid = get_current_user()
     if not netid:
         # race: require_login validated, then the row vanished before this
         # re-read (logout in another tab mid-request) — redirect, not 500.
         return redirect("/login")
-    # one row read: marks/faculty live on the same users row (was three queries)
+    return presentation(panel_data(netid, active_panel))
+
+
+# Keys in the view model that carry something identifying about one student.
+# The offline shell keeps the page's SHAPE and drops every one of these, so the
+# result can be cached in the HTTP cache without the October leak coming back.
+_PII_KEYS = (
+    "netid", "student_name", "personal_data", "scope_fields", "data",
+    "courses", "monthly", "hourwise", "fees", "campus", "academics",
+    "schedule", "marks_view", "marks_summary", "exams", "faculty_view",
+    "fb_plan", "attendance", "has_budgets", "dash", "tools", "wctx",
+    "last", "last_epoch", "hours_old",
+)
+
+
+def shell(active_panel="dashboard"):
+    """The offline shell: the panel page with every personal VALUE blanked.
+
+    Why not scrub the rendered HTML: a regex over output silently misses the day
+    someone adds a field to a template. This blanks the view model instead, so
+    the template renders its own empty states and never held the data.
+
+    The subtlety is that `presentation()` GATES on this model — `campus["show"]`,
+    `fees`, `academics` and `tools` must stay truthy or the panel 404s, and
+    `merge_personal()` needs `personal_data`/`scope_fields` to be dicts. So the
+    STRUCTURE is preserved and only leaf values are emptied: a shell looks like
+    the real page with every number, name and row replaced by an empty value.
+    """
+    netid = get_current_user()
+    if not netid:
+        return redirect("/login")
+
+    vm = panel_data(netid, active_panel)
+
+    def blank(value):
+        """Keep containers and the flags gates read; empty everything else."""
+        if isinstance(value, dict):
+            return {k: blank(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return []
+        if isinstance(value, bool):
+            return value            # `show`/`has_*` flags are structure, not data
+        if isinstance(value, str):
+            return ""
+        if isinstance(value, (int, float)):
+            return 0
+        return None
+
+    for k in _PII_KEYS:
+        if k in vm:
+            vm[k] = blank(vm[k])
+    vm["student_name"] = ""
+    vm["netid"] = ""
+    vm["is_shell"] = True
+    return presentation(vm)
+
+
+def _shell_off(vm, rendered):
+    """In shell mode an island prop block must be EMPTY, not merely data-free.
+
+    The blocks still serialize a `<script type="application/json">` even with no
+    rows, and the shell's whole contract is "no payloads in the page". A helper
+    at the call sites beats five separate conditionals that someone can forget.
+    """
+    return "" if vm.get("is_shell") else rendered
+
+
+def _creds_usable(netid):
+    """True only when this account's stored portal password still decrypts.
+
+    /api/refresh can answer nothing but 401 in every other case (no row, or a
+    blob the current Fernet keys cannot read — a key rotation), and the browser
+    logs every 401 as a console error on the page that fired it. The background
+    auto-sync therefore needs to know BEFORE it fetches: see the `can-sync` meta
+    tag and web/src/data/background.ts (W5.4: it used to be app/static/dash.js).
+    (E4: zero console errors on every route, including the not-yet-synced
+    account.)
+    """
+    from ..crypto import decrypt_pw
+    row = user_password(netid)
+    return bool(row and decrypt_pw(row["password"] or ""))
+
+
+def dashboard_island_payload(vm, netid):
+    """The dashboard grid's island props — ONE computation, two consumers.
+
+    presentation() renders the inert `#island-dashboard` block from this, and
+    /api/dashboard (app/blueprints/panels.py) serves the identical JSON. That is
+    what lets a sync repaint the grid from DATA: the island refetches this
+    payload and Preact patches the numbers, instead of the browser downloading
+    the route's markup again and swapping <main> out (which is what destroyed
+    the user's scroll position).
+    """
+    return _island_props(
+        profile={"netid": netid, "name": vm["student_name"] or netid,
+                 "email": vm["dash"]["email"], "reg_no": vm["dash"]["reg_no"]},
+        ticker=_today_ticker(vm["group_key"]), week=vm["dash"]["week"],
+        budgets=vm["wctx"]["budgets"], marks_summary=vm["marks_summary"],
+        exams=vm["exams"], teach_groups=vm["wctx"]["teach_groups"],
+        fb_plan=vm["fb_plan"])
+
+
+def presentation(vm):
+    """Render one panel from panel_data()'s view model.
+
+    The page-only tail: the hourwise section, the Absences-vs-hourwise choice
+    for `monthly`, the two background kicks, the per-panel template name and
+    the P3.1 404 gate. /api/<panel> (app/blueprints/panels.py) does NOT go
+    through this — it serves `vm["data"]`, the same numbers without them.
+
+    `monthly` stays the complete list in `vm`; only the render sees the
+    choice. No panel template reads `monthly` without `hourwise` (/attendance
+    branches on `hourwise` first), so moving that choice here is what keeps
+    this split behaviour-neutral: keeping it inside panel_data would have
+    made an hourwise user whose grid came back empty silently lose the
+    Absences card.
+    """
+    netid = vm["netid"]
+    # The reminder card's server-known state. Imported here, not at module top:
+    # app.routes_push imports the app facade, which imports this module.
+    from ..routes_push import push_ssr_state as _push_ssr_state
+    # scope-filled copy of personal (portal values win, scope gaps only); the
+    # profile widget's avatar is rendered in the browser from the netid and is
+    # not part of this merge. Read once: the template and the settings island
+    # must paint the same keys.
+    personal = merge_personal(vm["personal_data"], vm["scope_fields"])
+    group_key, monthly = vm["group_key"], vm["monthly"]
+    hourwise = vm["hourwise"]
+    monthly_abs = [] if hourwise else monthly
+    # an authenticated visit that finds the SCOPE blob missing/stale starts
+    # the background sync — the surfaces fill in on the next reload
+    _scope_sync_kick_if_stale(netid)
+    # portal data has no background refresher of its own: without this a
+    # dashboard opened the next morning shows yesterday's numbers until
+    # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
+    # the knob is 0.
+    auto_sync_kick_if_stale(netid)
+    # Each route renders only its own panel: "/" -> home.html, everything else
+    # -> <panel>.html. (The old 1,060-line 9-panel dashboard.html is gone: it was
+    # never routed after P3.1 and only existed as a duplication.)
+    tpl = "home.html" if vm["panel"] == "dashboard" else f"{vm['panel']}.html"
+    # P3.1: every panel template wraps its <main> content in a {% if %} on its
+    # own data, so with no data the route would serve 200 + page chrome + an
+    # empty <main>. The nav entry is hidden in that same case, so nobody can
+    # arrive here by clicking — only a stale bookmark or a push deep link — and
+    # a URL that renders nothing is a broken link, not a page: 404 (all four
+    # gated routes alike). /attendance's hourwise/marks/exams sections have
+    # independent fallbacks, so it is not gated this way.
+    gated = {"campus": vm["campus"]["show"], "academics": vm["academics"],
+             "fees": vm["fees"], "tools": vm["tools"]}
+    if not gated.get(vm["panel"], True):
+        abort(404)
+    return render_template(
+        tpl, netid=netid, courses=vm["courses"], monthly=monthly_abs,
+        hourwise=hourwise,
+        days_left_90=next((c["days_left_90"] for c in vm["courses"] if c["days_left_90"] is not None), None),
+        stop=next((c["stop"] for c in vm["courses"] if c["stop"] is not None), None),
+        days_left_exam=next((c["days_left_exam"] for c in vm["courses"] if c["days_left_exam"] is not None), None),
+        last=vm["last"], last_epoch=vm["last_epoch"], hours_old=vm["hours_old"],
+        has_budgets=vm["has_budgets"],
+        # P4.1: the sync caption is progressive enhancement — the server paints
+        # exactly what the island would (same bucket table), so first paint is
+        # correct with JS blocked and hydration is a no-op repaint.
+        sync_age_text=_sync_age_caption(vm["last_epoch"]),
+        sync_age_props="" if vm.get("is_shell") else _sync_age_props(vm["last_epoch"], vm["last"]),
+        # P6.1: the attendance meters hydrate from this inert block. The rows
+        # below it are already server-painted, so the block is the ONLY thing
+        # that needs JS; with it blocked the page is unchanged.
+        attendance_props=_shell_off(vm, _attendance_block(vm["courses"])),
+        att_nudge=_att_nudge, att_pole=_att_pole, att_label=_att_label,
+        # P6.3: the marks cards hydrate from this inert block. The cards below
+        # are already server-painted, so the block is the ONLY thing that
+        # needs JS; with it blocked the page is unchanged.
+        marks_props=_shell_off(vm, _marks_block(vm["marks_view"])),
+        student_name=vm["student_name"], dash=vm["dash"], marks=vm["marks_view"],
+        marks_summary=vm["marks_summary"],
+        academics=vm["academics"],
+        fees=vm["fees"],
+        academics_props=_shell_off(vm, academics_island.block(academics_island.props(vm["academics"]))
+        if vm["academics"] else ""),
+        fees_props=_shell_off(vm, fees_island.block(fees_island.props(vm["fees"])) if vm["fees"] else ""),
+        exams=vm["exams"], faculty=vm["faculty_view"], fb_plan=vm["fb_plan"],
+        # card/widget engine: layout registry + derived widget data (route-side
+        # joins — partials consume flat dicts only)
+        layout=vm["layout"], widget_specs=WIDGETS,
+        ticker=_today_ticker(vm["group_key"]), budgets=vm["wctx"]["budgets"],
+        teach_groups=vm["wctx"]["teach_groups"],
+        version=APP_VERSION,
+        timetable=timetable_html(vm["group_key"], vm["attendance"]),
+        tt_fetched_at=_tt_fetched_at(vm["group_key"]),
+        tt_editor_enabled=_tt_editor_enabled(),
+        # scope-filled copy of personal (portal values win, scope gaps only);
+        # the profile widget's avatar is rendered in the browser from the netid
+        personal=personal,
+        settings_props=_shell_off(vm, settings_island.block(settings_island.props(personal))),
+        # P6.8: the reminder state the server already knows, so the card is not
+        # stuck on "Loading…" with JS blocked (push.js repaints the same text).
+        push_state=_push_ssr_state(netid),
+        campus=vm["campus"],
+        campus_props=_shell_off(vm, campus_island.block(campus_island.props(vm["campus"]))),
+        tools=vm["tools"],
+        # P7.1: whose IndexedDB rows this page may read. See layout.session_netid.
+        data_netid=session_netid(netid),
+        # rows only - the route 404s when the list is empty, so vm["tools"] is
+        # non-empty here; the card and footnote stay template markup.
+        tools_props=_shell_off(vm, tools_island.block(tools_island.props(vm["tools"]))),
+        # P6.2: the widgets' own inputs, serialised unchanged for the island.
+        # Built from the SAME locals the partials read — see
+        # dashboard_island_payload(), which /api/dashboard also serves.
+        dashboard_island_props=_island_block(dashboard_island_payload(vm, netid)),
+        scope_sync_state=_scope_sync_state(netid),
+        # E4: the auto-sync must not fire /api/refresh on an account whose
+        # stored creds cannot decrypt — the 401 is unavoidable and the browser
+        # logs it. web/src/data/background.ts reads this before its background
+        # autoRefreshIfStale().
+        can_sync=_creds_usable(netid))
+
+
+def panel_data(netid, active_panel="dashboard"):
+    """The dashboard view model for `netid`: what every panel shows, as data.
+
+    ONE computation, two consumers — presentation() renders templates from it
+    and the /api/<panel> endpoints serve a slice of it as JSON, so the page and
+    the offline store cannot disagree.
+
+    EXCLUDED on purpose: everything that is already-rendered HTML or a UI flag
+    rather than a value, plus `layout`/`widget_specs` (the card registry):
+      * timetable  — timetable_html() output. Consumers get `schedule` instead,
+                     the structured {day: {period: {code, name, location,
+                     attendance}}} grid the HTML is drawn from, attendance
+                     join already applied. Storing HTML in IndexedDB is the
+                     coupling the rewrite exists to remove.
+      * layout, widget_specs  — LAYOUT/WIDGETS presentation registry.
+      * version, tt_editor_enabled — UI flags.
+      * tools — the Tools panel's link registry (app-owned URLs), not data.
+      * sync captions — derived from last_epoch, which IS included, so a
+                     consumer formats its own relative time.
+    Display strings that the page prints verbatim (`pct_disp`, `due_disp`,
+    `days_left_90`, `fill`, ...) stay IN: they are the same numbers the page
+    shows and the offline copy wants them for parity; they cost nothing.
+    """
     row = user_dashboard(netid)
     _track("page_view", target="dashboard", user=netid)
     data = _jload(row["attendance_json"] if row else None,
@@ -161,12 +414,11 @@ def index():
     attendance = _attendance_index(courses)  # spec §4 join — consumed by timetable_html
     # Detailed attendance (SCOPE hourwise × timetable): replaces the Absences
     # card when the feature, the group's timetable and the stored hour rows
-    # are all present; otherwise the card above renders exactly as on main.
+    # are all present; otherwise the Absences card renders exactly as on main.
+    # Data, not presentation: /api/attendance serves it too. Computed HERE,
+    # after courses (hourwise_view joins the course objects), and kept ahead
+    # of `dash` only because that is where it always was.
     hourwise = _hourwise_section(netid, group_key, monthly)
-    if hourwise:
-        monthly_abs = []
-    else:
-        monthly_abs = monthly
     dash = {
         # institute mail is NetID@srmist.edu.in (the portal login page states
         # it verbatim) — the personal Gmail from the profile is NOT shown here
@@ -196,40 +448,89 @@ def index():
     # knob, so the feature set is read per request like every other gate.
     campus = campus_view(_jload(row["scope_json"] if row else None, {}),
                          enabled_features())
-    # an authenticated visit that finds the SCOPE blob missing/stale starts
-    # the background sync — the surfaces fill in on the next reload
-    _scope_sync_kick_if_stale(netid)
-    # portal data has no background refresher of its own: without this a
-    # dashboard opened the next morning shows yesterday's numbers until
-    # someone presses sync. No-op inside AUTO_SYNC_STALE_S, and off when
-    # the knob is 0.
-    auto_sync_kick_if_stale(netid)
-    return render_template(
-        "dashboard.html", netid=netid, courses=courses, monthly=monthly_abs,
-        hourwise=hourwise,
-        days_left_90=next((c["days_left_90"] for c in courses if c["days_left_90"] is not None), None),
-        stop=next((c["stop"] for c in courses if c["stop"] is not None), None),
-        days_left_exam=next((c["days_left_exam"] for c in courses if c["days_left_exam"] is not None), None),
-        last=last, last_epoch=last_epoch, hours_old=hours_old, has_budgets=has_budgets,
-        student_name=student_name, dash=dash, marks=marks_view, marks_summary=marks_summary,
-        academics=academics,
-        fees=fees,
-        exams=exams, faculty=faculty_view, fb_plan=fb_plan,
-        # card/widget engine: layout registry + derived widget data (route-side
-        # joins — partials consume flat dicts only)
-        layout=layout, widget_specs=WIDGETS,
-        ticker=_today_ticker(group_key), budgets=_wctx["budgets"],
-        teach_groups=_wctx["teach_groups"],
-        version=APP_VERSION,
-        timetable=timetable_html(group_key, attendance),
-        tt_fetched_at=_tt_fetched_at(group_key),
-        tt_editor_enabled=_tt_editor_enabled(),
-        # scope-filled copy of personal (portal values win, scope gaps only);
-        # the profile widget's avatar stays the generated blobatar
-        personal=merge_personal(personal_data, _scope_fields),
-        campus=campus,
-        tools=_tools_entries(netid),
-        scope_sync_state=_scope_sync_state(netid))
+    # Tools rows come from the panel views themselves: a link renders only
+    # when its panel renders (no second read of the cold blob).
+    tools = _tools_entries(campus, fees, academics, hourwise)
+    return dict(
+        # ── panels the API serves (app/blueprints/panels.py) ──
+        courses=courses,          # /api/attendance: code, pct, budgets, tints
+        monthly=monthly,          # /api/attendance: month bars + absence chips
+        hourwise=hourwise,        # /api/attendance: detailed grid (None = feature off)
+        fees=fees,                # /api/fees: None when gated (one rule)
+        campus=campus,            # /api/campus: {"show", "cards"}
+        academics=academics,      # /api/academics: {"cgpa", "courses"} or None
+        schedule=_schedule(group_key, attendance),  # timetable AS DATA, not HTML
+        # ── the rest of the page model (home/marks/timetable/settings) ──
+        netid=netid, panel=active_panel, data=data, personal_data=personal_data,
+        scope_fields=_scope_fields, student_name=student_name,
+        marks_view=marks_view, marks_summary=marks_summary, exams=exams,
+        faculty_view=faculty_view, fb_plan=fb_plan, group_key=group_key,
+        attendance=attendance, has_budgets=has_budgets, dash=dash, tools=tools,
+        layout=layout, wctx=_wctx, last=last, last_epoch=last_epoch,
+        hours_old=hours_old,
+    )
+
+
+def _schedule(group_key, attendance):
+    """The timetable tab's grid as DATA — what timetable_html renders from.
+
+    {day: {period: {code, name, location, attendance}}} with the spec §4
+    attendance join already applied (a joined course dict or None for "no
+    data"). This is the JSON-side counterpart of timetable= (an escaped HTML
+    string): the API needs values, not markup. Empty dict = no timetable.
+    """
+    gid = group_id(group_key) if group_key else None
+    if gid is None:
+        return {}
+    custom_codes = {r[0] for r in group_subjects(gid) if r[3] and r[0]} if attendance else set()
+    out = {}
+    for r in group_slots(gid):
+        out.setdefault(r[0], {})[r[1]] = {
+            "code": r[2] or "", "name": r[3] or "", "location": r[4] or "",
+            # the ROW rule of timetable_html (audit 2026-09-27): a custom subject
+            # never joins; otherwise code-exact, then normalized name.
+            "attendance": _join_attendance(attendance, custom_codes, r[2] or "", r[3] or ""),
+        }
+    return out
+
+
+# ── P3.1: one document -> nine real routes ───────────────────────────────
+# Each panel is its own URL; every route runs the SAME view model (index()
+# computes the data once) but renders a per-route template containing only that
+# panel. index keeps endpoint `index` (Flask pins it on __name__). The eight
+# wrappers below are bare per-panel endpoints; they exist as real `def`s so
+# __name__ == the endpoint name (FlatBlueprint derives endpoint from __name__).
+def attendance():
+    return index("attendance")
+
+
+def timetable():
+    return index("timetable")
+
+
+def marks():
+    return index("marks")
+
+
+def campus():
+    return index("campus")
+
+
+def academics():
+    return index("academics")
+
+
+def fees():
+    return index("fees")
+
+
+def tools():
+    return index("tools")
+
+
+def settings():
+    return index("settings")
+# end P3.1
 
 
 def _load_component_tags(class_key, marks):

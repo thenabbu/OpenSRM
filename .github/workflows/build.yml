@@ -227,6 +227,26 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
+      # The label expression above is pinned by test_supply_chain.py, but a pin
+      # only proves the string is in the workflow. This reads the artifact that
+      # was just pushed and checks it names THIS commit — the property a deploy
+      # relies on to answer "which code is running". Keyed on the pushed digest,
+      # not on :latest: :latest is a mutable tag and would answer for whatever
+      # moved it last. Only an unreleased build has no digest to read.
+      - name: Pushed image is labelled with this commit
+        if: needs.meta.outputs.released == 'true'
+        run: |
+          img="ghcr.io/thenabbu/opensrm@${{ steps.build.outputs.digest }}"
+          got=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$img")
+          echo "image $img -> revision ${got:-<unlabelled>}"
+          [ "$got" = "${{ github.sha }}" ] || {
+            echo "::error::image label ${got:-<unlabelled>} != commit ${{ github.sha }}"; exit 1; }
+          rel=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$img")
+          want=$(cat VERSION)
+          [ "$rel" = "$want" ] || {
+            echo "::error::version label ${rel:-<unlabelled>} != VERSION $want"; exit 1; }
+          echo "labels match: revision=$got version=$rel"
+
       - name: Export digest
         if: needs.meta.outputs.released == 'true' || needs.meta-dev.outputs.sha_tag != ''
         run: |

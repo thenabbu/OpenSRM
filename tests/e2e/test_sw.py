@@ -40,15 +40,22 @@ with sync_playwright() as p:
     controlled = page.evaluate("() => !!navigator.serviceWorker.controller")
     check("page controlled by SW after reload", controlled)
 
-    # 3) cache name matches app/static/sw.js (single source of truth — this
-    #    literal rotted twice: v15->v19 on main, v19->v20 here, both undetected
-    #    because PR CI is lint-only)
-    import re as _re
-    from pathlib import Path as _P
-    _sw = (_P(__file__).resolve().parent.parent.parent / "app" / "static" / "sw.js").read_text()
-    _expected = _re.search(r"opensrm-v\d+", _sw).group(0)
+    # 3) the INSTALL really precached the built bundle. This used to assert the
+    #    `opensrm-v<NN>` cache-name literal was in caches.keys(); after the P8.2
+    #    Workbox parity swap nothing creates that cache any more (the name only
+    #    survives in the activate keep-list), so the check was asserting a name
+    #    rather than the thing the name stood for. The precache cache and the
+    #    entry chunk inside it are the real, non-vacuous evidence that
+    #    workbox-precaching ran.
     keys = page.evaluate("() => caches.keys()")
-    check(f"cache {_expected} present", _expected in keys, str(keys))
+    precache = next((k for k in keys if k.startswith("workbox-precache")), None)
+    entries = page.evaluate(
+        """async (name) => { const c = await caches.open(name);
+            return (await c.keys()).map(r => new URL(r.url).pathname); }""",
+        precache) if precache else []
+    entry = [e for e in entries if e.startswith("/static/dist/assets/app-") and e.endswith(".js")]
+    check("workbox precache holds the built entry bundle",
+          bool(precache) and bool(entry), f"{precache}: {len(entries)} urls, entry={entry}")
 
     # 4) dashboard path: registration also present via dash.js
     ctx.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])

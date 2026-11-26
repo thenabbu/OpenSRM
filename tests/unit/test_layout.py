@@ -155,9 +155,18 @@ check("day card spans 4 + row-span 2", 'lg:col-span-4' in html and 'lg:row-span-
 check("assess + people cards present (when-filter OR-semantics)",
       html.count('lg:col-span-8') == 2, str(html.count('lg:col-span-8')))
 check("marks chip renders", 'Internal marks' in html and '17.5/20' in html)
-check("attendance budget rows + alert class",
-      'can skip' in html and 'att-neg' in html and 'attend 3' in html,
-      "skip=%s neg=%s att3=%s" % ('can skip' in html, 'att-neg' in html, 'attend 3' in html))
+# P3.1: the budget rows/alert classes render on /attendance now, not on "/";
+# the layout assertions above stay on "/" because the cards live there.
+# 'attend N' is rendered by the timetable grid, which now lives on /timetable.
+# Each token is asserted against the ONE route that must render it — joining
+# the pages first let a token pass on either page, which is no assertion.
+_att = GET("/attendance").get_data(as_text=True)
+_tt = GET("/timetable").get_data(as_text=True)
+check("attendance budget rows + alert class (/attendance)",
+      'can skip' in _att and 'att-neg' in _att,
+      "skip=%s neg=%s" % ('can skip' in _att, 'att-neg' in _att))
+check("'attend N' budget rendered by the timetable grid (/timetable)",
+      'attend 3' in _tt, "'attend 3' %s /timetable" % ('in' if 'attend 3' in _tt else 'MISSING from'))
 check("people card lays widgets out 2-up (cols contract)",
       'sm:grid-cols-2' in html, "cols wrapper missing")
 check("teachers grouped + Practical mode tag",
@@ -185,7 +194,16 @@ c.execute("""UPDATE users SET marks_json='[]', faculty_map_json='{}',
           (json.dumps({"courses": [], "monthly": [], "period": None,
                        "daily_absent": {}}),))
 c.commit(); c.close()
-h3 = GET().get_data(as_text=True)
+# The seed has classes Mon-Fri only, and both widgets this checks are
+# weekday-driven (today.html hides itself on an empty day by design). Pin the
+# clock to a weekday or the assertion only passes Tue-Fri and fails every
+# weekend — which is exactly how this stayed "known pre-existing".
+A.datetime = type("M", (), {"now": staticmethod(
+    lambda: _dt.datetime(2026, 10, 12, 9, 45))})  # Monday 09:45
+try:
+    h3 = GET().get_data(as_text=True)
+finally:
+    A.datetime = real_dt
 check("all-empty cards hidden (no orphan shells)",
       'lg:col-span-4' in h3 and 'lg:col-span-8' not in h3)
 # The ticker widget hides itself on a weekend / a day with no timetable slots

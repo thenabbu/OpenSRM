@@ -1,0 +1,117 @@
+/* Vite entry (web/) — verbatim mirror of app/static/src.css with ONLY the
+   @source/@import paths rewritten to ../app/... Keep in lockstep with the
+   legacy entry (scripts/build-css.sh) until that pipeline retires. */
+/* OpenSRM compiled-CSS entry (DESIGN §10.1 / §10.16).
+   Build: scripts/build-css.sh — pinned Tailwind standalone CLI + daisyUI,
+   output committed as app/static/app.css, CI re-builds and fails if stale.
+   source(none) + explicit @source keeps the output DETERMINISTIC: editing
+   a doc must not churn app.css (the CI git-diff check would go red), so
+   only real class sources are scanned. */
+@import "tailwindcss" source(none);
+
+@plugin "daisyui" { themes: false; }
+
+/* The theme, where daisyUI 5 wants it: a real custom theme in the plugin
+   config (DESIGN Appendix A). Tokens live here once; daisyUI emits the
+   `[data-theme=openSRM]` variable block AND wires it into every component
+   layer. It used to be a hand-written `html[data-theme]` block in
+   partials/theme.html, which meant the components and the tokens were
+   maintained in two places. */
+@plugin "daisyui/theme" {
+  name: "openSRM";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(20% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(26% 0 0);
+  --color-base-content: oklch(100% 0 0);
+  --color-primary: oklch(0% 0 0);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(65% 0.241 354.308);
+  --color-secondary-content: oklch(97% 0.014 343.198);
+  --color-accent: oklch(100% 0 0);
+  --color-accent-content: oklch(0% 0 0);
+  --color-neutral: oklch(26% 0 0);
+  --color-neutral-content: oklch(98% 0 0);
+  --color-info: oklch(58% 0.158 241.966);
+  --color-info-content: oklch(97% 0.013 236.62);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(98% 0.014 180.72);
+  --color-warning: oklch(68% 0.162 75.834);
+  --color-warning-content: oklch(98% 0.026 102.212);
+  --color-error: oklch(57% 0.245 27.325);
+  --color-error-content: oklch(97% 0.013 17.38);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@source "../app/templates";
+@source "../app/views";
+@source "../app/app.py";
+@source "../app/static/*.js";
+@source "../app/static/safelist";
+@source "./src";
+
+/* Hand-written sheets in the SAME order as the old <link> tags
+   (framework first, then timetable, then blobatar's own motion + gaze layers).
+   They stay unlayered, so they override layered framework rules exactly as
+   before. blobatar's two stylesheets come from the package itself — the copies
+   this repo used to vendor under app/static/ were byte-identical to these. */
+@import "../app/static/timetable.css";
+@import "blobatar/motion.css";
+@import "blobatar/gaze.css";
+
+/* ── Phase 5: touch feel (DESIGN §7 / §10.16 rule 4) ──────────────────
+   Press feedback is FAST down, slow up with a slight overshoot — that
+   asymmetry is what reads as physical. transform/opacity only, no hover
+   lift, disabled entirely under prefers-reduced-motion. Motion still
+   only in response to something the person did. */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: linear(0, .32 8%, .72 17%, .95 27%, 1.04 38%, 1.02 50%, 1 65%, 1);
+  --t-press: 60ms; --t-ui: 200ms; --t-sheet: 320ms;
+}
+/* ── Fees: nested per-receipt accordion rows ──────────────────────────────
+   daisyUI's .collapse is height:auto on a grid, so the content track never
+   shrinks to 0 and a receipt stayed 32px tall with its narration painted over
+   the following rows (measured). For a row that is NOT its parent's grid
+   item, honour the element's state: closed = content hidden, [open] = block. */
+.fees-rcpt > .collapse-content { display: none; }
+.fees-rcpt[open] > .collapse-content { display: block; }
+/* the arrow pseudo is positioned against the summary; paint it over the amount
+   instead of reserving 3rem, which starved the one-line grid's name cell */
+.fees-rcpt > summary.collapse-title { padding-inline-end: 0; }
+html { overscroll-behavior-y: contain; }   /* contains scroll chains; pairs with pull.js (phase 7) */
+button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; user-select: none; }
+
+/* ── Focus ring, one rule for every focus stop ────────────────────────────
+   `<summary>` is natively focusable, so a keyboard user lands on the fees
+   receipt rows and the hourly accordion headings. Chromium draws no default
+   ring for them, and only .hw-mrow had one (timetable.css) — every other
+   summary was a focus stop with nothing on screen. Written once here rather
+   than per-template: a new disclosure must not silently become invisible. */
+:where(a, button, summary, label, [role=tab], input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.pressable { transition: transform 220ms var(--ease-spring), background-color 150ms; }
+.pressable:active { transform: scale(.97); transition-duration: var(--t-press); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable, .pressable:active { transition: none; transform: none; }
+}
+
+/* ── Phase 6: avatar idle loops pause on weak devices and offscreen ──
+   Pausing preserves the resolved pose (motion.css explains why). The tier
+   is set by perf.js before first paint; .is-offscreen is toggled by the
+   IntersectionObserver in dash.js. */
+html[data-perf="low"] .mo-root, html[data-perf="low"] .mo-root *,
+.mo-root.is-offscreen, .mo-root.is-offscreen * { animation-play-state: paused; }

@@ -1,0 +1,14 @@
+{
+  "criterion": "E14",
+  "tier": "machine",
+  "statement": "`STATUS.md` truthful; board matches reality (no ghost, duplicate or deadlocked cards).",
+  "verdict": "PASS",
+  "note": "board CLEAN, STATUS.md fresh",
+  "evidence": [
+    "board_check: board_check: CLEAN",
+    "STATUS.md last modified 0.6 d ago"
+  ],
+  "sha": "9c112bea7ac90b719143a0da30764a6bcd8abe81",
+  "round": 1,
+  "judged_at": "2026-11-18T17:48:07+00:00"
+}

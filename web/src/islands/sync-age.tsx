@@ -1,0 +1,48 @@
+import type { HostProps, SyncAgeProps } from './contract';
+import { markHydrated } from './contract';
+import { ageCaption } from '../lib/syncAge';
+
+export interface SyncAgeHost extends HostProps {
+  props: SyncAgeProps;
+}
+
+/** The in-flight caption dash.js writes (ref()); live state, not an age. */
+const SYNCING = 'Syncing…';
+
+/**
+ * The navbar sync caption, hydrated. The server painted identical text and
+ * classes (app/views/sync_age.py), so the first paint here changes nothing.
+ * What hydration ADDS: the caption re-ages itself every 60s and stamps
+ * `data-hydrated` — evidence only a mounted island can produce. Returns null
+ * and drives the existing span, so Preact never deletes or re-creates nodes
+ * the server owns (no flash, no focus loss, no layout shift).
+ */
+export default function SyncAge({ el, props }: SyncAgeHost) {
+  // main.ts's mountBounded clears the mount BEFORE rendering (render() alone
+  // only appends), and it captured the server's child nodes first, so a throw
+  // still restores them. Do not rely on Preact emptying anything for you.
+  const paint = (): void => {
+    if (el.textContent === SYNCING) return;   // a refresh is in flight: not ours
+    // The span carries the SAME two values as props (base.html renders data-ts /
+    // data-full from the same locals), and they are the live copy: dash.js bumps
+    // `data-ts` when a sync lands, without repainting this island (a repaint
+    // would arm a second 60 s timer). Read the DOM first, fall back to props for
+    // a mount with no data attributes (fixtures, tests).
+    const ts = el.dataset.ts ? Number(el.dataset.ts) : props.ts;
+    const full = el.dataset.full ?? props.full;
+    const text = props.busy ?? ageCaption(ts, Date.now() / 1000);
+    el.textContent = text;
+    el.classList.toggle('hidden', !text);
+    // The server emits BOTH representations (templates: `hidden` attribute,
+    // Tailwind: the class). Writing only one leaves a hydrated caption that
+    // says hidden one way and visible the other — keep them in lockstep.
+    el.toggleAttribute('hidden', !text);
+    el.title = full;
+  };
+  paint();
+  markHydrated(el);
+  // one timer per mount; lives as long as the page (re-mounts are guarded by
+  // data-hydrated in main.ts)
+  window.setInterval(paint, 60_000);
+  return null;
+}

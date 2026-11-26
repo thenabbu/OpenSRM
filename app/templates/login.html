@@ -1,20 +1,10 @@
 <!doctype html>
-<html data-theme="openSRM">
+<html lang="en" data-theme="openSRM">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
-<link rel="icon" type="image/png" sizes="192x192" href="{{ asset('icon-192.png') }}">
-<link rel="icon" type="image/png" sizes="512x512" href="{{ asset('icon-512.png') }}">
-<link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
-<link rel="manifest" href="/static/manifest.json">
+{% include "partials/pwa_head.html" %}
 <meta name="theme-color" content="#111111">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="OpenSRM">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="msapplication-TileColor" content="#111111">
-<meta name="msapplication-TileImage" href="{{ asset('icon-192.png') }}">
 <meta name="description" content="Self-hosted attendance dashboard for the SRM Student Portal.">
 <meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
@@ -133,6 +123,7 @@
 
     </div>
   </main>
+
 
   <!-- Safe area padding for iOS -->
   <div class="h-[env(safe-area-inset-bottom)]"></div>

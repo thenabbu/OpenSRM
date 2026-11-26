@@ -1,0 +1,1320 @@
+<div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel="" class="max-w-3xl mx-auto" style="">
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="text-base font-semibold">Subjects</h1>
+      <div class="join" role="group" aria-label="Attendance view">
+        <button type="button" id="att-view-graph" class="btn btn-sm btn-square join-item btn-active" aria-pressed="true" title="Graph view">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"></path>
+          </svg>
+        </button>
+        <button type="button" id="att-view-table" class="btn btn-sm btn-square join-item" aria-pressed="false" title="Table view">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <rect x="3.75" y="4.5" width="16.5" height="15" rx="1.5"></rect>
+            <path stroke-linecap="round" d="M3.75 9.75h16.5M9.75 9.75v9.75M15.75 9.75v9.75"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="att-graph">
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+      <div class="mrows">
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Class In Charge</span><span class="mpct">50.0%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:50.0%">2</span><span class="pn pn-75" style="left:75%">3</span><span class="pn pn-tot">4</span></div>
+          
+          <div class="meter" role="img" aria-label="Class In Charge, 50.0 percent attended, needs 4 for 75 percent">
+            <i class="mz mz--red" style="width:50.0%"></i>
+            <i class="mhatch" style="left:50.0%;width:25.0%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:50.0%;width:25.0%"></i><span style="left:62.5%">4</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Advanced Programming Practice</span><span class="mpct">54.5%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:54.55%">30</span><span class="pn pn-75" style="left:75%">42</span><span class="pn pn-tot">55</span></div>
+          
+          <div class="meter" role="img" aria-label="Advanced Programming Practice, 54.5 percent attended, needs 45 for 75 percent">
+            <i class="mz mz--red" style="width:54.55%"></i>
+            <i class="mhatch" style="left:54.55%;width:20.45%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:54.55%;width:20.45%"></i><span style="left:64.77%">45</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow nudL">
+          <div class="mtop"><span class="mname">Operating Systems</span><span class="mpct">68.1%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:68.18%">30</span><span class="pn pn-75" style="left:75%">33</span><span class="pn pn-tot">44</span></div>
+          
+          <div class="meter" role="img" aria-label="Operating Systems, 68.1 percent attended, needs 12 for 75 percent">
+            <i class="mz mz--red" style="width:68.18%"></i>
+            <i class="mhatch" style="left:68.18%;width:6.82%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:68.18%;width:6.82%"></i><span style="left:71.59%">12</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Numerical Methods And Analysis</span><span class="mpct">86.3%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:86.36%">38</span><span class="pn pn-75" style="left:75%">33</span><span class="pn pn-tot">44</span></div>
+          
+          <div class="meter" role="img" aria-label="Numerical Methods And Analysis, 86.3 percent attended, 6 skippable for 75 percent">
+            <i class="mz" style="width:86.36%"></i>
+            <i class="mhatch" style="left:75%;width:11.36%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:75%;width:11.36%"></i><span style="left:80.68%">6</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Design Thinking And Methodology</span><span class="mpct">86.6%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:86.67%">26</span><span class="pn pn-75" style="left:75%">23</span><span class="pn pn-tot">30</span></div>
+          
+          <div class="meter" role="img" aria-label="Design Thinking And Methodology, 86.6 percent attended, 4 skippable for 75 percent">
+            <i class="mz" style="width:86.67%"></i>
+            <i class="mhatch" style="left:75%;width:11.67%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:75%;width:11.67%"></i><span style="left:80.83%">4</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Professional Ethics</span><span class="mpct">90.9%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-now" style="left:90.91%">10</span><span class="pn pn-75" style="left:75%">9</span><span class="pn pn-tot">11</span></div>
+          
+          <div class="meter" role="img" aria-label="Professional Ethics, 90.9 percent attended, 2 skippable for 75 percent">
+            <i class="mz" style="width:90.91%"></i>
+            <i class="mhatch" style="left:75%;width:15.91%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:75%;width:15.91%"></i><span style="left:82.95%">2</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Computer Organization And Architecture</span><span class="mpct">95.5%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-75" style="left:75%">34</span><span class="pn pn-tot">43 / 45</span></div>
+          
+          <div class="meter" role="img" aria-label="Computer Organization And Architecture, 95.5 percent attended, 12 skippable for 75 percent">
+            <i class="mz" style="width:95.56%"></i>
+            <i class="mhatch" style="left:75%;width:20.56%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:75%;width:20.56%"></i><span style="left:85.28%">12</span></div>
+        </div>
+      
+      
+      
+        
+        
+        
+        
+        
+        
+        
+        <div class="mrow ">
+          <div class="mtop"><span class="mname">Data Structures And Algorithms</span><span class="mpct">97.8%</span></div>
+          
+          
+          
+          <div class="pnums"><span class="pn pn-75" style="left:75%">35</span><span class="pn pn-tot">45 / 46</span></div>
+          
+          <div class="meter" role="img" aria-label="Data Structures And Algorithms, 97.8 percent attended, 14 skippable for 75 percent">
+            <i class="mz" style="width:97.83%"></i>
+            <i class="mhatch" style="left:75%;width:22.83%"></i>
+            <i class="mtick"></i>
+          </div>
+          
+          <div class="pcts"><span class="pct pct-0">0%</span><span class="pct pct-75" style="left:75%">75%</span></div>
+          
+          <div class="pconn"><i style="left:75%;width:22.83%"></i><span style="left:86.41%">14</span></div>
+        </div>
+      
+      
+      </div>
+    </div>
+    </div>
+    <div id="att-table" hidden="">
+      <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
+        <table class="att-table">
+          <colgroup><col style="width:17%"><col style="width:38%"><col style="width:13%"><col style="width:17%"><col style="width:15%"></colgroup>
+          <thead><tr>
+            <th scope="col">Code</th><th scope="col">Subject</th>
+            <th scope="col" class="num">Total</th><th scope="col" class="num">Attended</th>
+            <th scope="col" class="num">Margin</th>
+          </tr></thead>
+          <tbody>
+          
+          
+            <tr>
+              <td class="font-mono">CL</td>
+              <td class="att-subj" title="Class In Charge">Class In Charge</td>
+              <td class="num">4</td>
+              <td class="num">2</td>
+              <td class="num att-margin att-neg">-4</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21CSC203P</td>
+              <td class="att-subj" title="Advanced Programming Practice">Advanced Programming Practice</td>
+              <td class="num">55</td>
+              <td class="num">30</td>
+              <td class="num att-margin att-neg">-45</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21CSC202J</td>
+              <td class="att-subj" title="Operating Systems">Operating Systems</td>
+              <td class="num">44</td>
+              <td class="num">30</td>
+              <td class="num att-margin att-neg">-12</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21MAB206T</td>
+              <td class="att-subj" title="Numerical Methods And Analysis">Numerical Methods And Analysis</td>
+              <td class="num">44</td>
+              <td class="num">38</td>
+              <td class="num att-margin att-pos">+6</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21DCS201P</td>
+              <td class="att-subj" title="Design Thinking And Methodology">Design Thinking And Methodology</td>
+              <td class="num">30</td>
+              <td class="num">26</td>
+              <td class="num att-margin att-pos">+4</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21LEM201T</td>
+              <td class="att-subj" title="Professional Ethics">Professional Ethics</td>
+              <td class="num">11</td>
+              <td class="num">10</td>
+              <td class="num att-margin att-pos">+2</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21CSS201T</td>
+              <td class="att-subj" title="Computer Organization And Architecture">Computer Organization And Architecture</td>
+              <td class="num">45</td>
+              <td class="num">43</td>
+              <td class="num att-margin att-pos">+12</td>
+            </tr>
+          
+          
+          
+            <tr>
+              <td class="font-mono">21CSC201J</td>
+              <td class="att-subj" title="Data Structures And Algorithms">Data Structures And Algorithms</td>
+              <td class="num">46</td>
+              <td class="num">45</td>
+              <td class="num att-margin att-pos">+14</td>
+            </tr>
+          
+          
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    
+
+    
+    <div class="att-h flex items-center gap-2">Detailed attendance
+      <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap hidden" title="1970-01-01T00:00:00"></span>
+    </div>
+    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5" id="hourwise-months">
+      
+      <details class="hw-month" data-month="Oct 2026">
+        <summary class="hw-mrow">
+          <span class="hk-label">Oct 2026</span>
+          <span class="hk-num">51P · 18A</span>
+        </summary>
+        <div class="hw-grid-wrap">
+          <div class="hw-grid" style="--hw-n:6" role="table" aria-label="Oct 2026 hour by hour">
+            <div class="hw-hcell" role="columnheader">Date</div>
+            <div class="hw-hcell" role="columnheader">h1</div><div class="hw-hcell" role="columnheader">h2</div><div class="hw-hcell" role="columnheader">h3</div><div class="hw-hcell" role="columnheader">h4</div><div class="hw-hcell" role="columnheader">h5</div><div class="hw-hcell" role="columnheader">h6</div>
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">16 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 16 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 16 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">15 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 15 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 15 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 15 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 15 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 15 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 15 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Thursday · 15 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">14 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Wednesday · 14 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Wednesday · 14 Oct 2026 · h2 · absent · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 14 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 14 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 14 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 14 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 14 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">13 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 13 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 13 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 13 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 13 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 13 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 13 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Tuesday · 13 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">12 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 12 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 12 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 12 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 12 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 12 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 12 Oct 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 12 Oct 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Sat</span> <span class="hw-dt">10 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 10 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Saturday · 10 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 10 Oct 2026 · h2 · absent · no subject on the timetable" aria-label="Saturday · 10 Oct 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 10 Oct 2026 · h3 · absent · no subject on the timetable" aria-label="Saturday · 10 Oct 2026 · h3 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h4"></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 10 Oct 2026 · h5 · absent · no subject on the timetable" aria-label="Saturday · 10 Oct 2026 · h5 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 10 Oct 2026 · h6 · absent · no subject on the timetable" aria-label="Saturday · 10 Oct 2026 · h6 · absent · no subject on the timetable">A</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">09 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Friday · 09 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Friday · 09 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 09 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 09 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Friday · 09 Oct 2026 · h4 · absent · no subject on the timetable" aria-label="Friday · 09 Oct 2026 · h4 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 09 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 09 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 09 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 09 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">08 Oct</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 08 Oct 2026 · h1 · absent · no subject on the timetable" aria-label="Thursday · 08 Oct 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 08 Oct 2026 · h2 · absent · no subject on the timetable" aria-label="Thursday · 08 Oct 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 08 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 08 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 08 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 08 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 08 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Thursday · 08 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">07 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 07 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 07 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">06 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 06 Oct 2026 · h6 · present · no subject on the timetable" aria-label="Tuesday · 06 Oct 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">05 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 05 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 05 Oct 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 05 Oct 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 05 Oct 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 05 Oct 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 05 Oct 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 05 Oct 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">01 Oct</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 01 Oct 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 01 Oct 2026 · h2 · absent · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 01 Oct 2026 · h3 · absent · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h3 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 01 Oct 2026 · h4 · absent · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h4 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 01 Oct 2026 · h5 · absent · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h5 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 01 Oct 2026 · h6 · absent · no subject on the timetable" aria-label="Thursday · 01 Oct 2026 · h6 · absent · no subject on the timetable">A</div>
+            
+            
+          </div>
+        </div>
+      </details>
+      
+      <details class="hw-month" data-month="Aug 2026">
+        <summary class="hw-mrow">
+          <span class="hk-label">Aug 2026</span>
+          <span class="hk-num">80P · 6A</span>
+        </summary>
+        <div class="hw-grid-wrap">
+          <div class="hw-grid" style="--hw-n:6" role="table" aria-label="Aug 2026 hour by hour">
+            <div class="hw-hcell" role="columnheader">Date</div>
+            <div class="hw-hcell" role="columnheader">h1</div><div class="hw-hcell" role="columnheader">h2</div><div class="hw-hcell" role="columnheader">h3</div><div class="hw-hcell" role="columnheader">h4</div><div class="hw-hcell" role="columnheader">h5</div><div class="hw-hcell" role="columnheader">h6</div>
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">31 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 31 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 31 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 31 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 31 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 31 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 31 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 31 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">27 Aug</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 27 Aug 2026 · h1 · absent · no subject on the timetable" aria-label="Thursday · 27 Aug 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 27 Aug 2026 · h2 · absent · no subject on the timetable" aria-label="Thursday · 27 Aug 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 27 Aug 2026 · h3 · absent · no subject on the timetable" aria-label="Thursday · 27 Aug 2026 · h3 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 27 Aug 2026 · h4 · absent · no subject on the timetable" aria-label="Thursday · 27 Aug 2026 · h4 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">25 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 25 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 25 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h2"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 25 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 25 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 25 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 25 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">24 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 24 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 24 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 24 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 24 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 24 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 24 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 24 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Sat</span> <span class="hw-dt">22 Aug</span></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h1"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h2"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Saturday · 22 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Saturday · 22 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Saturday · 22 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Saturday · 22 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Saturday · 22 Aug 2026 · h6 · absent · no subject on the timetable" aria-label="Saturday · 22 Aug 2026 · h6 · absent · no subject on the timetable">A</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">21 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 21 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 21 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 21 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 21 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 21 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 21 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 21 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 21 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 21 Aug 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 21 Aug 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">20 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 20 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 20 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 20 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 20 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 20 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 20 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 20 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 20 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">18 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 18 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 18 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h2"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 18 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 18 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 18 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 18 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">17 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 17 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 17 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 17 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 17 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 17 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 17 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 17 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 17 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Monday · 17 Aug 2026 · h5 · absent · no subject on the timetable" aria-label="Monday · 17 Aug 2026 · h5 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 17 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 17 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">14 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 14 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 14 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 14 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 14 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 14 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 14 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 14 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 14 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 14 Aug 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 14 Aug 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">13 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 13 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 13 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 13 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 13 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 13 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 13 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 13 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 13 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">12 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 12 Aug 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 12 Aug 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">10 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 10 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 10 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 10 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 10 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 10 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 10 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 10 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">07 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 07 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 07 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 07 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 07 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 07 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 07 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 07 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 07 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 07 Aug 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 07 Aug 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">06 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 06 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 06 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 06 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 06 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 06 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 06 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 06 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 06 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">05 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 05 Aug 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 05 Aug 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">04 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 04 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 04 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 04 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 04 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 04 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 04 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 04 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 04 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">03 Aug</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 03 Aug 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 03 Aug 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 03 Aug 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 03 Aug 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 03 Aug 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 03 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 03 Aug 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+          </div>
+        </div>
+      </details>
+      
+      <details class="hw-month" data-month="Jul 2026">
+        <summary class="hw-mrow">
+          <span class="hk-label">Jul 2026</span>
+          <span class="hk-num">51P · 2A</span>
+        </summary>
+        <div class="hw-grid-wrap">
+          <div class="hw-grid" style="--hw-n:6" role="table" aria-label="Jul 2026 hour by hour">
+            <div class="hw-hcell" role="columnheader">Date</div>
+            <div class="hw-hcell" role="columnheader">h1</div><div class="hw-hcell" role="columnheader">h2</div><div class="hw-hcell" role="columnheader">h3</div><div class="hw-hcell" role="columnheader">h4</div><div class="hw-hcell" role="columnheader">h5</div><div class="hw-hcell" role="columnheader">h6</div>
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">31 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 31 Jul 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 31 Jul 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">30 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 30 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 30 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 30 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 30 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 30 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 30 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 30 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 30 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 30 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 30 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">29 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 29 Jul 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 29 Jul 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">28 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 28 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 28 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 28 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 28 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 28 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 28 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 28 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 28 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 28 Jul 2026 · h6 · absent · no subject on the timetable" aria-label="Tuesday · 28 Jul 2026 · h6 · absent · no subject on the timetable">A</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">27 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 27 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 27 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 27 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 27 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 27 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 27 Jul 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 27 Jul 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">24 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 24 Jul 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 24 Jul 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">23 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 23 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 23 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 23 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 23 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 23 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 23 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 23 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 23 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 23 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 23 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">22 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 22 Jul 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 22 Jul 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">21 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 21 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 21 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 21 Jul 2026 · h2 · absent · no subject on the timetable" aria-label="Tuesday · 21 Jul 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 21 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 21 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">20 Jul</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 20 Jul 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 20 Jul 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 20 Jul 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 20 Jul 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 20 Jul 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 20 Jul 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 20 Jul 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 20 Jul 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 20 Jul 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 20 Jul 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+          </div>
+        </div>
+      </details>
+      
+      <details class="hw-month" data-month="Sep 2026">
+        <summary class="hw-mrow">
+          <span class="hk-label">Sep 2026</span>
+          <span class="hk-num">96P · 8A · 4OD</span>
+        </summary>
+        <div class="hw-grid-wrap">
+          <div class="hw-grid" style="--hw-n:6" role="table" aria-label="Sep 2026 hour by hour">
+            <div class="hw-hcell" role="columnheader">Date</div>
+            <div class="hw-hcell" role="columnheader">h1</div><div class="hw-hcell" role="columnheader">h2</div><div class="hw-hcell" role="columnheader">h3</div><div class="hw-hcell" role="columnheader">h4</div><div class="hw-hcell" role="columnheader">h5</div><div class="hw-hcell" role="columnheader">h6</div>
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">30 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 30 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 30 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 30 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-od" role="cell" title="Wednesday · 30 Sep 2026 · h4 · on duty · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h4 · on duty · no subject on the timetable">OD</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 30 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 30 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 30 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">29 Sep</span></div>
+            
+            <div class="hw-c hw-c-od" role="cell" title="Tuesday · 29 Sep 2026 · h1 · on duty · no subject on the timetable" aria-label="Tuesday · 29 Sep 2026 · h1 · on duty · no subject on the timetable">OD</div>
+            
+            <div class="hw-c hw-c-od" role="cell" title="Tuesday · 29 Sep 2026 · h2 · on duty · no subject on the timetable" aria-label="Tuesday · 29 Sep 2026 · h2 · on duty · no subject on the timetable">OD</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 29 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 29 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 29 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 29 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c hw-c-od" role="cell" title="Tuesday · 29 Sep 2026 · h6 · on duty · no subject on the timetable" aria-label="Tuesday · 29 Sep 2026 · h6 · on duty · no subject on the timetable">OD</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">28 Sep</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Monday · 28 Sep 2026 · h1 · absent · no subject on the timetable" aria-label="Monday · 28 Sep 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 28 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 28 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 28 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 28 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 28 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 28 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 28 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 28 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 28 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 28 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">25 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 25 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 25 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 25 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 25 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h3"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 25 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 25 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">24 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 24 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 24 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 24 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 24 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 24 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 24 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 24 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 24 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 24 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 24 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">23 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 23 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 23 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 23 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 23 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 23 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 23 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h4"></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 23 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 23 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 23 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 23 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">22 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 22 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 22 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 22 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 22 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 22 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 22 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 22 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 22 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">21 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 21 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 21 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 21 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 21 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 21 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 21 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 21 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">18 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 18 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 18 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">17 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 17 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 17 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 17 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 17 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 17 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 17 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 17 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 17 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 17 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 17 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">16 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 16 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 16 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">15 Sep</span></div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 15 Sep 2026 · h1 · absent · no subject on the timetable" aria-label="Tuesday · 15 Sep 2026 · h1 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 15 Sep 2026 · h2 · absent · no subject on the timetable" aria-label="Tuesday · 15 Sep 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 15 Sep 2026 · h3 · absent · no subject on the timetable" aria-label="Tuesday · 15 Sep 2026 · h3 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Tuesday · 15 Sep 2026 · h4 · absent · no subject on the timetable" aria-label="Tuesday · 15 Sep 2026 · h4 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">14 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 14 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 14 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 14 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 14 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 14 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 14 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 14 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Fri</span> <span class="hw-dt">11 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Friday · 11 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Friday · 11 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">10 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 10 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 10 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 10 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Thursday · 10 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 10 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Thursday · 10 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 10 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Thursday · 10 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 10 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Thursday · 10 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">09 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 09 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 09 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">08 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 08 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 08 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 08 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 08 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 08 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 08 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 08 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 08 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Mon</span> <span class="hw-dt">07 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Monday · 07 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Monday · 07 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Monday · 07 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Monday · 07 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Monday · 07 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Monday · 07 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)" aria-label="Monday · 07 Sep 2026 · h6 · present · &lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt; (&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;&lt;script&gt;window.__xss2=1&lt;/script&gt;)">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Thu</span> <span class="hw-dt">03 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Thursday · 03 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Thursday · 03 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 03 Sep 2026 · h2 · absent · no subject on the timetable" aria-label="Thursday · 03 Sep 2026 · h2 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 03 Sep 2026 · h3 · absent · no subject on the timetable" aria-label="Thursday · 03 Sep 2026 · h3 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c hw-c-a" role="cell" title="Thursday · 03 Sep 2026 · h4 · absent · no subject on the timetable" aria-label="Thursday · 03 Sep 2026 · h4 · absent · no subject on the timetable">A</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Wed</span> <span class="hw-dt">02 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h5 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h5 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Wednesday · 02 Sep 2026 · h6 · present · no subject on the timetable" aria-label="Wednesday · 02 Sep 2026 · h6 · present · no subject on the timetable">P</div>
+            
+            
+            <div class="hw-dcell" role="rowheader"><span class="hw-wd">Tue</span> <span class="hw-dt">01 Sep</span></div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 01 Sep 2026 · h1 · present · no subject on the timetable" aria-label="Tuesday · 01 Sep 2026 · h1 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 01 Sep 2026 · h2 · present · no subject on the timetable" aria-label="Tuesday · 01 Sep 2026 · h2 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 01 Sep 2026 · h3 · present · no subject on the timetable" aria-label="Tuesday · 01 Sep 2026 · h3 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c hw-c-p" role="cell" title="Tuesday · 01 Sep 2026 · h4 · present · no subject on the timetable" aria-label="Tuesday · 01 Sep 2026 · h4 · present · no subject on the timetable">P</div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h5"></div>
+            
+            <div class="hw-c" role="cell" title="No class scheduled · h6"></div>
+            
+            
+          </div>
+        </div>
+      </details>
+      
+    </div>
+    
+
+    
+  </div>

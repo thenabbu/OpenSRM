@@ -1,0 +1,8 @@
+{
+  "body": "{\"marks\":[{\"code\":\"21CSS201T\",\"components\":[{\"entered\":\"04/Sep/2026\",\"max\":5.0,\"name\":\"FT-I\",\"scored\":4.5}],\"max_total\":5.0,\"scored_total\":4.5,\"title\":\"COMPUTER ORGANIZATION AND ARCHITECTURE\"},{\"code\":\"21MAB206T\",\"components\":[{\"entered\":\"21/Sep/2026\",\"max\":5.0,\"name\":\"FT-I\",\"scored\":5.0}],\"max_total\":5.0,\"scored_total\":5.0,\"title\":\"NUMERICAL METHODS AND ANALYSIS\"}],\"ok\":true}\n",
+  "bytes": 380,
+  "content_type": "application/json",
+  "gzip_bytes": 230,
+  "path": "/api/marks",
+  "status": 200
+}

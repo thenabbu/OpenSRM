@@ -1,0 +1,263 @@
+{
+  "api": {
+    "/": {
+      "bytes": 268105,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 27676,
+      "status": 200
+    },
+    "/api/marks": {
+      "bytes": 380,
+      "content_type": "application/json",
+      "gzip_bytes": 230,
+      "status": 200
+    },
+    "/api/push/status": {
+      "bytes": 173,
+      "content_type": "application/json",
+      "gzip_bytes": 146,
+      "status": 200
+    },
+    "/api/scope/status": {
+      "bytes": 37,
+      "content_type": "application/json",
+      "gzip_bytes": 54,
+      "status": 200
+    },
+    "/api/timetable": {
+      "bytes": 304,
+      "content_type": "application/json",
+      "gzip_bytes": 208,
+      "status": 200
+    },
+    "/api/timetable/history": {
+      "bytes": 25,
+      "content_type": "application/json",
+      "gzip_bytes": 45,
+      "status": 200
+    },
+    "/avatar": {
+      "bytes": 310,
+      "content_type": "text/plain; charset=utf-8",
+      "gzip_bytes": 245,
+      "status": 200
+    },
+    "/avatar/zz9999": {
+      "bytes": 675,
+      "content_type": "image/svg+xml; charset=utf-8",
+      "gzip_bytes": 392,
+      "status": 200
+    },
+    "/healthz": {
+      "bytes": 16,
+      "content_type": "application/json",
+      "gzip_bytes": 36,
+      "status": 200
+    },
+    "/internal/metrics": {
+      "bytes": 24148,
+      "content_type": "text/plain; version=0.0.4",
+      "gzip_bytes": 1551,
+      "status": 200
+    },
+    "/login": {
+      "bytes": 13133,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 4567,
+      "status": 200
+    },
+    "/logout": {
+      "bytes": null,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": null,
+      "status": 302
+    },
+    "/static/app.css": {
+      "bytes": 159069,
+      "content_type": "text/css; charset=utf-8",
+      "gzip_bytes": 25695,
+      "status": 200
+    },
+    "/static/apple-touch-icon.png": {
+      "bytes": 6190,
+      "content_type": "image/png",
+      "gzip_bytes": 6141,
+      "status": 200
+    },
+    "/static/dash.js": {
+      "bytes": 30023,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 9965,
+      "status": 200
+    },
+    "/static/favicon.ico": {
+      "bytes": 1153,
+      "content_type": "image/vnd.microsoft.icon",
+      "gzip_bytes": 1176,
+      "status": 200
+    },
+    "/static/gaze.js": {
+      "bytes": 13108,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 4306,
+      "status": 200
+    },
+    "/static/icon-192.png": {
+      "bytes": 6325,
+      "content_type": "image/png",
+      "gzip_bytes": 6246,
+      "status": 200
+    },
+    "/static/icon-512.png": {
+      "bytes": 12488,
+      "content_type": "image/png",
+      "gzip_bytes": 10922,
+      "status": 200
+    },
+    "/static/login.js": {
+      "bytes": 4877,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 1794,
+      "status": 200
+    },
+    "/static/logo-rect.png": {
+      "bytes": 9438,
+      "content_type": "image/png",
+      "gzip_bytes": 2890,
+      "status": 200
+    },
+    "/static/manifest.json": {
+      "bytes": 999,
+      "content_type": "application/json",
+      "gzip_bytes": 380,
+      "status": 200
+    },
+    "/static/perf.js": {
+      "bytes": 844,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 511,
+      "status": 200
+    },
+    "/static/pull.js": {
+      "bytes": 5214,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 1955,
+      "status": 200
+    },
+    "/static/push.js": {
+      "bytes": 12233,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 3983,
+      "status": 200
+    },
+    "/static/sw.js": {
+      "bytes": 8915,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 3463,
+      "status": 200
+    },
+    "/static/timetable.js": {
+      "bytes": 15950,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 4198,
+      "status": 200
+    },
+    "/static/vendor/idiomorph.min.js": {
+      "bytes": 10587,
+      "content_type": "text/javascript; charset=utf-8",
+      "gzip_bytes": 3772,
+      "status": 200
+    }
+  },
+  "pages": {
+    "/": {
+      "dom_nodes": 2279,
+      "html_bytes": 268105,
+      "html_gzip_bytes": 27676,
+      "js_bytes": 96874,
+      "js_files": [
+        "/static/dash.js",
+        "/static/gaze.js",
+        "/static/perf.js",
+        "/static/pull.js",
+        "/static/push.js",
+        "/static/sw.js",
+        "/static/timetable.js",
+        "/static/vendor/idiomorph.min.js"
+      ],
+      "js_gzip_bytes": 32153,
+      "script_tags": 7
+    },
+    "/login": {
+      "dom_nodes": null,
+      "html_bytes": 13133,
+      "html_gzip_bytes": 4567,
+      "js_bytes": 14636,
+      "js_files": [
+        "/static/login.js",
+        "/static/perf.js",
+        "/static/sw.js"
+      ],
+      "js_gzip_bytes": 5768,
+      "script_tags": 2
+    }
+  },
+  "revision": "1fcbfe6",
+  "tabs": {
+    "academics": {
+      "panel_dom_nodes": 624,
+      "panel_html_bytes": 60051,
+      "panel_html_gzip_bytes": 3159
+    },
+    "attendance": {
+      "panel_dom_nodes": 824,
+      "panel_html_bytes": 108626,
+      "panel_html_gzip_bytes": 5524
+    },
+    "campus": {
+      "panel_dom_nodes": 791,
+      "panel_html_bytes": 79646,
+      "panel_html_gzip_bytes": 5795
+    },
+    "dashboard": {
+      "panel_dom_nodes": 172,
+      "panel_html_bytes": 20154,
+      "panel_html_gzip_bytes": 4626
+    },
+    "fees": {
+      "panel_dom_nodes": 72,
+      "panel_html_bytes": 8117,
+      "panel_html_gzip_bytes": 1655
+    },
+    "marks": {
+      "panel_dom_nodes": 59,
+      "panel_html_bytes": 6712,
+      "panel_html_gzip_bytes": 1376
+    },
+    "settings": {
+      "panel_dom_nodes": 116,
+      "panel_html_bytes": 15373,
+      "panel_html_gzip_bytes": 2544
+    },
+    "timetable": {
+      "panel_dom_nodes": 53,
+      "panel_html_bytes": 2838,
+      "panel_html_gzip_bytes": 891
+    },
+    "tools": {
+      "panel_dom_nodes": 62,
+      "panel_html_bytes": 7795,
+      "panel_html_gzip_bytes": 1171
+    }
+  },
+  "totals": {
+    "api_bytes": 604719,
+    "api_gzip_bytes": 122547,
+    "dom_nodes_all_panels": 2773,
+    "dom_nodes_page": 2279,
+    "html_bytes": 281238,
+    "html_gzip_bytes": 32243,
+    "js_bytes": 101751,
+    "js_gzip_bytes": 33947
+  }
+}

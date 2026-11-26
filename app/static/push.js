@@ -4,13 +4,28 @@
 (function () {
   'use strict';
   const el = id => document.getElementById(id);
-  const stateEl = el('push-state'), controlsEl = el('push-controls');
-  const toggle = el('push-toggle'), leadSel = el('push-lead');
-  const enableBtn = el('push-enable'), testBtn = el('push-test');
-  const hintEl = el('push-hint'), fbEl = el('push-feedback');
-  const typesEl = el('push-types'), cbRem = el('push-type-reminders'),
-        cbExm = el('push-type-exams');
-  if (!stateEl) return;
+
+  // Bound once per PUSH CARD, not once per page. Those were the same thing until
+  // soft navigation (web/src/nav/softNav.ts) started swapping the settings panel
+  // in without a reload: this script had already captured the old nodes, so the
+  // new card rendered with an EMPTY lead-time <select> and dead handlers. Every
+  // other document-level script re-arms on `osrm:island-mounted` (gaze.js and the
+  // avatar observer do it for the same reason); the dataset flag keeps the
+  // re-arm idempotent so a second mount cannot double-bind a listener.
+  function boot() {
+    const stateEl = el('push-state'), controlsEl = el('push-controls');
+    const toggle = el('push-toggle'), leadSel = el('push-lead');
+    const enableBtn = el('push-enable'), testBtn = el('push-test');
+    const hintEl = el('push-hint'), fbEl = el('push-feedback');
+    const typesEl = el('push-types'), cbRem = el('push-type-reminders'),
+          cbExm = el('push-type-exams');
+    if (!stateEl || stateEl.dataset.osrmPushBound) return;
+    stateEl.dataset.osrmPushBound = '1';
+    // The card is server-rendered with "Loading…" in place of the state line. On a
+    // repeat boot that caption is already gone (render() replaced it) — but the
+    // FIRST boot after a soft swap must not leave a stale "Loading…" behind if the
+    // status call is slow, so both boots start from the same caption.
+    stateEl.textContent = 'Loading…';
 
   const fb = (msg, isErr) => {
     if (!fbEl) return;
@@ -92,7 +107,7 @@
     return { sub: sub, server: res.body };
   }
 
-  async function render() {
+  async function render(prefetched) {
     // Feature detection first — but iOS Safari in a normal tab is not
     // "unsupported", it's "not installed": give the install steps instead.
     const unsupported = !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window);
@@ -109,9 +124,9 @@
       return;
     }
 
-    let st;
+    let st = prefetched;
     try {
-      st = (await api('/api/push/status')).body;
+      if (!st) st = (await api('/api/push/status')).body;
     } catch (e) {
       stateEl.textContent = 'Could not load reminder settings — reload the page.';
       return;
@@ -298,8 +313,13 @@
     testBtn.disabled = false;
   });
 
-  // lead choices come from the server (single source of truth)
-  api('/api/push/status').then(r => {
+  // lead choices come from the server (single source of truth). render() sets
+  // this select to the saved lead_minutes, so the fill has to finish FIRST:
+  // the innerHTML='' below would otherwise wipe a selection made against an
+  // option-less select, leaving the default on screen while the server still
+  // holds the saved value. The body is handed straight to render() so both
+  // writes land in one task (and the status is not fetched twice).
+  const fillLeads = api('/api/push/status').then(r => {
     const choices = (r.body && r.body.lead_choices) || [5, 10, 15, 30];
     leadSel.innerHTML = '';
     choices.forEach(c => {
@@ -308,9 +328,18 @@
       o.textContent = c + ' minutes before class';
       leadSel.appendChild(o);
     });
+    return r.body;
   }).catch(() => {});
 
-  render().catch(() => {
+  fillLeads.then(st => render(st)).catch(() => {
     stateEl.textContent = 'Could not load reminder settings — reload the page.';
   });
+  }
+
+  boot();
+  document.addEventListener('osrm:island-mounted', boot);
+  // A route can land WITHOUT an island mounting (the settings panel is server
+  // markup), so the swap itself is the second signal. boot() is idempotent per
+  // card, so hearing both is free.
+  document.addEventListener('osrm:route-swapped', boot);
 })();

@@ -91,7 +91,7 @@ def _html(features=None):
     try:
         cl = A.app.test_client()
         cl.set_cookie("srm_session", A.make_session_token(NETID))
-        return cl.get("/").get_data(as_text=True)
+        return cl.get("/attendance").get_data(as_text=True)
     finally:
         if old is None:
             os.environ.pop("SCOPE_FEATURES", None)
@@ -135,14 +135,22 @@ def t_scope_off_leaves_todays_card_untouched():
 
 
 def t_poll_budget_covers_a_real_cold_sync():
-    js = Path(__file__).resolve().parent.parent.parent / "app" / "static" / "dash.js"
-    src = js.read_text()
-    m = re.search(r"MAX_TRIES\s*=\s*(\d+)", src)
-    assert m, "MAX_TRIES not found in dash.js poll"
+    # W5.4: this read app/static/dash.js. The poll moved to web/src/data/
+    # userActions.ts (startScopePoll) and its budget is exported there, so the
+    # numbers are read from the module that ships them — and the file that used
+    # to hold them is asserted gone, or this check would silently stop meaning
+    # anything.
+    repo = Path(__file__).resolve().parent.parent.parent
+    assert not (repo / "app" / "static" / "dash.js").exists(), "dash.js is deleted (W5.4)"
+    src = (repo / "web" / "src" / "data" / "userActions.ts").read_text()
+    m = re.search(r"SCOPE_MAX_TRIES\s*=\s*(\d+)", src)
+    assert m, "SCOPE_MAX_TRIES not found in userActions.ts poll"
     tries = int(m.group(1))
+    fast = int(re.search(r"SCOPE_DELAY_MS\s*=\s*(\d+)", src).group(1)) / 1000
+    slow = int(re.search(r"SCOPE_SLOW_DELAY_MS\s*=\s*(\d+)", src).group(1)) / 1000
     # 4s cadence, 8s once it backs off: the worst case must beat a measured
     # 27-31s cold sync by a wide margin (a 45-try cap was ~4 min and lost).
-    worst_s = (10 * 4) + ((tries - 10) * 8)
+    worst_s = (10 * fast) + ((tries - 10) * slow)
     assert worst_s >= 900, f"poll gives up after {worst_s}s — too short for a cold sync"
 
 

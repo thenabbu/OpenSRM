@@ -1,0 +1,15 @@
+{
+  "criterion": "E3",
+  "tier": "machine",
+  "statement": "9 MPA routes, one shared shell partial (nav markup exists once), per-route payload within an enforced budget.",
+  "verdict": "PASS",
+  "note": "9 routes, one nav carrier in base.html, budgets green",
+  "evidence": [
+    "route templates: 9 -> academics.html, attendance.html, campus.html, fees.html, home.html, marks.html, settings.html, timetable.html, tools.html",
+    "templates carrying <nav>: 1 -> ['app/templates/base.html']",
+    "OK \u2014 no cycles, leaves stay leaves, app.py within budget"
+  ],
+  "sha": "59f8a92f0c1f716e42dd3b8629c79811feaab348",
+  "round": 2,
+  "judged_at": "2026-11-19T18:53:06+00:00"
+}

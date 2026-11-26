@@ -18,9 +18,14 @@
 name: Tests
 
 on:
-  # No `push:` trigger on purpose. On main this workflow runs ONLY as the
+  # No bare `push:` on main on purpose. On main this workflow runs ONLY as the
   # reusable job Build & Push gates on; a second standalone copy on the same
   # push was pure duplication.
+  #
+  # dev is the integration branch, so pushes to it run the full gate; a PR into
+  # dev carries the same suites, and main only ever runs this via Build & Push.
+  push:
+    branches: [dev]
   pull_request:
     # dev is the integration branch: every feature PR lands there first, so this
     # workflow must run on PRs based on dev or staging gets no test coverage.
@@ -71,6 +76,17 @@ jobs:
       # stayed green on the exact same tree.
       - name: check_docs (docs must not contradict the code)
         run: PYTHONPATH=. .venv/bin/python scripts/check_docs.py
+      # Unit 8.2. Icons drift silently: a stale 1024 declared as 512 installs
+      # badly on Android and nobody notices until a home-screen icon looks wrong.
+      # Reads real IHDR bytes + the template wiring, and self-tests its own
+      # ability to fail on every run.
+      - name: check_icons (manifest + template wiring + real IHDR sizes)
+        run: PYTHONPATH=. .venv/bin/python scripts/check_icons.py
+      # W7.3b. A class NEITHER stylesheet contains (bottom-20, shadow-lg,
+      # btn-circle) passed a stylesheet-vs-stylesheet diff and shipped a button
+      # 2400px off-screen. This one starts from web/src instead.
+      - name: check_css_classes (every class web/src writes has a CSS rule)
+        run: PYTHONPATH=. .venv/bin/python scripts/check_css_classes.py
       - name: test_app_factory (create_app isolation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_app_factory.py
       - name: test_exams (end-sem parser)
@@ -87,6 +103,18 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_fernet_rotation.py
       - name: test_official_tt (portal formId-10 parser + contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_official_tt.py
+      - name: test_assets_dist_url (dist entry must equal the URL its chunks import)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_assets_dist_url.py
+      - name: test_offline_shell (offline shell carries structure but no PII)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_offline_shell.py
+      - name: test_logout_wipes_caches (logout clears every cache, not just CACHE_NAME)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_logout_wipes_caches.py
+      # W7.5-1 + W7.5-5 at the source level: no page markup in the precache
+      # manifest, the push handler still there, and skipWaiting() still guarded
+      # to a first install. A rebuild regenerates app/static/sw.js, so these are
+      # cheap to lose and invisible to a green browser run.
+      - name: test_sw_precache_no_html (no page markup precached; push + guarded skipWaiting)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sw_precache_no_html.py
       - name: test_sessions (session lifecycle contract)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_sessions.py
       - name: test_account_delete (schema-driven account-deletion residue)
@@ -117,12 +145,20 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_canary_sync.py
       - name: test_marks_view (marks view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_marks_view.py
+      - name: test_settings_push_ssr (reminder card first paint)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_settings_push_ssr.py
       - name: test_layout (card/widget engine)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_layout.py
       - name: test_css_safelist (render-time classes exist in app.css)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_css_safelist.py
       - name: test_perf_budget (third-party-free pages, cache headers, reload sites)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_perf_budget.py
+      # W5.5's grep gate: the hybrid is GONE from the served tree and from the
+      # workbox precache, not merely unreferenced by the templates. Comments in
+      # web/src and tests/ that name the deleted files are the record of the
+      # deletion and are deliberately out of scope (see the suite's docstring).
+      - name: test_legacy_gone (no live reference to the deleted legacy scripts)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_legacy_gone.py
       - name: test_attendance_view (attendance view model)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_attendance_view.py
       - name: test_att_firstpaint (no stale Absences card during a scope sync)
@@ -175,6 +211,18 @@ jobs:
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_fees.py
       - name: test_scope_profile (SCOPE profile enrichment + Settings merge)
         run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_scope_profile.py
+      - name: test_readpath_netid (P7.1 offline read path — data-netid is the cache key)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_readpath_netid.py
+      # P10.1 rollback flag, BOTH directions on EVERY panel route: PREACT_ISLANDS
+      # unset must still hydrate (default ON), and off must degrade to
+      # server-rendered panels, not a 500 — and must differ from ON by the module
+      # tag only, so neither direction can silently lose a section.
+      - name: test_rollback_flag (PREACT_ISLANDS, both directions, all 9 routes)
+        run: PYTHONPATH=. DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_rollback_flag.py
+      # The vision gate's own three states, against a stub provider: a 503 must
+      # read UNREACHABLE, a broken page must read REAL UI REGRESSION.
+      - name: test_vision_verify (a provider outage is not a UI regression)
+        run: .venv/bin/python tests/unit/test_vision_verify.py
 
   docker:
     runs-on: ubuntu-latest
@@ -281,7 +329,11 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 min was enough for one engine. W8.4 runs the offline proof three times
+    # (each with its own server boot, since the offline leg kills it on purpose)
+    # and apt-installs webkit's GTK4 deps; the measured job was 5m49s before the
+    # third engine could actually launch.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -311,27 +363,142 @@ jobs:
       # Headless shell only — these suites never need a headed browser.
       # Same PLAYWRIGHT_BROWSERS_PATH as the run steps below: the browser must
       # land where the suites look for it.
-      - name: Install Playwright chromium (headless shell)
+      #
+      # W8.4: webkit and firefox are here for the offline proof's engine matrix
+      # (scripts/offline_proof.sh, ENGINES on its step). The offline path is
+      # where the three engines genuinely differ — service-worker lifetime over
+      # a dead origin, Cache API storage partitioning, secure-context rules — so
+      # a Chromium-only run proves one third of what the card asks for. These
+      # two come from `playwright install` proper (there is no --only-shell for
+      # them).
+      #
+      # --with-deps is REQUIRED for webkit — its build is webkit-ubuntu-26.04
+      # and the runner is 24.04, so launch fails with "Host system is missing
+      # dependencies". But plain --with-deps installs a 177-package superset (a
+      # full X11 + GStreamer tree) and ate the entire job timeout on its own.
+      # The real gap is the ten libraries the launcher names, so install those
+      # and let apt resolve their dependencies.
+      #
+      # firefox gets no --with-deps: it launched fine on the stock runner
+      # (measured — it painted 9/9 routes in the first matrix run), so only the
+      # download is needed.
+      - name: WebKit system libraries (the 10 the launcher names)
+        run: |
+          sudo apt-get update -qq
+          # libx264's package name carries the soname version (164 on 24.04,
+          # 165 on 26.04), so resolve it rather than hardcode it.
+          X264=$(apt-cache search --names-only '^libx264-[0-9]+$' | head -1 | cut -d' ' -f1)
+          # The launcher names the exact missing libs at runtime. Iteration 1 named
+          # 10 libs; this build (webkit-ubuntu-26.04 on 24.04 runner) names only
+          # these three after the 10 are installed. Install those too.
+          sudo apt-get install -y -qq --no-install-recommends \
+            libgtk-4-1 libgraphene-1.0-0 libevent-2.1-7t64 libopus0 \
+            libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
+            libwoff1 libharfbuzz-icu0 libsecret-1-0 libhyphen0 \
+            libmanette-0.2-0 libgles2 libavif16 "${X264:-libx264-164}" \
+            libflite1 libsoup-3.0-0 libwayland-server0
+
+      - name: Install Playwright chromium, webkit and firefox
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
-        run: .venv/bin/playwright install --only-shell chromium
+        run: |
+          .venv/bin/playwright install --only-shell chromium
+          .venv/bin/playwright install webkit firefox
+
+      # W3.3 golden drift gate: re-capture the 9 routes and diff them against the
+      # committed tests/golden/v3, naming every file that moved (and for the first
+      # text artifacts, the changed line and column). It lives in THIS job and not
+      # in unit: it boots gunicorn and drives chromium, and the browsers are already
+      # installed here. --no-screens is deliberate — the goldens were captured on
+      # the laptop, and PNG bytes encode the capture host's font stack, so only
+      # dom/, api/, routes.json and metrics.json are byte-comparable across hosts.
+      #
+      # FIRST run step on purpose: it is the cheapest signal in the job and it must
+      # not be skipped because something else failed. Measured: a one-word UI change
+      # failed the browser suites first and this step never ran, turning "the gate
+      # says what drifted" into "some DUT is red".
+      - name: Golden drift (tests/golden/v3 --check)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        # --out is explicit so the NEXT step can judge the same pixels: one
+        # browser pass, two gates. Without it the capture lands in a random
+        # mkdtemp tree and the vision step would have to drive chromium again.
+        run: bash scripts/capture_golden.sh --check --no-screens --out "$RUNNER_TEMP/golden-ci"
+
+      # W8.3: the screenshots finally get LOOKED AT. The drift gate has always
+      # run with --no-screens (PNG bytes encode the capture host's font stack),
+      # so tests/golden/v3/screens - 27 committed images - were decoration: no
+      # gate, anywhere, ever compared them to anything. A vision model now
+      # judges every route at mobile and desktop width for the breakage a byte
+      # diff cannot see (blank panel, clipped content, blocks drawn on top of
+      # each other), and writes a verdict file per pair.
+      #
+      # It FAILS the job when a pair is not a MATCH, and also when it cannot
+      # run at all: a missing key is a red step, never a skip - a verification
+      # that silently does not happen is the exact defect this step exists to
+      # end. Reuses the capture the drift gate just made.
+      # Fork PRs get no repository secrets (GitHub never exposes them to
+      # pull_request runs from a fork), so the key is absent there by
+      # construction and the step would red for a reason the contributor cannot
+      # fix. Same guard the GHCR upgrade smoke uses. Any PR from a branch in
+      # THIS repo - which is how every change to this repo lands - still runs it.
+      - name: Vision verification (9 routes x mobile/desktop, real model)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: .venv/bin/python scripts/vision_verify.py --capture-dir "$RUNNER_TEMP/golden-ci" --out "$RUNNER_TEMP/vision"
+
+      - name: Vision verdicts + the pixels the model saw
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vision-verdicts
+          path: |
+            ${{ runner.temp }}/vision/*.json
+            ${{ runner.temp }}/golden-ci/screens/*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      # SCOPE_FEATURES is DERIVED from the app's own registry, never hand-copied.
+      # The feature list and the env that enables it used to be two literals that
+      # had to agree by hand; a new slug in app/scope/ops.py:FEATURES would leave
+      # four panels 404ing while the suites that seed them went red for no
+      # visible reason. One source of truth, exported to the rest of the job.
+      - name: SCOPE_FEATURES from app.scope.ops.FEATURES
+        run: |
+          set -eu
+          SCOPE=$(PYTHONPATH=. .venv/bin/python -c 'from app.scope.ops import FEATURES; print(",".join(FEATURES))')
+          echo "SCOPE_FEATURES=$SCOPE" >> "$GITHUB_ENV"
+          echo "SCOPE_FEATURES=$SCOPE"
 
       # One gunicorn backs all of these; every suite asserts the listener is
       # its own server (require_own_server) before it tests anything.
+      # test_route_panels seeds a fabricated SCOPE blob and asserts the four
+      # data-gated panels render, so the server needs the features the blob
+      # answers — without this its four gated routes 404 and "no sibling
+      # panel leaked" passes on an empty page (the F6 hole).
       - name: Browser suites that need a server
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: |
           bash scripts/ci_e2e_http.sh \
-            test_sw test_xss test_navbar test_marks_dut test_personal \
-            test_softrefresh_dut \
+            test_sw test_xss test_navbar test_route_panels test_panel_api test_marks_dut test_personal \
+            test_background_dut \
+            test_nav_routes \
+            test_sync_data_dut \
+            test_refresh_wiring \
+            test_copy_rearm \
             test_touchfeel_dut \
             test_lowtier_dut \
             test_pull_dut \
             test_perf_budget_e2e \
             test_delete_dut \
             test_att_dut test_feedback_dut test_feedback_contrast test_login_guide_check \
-            test_fees_dut test_scope_profile_dut
+            test_fees_dut test_scope_profile_dut \
+            test_widget_parity_dut \
+            test_page_chrome_dut \
+            test_island_api
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)
         env:
@@ -343,6 +510,57 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_dut_official_tt.py
 
+      # The timetable EDITOR, which nothing else covers: the suite boots its OWN
+      # two servers with TIMETABLE_EDITOR pinned enabled then archived, so it
+      # cannot ride the shared server above (ci_e2e_http.sh pins no such env and
+      # the suite sets DATA_DIR at import). After W5.4 deletes timetable.js this
+      # step is the only thing between us and a silent editor break.
+      - name: test_timetable_edit_dut (timetable editor DUT, self-booting)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/e2e/test_timetable_edit_dut.py
+
+      # The offline read path: online visit writes the cache, then the SAME
+      # server is killed and the page must still paint. Boots its own server on
+      # 18183 (nothing above holds that port), so it needs no fixture here.
+      # The script exits non-zero when any leg fails, which is the whole point
+      # of this step — a gate that cannot fail is worse than no gate.
+      #
+      # W8.4: ENGINES puts route_paint.py AND offline_paint.py through all three
+      # engines. Each engine gets its own server boot because the offline leg
+      # kills it on purpose. Roughly 3x this step's old wall time; the job's
+      # timeout-minutes (line 324) has the headroom.
+      - name: Offline read path, 3 engines (scripts/offline_proof.sh)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          ENGINES: chromium webkit firefox
+        run: bash scripts/offline_proof.sh
+
+      # W6.3: the network-cut suite. All nine routes with the network cut
+      # against the BUILT dist, two-student isolation on one device, and FOUR
+      # separately named logout wipe assertions (IndexedDB rows, Cache API
+      # shell/PII, push subscription, Web Storage). Self-booting: own DATA_DIR,
+      # own gunicorn on a free port, and it derives SCOPE_FEATURES itself instead
+      # of inheriting this job's copy, so a drift in the env cannot make it pass
+      # on four 404s.
+      - name: Network-cut suite, nine routes (test_offline_routes.py)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+        run: .venv/bin/python tests/e2e/test_offline_routes.py
+
+      # Accessibility (axe-core over 9 routes + a live Tab walk and a focus-ring
+      # check) and stress (slow link, flaky API, repeated reloads, offline
+      # flapping, a 4x-throttled client under heap churn). Both need a seeded,
+      # LOGGED-IN server, so they share one boot in scripts/a11y_stress.sh —
+      # the same script gates.sh runs locally.
+      #
+      # PORT 18188 on purpose: run_push_duts.sh below owns 18185-18187.
+      - name: Accessibility + stress (scripts/a11y_stress.sh)
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
+          PORT: '18188'
+        run: VENV="$PWD/.venv" bash scripts/a11y_stress.sh
+
       # Boots its own three gunicorn instances (18185 unconfigured /
       # 18186 push-enabled / 18187 same DB with push env stripped) and runs
       # test_push_sw + test_push_ui against them.
@@ -350,6 +568,28 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
         run: VENV="$PWD/.venv" bash tests/e2e/run_push_duts.sh
+
+      # dut_suite.sh (gates.sh's 11-script runner) deliberately has no step of
+      # its own here: all 11 suites below already run in this job via
+      # ci_e2e_http.sh, which is why dut_suite.sh exists for the LOCAL bar. This
+      # step asserts that coverage instead of trusting a comment — if a DUT is
+      # added to dut_suite.sh and not to the list above, CI goes red here rather
+      # than the new script being silently untested on the runner forever.
+      - name: dut_suite.sh coverage (every DUT is in this job)
+        run: |
+          set -eu
+          WANT=$(grep -oE 'SCRIPTS="[^"]*"' scripts/dut_suite.sh \
+                 | tr -d '"' | sed 's/^SCRIPTS=//')
+          MISSING=""
+          for s in $WANT; do
+            grep -qE "\\b$s\\b" .github/workflows/tests.yml || MISSING="$MISSING $s"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::dut_suite.sh runs scripts this CI job does not:$MISSING"
+            echo "Add them to the ci_e2e_http.sh step above, or CI never runs them."
+            exit 1
+          fi
+          echo "dut_suite.sh's $(echo "$WANT" | wc -w) DUT scripts all run in this job"
 
       - name: Collect failure logs
         if: failure()
@@ -360,5 +600,47 @@ jobs:
             /tmp/suite-*.log
             /tmp/gunicorn-ci.log
             /tmp/gun-*.log
+            /tmp/golden-check-*/
+            /*/golden-ci/**
           if-no-files-found: ignore
           retention-days: 7
+
+  # web/ — the Preact islands. Nothing else in this file touches TypeScript, so
+  # before this job a type error or a broken island could merge with every
+  # workflow green. Runs the same three gates the local build does, via one
+  # script so the local repro is literally the CI line: bash scripts/ci_web.sh
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Node 22, not the lab's v26: 22 is the current Active LTS, GitHub caches
+      # it on the runner image, and package.json declares no `engines` — so the
+      # pin lives here rather than being implied by whichever image is default
+      # (ubuntu-latest currently ships 20, which is what tsc 7 and vite 8 have
+      # not been tested against). Bump together with the local pnpm.
+      - name: Set up Node 22
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@9.15.9 --activate
+
+      # No secrets: pnpm install reads the public registry, tsc and vitest are
+      # both offline once node_modules exists. No portal/CF/ntfy env is touched.
+      - name: Install, typecheck, unit tests (web/)
+        run: bash scripts/ci_web.sh
+
+      # The e2e job runs every browser suite against the COMMITTED
+      # app/static/dist. That is only "the built dist" if the committed bundle
+      # is what `pnpm build` produces from this source - until this step, a
+      # source change with a stale dist passed every gate, because nothing on
+      # the runner ever rebuilt it. Needs node+pnpm, so it belongs here and not
+      # in unit. The script rebuilds, then `git diff --exit-code` on the two
+      # committed build artifacts (dist/ and sw.js) is the verdict.
+      - name: Committed dist == a fresh `pnpm build` (scripts/build-web.sh --check)
+        run: bash scripts/build-web.sh --check

@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""P7.10 — every one of the 9 islands must PAINT, in a real browser, after hydration.
+
+Run by scripts/offline_proof.sh (leg 4), which owns the seeded server:
+
+    python tests/e2e/route_paint.py --base http://127.0.0.1:18183 --token T
+
+Why this exists: before this file only /attendance had ever been proven to paint
+in a browser. Eight islands shipped with unit tests that mount them into a bare
+div — that proves the COMPONENT renders, not that the ISLAND pops on the real
+page (the server paint can be valid props that hydrate to zero rows, a mount
+point can be missing from the template, a route can 404 on unseeded features).
+The P6 era shipped exactly that way.
+
+Per route, four assertions, in this order:
+
+  1. ISLAND   the route has the island it is supposed to have;
+  2. HYDRATE  it carries the app's own completion marker (`data-hydrated` on the
+              mount, or `data-mounted-at` on a cache-branch mount) — no timer;
+  3. ROWS     it has > 0 children matching that island's row selector, counted
+              in the DOM. A route that is legitimately empty must say so here in
+              ROW_SELECTOR as `empty_by_design` — a silently skipped route is a
+              fake pass and this file has no `skip` outcome on purpose;
+  4. CLEAN    no uncaught exception, and NO console output of any type. Not
+              just console.error: a `console.warn` on a student's phone is
+              noise nobody reads, so the prod build talks to the console not at
+              all. web/src/log.ts is the single switch that decides, and this
+              assertion is what pins it shut.
+  5. CSP      zero `securitypolicyviolation` events. The console half above
+              cannot see a blocked fetch that logs nothing, and a CSP refusal
+              is silent at the network layer, so it is counted from the event
+              the browser fires rather than from a log line that may never be
+              written. Scope: this is a PAGE assertion. It cannot observe a
+              service worker's own requests or the policy applied inside the
+              worker's context — tests/e2e/test_sw.py owns that half, and this
+              file does not pretend otherwise.
+
+`/api/refresh` returning 401 is NOT an error here: the page fires it in the
+background before the session cookie is read, and the app handles it (see
+app/static/dash.js). It is the only 4xx/5xx excused, and excusing it is
+asserted (a genuine 500 still fails).
+"""
+import argparse
+import os
+import sys
+from urllib.parse import urlparse
+
+from playwright.sync_api import sync_playwright
+
+# route -> (island name on the page, row selector, what a row is)
+#
+# The row selector is the island's ROW, never its wrapper: `/settings` has one
+# top-level `.collapse` per group, but the rows a person reads are its cells, so
+# counting the collapse would pass on a single group. Where several candidates
+# exist the narrowest one that is still a row wins.
+ROUTES = {
+    "/":           ("dashboard",  "[data-island=dashboard] .wbox",   "widget boxes"),
+    "/attendance": ("attendance", "[data-island=attendance] .mrow",  "course rows"),
+    "/timetable":  ("timetable",  "[data-island=timetable] .day-panel", "day panels"),
+    "/marks":      ("marks",      "[data-island=marks] > div",       "subject cards"),
+    "/campus":     ("campus",     "[data-island=campus] .card",      "campus cards"),
+    "/academics":  ("academics",  "[data-island=academics] .acad-srow", "semester subject rows"),
+    "/fees":       ("fees",       "[data-island=fees] .grid-cols-\\[auto_1px_1fr_auto\\]", "fee rows"),
+    "/tools":      ("tools",      "[data-island=tools] > li",        "destination rows"),
+    "/settings":   ("settings",   "[data-island=settings] [data-copy]", "detail cells"),
+}
+
+# Routes that legitimately render NO rows. This is an ASSERTION, not a skip: the
+# route must still load, still carry its island, and still hydrate — and its row
+# count must be exactly 0. A route listed here that starts painting rows fails,
+# and a route with zero rows that is NOT listed here fails. Empty-by-design has
+# to be earned, so no route is in this set today; if one moves in, it is a
+# deliberate edit with a reason attached.
+EMPTY_BY_DESIGN = {}
+
+# The one background request the app makes and handles. Asserted, not assumed:
+# if it stops 401ing, or a different endpoint starts failing, this trips.
+EXCUSED = "/api/refresh"
+
+SETTLED = """() => {
+  const is = [...document.querySelectorAll('[data-island]')];
+  return {n: is.length, done: is.filter(e => e.dataset.mountedAt || e.dataset.hydrated).length};
+}"""
+
+# W5.5 assertion 5. Installed before the first byte of every document, so a
+# refusal during parse (a blocked <script>, an inline handler, a font) is
+# caught, not just the ones that happen after hydration. Deliberately NOT a
+# string match on the console: the browser fires this event even when the page
+# logs nothing at all, which is the case that matters.
+CSP_PROBE = """
+window.__csp = [];
+document.addEventListener('securitypolicyviolation', function (e) {
+  window.__csp.push({d: e.violatedDirective, b: e.blockedURI,
+                     s: e.sourceFile, l: e.lineNumber});
+});
+"""
+CSP_READ = "() => (window.__csp || [])"
+
+
+class Leg:
+    def __init__(self):
+        self.pass_n = self.fail_n = 0
+        self.csp_n = 0   # counted, not inferred: the summary line states it
+
+    def chk(self, name, ok, detail=""):
+        if ok:
+            self.pass_n += 1
+            print(f"  [PASS] {name}" + (f" — {detail}" if detail else ""))
+        else:
+            self.fail_n += 1
+            print(f"  [FAIL] {name}" + (f" — {detail}" if detail else ""))
+        return ok
+
+
+def check_route(page, leg, route, island, row_sel, row_word):
+    """Returns True when this route painted. Prints its own [PASS]/[FAIL] line."""
+    errors, console, net_fail = [], [], []
+
+    def on_error(exc):
+        errors.append(f"exception: {exc}")
+
+    def on_console(msg):
+        # W4.2: EVERY type counts now (warn/info/log/debug/error), not just
+        # error. "Failed to load resource" carries no URL; correlate with
+        # net_fail, which is why it is filtered by HARNESS_NOISE below.
+        console.append(f"console.{msg.type}: {msg.text}")
+
+    def on_response(resp):
+        if resp.status >= 400 and EXCUSED not in resp.url:
+            net_fail.append(f"{resp.status} {resp.url}")
+
+    page.on("pageerror", on_error)
+    page.on("console", on_console)
+    page.on("response", on_response)
+    try:
+        resp = page.goto(f"{args.base}{route}", wait_until="domcontentloaded")
+        # Which branch of the service worker answered (network / shell-race /
+        # offline-ladder). A shell looks like a perfectly good 200 document, and
+        # the difference decides whether a missing island is a bug here or a
+        # gated panel on the server.
+        branch = (resp.headers.get("x-osrm-path") if resp else None) or "none"
+        if resp is None or resp.status >= 400:
+            leg.chk(route, False, f"route itself returned {resp.status if resp else 'no response'}")
+            return False
+
+        # DETERMINISTIC settle: poll the app's own marker, hard ceiling so a page
+        # that never hydrates fails loudly instead of being measured mid-boot.
+        st = {"n": 0, "done": 0}
+        for _ in range(60):
+            st = page.evaluate(SETTLED)
+            if st["n"] and st["done"] == st["n"]:
+                break
+            page.wait_for_timeout(250)
+
+        # The app prefetches 8 panel shells + the island chunks in the
+        # background after paint (web/src/session/shell.ts). Navigating away
+        # mid-prefetch cancels those fetches, and WebKit reports a cancelled
+        # background fetch as a page error on the NEXT document — so the noise
+        # landed on the following route and read as that route's own console
+        # output. Measured (webkit, 9 routes, identical page): 41 page errors
+        # without this wait, 0 with it. Waiting for the app's own "warm
+        # settled" flag is deterministic and excuses nothing: a genuinely
+        # broken fetch still reports here.
+        for _ in range(80):
+            warm = page.evaluate("() => (window.__shellWarm || {}).done === true")
+            if warm:
+                break
+            page.wait_for_timeout(250)
+
+        mount = page.locator(f"[data-island={island}]")
+        if not mount.count():
+            # Name what the browser actually got. "3 islands seen" alone cost a
+            # CI round trip: the answer (which islands, which document) is the
+            # difference between a shell for the wrong route and a gated panel.
+            detail = page.evaluate("""() => ({
+              islands: [...document.querySelectorAll('[data-island]')].map(e => e.dataset.island),
+              title: document.title,
+              len: document.documentElement.outerHTML.length,
+              dash: !!document.getElementById('tab-dashboard'),
+            })""")
+            leg.chk(route, False,
+                    f"no [data-island={island}] on the page ({st['n']} islands seen: "
+                    f"{detail['islands']}) title={detail['title']!r} html={detail['len']}B "
+                    f"dashboardPanel={detail['dash']} sw-branch={branch}")
+            return False
+        hydrated = mount.first.evaluate(
+            "(e) => !!(e.dataset.hydrated || e.dataset.mountedAt)")
+        rows = page.locator(row_sel).count()
+        # The 401 excuse is only valid while the endpoint really does 401; a
+        # different failure on it would otherwise vanish into the excuse list.
+        #
+        # Second excuse, same class: Playwright's own page.evaluate() runs as an
+        # inline script, so under this app's CSP (`script-src 'self'`) Firefox
+        # logs a "blocked a JavaScript eval (script-src)" console.error on every
+        # route. That is the HARNESS tripping the app's security policy, not the
+        # app failing — Chromium never surfaces it, which is why this only
+        # appeared once the audit ran cross-browser on the laptop. Verified that
+        # no built asset contains eval( or new Function( before excusing it.
+        # Third excuse, same class (browser hygiene, not app behaviour):
+        #   - "has been classified as a bounce tracker": Firefox's tracking
+        #     protection against loopback hosts with no interaction. It fires
+        #     once per profile and only on the FIRST route because the profile
+        #     starts there — which is why it lands on whichever route runs
+        #     first, never on the app's markup.
+        #   - "This site has been reported as deceptive": Firefox's Safe
+        #     Browsing notice, same shape, same one-per-profile timing.
+        # Neither carries a URL from this app and neither is produced by its
+        # code; both are assertions about the browser's own heuristics.
+        HARNESS_NOISE = ("Failed to load resource", "blocked a JavaScript eval",
+                         "has been classified as a bounce tracker",
+                         "has been reported as deceptive",
+                         "This site is not available because it was blocked by the Safe Browsing")
+        spurious = [e for e in errors if not any(n in e for n in HARNESS_NOISE)]
+        noisy = [c for c in console if not any(n in c for n in HARNESS_NOISE)]
+        # W5.5: the same harness excuse, in its structured form. A
+        # securitypolicyviolation whose blockedURI is `eval` is Playwright's own
+        # page.evaluate() being refused by `script-src 'self'` — the harness
+        # tripping the app's policy, never the app. Only that exact case is
+        # excused: a blocked script, style, font, connect or frame counts.
+        csp = [v for v in page.evaluate(CSP_READ) if v.get("b") != "eval"]
+        leg.csp_n += len(csp)
+        clean = not spurious and not noisy and not net_fail and not csp
+        if route in EMPTY_BY_DESIGN:
+            # Declared empty: hydrating to exactly zero rows is the CORRECT
+            # outcome, and painting any is a regression worth failing on.
+            ok = hydrated and rows == 0 and clean
+            detail = f"empty-by-design, {rows} {row_word} (must be 0)"
+        else:
+            ok = hydrated and rows > 0 and clean
+            detail = f"{rows} {row_word}"
+        if not hydrated:
+            detail += f"; island never hydrated ({st['done']}/{st['n']} islands finished)"
+        if rows == 0:
+            detail += "; painted ZERO rows"
+        if net_fail:
+            detail += f"; http failures {net_fail[:3]}"
+        if spurious:
+            detail += f"; console {spurious[:2]}"
+        if noisy:
+            detail += f"; {len(noisy)} console line(s), first {noisy[:2]}"
+        if csp:
+            detail += (f"; {len(csp)} CSP violation(s), first "
+                       f"{csp[0]['d']} blocked {csp[0]['b'] or '(inline)'}"
+                       f"{' at ' + csp[0]['s'] if csp[0]['s'] else ''}")
+        leg.chk(route, ok, detail)
+        return ok
+    finally:
+        page.remove_listener("pageerror", on_error)
+        page.remove_listener("console", on_console)
+        page.remove_listener("response", on_response)
+
+
+def main():
+    global args
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--token", required=True)
+    ap.add_argument("--route", action="append", default=None,
+                    help="only these routes (default: all 9)")
+    ap.add_argument("--browser", default="chromium",
+                    choices=["chromium", "webkit", "firefox"],
+                    help="engine to paint in (default chromium); one RESULT line per run")
+    args = ap.parse_args()
+
+    routes = args.route or list(ROUTES)
+    leg = Leg()
+    with sync_playwright() as pw:
+        # Playwright resolves its own browser build first. On a box that only
+        # carries a chrome-for-testing binary (no chrome-headless-shell), fall
+        # back to the executable the environment already advertises — CI installs
+        # the matching build and never takes this path. Only Chromium has that
+        # override; WebKit/Firefox must come from `playwright install`.
+        if args.browser == "chromium":
+            browser = pw.chromium.launch(
+                headless=True,
+                executable_path=os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH") or None,
+                args=["--no-first-run", "--no-default-browser-check"])
+        else:
+            try:
+                browser = getattr(pw, args.browser).launch(headless=True)
+            except Exception as exc:                  # noqa: BLE001
+                # NOT a skip. No browser means no route paint, and an unproven
+                # route paint is the exact defect this file exists to catch.
+                print(f"\n  no {args.browser} — the 9 routes are UNPROVEN")
+                msg = str(exc).strip()
+                if "\n" in msg:
+                    print(f"  {msg[:2000]}")
+                else:
+                    print(f"  {type(exc).__name__}: {msg[:500]}")
+                print("  install with: PLAYWRIGHT_BROWSERS_PATH="
+                      f"{os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '<path>')} "
+                      f".venv/bin/playwright install {args.browser}")
+                return 2
+        ctx = browser.new_context()
+        # The cookie's domain MUST match the host we actually navigate to. This
+        # was hardcoded to 127.0.0.1, so any run against a LAN address (the
+        # laptop-offload path: --base http://192.168.29.7:PORT) sent no session,
+        # every route 302'd to /login, and all 9 reported "0 islands seen" —
+        # a false failure that looks exactly like a broken migration.
+        _host = urlparse(args.base).hostname or "127.0.0.1"
+        ctx.add_cookies([{"name": "srm_session", "value": args.token,
+                          "domain": _host, "path": "/"}])
+        page = ctx.new_page()
+        # W5.5 assertion 5. Registered once per page: it re-runs on every
+        # navigation (so window.__csp is fresh per route) and it covers the
+        # parse, which a listener attached after goto() would miss.
+        page.add_init_script(CSP_PROBE)
+        for route in routes:
+            if route not in ROUTES:
+                leg.chk(route, False, "not in the route table — a skipped route is a fake pass")
+                continue
+            island, row_sel, row_word = ROUTES[route]
+            check_route(page, leg, route, island, row_sel, row_word)
+        ctx.close()
+        browser.close()
+
+    print(f"\n  route paint [{args.browser}]: {leg.pass_n} passed, {leg.fail_n} failed"
+          f" ({len(EMPTY_BY_DESIGN)} declared empty-by-design, asserted not skipped)"
+          f" | {leg.csp_n} CSP violation(s) across {leg.pass_n + leg.fail_n} route(s)")
+    return 0 if leg.fail_n == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
