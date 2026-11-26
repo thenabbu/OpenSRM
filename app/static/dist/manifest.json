@@ -3,15 +3,24 @@
     "file": "assets/design-m1uS3-4X.js",
     "name": "design"
   },
+<<<<<<< HEAD
   "_jsxRuntime.module-DjDpQ2xH.js": {
     "file": "assets/jsxRuntime.module-DjDpQ2xH.js",
+=======
+  "_jsxRuntime.module-DebWcVT7.js": {
+    "file": "assets/jsxRuntime.module-DebWcVT7.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "jsxRuntime.module",
     "imports": [
       "src/main.ts"
     ]
   },
   "src/islands/sync-age.tsx": {
+<<<<<<< HEAD
     "file": "assets/sync-age-lPSV34Wz.js",
+=======
+    "file": "assets/sync-age-CJEnrJrn.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "sync-age",
     "src": "src/islands/sync-age.tsx",
     "isDynamicEntry": true,
@@ -20,7 +29,11 @@
     ]
   },
   "src/main.ts": {
+<<<<<<< HEAD
     "file": "assets/app-Cg2JRCjz.js",
+=======
+    "file": "assets/app-CH_chepz.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "app",
     "src": "src/main.ts",
     "isEntry": true,
@@ -37,104 +50,180 @@
       "src/panels/tools/ToolsPanel.tsx"
     ],
     "css": [
+<<<<<<< HEAD
       "assets/app-1kk3bKxV.css"
     ]
   },
   "src/panels/academics/AcademicsPanel.tsx": {
     "file": "assets/AcademicsPanel-B7aETCLB.js",
+=======
+      "assets/app-NMAvbyTa.css"
+    ]
+  },
+  "src/panels/academics/AcademicsPanel.tsx": {
+    "file": "assets/AcademicsPanel-BgQq3Da1.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "AcademicsPanel",
     "src": "src/panels/academics/AcademicsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/attendance/AttendancePanel.tsx": {
     "file": "assets/AttendancePanel-CcVGNPFt.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/attendance/AttendancePanel.tsx": {
+    "file": "assets/AttendancePanel-CecR55is.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "AttendancePanel",
     "src": "src/panels/attendance/AttendancePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/campus/CampusPanel.tsx": {
     "file": "assets/CampusPanel-dTURyd4x.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/campus/CampusPanel.tsx": {
+    "file": "assets/CampusPanel-Du8m5_c_.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "CampusPanel",
     "src": "src/panels/campus/CampusPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/dashboard/DashboardPanel.tsx": {
     "file": "assets/DashboardPanel-C-akW_5V.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/dashboard/DashboardPanel.tsx": {
+    "file": "assets/DashboardPanel-DQzbbb59.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "DashboardPanel",
     "src": "src/panels/dashboard/DashboardPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
       "_design-m1uS3-4X.js"
     ]
   },
   "src/panels/fees/FeesPanel.tsx": {
+<<<<<<< HEAD
     "file": "assets/FeesPanel-DpKPDcNT.js",
+=======
+    "file": "assets/FeesPanel-CmcYCIOg.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "FeesPanel",
     "src": "src/panels/fees/FeesPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/marks/MarksPanel.tsx": {
     "file": "assets/MarksPanel-DcXjb7yr.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/marks/MarksPanel.tsx": {
+    "file": "assets/MarksPanel-DTbjThs2.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "MarksPanel",
     "src": "src/panels/marks/MarksPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/settings/SettingsPanel.tsx": {
     "file": "assets/SettingsPanel-CONBk8yG.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/settings/SettingsPanel.tsx": {
+    "file": "assets/SettingsPanel-DXFgmnbF.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "SettingsPanel",
     "src": "src/panels/settings/SettingsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/timetable/TimetablePanel.tsx": {
     "file": "assets/TimetablePanel-D0iWT0-a.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/timetable/TimetablePanel.tsx": {
+    "file": "assets/TimetablePanel-D31n-HSz.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "TimetablePanel",
     "src": "src/panels/timetable/TimetablePanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
     ]
   },
   "src/panels/tools/ToolsPanel.tsx": {
     "file": "assets/ToolsPanel-CArFxENq.js",
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+    ]
+  },
+  "src/panels/tools/ToolsPanel.tsx": {
+    "file": "assets/ToolsPanel-CbWuL3GS.js",
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     "name": "ToolsPanel",
     "src": "src/panels/tools/ToolsPanel.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_design-m1uS3-4X.js",
       "src/main.ts",
+<<<<<<< HEAD
       "_jsxRuntime.module-DjDpQ2xH.js"
+=======
+      "_jsxRuntime.module-DebWcVT7.js"
+>>>>>>> d28802c (feat(fees): rebuild the fees tab around the deadline, not the number)
     ]
   }
 }
