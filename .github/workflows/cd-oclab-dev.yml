@@ -32,8 +32,6 @@ jobs:
     environment:
       name: dev
       url: https://srm-dev.200871.xyz
-    env:
-      HEALTH_URL: https://srm-dev.200871.xyz/healthz
     steps:
       - name: Check the dev target is provisioned
         env:
@@ -98,14 +96,36 @@ jobs:
           ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
             "ubuntu@$OCLAB_HOST" "deploy-dev $SHA"
 
-      - name: Verify staging serves the expected build
+      # The old probe curled the PUBLIC URL from the runner. Cloudflare answers a
+      # GitHub runner with 403 (every attempt, both deploys on 2026-11-26), so the
+      # job went red on a deploy that had in fact recreated the container and was
+      # serving the new bundle. Ask the box instead: the container's own
+      # HEALTHCHECK is the same /healthz, and comparing the running image id with
+      # `:dev-<sha>` proves the deploy shipped THIS build, not the previous one.
+      - name: Verify staging runs this build
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+          OCLAB_DEPLOY_SSH: ${{ secrets.OCLAB_DEPLOY_SSH }}
+          SHA: ${{ steps.ref.outputs.sha }}
         run: |
           set -eu
+          KEY="$(mktemp)"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$OCLAB_DEPLOY_SSH" > "$KEY"
+          chmod 600 "$KEY"
           for i in $(seq 1 24); do
-            CODE="$(curl -sS -o /dev/null -w '%{http_code}' "$HEALTH_URL" || true)"
-            [ "$CODE" = "200" ] && { echo "staging healthy after $i attempt(s)"; exit 0; }
-            echo "attempt $i: $HEALTH_URL -> $CODE"
+            OUT="$(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
+              "ubuntu@$OCLAB_HOST" \
+              "docker inspect --format '{{.State.Health.Status}} {{.Image}}' opensrm-dev; docker image inspect --format '{{.Id}}' ghcr.io/thenabbu/opensrm:dev-$SHA" || true)"
+            HEALTH="$(printf '%s\n' "$OUT" | sed -n 1p | awk '{print $1}')"
+            RUNNING="$(printf '%s\n' "$OUT" | sed -n 1p | awk '{print $2}')"
+            WANT="$(printf '%s\n' "$OUT" | sed -n 2p)"
+            if [ "$HEALTH" = "healthy" ] && [ -n "$WANT" ] && [ "$RUNNING" = "$WANT" ]; then
+              echo "staging runs dev-$SHA, healthy after $i attempt(s)"
+              exit 0
+            fi
+            echo "attempt $i: health=$HEALTH running=$RUNNING want=$WANT"
             sleep 5
           done
-          echo "::error::staging never answered 200 on $HEALTH_URL"
+          echo "::error::staging never ran dev-$SHA healthy (see the attempts above)"
           exit 1
