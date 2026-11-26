@@ -2,52 +2,82 @@
 {% set active_tab = "fees" %}
 {% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
   {% if fees %}
-  <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto" style=""
+  <div id="tab-fees" role="tabpanel" aria-labelledby="tab-fees-tab" data-tabpanel class="max-w-3xl mx-auto"
        data-island="fees" data-props="#island-fees">
-    <!-- ONE hero: the tab's single loud number. Dues >= 1 rupee = warning,
-         >= 100000 (semester-fee scale) = error (documented in views/fees.py).
-         Zero dues = the hero is ABSENT and the page opens at Paid. -->
-    {% if fees.due_disp %}
-    <div class="bg-base-200 border border-base-300 rounded-box p-4">
-      <div class="flex items-baseline justify-between gap-3">
-        <span class="text-sm font-semibold">Outstanding dues</span>
-        <span class="font-mono font-bold text-2xl tabular-nums {{ fees.level }}">₹{{ fees.due_disp }}</span>
-      </div>
-      <p class="text-xs text-base-content/50 mt-1">As reported by the SCOPE backend</p>
-    </div>
-    {% endif %}
+    {# ── 1. WHAT IS OWED, AND WHEN IT GETS MORE EXPENSIVE ─────────────────
+       One card per charge, named (feetype) and dated. The number is the
+       documented 22px hero step (§4.16), never a bigger invented one, and it
+       never stands alone: the deadline sits beside it and the penalty delta
+       under it. A total line appears ONLY when it sums 2+ charges — with one
+       charge the card below already carries the number (dup otherwise). #}
     {% if fees.dues %}
-    <div class="bg-base-200 border border-base-300 rounded-box p-4{% if fees.due_disp %} mt-3{% endif %}">
-      <div class="flex flex-col gap-2">
-        {% for d in fees.dues %}
-        <div class="flex items-baseline justify-between gap-3">
-          <span class="text-sm">{% if d.due %}<span class="whitespace-nowrap">Due {{ d.due }}</span>{% else %}Outstanding{% endif %}{% if d.penalised %} <span class="text-xs text-error">penalty applied</span>{% elif d.penalty %} <span class="text-xs text-base-content/50 whitespace-nowrap">penalty after {{ d.penalty }}</span>{% endif %}</span>
-          <span class="font-mono text-sm tabular-nums text-base-content/70">₹{{ d.amt }}</span>
-        </div>
-        {% endfor %}
-      </div>
+    {% if fees.due_sum %}
+    <div class="flex items-baseline justify-between gap-3 mb-3">
+      <span class="text-sm font-semibold">Owed</span>
+      <span class="font-mono font-bold text-[22px] tabular-nums {{ fees.level }}">₹{{ fees.due_sum }}</span>
     </div>
     {% endif %}
-    {% if fees.years %}
-    <div class="flex items-baseline justify-between gap-3{% if fees.due_disp %} mt-5{% endif %}">
-      <h1 class="text-base font-semibold">Paid</h1>
-      <span class="font-mono text-sm text-base-content/60 tabular-nums">₹{{ fees.paid_total }}</span>
+    <div class="flex flex-col gap-3">
+      {% for d in fees.dues %}
+      <div class="bg-base-200 border border-base-300 rounded-box p-4" data-charge>
+        <div class="flex items-baseline justify-between gap-3">
+          <span class="text-sm font-semibold">{{ d.head }}</span>
+          {% if d.cycle %}<span class="font-mono text-xs text-base-content/60 whitespace-nowrap">{{ d.cycle }}</span>{% endif %}
+        </div>
+        <div class="flex items-baseline flex-wrap gap-x-2 gap-y-1 mt-2">
+          <span class="font-mono font-bold text-[22px] tabular-nums {{ d.level }}">₹{{ d.amt }}</span>
+          {% if d.deadline %}
+          <span class="text-xs text-base-content/60">{% if d.overdue %}was due{% else %}by{% endif %} {{ d.deadline }}</span>
+          {% else %}
+          <span class="text-xs text-base-content/60">no due date from SRM yet</span>
+          {% endif %}
+          {% if d.days_left is not none %}
+          {# the words carry the state: only the 22px number takes a status
+             hue, because the raw status tokens fail AA as 12px text (§4.14) #}
+          <span class="font-mono text-xs text-base-content/60 tabular-nums whitespace-nowrap">{% if d.overdue %}overdue{% elif d.days_left == 0 %}last day{% elif d.days_left == 1 %}1 day left{% else %}{{ d.days_left }} days left{% endif %}</span>
+          {% endif %}
+        </div>
+        {% if d.late_extra %}
+        <p class="text-xs text-base-content/60 mt-1">Late fee ₹{{ d.late_extra }} {% if d.penalised or d.overdue %}applied{% elif d.late_on %}from {{ d.late_on }}{% else %}after the due date{% endif %}</p>
+        {% endif %}
+        {% if d.min %}
+        <p class="text-xs text-base-content/50 mt-1">part payment taken, ₹{{ d.min }} minimum</p>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
-    <!-- Groups: year header, extra gap beneath it (group gapping), then rows
-         separated by a tight uniform gap — no dividers between rows. Row is
-         date (leftmost, under the year) | rule | payment | amount (right). -->
-    <div class="flex flex-col gap-5 mt-3">
+    <p class="text-xs text-base-content/60 mt-3">Pay through the SRM portal.</p>
+    {% elif fees.years %}
+    {# Nothing owed: say it once. An empty space where the charge card would
+       be reads as a broken page, not as an all-clear. #}
+    <p class="text-sm text-base-content/60">Nothing due.</p>
+    {% endif %}
+
+    {# ── 2. WHAT HAS BEEN PAID ────────────────────────────────────────────
+       One year: the year becomes a label on the heading, because a year
+       header carrying the same total as the heading above it is the same
+       number twice. Two or more: year headers earn their place. #}
+    {% if fees.years %}
+    {# a card, like every other block on the page: bare rows on the page
+       background read as an unfinished list (§4.19) #}
+    <div class="bg-base-200 border border-base-300 rounded-box p-4{% if fees.dues %} mt-6{% else %} mt-4{% endif %}">
+    <div class="flex items-baseline justify-between gap-3">
+      <h1 class="text-base font-semibold">Paid{% if fees.year_label %} <span class="font-mono text-xs font-normal text-base-content/60">{{ fees.year_label }}</span>{% endif %}</h1>
+      <span class="font-mono text-sm font-semibold tabular-nums">₹{{ fees.paid_total }}</span>
+    </div>
+    <div class="flex flex-col gap-5 mt-4">
       {% for y in fees.years %}
       <section>
+        {% if fees.multi_year %}
         <div class="flex items-baseline justify-between gap-2">
           <h2 class="font-mono text-xs text-base-content/60">{{ y.year }}</h2>
           <span class="font-mono text-sm font-semibold tabular-nums">₹{{ y.total }}</span>
         </div>
-        <div class="flex flex-col gap-2 mt-4">
+        {% endif %}
+        <div class="flex flex-col gap-2{% if fees.multi_year %} mt-4{% endif %}">
           {% for r in y.rows %}
-          <div class="grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline">
-            <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ r.date }}</span>
-            <span class="-my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
+          <div class="grid grid-cols-[6.5rem_1fr_auto] gap-x-3 items-baseline">
+            <span class="font-mono text-xs text-base-content/60 tabular-nums whitespace-nowrap">{{ r.date }}</span>
             <span class="text-sm min-w-0 break-words">{{ r.head }}</span>
             <span class="font-mono text-sm tabular-nums text-right">₹{{ r.amt }}</span>
           </div>
@@ -56,21 +86,25 @@
       </section>
       {% endfor %}
     </div>
+    </div>
+    {% elif fees.dues %}
+    <p class="text-xs text-base-content/50 mt-4">No payments recorded yet.</p>
     {% endif %}
+
+    {# ── 3. PROOF OF PAYMENT ──────────────────────────────────────────────
+       Closed by default: one line per receipt (date, label, amount), the
+       voucher number and full narration inside. The list is never totalled —
+       it is proof, not a second grand total that could disagree with §2. #}
     {% if fees.ledger %}
-    <!-- Receipts: closed by default. One line per receipt at rest (date, head,
-         amount); the narration + voucher number live inside a per-receipt
-         accordion so the list never reads as a wall of text. -->
-    <details class="collapse collapse-arrow bg-base-200 border border-base-300 rounded-box{% if fees.years %} mt-5{% endif %}">
+    <details class="collapse collapse-arrow bg-base-200 border border-base-300 rounded-box{% if fees.years or fees.dues %} mt-6{% endif %}">
       <summary class="collapse-title text-sm font-semibold">
-        Receipts <span class="font-mono text-base-content/60 tabular-nums">({{ fees.ledger | length }})</span>
+        Payment receipts <span class="font-mono text-base-content/60 tabular-nums">({{ fees.ledger | length }})</span>
       </summary>
       <div class="collapse-content">
         {% for e in fees.ledger %}
         <details class="collapse collapse-arrow fees-rcpt{% if not loop.first %} border-t border-base-300{% endif %}">
-            <summary class="collapse-title grid grid-cols-[auto_1px_1fr_auto] gap-x-3 items-baseline text-sm min-h-0 py-1.5">
-              <span class="font-mono text-xs text-base-content/60 tabular-nums">{{ e.date }}</span>
-              <span class="-my-0.5 self-stretch border-l border-base-300" aria-hidden="true"></span>
+            <summary class="collapse-title grid grid-cols-[6.5rem_1fr_auto] gap-x-3 items-baseline text-sm min-h-0 py-1.5">
+              <span class="font-mono text-xs text-base-content/60 tabular-nums whitespace-nowrap">{{ e.date }}</span>
               <span class="text-sm min-w-0 truncate">{{ e.head }}</span>
               <span class="font-mono text-sm font-semibold tabular-nums text-right">₹{{ e.amt }}</span>
             </summary>

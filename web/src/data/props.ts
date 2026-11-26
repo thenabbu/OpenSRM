@@ -31,15 +31,23 @@ type Project = (data: unknown) => unknown;
 
 const feesProps = (data: unknown): FeesProps => {
   const f = data as FeesData & { due?: number };
+  // /api/fees types `level` as a bare string; the island's enum is narrower.
+  // Anything the server did not mean to colour falls back to '' (uncoloured).
+  const level = (v: string): FeesProps['level'] =>
+    v === 'text-warning' || v === 'text-error' ? v : '';
   return {
     due_disp: f.due_disp,
-    // /api/fees types `level` as a bare string; the island's enum is narrower.
-    // Anything the server did not mean to colour falls back to '' (uncoloured).
-    level: f.level === 'text-warning' || f.level === 'text-error' ? f.level : '',
+    due_sum: f.due_sum,
+    level: level(f.level),
     dues: f.dues.map((d) => ({
-      amt: d.amt, due: d.due, penalty: d.penalty, penalised: Boolean(d.penalised),
+      head: d.head, cycle: d.cycle, amt: d.amt, level: level(d.level),
+      deadline: d.deadline, late_on: d.late_on, late_extra: d.late_extra,
+      days_left: d.days_left, overdue: Boolean(d.overdue),
+      penalised: Boolean(d.penalised), min: d.min,
     })),
     paid_total: f.paid_total,
+    multi_year: Boolean(f.multi_year),
+    year_label: f.year_label,
     years: f.years.map((y) => ({
       year: y.year,
       total: y.total,

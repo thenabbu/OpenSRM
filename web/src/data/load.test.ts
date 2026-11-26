@@ -234,7 +234,8 @@ describe('auth and gating never cache', () => {
 
     // Positive control: 404 then 200 — the second visit caches. So the empty
     // store above is the 404's doing, not a read path that never writes.
-    await loadPanel('fees', { netid: A, fetcher: net({ due: 0, due_disp: '0', dues: [], ledger: [], level: '', paid_total: '0', years: [] }) });
+    await loadPanel('fees', { netid: A, fetcher: net({ due: 0, due_disp: '', due_sum: '', dues: [], ledger: [], level: '', multi_year: false,
+        paid_total: '0', year_label: '', years: [] }) });
     expect(await db.fees.get(A)).toBeDefined();
   });
 });

@@ -60,7 +60,7 @@ ROUTES = {
     "/marks":      ("marks",      "[data-island=marks] > div",       "subject cards"),
     "/campus":     ("campus",     "[data-island=campus] .card",      "campus cards"),
     "/academics":  ("academics",  "[data-island=academics] .acad-srow", "semester subject rows"),
-    "/fees":       ("fees",       "[data-island=fees] .grid-cols-\\[auto_1px_1fr_auto\\]", "fee rows"),
+    "/fees":       ("fees",       "[data-island=fees] section .grid", "fee rows"),
     "/tools":      ("tools",      "[data-island=tools] > li",        "destination rows"),
     "/settings":   ("settings",   "[data-island=settings] [data-copy]", "detail cells"),
 }
