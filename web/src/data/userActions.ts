@@ -102,8 +102,8 @@ export function bindTagSave(doc: Document = document): void {
 
 // ─ 2. dash-delete-account ─────────────────────────────────────────────────
 export const DELETE_URL = '/api/account/delete';
-export const DEL_ERR_CLASS = 'mt-2 text-xs text-error';
-export const DEL_IDLE_CLASS = 'mt-2 text-xs text-base-content/70';
+export const DEL_ERR_CLASS = 'text-xs text-error';
+export const DEL_IDLE_CLASS = 'text-xs text-base-content/70';
 
 /** Rows this module already wired — a route swap drops the old node, so the
  *  entry dies with it and the swapped-in row binds as a fresh element. */

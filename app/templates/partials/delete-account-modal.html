@@ -1,0 +1,32 @@
+<!-- Delete my data: opt-in, destructive, identical on every route — one partial
+     so the copy cannot drift between pages. The row only OPENS this explainer;
+     only the confirm button inside POSTs /api/account/delete (dash.js / the
+     bundle bind #delete-account-btn + #del-confirm). -->
+<dialog id="delete-account-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="del-modal-title">
+  <div class="modal-box bg-base-200 border border-base-300 flex flex-col gap-3">
+    <h3 id="del-modal-title" class="font-bold text-base">Delete my data</h3>
+    <p class="text-sm text-base-content/70 leading-relaxed">Opt-in: nothing is removed until you confirm.</p>
+    <p class="text-sm font-semibold">Erased from this app</p>
+    <ul class="list-disc pl-5 space-y-2 text-sm leading-relaxed text-base-content/80">
+      <li>Your account, attendance, marks, timetable and profile</li>
+      <li>Every login session, on every device</li>
+      <li>The portal session stored here</li>
+      <li>Reminder subscriptions and the sent-reminder log</li>
+    </ul>
+    <p class="text-sm font-semibold">Never touched</p>
+    <ul class="list-disc pl-5 space-y-2 text-sm leading-relaxed text-base-content/80">
+      <li>The SRM portal itself — nothing is deleted on SRM's servers</li>
+      <li>Shared timetables and class-wide data other students rely on</li>
+      <li>Any other student's account</li>
+    </ul>
+    <p class="text-xs text-base-content/60">Cannot be undone — you are signed out afterwards.</p>
+    <div id="del-status" class="text-xs text-base-content/70" role="status" aria-live="polite"></div>
+    <div class="modal-action mt-2">
+      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
+      <!-- text-base-content: the default error-content label measures 4.43:1
+           on the error fill (AA needs 4.5 for 16px); pure white clears it at 4.85:1 -->
+      <button id="del-confirm" class="btn btn-error btn-sm min-h-11 text-base-content">Delete permanently</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>

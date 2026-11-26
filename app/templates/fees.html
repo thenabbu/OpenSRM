@@ -121,39 +121,7 @@
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>{% endif %}
-<!-- Delete my data: same opt-in shape as the feedback modal — explainer
-     lists exactly what goes and what stays, one confirm button, status in
-     the modal, redirect to /login on success (the bundle: web/src/data/userActions.ts). -->
-<dialog id="delete-account-modal" class="modal modal-bottom sm:modal-middle" aria-labelledby="del-modal-title">
-  <div class="modal-box bg-base-200 border border-base-300">
-    <h3 id="del-modal-title" class="font-bold text-base mb-2">Delete my data</h3>
-    <p class="text-xs text-base-content/70">Opt-in — nothing is removed until you confirm. This cannot be undone.</p>
-    <p class="text-sm font-semibold mt-3">Erased from this app</p>
-    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
-      <li>Your account, saved attendance, marks, timetable and personal details</li>
-      <li>Every login session, on every device</li>
-      <li>Your portal session stored here (the cookies this app saved)</li>
-      <li>Reminder subscriptions, the sent-reminder log and delivery receipts</li>
-      <li>Your usage/telemetry rows and your timetable edit-history entries</li>
-      <li>Your name on class-wide exam-tag confirmations — the shared confirmation stays</li>
-    </ul>
-    <p class="text-sm font-semibold mt-3">Never touched</p>
-    <ul class="mt-1 space-y-1 text-sm leading-relaxed text-base-content/80 list-disc list-inside">
-      <li>The SRM portal itself — nothing is deleted on SRM's servers</li>
-      <li>Shared timetables and class-wide data other students rely on</li>
-      <li>Any other student's account</li>
-    </ul>
-    <p class="mt-3 text-xs text-base-content/60">Afterwards you are signed out and returned to the login page.</p>
-    <div id="del-status" class="mt-2 text-xs text-base-content/70" role="status" aria-live="polite"></div>
-    <div class="modal-action">
-      <form method="dialog"><button class="btn btn-ghost btn-sm min-h-11">Cancel</button></form>
-      <!-- text-base-content: the default error-content label measures 4.43:1
-           on the error fill (AA needs 4.5 for 16px); pure white clears it at 4.85:1 -->
-      <button id="del-confirm" class="btn btn-error btn-sm min-h-11 text-base-content">Delete permanently</button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+{% include 'partials/delete-account-modal.html' %}
 <dialog id="add-subject-modal" class="modal modal-bottom sm:modal-middle">
   <div class="modal-box bg-base-200 border border-base-300">
     <fieldset class="fieldset">
