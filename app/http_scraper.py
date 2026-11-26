@@ -766,6 +766,38 @@ def _exam_post(opener, base, xheaders, month, year):
         return None
 
 
+def _official_exam_post(opener, base, xheaders, month, year):
+    """POST StudentExamTimeTable.jsp (iden=126) for one exam window.
+    Returns ((month, year), html) or None. The official timetable needs the
+    month/year pair; without it the portal returns no hall/seat allotment.
+    """
+    url = f"{base}{BASE_PATH}/students/transaction/StudentExamTimeTable.jsp"
+    data = urllib.parse.urlencode({"iden": "126", "hdnExamMonth": month,
+                                   "hdnExamYear": year}).encode()
+    headers = _hdrs({**xheaders, "Content-Type": "application/x-www-form-urlencoded",
+                     "X-Requested-With": "XMLHttpRequest"}, referer=HRD_URL)
+    try:
+        _u, body = _req(opener, url, headers, data=data)
+        return (month, year), body.decode("utf-8", errors="replace")
+    except HttpScraperError:
+        return None
+
+
+def _merge_official_rows(results):
+    """Parse iden=126 bodies from several exam windows into one de-duplicated row list."""
+    from app.app import parse_exam_timetable  # deferred: avoid circularity
+    rows, seen = [], set()
+    for res in results:
+        if not res:
+            continue
+        for r in parse_exam_timetable(res[1]) or []:
+            key = (r["code"], r["date"])
+            if key not in seen:
+                seen.add(key)
+                rows.append(r)
+    return rows
+
+
 # fallback question ids when the live form fragment carries no
 # hiddenQuestionId field (see _fb_question_ids)
 DEFAULT_FB_QIDS = ",".join(str(x) for x in range(23, 37)) + ","
@@ -1115,7 +1147,7 @@ def fill_feedback(netid, plan, cookies_json):
     return res
 
 
-def _merge_exam_results(results, official_html=None):
+def _merge_exam_results(results, official_html=None, official_rows=None):
     """[(month, year), html] | None entries -> sorted rows, or None when the
     probe is unreliable — None means 'preserve stored value' upstream.
 
@@ -1128,12 +1160,16 @@ def _merge_exam_results(results, official_html=None):
     official_html: the iden=126 Exam Time Table body. Official rows win per
     subject code (they carry exact clock slots); scribe rows fill subjects the
     official page leaves pending — pre-release fallback for future sems.
+    official_rows: pre-parsed iden=126 rows gathered across several exam
+    windows. When given, official_html is ignored.
     Parse state: rows = merge them; [] = official publishes nothing yet
     (scribe fallback rules apply); None = table present but unparseable
     (label/column drift) — preserve stored rows, never wipe."""
     from app.app import parse_exam_schedule, parse_exam_timetable  # deferred: avoid circularity
     official = []
-    if official_html:
+    if official_rows is not None:
+        official = official_rows
+    elif official_html:
         official = parse_exam_timetable(official_html)
     ok = [r for r in results if r is not None]
     if official is None:
@@ -1269,9 +1305,14 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
         # responses, no wall-time cost (plan: hot cadence, catches early seeding)
         exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
                      for m, y in cands]
+        # official timetable (iden=126) per window — the portal only returns
+        # hall/seat for the requested month/year, never for a bare fetch
+        official_futs = [ex.submit(_official_exam_post, opener, base, xheaders, m, y)
+                         for m, y in cands]
         parallel_html = {fid: html for fid, html in
                          (f.result() for f in futures)}
         exam_results = [f.result() for f in exam_futs]
+        official_rows = _merge_official_rows([f.result() for f in official_futs])
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
               {k: len(v) for k, v in parallel_html.items()})
 
@@ -1292,9 +1333,12 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
                        for fid, path in JSPS.items() if fid in fids]
             exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
                          for m, y in cands]
+            official_futs = [ex.submit(_official_exam_post, opener, base, xheaders, m, y)
+                             for m, y in cands]
             parallel_html = {fid: html for fid, html in
                              (f.result() for f in futures)}
             exam_results = [f.result() for f in exam_futs]
+            official_rows = _merge_official_rows([f.result() for f in official_futs])
         # audit S25: re-derive from the REFETCHED body — content_html still
         # held the dead session's page, so a legitimate refetch parsed a
         # 466-byte corpse and reported 'Attendance page did not load'
@@ -1359,7 +1403,7 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
 
     # End-sem schedule: official 126 table wins; scribe rows fill the rest.
     # None (both unreliable) -> key omitted -> stored value preserved upstream.
-    exams = _merge_exam_results(exam_results, official_html=parallel_html.get("126", ""))
+    exams = _merge_exam_results(exam_results, official_rows=official_rows)
     if not exams:   # [] = clean empty window, None = unreliable — both worth counting
         metrics.inc("opensrm_parse_empty_total", page="exams", pipeline="http")
     log.debug("exam probe netid=%s candidates=%s rows=%s", netid, cands,
