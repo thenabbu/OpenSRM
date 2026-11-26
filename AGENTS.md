@@ -27,11 +27,16 @@ most common red on this branch (6 of 27 merged PRs).
 
 - **Local dev**: repo at `/opt/data/opensrm-repo` on the hermes host, venv
   `.venv` (managed by `uv`). pnpm only in `web/` — never npm — and the CSS is
-  compiled ahead of time by Vite into the committed
+  compiled ahead of time by Vite (`bash scripts/build-web.sh`) into the committed
   `app/static/dist/assets/app-*.css`.
-- **Prod**: lab host, container `opensrm`, compose project `/docker/opensrm`,
-  behind a Cloudflare tunnel at `https://srm.200871.xyz`. Operator detail:
-  `docs/runbook.md`.
+- **Prod**: oclab VPS (`ssh oracle`), container `opensrm`, compose project
+  `/docker/opensrm`, at `https://srm.200871.xyz` behind Cloudflare + Caddy.
+  Operator detail: `docs/runbook.md`. It deploys itself after a green build of
+  `main`; nothing deploys it by hand.
+- **Staging**: the same box, service `opensrm-dev` in the same compose project,
+  at `https://srm-dev.200871.xyz`. It deploys itself after a green build of
+  `dev`. Prod and dev share one compose file and one `.env`, so any command that
+  touches dev must use `--no-deps` and name the one service.
 - **Do NOT touch** `flights.200871.xyz` (DNS/ingress) — another agent owns it.
 
 ## Layout
@@ -61,7 +66,7 @@ app/views/            # dashboard view models: attendance budgets, marks derivat
 app/http_scraper.py   # pure-HTTP portal pipeline (archived Playwright fallback)
 app/migrations.py     # versioned schema; runs inside create_app()
                       # Count them: grep -c '@migration(version=' app/migrations.py
-app/templates|static/ # daisyUI v5, pre-compiled app.css, theme tokens in partials/theme.html
+app/templates|static/ # daisyUI v5, pre-compiled dist CSS (app/static/dist/), theme tokens in partials/theme.html
 tests/unit/           # no-server suites
 tests/e2e/            # Playwright DUTs
 egress/               # CF Worker egress proxy + PoCs — NOT in the image (.dockerignore)
@@ -71,7 +76,7 @@ docs/                 # runbook.md · audit/ · push.md · SCANS.md · perf/ · 
 scripts/              # gates.sh · check_docs.py · check_architecture.py ·
                       # pr_preflight.sh · post_deploy.sh · url_map_dump.py · perf_baseline.py
 .github/workflows/    # tests.yml (unit+docker+e2e, PR gate) · build.yml · lint.yml ·
-                      # scans.yml (report-only); SHA-pinned actions; `uv lock --check`
+                      # scans.yml (blocking); SHA-pinned actions; `uv lock --check`
 ```
 
 Suites: run `bash scripts/gates.sh --list`. Counts are deliberately absent —
@@ -93,16 +98,25 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
 
 ## CI / merge / release
 
-- **Branches: `main` only.** Merge feature branches, then delete them local and remote.
+- **Branches: `dev` is the integration branch, `main` is production.**
+  Work branches off `origin/dev` (that is what `scripts/wt.sh new <slug>` cuts),
+  and every feature PR targets `dev`. `main` receives only a promotion from
+  `dev`, a `hotfix/<slug>`, or release tooling; `promotion-guard.yml` fails any
+  other head branch.
+- **Promotion** = merge `dev` into `main` as a merge commit, then fast-forward
+  `dev` onto `main` (`git checkout -B dev origin/main && git push origin dev`).
+  Never delete `dev`: deleting it silently re-targets every open PR at `main`.
+- `exp/<slug>` branches are created only by a human. `exp-guard.yml` fails a
+  promotion that carries one. It detects, it does not prevent.
 - Merge commits, never squash. Atomic commits: finding + evidence + fix + how verified.
 - **Commit email**: `scripts/wt.sh new <slug>` sets it per-worktree and installs a
   pre-commit hook that refuses a commit in the canonical checkout. If you commit
   by hand, pass `-c user.email=128571614+thenabbu@users.noreply.github.com`; the
   wrong one does not link the commit to the account.
-- CI jobs: **Lint** (`ruff` + `uv lock --check` + app.css freshness) · **Tests**
+- CI jobs: **Lint** (`ruff` + `uv lock --check` + dist CSS freshness) · **Tests**
   (`unit` + `docker` + `e2e`) · **Build & Push** (GHCR `:latest` + `:<VERSION>`, and
   nothing else — published only on the push that moves `VERSION`,
-  `needs: [lint, tests]` on `main`) · **Scans** (report-only). No `:<sha>` tag:
+  `build` needs `[meta, meta-dev]` on `main`) · **Scans** (blocking). No `:<sha>` tag:
   GHCR names each package version after a tag it carries, so a sha tag made the
   package list read like random words (`a9c2598`) instead of `2.12.0`.
   A red `unit`/`e2e` on a PR is a real failure, not a flake.
@@ -116,15 +130,22 @@ Fresh DB per boot: `DATA_DIR=$(mktemp -d)`. Pick a free port first —
   `CHANGELOG.md` through a second auto-merged PR. The app carries **no** release-notes
   feed — GitHub Releases is the changelog, and `test_audit_findings` M27 fails if an
   in-app feed ever comes back.
-- **`main` takes no direct pushes** (7 required checks). Both bot jobs therefore go
-  through a PR with auto-merge; a `git push origin HEAD:main` inside a workflow returns
-  GH006 and leaves its work unlanded. M28 fails if one comes back.
+- **`main` takes no direct pushes** (7 required checks, plus the two guards).
+  Both bot jobs therefore go through a PR; a `git push origin HEAD:main` inside a
+  workflow returns GH006 and leaves its work unlanded. M28 fails if one comes back.
+- **Require the BARE check names** (`unit`, `docker`, `e2e`), never the
+  `tests / unit` form. A `pull_request` run reports bare names; only the
+  reusable call from `build.yml` reports the prefixed ones. Requiring the
+  prefixed form leaves checks that never report, and the PR blocks forever while
+  every visible job is green.
 - Backfilling old tags/Releases is `scripts/backfill_releases.sh` (it skips tags that
   already exist); versions that exist as tags but not as Releases need the same treatment
   or `CHANGELOG.md` silently misses them.
-- Deploy is manual and separate from merge approval. `scripts/post_deploy.sh` runs the
-  whole verification chain (prod SHA == main, static purge, authenticated render).
-  `scripts/pr_preflight.sh` is its pre-merge twin.
+- Deploy is one path, to the oclab VPS, and it runs itself after a green build
+  (`cd-oclab.yml` → the box's forced-command verb `deploy`). Staging is the same
+  shape through `cd-oclab-dev.yml` and the `deploy-dev <sha>` verb. Both verbs
+  live on the box, not in this repo. `scripts/pr_preflight.sh` is the pre-merge
+  verifier.
 
 ## Safety rules (non-negotiable)
 

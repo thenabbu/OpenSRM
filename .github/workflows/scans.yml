@@ -11,15 +11,14 @@
 name: Scans
 
 on:
-  # Same branch scoping as tests.yml: feat/preact-migration is the long-lived
-  # branch this wave's PRs land on, and without it listed here none of these
-  # scans run on that branch at all — the scans would exist and never execute.
-  # Drop the branch entry when the migration merges to main.
+  # Same branch scoping as tests.yml: dev is the integration branch, so the
+  # scans must run both on PRs based into it and on every push to it. main is
+  # covered by the reusable run Build & Push gates on.
   pull_request:
-    branches: [main, feat/preact-migration]
+    # base-branch filter: PRs into dev need the security scans too
+    branches: [main, dev]
   push:
-    branches: [main, feat/preact-migration]
-  workflow_dispatch:
+    branches: [main, dev]
 
 # audit: scans only read the repo; the trivy build context never leaves the
 # runner and nothing is pushed.

@@ -19,6 +19,11 @@ KIND_STATUS = {
     "portal_cooldown": 429,
     "busy": 503,
     "portal_down": 503,
+    # the portal (or the WAF in front of it) answered, but not with a login
+    # form / not with an acceptance — that is not an outage of the portal
+    "portal_blocked": 503,
+    # the portal is deliberately throttling our egress IP (captcha 403)
+    "portal_throttled": 503,
     "markup_changed": 503,
     "internal": 503,
 }

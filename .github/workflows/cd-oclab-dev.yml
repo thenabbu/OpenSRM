@@ -1,0 +1,111 @@
+name: Deploy dev (automatic)
+
+# Staging at srm-dev.200871.xyz. Separate file from cd-oclab.yml on purpose: the
+# prod deploy must never be reachable from a dev build, and a single workflow
+# filtered on branch would put both paths one bad `if:` apart.
+on:
+  workflow_run:
+    workflows: ["Build & Push"]
+    types: [completed]
+    # This filter matches the TRIGGERING RUN's head branch, not a PR base.
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "short sha already published as ghcr.io/thenabbu/opensrm:dev-<sha>"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  # A superseded staging build has no rollback value, unlike prod.
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: dev
+      url: https://srm-dev.200871.xyz
+    env:
+      HEALTH_URL: https://srm-dev.200871.xyz/healthz
+    steps:
+      - name: Check the dev target is provisioned
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+          OCLAB_SSH: ${{ secrets.OCLAB_DEPLOY_SSH }}
+        run: |
+          set -eu
+          missing=0
+          if [ -z "${OCLAB_HOST:-}" ]; then
+            echo "::error::variable OCLAB_HOST is not set"; missing=1
+          fi
+          if [ -z "${OCLAB_SSH:-}" ]; then
+            echo "::error::secret OCLAB_DEPLOY_SSH is not set"; missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Resolve the build to deploy
+        id: ref
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ inputs.sha }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHA="$DISPATCH_SHA"
+          else
+            SHA="$(printf '%s' "$RUN_SHA" | cut -c1-7)"
+          fi
+          case "$SHA" in
+            *[!0-9a-f]*) echo "::error::'$SHA' is not a hex sha"; exit 1 ;;
+          esac
+          [ "${#SHA}" -ge 7 ] || { echo "::error::'$SHA' is too short to be a sha"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "deploying ghcr.io/thenabbu/opensrm:dev-$SHA"
+
+      # Refuse to run for a build that was NOT a dev build. A workflow_dispatch
+      # skips the `branches:` filter above, so this is the only guard left.
+      - name: Refuse to act on a run that was not a dev build
+        if: github.event_name == 'workflow_run'
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          [ "$BRANCH" = "dev" ] || { echo "::error::triggered by a '$BRANCH' build, not dev"; exit 1; }
+
+      - name: Deploy the dev service only
+        env:
+          OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+          OCLAB_DEPLOY_SSH: ${{ secrets.OCLAB_DEPLOY_SSH }}
+          SHA: ${{ steps.ref.outputs.sha }}
+        run: |
+          set -eu
+          KEY="$(mktemp)"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s\n' "$OCLAB_DEPLOY_SSH" > "$KEY"
+          chmod 600 "$KEY"
+          # The verb takes ONE argument and recreates ONLY the opensrm-dev
+          # service. A bare `docker compose up -d` would reconcile the whole
+          # project and recreate PROD from OPENSRM_TAG - they share one compose
+          # file and one .env on that box.
+          ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
+            "ubuntu@$OCLAB_HOST" "deploy-dev $SHA"
+
+      - name: Verify staging serves the expected build
+        run: |
+          set -eu
+          for i in $(seq 1 24); do
+            CODE="$(curl -sS -o /dev/null -w '%{http_code}' "$HEALTH_URL" || true)"
+            [ "$CODE" = "200" ] && { echo "staging healthy after $i attempt(s)"; exit 0; }
+            echo "attempt $i: $HEALTH_URL -> $CODE"
+            sleep 5
+          done
+          echo "::error::staging never answered 200 on $HEALTH_URL"
+          exit 1

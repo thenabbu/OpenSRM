@@ -117,6 +117,8 @@ from .scope.ops import enabled_features  # noqa: F401 — re-exported from app.a
 from .security import require_login
 from .state import (  # noqa: F401 — re-exported: tests/recipes import these from app.app
     _RATE_CAP,
+    _admit_ip,
+    _charge_ip,
     _charge_rate,
     _check_ip_rate,
     _check_rate,

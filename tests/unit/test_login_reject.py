@@ -83,10 +83,13 @@ assert (_cap3[0] == "fail"
         and _cap3[1]["kind"] == "bad_credentials"), "3rd captcha failure gives up"
 
 silent = classify(PAGE)      # page re-rendered with NO alert at all
-assert silent[0] == "fail" and "without an error" in silent[1]["error"], \
-    "the silent-rejection branch must be reachable (it was unreachable before)"
-assert silent[1]["kind"] == "portal_cooldown", f"silent rejection = portal cooldown: {silent[1]}"
-assert calls["portal_fail"] == 1, "silent rejection arms the portal cooldown"
+assert silent[0] == "fail", "the silent-rejection branch must stay reachable"
+# 2026-11-25: a discarded request is a payload/WAF problem, never an outage
+# and never "rate-limiting" — and it must not arm the GLOBAL cooldown, or one
+# hostile stub pauses every account.
+assert silent[1]["kind"] == "portal_blocked", f"silent rejection is not an outage: {silent[1]}"
+assert "rate-limiting" not in silent[1]["error"] and "not responding" not in silent[1]["error"], silent[1]
+assert calls["portal_fail"] == 0, "a discarded payload must not pause every account"
 assert classify("<html>HRDSystem.jsp</html>") == ("ok", None), "success path untouched"
 
 # tripwire: the old loose condition still matches the credentials body — this is
@@ -373,7 +376,8 @@ for rel in ("app/app.py", "app/http_scraper.py", "app/scraper.py"):
 assert not problems, "producer inventory problems:\n  " + "\n  ".join(problems)
 assert typed, "no typed sync_error producers found — inventory broken"
 assert set(A.KIND_STATUS) == {"bad_credentials", "rate_limited", "portal_cooldown",
-                              "busy", "portal_down", "markup_changed", "internal"}, \
+                              "busy", "portal_down", "portal_blocked",
+                              "portal_throttled", "markup_changed", "internal"}, \
     f"kind table changed: {sorted(A.KIND_STATUS)}"
 # the differential: old substring classifier vs new kind table, per producer
 for rel, lineno, kind, msg in typed:

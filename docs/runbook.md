@@ -1,33 +1,51 @@
 # Runbook — build, deploy, rollback, restore, rotate, damp
 
-Operator guide for a self-hosted OpenSRM. Every lab/infrastructure claim was
-verified live on 2026-10-16 with the command shown next to it; re-run the
-command before trusting the claim after any infra change. Code claims are read
-from `main` at 4ef16cb (v1.25.0).
+Operator guide for a self-hosted OpenSRM. The infrastructure claims below were
+re-verified live on **2026-11-22** against the oclab VPS (`ssh oracle`); re-run
+the command next to a claim before trusting it after any infra change.
+
+**The homelab is gone.** On 2026-11-19 the database, the keys and the hostname
+moved to oclab; the lab container is stopped with `restart=no` and its volume is
+kept for rollback only. Any `ssh lab` command in older notes returns empty and
+reads as "nothing wrong".
+
+**Read this before running any command below:** sections that still show
+`ssh lab` were written for the homelab. The host is now `ssh oracle`, and the
+`/data/ssd120/...` backup paths no longer exist on the production box — the
+per-deploy snapshots live in `/docker/opensrm/snapshots/`. Do not run those
+lines verbatim; translate the host first and re-verify the path.
+Count them with `grep -c 'ssh lab' docs/runbook.md` rather than assuming this
+note caught every one.
 
 ## Where things live
 
 | Thing | Where | Verified by |
 |---|---|---|
-| Repo | `github.com/thenabbu/OpenSRM`, `main` only | `gh pr list` / `git log origin/main` |
-| Compose project | `/docker/opensrm/` on the lab host — `docker-compose.yml` + project env file `.env` (the ONLY env file compose interpolates for this project) | `ssh lab 'ls -la /docker/opensrm/'` |
-| Container | `opensrm`, bound `127.0.0.1:8083` + `172.31.0.1:8083` (cloudflared gateway) → container 8080; never 0.0.0.0 — CF-only access | `ssh lab 'docker port opensrm'` |
-| Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh lab 'docker exec opensrm ls /app/data'` |
-| Daily snapshots | `/data/ssd120/backups/opensrm/srm.YYYYMMDD.snapshot.db.gz`, taken ~03:0x IST, 7 kept | `ssh lab 'ls -1t /data/ssd120/backups/opensrm/'` |
+| Repo | `github.com/thenabbu/OpenSRM` — `dev` integrates, `main` is production | `git log origin/main`, `git log origin/dev` |
+| Compose project | `/docker/opensrm/` on **oclab** — `docker-compose.yml` + project env file `.env` (the ONLY env file compose interpolates for this project). Six services: `opensrm`, `opensrm-dev`, prometheus, alertmanager, grafana, node | `ssh oracle 'ls -la /docker/opensrm/'` |
+| Container | `opensrm`, **no published port**; Caddy at `/docker/caddy` reaches `opensrm:8080` over the external `node` network. Ingress is Cloudflare → Caddy, gated by a Cloudflare-IP allowlist and `X-Edge-Secret` | `ssh oracle 'docker port opensrm'` (prints nothing) |
+| Staging container | `opensrm-dev`, same compose project and `.env`, `expose: 8080`, own volume `opensrm-dev-data`, serves `srm-dev.200871.xyz` | `ssh oracle 'docker compose -f /docker/opensrm/docker-compose.yml ps opensrm-dev'` |
+| Data | named volume `opensrm_opensrm-data` → `/app/data` (`srm.db`, `fernet.key`, `opensrm.log`) | `ssh oracle 'docker inspect opensrm --format "{{range .Mounts}}{{.Name}} {{end}}"'` |
+| Deploy snapshots | `/docker/opensrm/snapshots/srm.predeploy-YYYYMMDD-HHMMSS.db`, one per gated deploy | `ssh oracle 'ls -1t /docker/opensrm/snapshots \| head -3'` |
 | Push tick | Hermes-host cron job `opensrm-push-tick` → `/opt/data/scripts/push-tick.sh` → `POST /internal/push/tick`; success log `/opt/data/cron/output/push-tick.log` | see [Push tick](#push-tick-scheduler-alerting-dead-man) |
 | Observability stack (optional) | repo `ops/observability/` → deploy at `/docker/opensrm-obs/`; loopback-only 9092/9093, Grafana 3100 on the LAN (password-gated) | see [Observability stack](#observability-stack-optional) |
-| Edge | Cloudflare tunnel → `srm.200871.xyz` | `ssh lab 'docker exec opensrm env'` + CF dashboard |
+| Edge | Cloudflare (proxied, Full) → Caddy → `opensrm:8080`. **No tunnel** — the box has its own public IP, which is why Caddy carries the Cloudflare-only guard | `curl -sSI https://srm.200871.xyz/healthz \| grep -iE 'cf-ray\|strict-transport'` |
 | Edge outage page | Worker `srm-maintenance` on route `srm.200871.xyz/*`, in front of the tunnel — serves the branded maintenance page when the origin is unreachable (incl. the whole host being off). Source + reproduce script: `edge/maintenance/` (`./deploy.sh`) | `curl -sI https://srm.200871.xyz/ \| grep -i x-opensrm` (`-edge: pass` up, `-maintenance: 1` down) |
 
-Note the two env files: the lab also keeps a master secret registry at
+Note the two env files: the host also keeps a master secret registry at
 `/docker/.env`, but **compose never reads it for this project** — a `${VAR}`
 that exists only there arrives empty. Every knob below goes into
 `/docker/opensrm/.env`.
 
+`OPENSRM_TAG` in that file pins production and must never be written by a
+staging path. A staging deploy names `opensrm-dev` and passes `--no-deps`, or
+compose reconciles the whole project and recreates prod from `OPENSRM_TAG`.
+
 ## Build
 
-CI builds every green `main` push: `lint` + `tests` (unit/docker/e2e) gate the
-publish job (`.github/workflows/build.yml`, `needs: [lint, tests]`), which
+CI builds every green `main` push: the `tests` job (unit/docker/e2e) gates the
+publish path (`.github/workflows/build.yml`, `build` needs `[meta, meta-dev]`),
+which
 pushes `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` (from the
 `VERSION` file) — and only on the push that moved `VERSION`, so a version tag
 names one immutable artifact — with OCI `version`/`revision` labels
@@ -39,15 +57,16 @@ itself — the CSS is pre-compiled on the dev side and committed
 (`app/static/dist/assets/app-*.css`, CI re-builds it and fails if stale), so the runtime
 image carries no node/npm and no bundler.
 
-Deploy is **manual** — no watcher exists, by maintainer decision
-(CONTRIBUTING.md "Deploy").
+There is **one** deploy path. `cd-oclab.yml` deploys the oclab VPS, which serves
+production at `srm.200871.xyz`, after a green **Build & Push** on `main`. Nothing
+in this repository deploys the lab. See [Deploy
+(automatic)](#deploy-automatic) and [Roll back to the lab](#roll-back-to-the-lab).
 
-## Deploy (gated, scripted)
+## The deploy script
 
-`scripts/deploy_gated.sh <tag-or-digest>` automates the steps *after* the
-decision, not the decision. The "no watcher" rule stands: nothing fires on its
-own, and the `production` GitHub Environment requires an approval before the
-workflow runs at all.
+`scripts/deploy_gated.sh <tag-or-digest>` does the mechanical part of a deploy,
+on the host that runs it. The automatic workflow runs it on the VPS. You can run
+it on the lab by hand.
 
 What it does, in order: snapshot the DB (verified — a snapshot with no users or
 a failed integrity check aborts the deploy), pull the target **before** stopping
@@ -65,11 +84,11 @@ Two host facts this script encodes, both learned the hard way:
 - the image reverts on rollback but the **schema does not** — which is exactly
   why the snapshot comes first.
 
-## Deploy (automatic, oclab only)
+## Deploy (automatic)
 
-The second deployment lives on the Oracle VPS at `srm-d1.200871.xyz`. It deploys
-itself. **The lab prod does not.** The "no watcher" rule above still holds for
-`srm.200871.xyz`, and the key that deploys the VPS does not exist on the lab.
+The deployment lives on the Oracle VPS and serves production at
+`srm.200871.xyz`. It deploys itself, and it is the only deployment the repository
+runs.
 
 How it runs:
 
@@ -80,15 +99,25 @@ How it runs:
    job stops. This makes a re-run safe.
 4. Otherwise the job calls `deploy <version>` on the box over SSH.
 5. The box fetches `scripts/deploy_gated.sh` **from the release tag**, then runs
-   it. The deploy is therefore the same script the lab uses: snapshot, pull,
-   pin, `compose up -d`, verify, auto-rollback.
+   it: snapshot, pull, pin, `compose up -d`, verify, auto-rollback.
 6. The runner then confirms two more things. The live edge is checked **on the
    box** with the wrapper's `verify` verb: `/healthz` is 200, `/login` is 200,
-   and HSTS is present (proof the app still trusts the edge secret). The runner
-   checks the image identity through `status`: the deployed tag and the commit
-   the running image was built from.
+   and HSTS is present (proof the app still trusts the edge secret).
    Cloudflare challenges GitHub's runner egress, so a runner-side `curl` gets
    403 even when the site is healthy. That is why the edge check runs on the box.
+
+The last step checks the identity of what runs, and what it can check depends on
+whether this run deployed:
+
+- **After a deploy**, the image must be the tag we asked for, and its
+  `org.opencontainers.image.revision` label must equal the commit this run
+  checked out. That commit is what published the tag, so a mismatch is a real
+  fault and fails the run.
+- **After a skip**, the image must still be the tag we asked for. The revision
+  is printed and not compared. A tag is published once, from the commit that
+  moved `VERSION`, so a later commit cannot change that image. Comparing the two
+  failed every correct skip (run 44186834763: tag 2.12.1 built from `274efc6`,
+  run at `f0dbac4`).
 
 A failed deploy does not leave a broken site. `deploy_gated.sh` re-pins the
 previous tag and verifies it before it exits non-zero.
@@ -105,9 +134,10 @@ printf 'restrict,command="/usr/local/bin/opensrm-deploy" %s\n' "$(cat /tmp/gha.p
 ```
 
 `/usr/local/bin/opensrm-deploy` is the only program that key may run. It
-accepts two verbs: `status` (read the deployed tag and image commit) and
-`deploy <x.y.z>`. Any other request is refused before it reaches a shell. This
-matters because the box's `docker` group is effectively root.
+accepts three verbs: `status` (read the deployed tag and image commit), `verify`
+(check the live edge from the box) and `deploy <x.y.z>`. Any other request is
+refused before it reaches a shell. This matters because the box's `docker` group
+is effectively root.
 
 In the repository:
 
@@ -127,6 +157,30 @@ Same path, without waiting for a push:
 ```bash
 gh workflow run cd-oclab.yml -f version=2.13.0
 ```
+
+## Roll back to the lab
+
+The lab no longer serves production. Its container is stopped with
+`restart=no`, and its volume is kept for rollback. Move the hostname back first.
+There is no workflow for it, no `production` environment and no
+`LAB_DEPLOY_SSH` secret. Do this only when the lab itself needs a different
+version.
+
+The lab is behind NAT, so nothing dials in. Run the script on the host, from a
+checkout on the unit you want:
+
+```bash
+ssh lab
+cd /opt/data/opensrm-repo && git fetch origin --prune && git switch --detach <tag>
+DEPLOY_DRY_RUN=1 bash scripts/deploy_gated.sh <tag>   # rehearse: changes nothing
+bash scripts/deploy_gated.sh <tag>                    # snapshot, pull, pin, verify
+```
+
+Then check the lab's own edge by hand: `GET https://srm.200871.xyz/healthz` must
+be 200, and `GET /login` must be 200 with HSTS. `scripts/post_deploy.sh` is the
+lab-only helper for the rest of it: it purges the statics that changed from the
+Cloudflare zone and makes sure the served bytes match `origin/main`. It knows
+the lab's paths and zone, so it does not run anywhere else.
 
 ## Deploy (by hand, for reference)
 

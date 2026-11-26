@@ -62,8 +62,9 @@ requirements. There is no Node build: CSS is compiled ahead of time by
    only, and only if the tests are green there — plus `:<sha>` on every push.
    Each build publishes **`linux/amd64` and `linux/arm64`** as one manifest
    list, built on a native runner per architecture, so the arm64 VPS can pull
-   the same tag the lab does. Deployment of lab prod stays manual (see
-   [docs/runbook.md](docs/runbook.md)); the oclab VPS deploys itself. Merges
+   the same tag the lab does. Deploy is one path: the oclab VPS deploys itself
+   after a green build (see [docs/runbook.md](docs/runbook.md)). The lab deploy
+   is retired from CI. Merges
    use merge commits with a `merge: <summary>` subject — never squash — so the
    atomic commits stay intact.
 
@@ -150,30 +151,47 @@ that catch people out first:
 - **Build** — on push to `main`: the image is built every time but pushed to
   `ghcr.io/thenabbu/opensrm` as `:latest` + `:<VERSION>` only when that push
   moved `VERSION` (a manually dispatched run builds without publishing unless
-  `republish` is set), gated on `needs: [lint, tests]` so a red suite never publishes
+  `republish` is set), gated on the `tests` job through `build`'s `needs: [meta, meta-dev]`, so a red suite never publishes
   `:latest`. The shipped image omits the browser fallback; build with
   `--build-arg WITH_PLAYWRIGHT=1` to include it. Rollback pins
   `OPENSRM_TAG` (see AGENTS.md "Prod deploy").
+
 - **Scans** — gitleaks / pip-audit / trivy in
   `.github/workflows/scans.yml`, **blocking**. A leaked secret, a vulnerable
   dependency or a fixable HIGH/CRITICAL CVE fails the run.
   [docs/SCANS.md](docs/SCANS.md) covers what each gates and why there is no
   `.trivyignore`-style escape hatch.
-- **Deploy (lab prod)** — **gated, never automatic**: there is still no watcher
-  for `srm.200871.xyz`. Nothing deploys until a human approves the `production`
-  environment on a `workflow_dispatch` run, and `scripts/deploy_gated.sh` then
-  does the mechanical part (verified snapshot, digest pin, health + render
-  checks, auto-rollback). Run it with `DEPLOY_DRY_RUN=1` first; see
-  [docs/runbook.md](docs/runbook.md). An auto-deploy watcher was deliberately
-  removed at the maintainer's request — do not add one back **for prod**. The
-  approval gate is what keeps that promise while removing the 1am manual steps.
-- **Deploy (oclab VPS)** — **automatic, and only there**:
-  `cd-oclab.yml` deploys `srm-d1.200871.xyz` after a green **Build & Push** on
+- **Deploy (oclab VPS, the only path)** — **automatic**:
+  `cd-oclab.yml` deploys `srm.200871.xyz` (production) after a green **Build & Push** on
   `main`. It never builds, it pulls the published `:<VERSION>` image, and it
-  runs the same `deploy_gated.sh`, so a bad deploy still rolls itself back. The
-  key it uses exists only on the VPS and can run two verbs (`status`,
-  `deploy <version>`). Scope is deliberate: automating the second deployment
-  must not quietly become automating prod.
+  runs `scripts/deploy_gated.sh`, so a bad deploy still rolls itself back. The
+  key it uses exists only on the VPS and can run three verbs (`status`,
+  `verify`, `deploy <version>`). After a deploy the job checks the running tag
+  and the image's revision label against the commit it built. After a skip, when
+  the box already ran that tag, it checks the tag only: that image came from an
+  earlier commit, so the revision cannot match this one.
+- **Deploy (lab prod)** — **retired**: on 2026-11-18 the database, the two keys
+  and the hostname `srm.200871.xyz` moved to the oclab box. The lab container is
+  stopped with `restart=no`, and its volume is kept for rollback only. There is no
+  lab workflow, no `production` environment and no watcher. Do not add one back.
+  To roll back, point the `srm` record at the lab tunnel, start the container, and
+  copy back any rows oclab accepted. See [docs/runbook.md](docs/runbook.md).
+
+### Branches and environments
+
+`dev` is the integration branch; `main` is production. Feature work branches off
+`origin/dev` and PRs into `dev`. `main` receives only a promotion from `dev`, a
+`hotfix/<slug>`, or release tooling, and `promotion-guard` enforces that by check
+name. Promotion is a merge commit, then `dev` fast-forwards onto `main`
+(`git checkout -B dev origin/main && git push origin dev`); never delete `dev`,
+because doing so re-targets every open PR at `main`.
+
+A green `dev` push publishes `:dev-<shortsha>` and `:dev`, then
+`cd-oclab-dev.yml` deploys `srm-dev.200871.xyz` through the box's
+`deploy-dev <sha>` verb. That verb recreates only `opensrm-dev` with
+`--no-deps`; prod and staging share one compose file and one `.env`, so a bare
+`docker compose up -d` would recreate production. `exp/<slug>` branches are
+created only by a human, and `exp-guard` fails a promotion carrying one.
 
 ## Portal rate limits
 

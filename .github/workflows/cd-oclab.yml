@@ -1,10 +1,12 @@
-# Automatic deployment to the oclab box (the Oracle VPS, srm-d1.200871.xyz).
+# The ONLY deployment path: the oclab box (the Oracle VPS), which serves
+# production at srm.200871.xyz.
 #
-# SCOPE, and it matters: this deploys the SECOND deployment ONLY. Lab prod
-# (srm.200871.xyz) stays gated behind deploy.yml and the `production`
-# environment, exactly as CONTRIBUTING promises. The "no watcher" rule that
-# doc states is about prod; this workflow does not touch prod, and the
-# deploy key it uses does not exist on the lab.
+# There were two paths until this one. The gated lab workflow (deploy.yml) is
+# gone: the repo had zero secrets for it, `ssh lab` resolves to nothing on a
+# runner, and it had never run. The lab stopped serving production on 2026-11-18,
+# when the database, the keys and the hostname moved here. Its container is
+# stopped with `restart=no` and its volume is kept for rollback only.
+# CONTRIBUTING.md and docs/runbook.md state this rule; keep them in step.
 #
 # Why this one is allowed to be automatic: it runs only after Build & Push has
 # gone green on main, it never builds anything itself (it pulls an immutable
@@ -13,7 +15,7 @@
 # a broken site.
 #
 # Two repository settings are required; the run fails loudly if either is
-# missing rather than silently skipping the deploy (see deploy.yml for why):
+# missing rather than silently skipping the deploy:
 #   secret   OCLAB_DEPLOY_SSH  private half of the deploy key whose public half
 #                              is installed on the box with a forced command.
 #   variable OCLAB_HOST        the box's address. Deliberately NOT in this file:
@@ -50,10 +52,10 @@ jobs:
     timeout-minutes: 25
     environment:
       name: oclab
-      url: https://srm-d1.200871.xyz
+      url: https://srm.200871.xyz
     env:
-      HEALTH_URL: https://srm-d1.200871.xyz/healthz
-      LOGIN_URL: https://srm-d1.200871.xyz/login
+      HEALTH_URL: https://srm.200871.xyz/healthz
+      LOGIN_URL: https://srm.200871.xyz/login
     steps:
       - name: Check the deploy target is provisioned
         env:
@@ -159,19 +161,49 @@ jobs:
 
       # A restart is verified by the identity it reports, not by the clock, and
       # not by the deploy script's own exit code.
+      #
+      # Which identity the label can prove depends on whether THIS run deployed:
+      #
+      #   deployed - the running image was built by the commit this run checked
+      #              out (an automatic run checks out workflow_run.head_sha, and
+      #              that same commit is what published the tag), so the label
+      #              must equal it.
+      #   skipped  - the box already ran the tag, and that tag was built by an
+      #              EARLIER commit. Comparing it against this run's commit is
+      #              wrong. Run 44186834763 failed a correct skip this way
+      #              (2.12.1 built from 274efc6, run at f0dbac4): a docs merge
+      #              that publishes nothing cannot change the image, so no
+      #              comparison can ever pass. The tag is the assertion there.
+      #
+      # A manual dispatch checks out whichever branch you picked, which is not
+      # the commit that built the tag, so it asserts the tag too.
       - name: Confirm the running image is the one we asked for
         env:
           OCLAB_HOST: ${{ vars.OCLAB_HOST }}
+          EVENT: ${{ github.event_name }}
+          WANT: ${{ steps.v.outputs.version }}
+          WANT_SHA: ${{ steps.v.outputs.expected_sha }}
+          ALREADY: ${{ steps.now.outputs.already }}
         run: |
           set -eu
           OUT=$(ssh -i ~/.ssh/oclab -o StrictHostKeyChecking=accept-new "ubuntu@$OCLAB_HOST" status)
           echo "$OUT"
           DEPLOYED=$(echo "$OUT" | sed -n 's/^deployed=//p')
           REV=$(echo "$OUT" | sed -n 's/^revision=//p')
-          [ "$DEPLOYED" = "${{ steps.v.outputs.version }}" ] || {
-            echo "::error::box reports $DEPLOYED, expected ${{ steps.v.outputs.version }}"; exit 1; }
-          if [ -n "$REV" ] && [ "$REV" != "${{ steps.v.outputs.expected_sha }}" ]; then
-            echo "::error::running image was built from $REV, expected ${{ steps.v.outputs.expected_sha }}"
-            exit 1
+          echo "compared: deployed=$DEPLOYED want=$WANT revision=${REV:-<none>} expected_sha=${WANT_SHA:-<none>} already=${ALREADY:-<none>} event=$EVENT"
+          [ "$DEPLOYED" = "$WANT" ] || {
+            echo "::error::box reports $DEPLOYED, expected $WANT"; exit 1; }
+          [ -n "$REV" ] || {
+            echo "::error::the running image carries no org.opencontainers.image.revision label, so the deploy cannot be verified"; exit 1; }
+          if [ -n "$ALREADY" ]; then
+            echo "skip path: box already ran $DEPLOYED, built from $REV. Tag checked. Revision not compared, it belongs to an earlier commit."
+            exit 0
           fi
-          echo "verified: $DEPLOYED built from ${REV:-<no label>}"
+          if [ "$EVENT" != "workflow_run" ]; then
+            echo "manual dispatch: $DEPLOYED is built from $REV. Tag checked. Revision not compared, this checkout is not the build commit."
+            exit 0
+          fi
+          [ "$REV" = "$WANT_SHA" ] || {
+            echo "::error::running image was built from $REV, expected $WANT_SHA"
+            exit 1; }
+          echo "verified: $DEPLOYED built from $REV"

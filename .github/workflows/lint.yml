@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, 'feat/**']
   pull_request:
-    branches: [main, feat/preact-migration]
+    # base-branch filter: PRs into dev need lint too
+    branches: [main, dev]
 
 # audit: default token read-only for this workflow
 permissions:
