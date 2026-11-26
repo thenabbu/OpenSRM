@@ -218,13 +218,24 @@ def test_secure_token_is_required():
             assert "secureToken" in str(e), str(e)
 
 
-# ── 3. cptoken: seconds since load, not a 10-digit epoch ────────────────────
-def test_cptoken_posts_seconds():
-    (_action, err), seen = _post("<html>no marker</html>")
+# ── 3. cptoken: the shape the portal JUDGES (measured 2026-11-26) ────────────
+# NOT "seconds since load". The portal discards a plausible small on-page
+# value and judges the epoch-shaped one; see _cptoken_elapsed. This test is the
+# one that has to fail if somebody "fixes" that clock mismatch.
+def test_cptoken_elapsed_is_the_judged_epoch_shape():
+    t0 = time.monotonic() - 22
+    (action, err), seen = _post("<html>no marker</html>", ctx_over={"t0": t0})
     raw = base64.b64decode(seen["fields"]["cptoken_1"][0]).decode()
     elapsed, count = raw.split("313c")
-    assert int(count) == H._telemetry_interactions(), raw
-    assert 20 <= int(elapsed) <= 24, f"elapsed must be ~22 s, got {elapsed!r} (epoch bug?)"
+    assert int(count) == H._telemetry_interactions() == H._TEL_CLICKS + H._TEL_KEYS, (
+        f"cptoken interaction total must be CLICKS+KEYS=26 (the judged value), "
+        f"got {count!r} in {raw!r}")
+    # 22 s after load: the judged shape posts an epoch (10 digits), not 22.
+    assert int(time.time() - t0) >= 1795579000, int(time.time() - t0)
+    assert elapsed == str(max(5, int(time.time() - t0))), raw
+    assert int(elapsed) >= 1795579000, (
+        f"cptoken elapsed must be the epoch shape, got {elapsed!r} — "
+        f"a ~22 s 'seconds on page' value is silently discarded by the portal")
     assert err["kind"] == "portal_blocked", err
 
 
@@ -607,7 +618,7 @@ if __name__ == "__main__":
     for fn in (test_waf_stub_is_typed_blocked,
                test_blocked_kind_is_503_and_message_is_honest,
                test_secure_token_is_required,
-               test_cptoken_posts_seconds,
+               test_cptoken_elapsed_is_the_judged_epoch_shape,
                test_telemetry_payload_is_the_judged_blob,
                test_success_marker_beyond_4000_bytes,
                test_silent_rejection_does_not_arm,
