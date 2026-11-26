@@ -252,7 +252,7 @@ jobs:
       # the dashboard down. Boots the oldest still-published release on this
       # volume, then this image on the same one.
       - name: Log in to GHCR (read the previous release)
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY != ''
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
@@ -260,7 +260,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upgrade smoke (previous release's data under this image)
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY != ''
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY
         env:
           # Unauthenticated calls spend 60 requests per hour per IP, and GitHub's
           # runner pool is shared. When that budget is gone the API answers with
@@ -443,7 +443,7 @@ jobs:
       # fix. Same guard the GHCR upgrade smoke uses. Any PR from a branch in
       # THIS repo - which is how every change to this repo lands - still runs it.
       - name: Vision verification (9 routes x mobile/desktop, real model)
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY != ''
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GEMINI_API_KEY
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/pw-browsers
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
