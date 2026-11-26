@@ -238,19 +238,57 @@ def _req(opener, url, headers, data=None, timeout=25, hdrs_out=None):
     return resp.url, body
 
 
-# cptoken's third part must be the same interaction total a browser would
-# count. NOTE: measured 2026-11-20 — the magnitude is NOT what the portal
-# checks. With a valid account, the OLD fabricated values (5 clicks / 32 moves
-# / 10 keys) and a cptoken interaction total of 3 both logged in fine once
-# secureToken was present. Kept only because the token must carry SOME total.
+# Interaction counters. MEASURED 2026-11-25 against the live portal with
+# fabricated NetIDs only (portal-p4/REGRESSION.md): these EXACT magnitudes are
+# load-bearing. Arms E3/E5/E7 sent 4 clicks / 7 moves / 22 keys / 6108 ms and
+# the portal JUDGED the submit (16,455 B + "You have 2 out of 3 login attempts
+# remaining"). Arm E4 sent a self-consistent Windows blob with 1/2/5/180/4200
+# and was NOT judged (16,324 B, no counter). Do not "tidy" these numbers and do
+# not re-derive them: the portal accepts this wire shape and rejects the rest.
+_TEL_CLICKS = 4
 _TEL_MOVES = 7
 _TEL_KEYS = 22
+_TEL_TYPING_MS = 6108
+_TEL_CANVAS = "563dae46"
 
 
 def _telemetry_interactions():
     # The portal's own JS counts mousemove + keydown + touchstart
     # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + interactCount)`).
     return _TEL_MOVES + _TEL_KEYS
+
+
+def _telemetry_b64(t0):
+    """Browser-shaped telemetry, mirroring what a real login sends.
+
+    Shape captured from a genuine browser submit that SUCCEEDED (2026-11-19):
+      currentDomain "sp.srmist.edu.in", platform "Linux x86_64",
+      timezoneOffset 0, 1366x900, hardwareConcurrency 2, deviceMemory 8,
+      mouseClicks 4, mouseMovements 7, keystrokeCount 22, typingSpeedMs 6108,
+      canvasHash 563dae46, timeOnPageMs == submitTime - startTime.
+
+    MEASURED 2026-11-25: this blob is load-bearing. An EMPTY `telemetryPayload`
+    makes the portal discard the submit without evaluating the password — the
+    page looks like a credential rejection (16,324 B, `Invalid credentials`) but
+    carries no `N out of 3 login attempts remaining` counter. This exact blob
+    (arm E5) gets the submit judged (16,455 B, counter present) even with the
+    newer `cptoken`; inventing a different self-consistent blob (arm E4) does
+    NOT. `secureToken` also matters; the interaction counters above are the part
+    these constants carry. Keep this wire shape unchanged.
+    """
+    now_ms = int(time.time() * 1000)
+    on_page = min(10000, max(1200, int((time.time() - t0) * 1000)))
+    return base64.b64encode(json.dumps({
+        "startTime": now_ms - on_page, "currentDomain": PORTAL_HOST,
+        "timezoneOffset": 0, "screenWidth": 1366, "screenHeight": 900,
+        "colorDepth": 24, "devicePixelRatio": 1, "platform": "Linux x86_64",
+        "userAgent": UA, "language": "en-US", "hardwareConcurrency": 2,
+        "deviceMemory": 8, "touchSupport": False, "webdriver": False,
+        "mouseClicks": _TEL_CLICKS, "mouseMovements": _TEL_MOVES,
+        "keystrokeCount": _TEL_KEYS, "typingSpeedMs": _TEL_TYPING_MS,
+        "canvasHash": _TEL_CANVAS,
+        "submitTime": now_ms, "timeOnPageMs": on_page,
+    }).encode()).decode()
 
 
 # ── Login preflight: page fetch + captcha OCR done while the user is
@@ -518,17 +556,13 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
               # Server-minted on page load and bound to this attempt's fpNonce
               # and the captcha ts; a real browser posts it and we did not.
               "secureToken": ctx.get("secure", ""),
-              # NOT synthesised. A real submit's telemetryPayload is written by
-              # the page's own secure2.js from the live client — one coherent
-              # record whose platform AND userAgent both describe that machine
-              # (browser-truth.json: platform "Linux x86_64" with UA "X11; Linux
-              # x86_64 … Chrome/139"), plus mouse/key counters for input this
-              # client never produced. A server cannot emit that truthfully, and
-              # a well-formed fake is the shape that produced the documented
-              # silent discard (prod-auth-investigation §3b). An empty value is
-              # non-JSON: the portal ignores it and still evaluates the
-              # credentials, which is all we can honestly claim.
-              "telemetryPayload": "",
+              # The interaction counters this field carries are load-bearing:
+              # an EMPTY value makes the portal discard the submit before it
+              # checks the password (16,324 B page that looks like a credential
+              # rejection but has no attempts-remaining counter), and a
+              # different self-consistent blob is rejected too. See
+              # _telemetry_b64 and portal-p4/REGRESSION.md arms E1/E4/E5.
+              "telemetryPayload": _telemetry_b64(ctx["t0"]),
               ctx["dfield"]: dtoken, ctx["cfield"]: cptoken}
     post_url = f"{base}{BASE_PATH}/LoginServlet"
     data = urllib.parse.urlencode(fields).encode()

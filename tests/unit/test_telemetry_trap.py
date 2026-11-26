@@ -16,10 +16,13 @@ labelled as cosmetic.
 
 Offline: no network, no credentials.
 """
+import base64
+import json
 import os
 import re
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -53,18 +56,22 @@ def test_post_login_forwards_secure_token():
     )
 
 
-def test_telemetry_payload_is_not_synthesised():
-    # The real submit writes telemetryPayload from the LIVE client (see
-    # browser-truth.json: platform "Linux x86_64" with UA "X11; Linux x86_64 …
-    # Chrome/139" — one coherent self-portrait, plus mouse/key counters). A
-    # server cannot produce that record truthfully, so we send none: an empty
-    # (non-JSON) value is ignored by the portal and the credentials are still
-    # evaluated, while a well-formed fake is the shape that produced the
-    # documented silent discard.
-    assert not hasattr(H, "_telemetry_b64"), "the fabricated blob builder must be gone"
+def test_telemetry_payload_is_the_judged_blob():
+    # MEASURED 2026-11-25 (portal-p4/REGRESSION.md): an empty telemetryPayload
+    # is NOT ignored — the portal discards the submit and never checks the
+    # password (16,324 B, "Invalid credentials", no attempts-remaining counter;
+    # arms E1/E6). The blob below keeps the submit JUDGED (16,455 B, "You have
+    # 2 out of 3 login attempts remaining"; arms E3/E5 with bf1f147e's own
+    # cptoken). A different self-consistent blob is rejected (arm E4), so this
+    # pins the exact wire shape, not just "some JSON".
+    raw = H._telemetry_b64(time.time() - 30)
+    blob = json.loads(base64.b64decode(raw))
+    assert (blob["mouseClicks"], blob["mouseMovements"], blob["keystrokeCount"],
+            blob["typingSpeedMs"]) == (4, 7, 22, 6108), blob
+    assert blob["timeOnPageMs"] == 10000, blob   # clamped dwell, as sent by E3/E5
     src = Path(__file__).resolve().parent.parent.parent / "app" / "http_scraper.py"
-    assert '"telemetryPayload": ""' in src.read_text(), \
-        "the login POST must send an EMPTY telemetryPayload, never a fake record"
+    assert '"telemetryPayload": _telemetry_b64(ctx["t0"])' in src.read_text(), \
+        "the login POST must send the measured blob, never an empty value"
     # the portal's own JS counts mousemove + keydown + touchstart
     assert H._telemetry_interactions() == H._TEL_MOVES + H._TEL_KEYS
 
@@ -72,5 +79,5 @@ def test_telemetry_payload_is_not_synthesised():
 if __name__ == "__main__":
     test_login_page_parses_secure_token()
     test_post_login_forwards_secure_token()
-    test_telemetry_payload_is_not_synthesised()
+    test_telemetry_payload_is_the_judged_blob()
     print("login secureToken contract checks OK")
