@@ -447,28 +447,39 @@ bindTimetableEditor();
 // editor's nodes do not exist yet and the call above returns false, and the
 // editor only appears when that route is swapped in. Idempotent per element (see
 // the ttBound flag in timetableEditor.ts), so the extra calls are free.
-// One immediate attempt, then a brief bounded retry: the nodes bindTimetableEditor
-// needs are not all in the document at the instant the signal fires (the grid is
-// rendered by the island from the timetable data), and it returns false unless it
-// finds every one of them. 20 x 100 ms is the ceiling; the bind itself is per
-// element, so a retry after success is a no-op. The `typeof document` guard is for
-// unit tests, where a pending timer can outlive the jsdom environment.
-const rebindTimetableEditor = (): void => {
+// One immediate attempt, then a brief bounded retry: the nodes a binder needs are
+// not all in the document at the instant the signal fires (the timetable grid is
+// rendered by the island from the timetable data), and a binder returns false
+// until it finds them. 20 x 100 ms is the ceiling; every binder is per-element
+// idempotent, so a retry after success is a no-op. The `typeof document` guard is
+// for unit tests, where a pending timer can outlive the jsdom environment.
+const rebindAfterSwap = (bind: () => boolean, canAppear: () => boolean): (() => void) => () => {
   let tries = 0;
   const attempt = (): void => {
     if (typeof document === 'undefined') return;      // test env torn down
-    if (bindTimetableEditor()) return;
-    // Retry ONLY where the editor can appear. On every other route the panel is
-    // absent, so there is nothing to wait for — and 20 timers ticking for 2 s on
-    // every island mount is a cost the perf budget can see (a switch window on
-    // /attendance caught one long task before this guard existed).
-    if (!document.getElementById('tab-timetable') || ++tries > 20) return;
+    if (bind()) return;
+    // Retry ONLY where the bound nodes can appear. On every other route there is
+    // nothing to wait for — and 20 timers ticking for 2 s on every island mount
+    // is a cost the perf budget can see (a switch window on /attendance caught
+    // one long task before this guard existed).
+    if (!canAppear() || ++tries > 20) return;
     setTimeout(attempt, 100);
   };
   attempt();
 };
+const rearmTimetableEditor = rebindAfterSwap(
+  bindTimetableEditor, () => !!document.getElementById('tab-timetable'));
+// The delete row is the same class of node, and it was the one left unhooked: it
+// is server-rendered inside the settings route, so after a soft navigation the
+// row is a NEW element while the boot-time bind further down this file sits on
+// the detached one. Measured on srm-dev (2026-11-26): land on /, tap Settings,
+// tap "Delete my data" — no dialog, no request. Direct-loading /settings worked,
+// which is why the DUT (it opens the page it tests) never saw it.
+const rearmDeleteAccount = rebindAfterSwap(
+  bindDeleteAccount, () => !!document.getElementById('delete-account-btn'));
 for (const ev of ['osrm:island-mounted', 'osrm:route-swapped'] as const) {
-  document.addEventListener(ev, rebindTimetableEditor);
+  document.addEventListener(ev, rearmTimetableEditor);
+  document.addEventListener(ev, rearmDeleteAccount);
 }
 
 // W5.4b: page chrome — the five dash.js behaviours that belong to the page

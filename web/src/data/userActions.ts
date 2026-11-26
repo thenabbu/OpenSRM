@@ -116,8 +116,14 @@ export const DEL_IDLE_CLASS = 'mt-2 text-xs text-base-content/70';
  * removed — the student must be able to see that a destructive action did NOT
  * half-happen.
  */
-export function bindDeleteAccount(doc: Document = document): void {
+export function bindDeleteAccount(doc: Document = document): boolean {
   const btn = doc.getElementById('delete-account-btn');
+  // Idempotent per element: main.ts re-arms this binder after every soft-nav
+  // route swap, and a second listener on #del-confirm would make ONE confirm
+  // POST twice. False means this route has no delete row (nothing to bind).
+  if (!btn) return false;
+  if (btn.dataset.delBound) return true;
+  btn.dataset.delBound = '1';
   const confirm = doc.getElementById('del-confirm');
   btn?.addEventListener('click', () => {
     (doc.getElementById('delete-account-modal') as HTMLDialogElement | null)?.showModal();
@@ -159,6 +165,7 @@ export function bindDeleteAccount(doc: Document = document): void {
         btnEl.disabled = false;
       });
   });
+  return true;
 }
 
 // ─ 3. dash-details-dismiss ────────────────────────────────────────────────

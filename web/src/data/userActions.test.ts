@@ -196,6 +196,42 @@ describe('dash-delete-account', () => {
     expect(status.className).toBe(DEL_ERR_CLASS);
     expect(loc.href).toBe('/settings');               // no navigation on failure
   });
+
+  // Regression: the settings route is reached by a soft navigation, which
+  // replaces the DOM. A boot-time bind then sits on detached nodes — the row
+  // was inert while a DIRECT load of /settings worked, so this test binds on a
+  // route without the row first, swaps the markup in, and binds again.
+  it('binds the row a soft-nav swap puts in the document, exactly once per node', async () => {
+    const doc = fresh('<div id="route"></div>');
+    const spy = vi.fn(async () => json({ ok: true }));
+    vi.stubGlobal('fetch', spy);
+    const loc = { href: '/settings' };
+    vi.stubGlobal('location', loc);
+
+    expect(bindDeleteAccount(doc)).toBe(false);       // boot route has no row
+
+    doc.getElementById('route')!.innerHTML = `
+      <button id="delete-account-btn">Delete my data</button>
+      <dialog id="delete-account-modal">
+        <div id="del-status"></div>
+        <button id="del-confirm">Delete permanently</button>
+      </dialog>`;
+    const dlg = doc.getElementById('delete-account-modal') as HTMLDialogElement;
+    dlg.showModal = function showModal() {
+      this.open = true;
+    };
+
+    expect(bindDeleteAccount(doc)).toBe(true);        // the swapped-in row binds
+    expect(bindDeleteAccount(doc)).toBe(true);        // repeat call is a no-op
+
+    (doc.getElementById('delete-account-btn') as HTMLElement).click();
+    expect(dlg.open).toBe(true);
+    expect(spy).not.toHaveBeenCalled();               // the row alone never deletes
+
+    (doc.getElementById('del-confirm') as HTMLElement).click();
+    await vi.waitFor(() => expect(loc.href).toBe('/login'));
+    expect(spy).toHaveBeenCalledTimes(1);             // ONE confirm = ONE POST
+  });
 });
 
 // ── dash-details-dismiss ──────────────────────────────────────────────────
