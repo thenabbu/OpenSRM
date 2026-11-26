@@ -9,6 +9,13 @@ So `secureToken` is load-bearing. The telemetry magnitudes are not: with
 `secureToken` present, the OLD fabricated counters (5 clicks / 32 moves /
 10 keys / 8500 ms) and a `cptoken` interaction total of 3 both logged in.
 
+Corrected 2026-11-26: that last clause was measured against an account with
+attempts to spend, and it conflated "the portal evaluated this" with "the
+portal accepted this". Re-measured on fabricated NetIDs, only served attempts
+exist, so the difference is visible: the cptoken interaction total and its
+elapsed part are load-bearing. See portal-p6/DISCARD.md. The blob's exact
+magnitudes below stay pinned because they are the same judged shape.
+
 That matters because "Invalid credentials" is the same string the portal returns
 for a wrong password, so a missing `secureToken` reads as bad credentials. This
 file pins the field that must keep being forwarded, and keeps the rest honestly
@@ -72,8 +79,13 @@ def test_telemetry_payload_is_the_judged_blob():
     src = Path(__file__).resolve().parent.parent.parent / "app" / "http_scraper.py"
     assert '"telemetryPayload": _telemetry_b64(ctx["t0"])' in src.read_text(), \
         "the login POST must send the measured blob, never an empty value"
-    # the portal's own JS counts mousemove + keydown + touchstart
-    assert H._telemetry_interactions() == H._TEL_MOVES + H._TEL_KEYS
+    # MEASURED 2026-11-26 (portal-p6/DISCARD.md): the cptoken interaction total
+    # is CLICKS+KEYS=26, not mousemove+keydown. The mousemove total (29) is part
+    # of the wire shape the portal silently DISCARDS — same body, same blob,
+    # 15,597 B untouched login page.
+    assert H._telemetry_interactions() == H._TEL_CLICKS + H._TEL_KEYS == 26, (
+        f"cptoken interaction total must be CLICKS+KEYS=26 (judged), got "
+        f"{H._telemetry_interactions()}")
 
 
 if __name__ == "__main__":

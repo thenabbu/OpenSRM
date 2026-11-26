@@ -252,10 +252,35 @@ _TEL_TYPING_MS = 6108
 _TEL_CANVAS = "563dae46"
 
 
+def _cptoken_elapsed(t0_monotonic, wall_now, mono_now):
+    """The `elapsed` part of `cptoken`, in the shape the portal JUDGES.
+
+    DO NOT "fix" the clock mismatch below. It looks like a bug — `t0` is
+    `time.monotonic()` and `wall_now` is `time.time()`, so the subtraction is
+    ~1.8e9 and the value posted is a full epoch second, not seconds-on-page.
+    It is a bug, and it is LOAD-BEARING: the portal discards every submit that
+    carries a plausible small on-page value and judges the epoch one.
+
+    Measured 2026-11-26 with fabricated NetIDs, scores of ~40 interleaved POSTs
+    on one IP: the deployed 2.12.4 image posted `17955791525de526` and was
+    judged (16,455 B + `N out of 3 login attempts remaining`); the same body
+    with `65de526` (elapsed=6) was silently discarded 14/14 (15,597 B, the
+    untouched login page, no alert). Equalising the interaction total alone is
+    NOT enough. Treat this as a fixed wire constant, not a timer.
+
+    Common mistake: "the portal's JS posts seconds since load". It may, but
+    that is not the value it accepts from us. Callers must pass the clocks in
+    so a test can pin both without patching time.
+    """
+    return str(max(5, int(wall_now - t0_monotonic)))
+
+
 def _telemetry_interactions():
-    # The portal's own JS counts mousemove + keydown + touchstart
-    # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + interactCount)`).
-    return _TEL_MOVES + _TEL_KEYS
+    # Must equal the total the telemetry blob claims. Using mousemove here
+    # reads as a runtime interaction count, but the portal JUDGES the blob on
+    # the 6b53326 shape (clicks+keystrokes) and DISCARDS every submit that
+    # carries the mousemove total. See _cptoken_fragment.
+    return _TEL_CLICKS + _TEL_KEYS
 
 
 def _telemetry_b64(t0):
@@ -538,10 +563,7 @@ def _post_login(opener, ctx, netid, password, base, xheaders, helpers, on_step=N
     from app.app import sync_error  # deferred: app.app imports this module lazily
     # POST login
     dtoken = base64.b64encode(PORTAL_HOST[::-1].encode()).decode()
-    # Seconds since the page load, like the portal's own JS
-    # (`btoa(Math.floor((Date.now()-loadTime)/1000) + delim + count)`). t0 is
-    # time.monotonic(); the old `time.time() - t0` posted a 10-digit epoch.
-    elapsed = str(max(1, int(time.monotonic() - ctx["t0"])))
+    elapsed = _cptoken_elapsed(ctx["t0"], time.time(), time.monotonic())
     # cptoken's third part must be the same interaction total the telemetry
     # claims. Sending a hardcoded 3 against fabricated counters is a mismatch
     # the portal reads.
