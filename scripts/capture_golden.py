@@ -556,6 +556,11 @@ def api_capture(base: str, token: str, out: Path) -> dict:
                 # runtime telemetry: values are timing/RSS/ages (differ every
                 # run); keep metric names + labels, zero the values
                 text = re.sub(r"(?m) -?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$", " 0", text)
+                # activity_by_hour buckets by `strftime('%H', ts)` inside SQLite,
+                # which the Python clock pin cannot reach, so the label tracks the
+                # real hour and reds this gate every hour after a re-baseline.
+                # Mask it to a fixed label, like the Vite build hash above.
+                text = re.sub(r'(opensrm_activity_by_hour\{hour=")[0-9]{2}', r"\g<1>00", text)
             nb = text.encode()  # sizes reflect the captured (normalized) artifact
             rec = {"path": path, "status": status, "content_type": ctype,
                    "bytes": len(nb), "gzip_bytes": gz(nb), "body": text}
