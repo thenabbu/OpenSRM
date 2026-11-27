@@ -231,6 +231,18 @@ check("hall column gone -> hall empty, seat still read",
 DRIFT = ("<table><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>"
          "<tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></table>")
 check("drifted table -> None (preserve, not wipe)", parse_exam_timetable(DRIFT) is None)
+# live Nov 2026 shape: Hall No. blank, the Seat cell carries nested tags with
+# the room text ('219<br>SECOND FLOOR<span>Academic Building Second Floor</span>')
+LIVE_SEAT_ETT = HDR_ETT.replace(
+    "<td>25-NOV-2026 AN  (02:00-05:00)</td><td>12</td><td>08</td>",
+    "<td>25-NOV-2026 AN  (02:00-05:00)</td><td></td>"
+    "<td>219<br>SECOND FLOOR<span>Academic Building Second Floor</span></td>")
+live_rows = parse_exam_timetable(LIVE_SEAT_ETT)
+check("blank hall + room in seat cell -> seat number split off",
+      live_rows and live_rows[0]["seat"] == "219", str(live_rows))
+check("room text becomes the hall when the hall cell is empty",
+      live_rows and live_rows[0]["hall"] == "SECOND FLOOR Academic Building Second Floor",
+      str(live_rows))
 _drift_scribe = _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=DRIFT)
 check("drift + scribe rows -> scribe applied (official broken must not freeze updates)",
       _drift_scribe is not None and {r["code"] for r in _drift_scribe} >= {"21AAA101J", "21BBB102T"},

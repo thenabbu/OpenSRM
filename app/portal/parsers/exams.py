@@ -26,6 +26,14 @@ def parse_exam_schedule(html):
     return out
 
 
+def _txt(cell_html):
+    """Cell -> text with tags turned into spaces. The portal nests <br>/<span>
+    inside hall/seat cells and `_cells` strips tags with '', gluing the words
+    ('219SECOND FLOORAcademic Building Second Floor')."""
+    t = re.sub(r"<[^>]+>", " ", cell_html or "")
+    return re.sub(r"\s+", " ", t.replace("\xa0", " ").replace("&nbsp;", " ")).strip()
+
+
 def parse_exam_timetable(html):
     """StudentExamTimeTable.jsp (iden=126, official 'Exam Time Table' page)
     -> end-sem exam rows. Verified live Oct 7 2026 (the ONLY published source
@@ -70,6 +78,7 @@ def parse_exam_timetable(html):
 
     out = []
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        tds = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
         cells = _cells(row)
         i_date, i_code = _i("date"), _i("code")
         need = [i for i in (i_date, i_code, _i("hall"), _i("seat")) if i is not None]
@@ -81,13 +90,21 @@ def parse_exam_timetable(html):
             continue  # header/banner rows, pending `- -`, blanked cells
         mon = MONTHS.get(dm.group(2), "00")
         tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", ds)
+        # Hall No. is often blank while the Seat no. cell carries
+        # '219 SECOND FLOOR Academic Building Second Floor'. Split the number
+        # off and keep the room text as the hall when the hall cell is empty.
+        i_h, i_s = _i("hall"), _i("seat")
+        hall = _txt(tds[i_h]) if i_h is not None and i_h < len(tds) else ""
+        seat_raw = _txt(tds[i_s]) if i_s is not None and i_s < len(tds) else ""
+        sm = re.match(r"^(\d+[A-Za-z]?)\s+(.+)$", seat_raw)
+        seat, room = (sm.group(1), sm.group(2)) if sm else (seat_raw, "")
         out.append({
             "code": cells[i_code], "name": (cells[_i("name")] or "") if _i("name") is not None else "",
             "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
             "session": (re.search(r"\b(AN|FN)\b", ds) or [None, ""])[1],
             "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
-            "hall": (cells[_i("hall")] or "") if _i("hall") is not None else "",
-            "seat": (cells[_i("seat")] or "") if _i("seat") is not None else "",
+            "hall": hall or room,
+            "seat": seat,
         })
     if not out and "<table" in html:
         # table present but nothing parsed: label/column drift or blanked rows.
