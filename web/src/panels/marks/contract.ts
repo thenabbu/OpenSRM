@@ -23,6 +23,10 @@ export const marksProps = z.object({
       title: z.string(),                    // already .title()'d server-side
       scored_disp: z.string(),
       max_disp: z.string(),
+      head_disp: z.string(),                // card headline: '48.95/60' or the grade letter
+      sub_disp: z.string(),                 // '' unless an internal-only /100 course
+      grade: z.string(),                    // '' unless internal-only
+      internal: z.boolean(),                // internal total is already /100
       pct: z.number(),                     // raw, for the outlier accent
       pct_disp: z.string(),                // '94.0' — one decimal, server-formatted
       outlier: z.boolean(),

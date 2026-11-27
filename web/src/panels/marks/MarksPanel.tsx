@@ -3,7 +3,7 @@ import { markHydrated, type HostProps } from '../../islands/contract';
 
 export type MarksHost = HostProps;
 
-const CHIP = 'inline-flex items-center justify-center w-14 h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs';
+const CHIP = 'inline-flex items-center justify-center w-[6.5rem] h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs px-2';
 
 /**
  * One component line — the DOM of marks.html:216-256.
@@ -60,7 +60,7 @@ function Component({ s, cpt }: { s: MarksSubject; cpt: MarksComponent }) {
   return (
     <div class="py-1">
       <div class="flex items-center gap-2">
-        <span class={CHIP}>{cpt.name}</span>
+        <span class={CHIP} title={cpt.name}><span class="truncate">{cpt.name}</span></span>
         {cpt.date_disp ? <span class="text-xs font-mono text-base-content/50">{cpt.date_disp}</span> : null}
         <span class="font-mono text-xs tabular-nums ml-auto">{cpt.score_disp}/{cpt.max_disp}</span>
         <TagForm s={s} cpt={cpt} />
@@ -80,13 +80,16 @@ function Component({ s, cpt }: { s: MarksSubject; cpt: MarksComponent }) {
 function Subject({ s }: { s: MarksSubject }) {
   return (
     <div class="bg-base-200 border border-base-300 rounded-box p-4">
-      <div class="flex items-baseline justify-between gap-2">
-        <span class="font-mono text-xs text-base-content/60">{s.code}</span>
-        {/* neutral number; exactly one outlier on the page may take the accent (§2.7) */}
-        <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}`}>{s.pct_disp}%</span>
+      <div class="mb-2">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="font-mono text-xs text-base-content/60">{s.code}</span>
+          {/* neutral number; exactly one outlier may take the accent (§2.7).
+              An internal-only course (/100) leads with its GRADE. */}
+          <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}`}>{s.head_disp}</span>
+        </div>
+        <h3 class="text-sm font-semibold leading-snug">{s.title || s.code}</h3>
+        {s.sub_disp ? <div class="font-mono text-xs text-base-content/50 tabular-nums">{s.sub_disp}</div> : null}
       </div>
-      <h3 class="text-sm font-semibold leading-snug">{s.title || s.code}</h3>
-      <div class="font-mono text-xs text-base-content/50 tabular-nums mb-2">{s.scored_disp}/{s.max_disp}</div>
       <div class="border-t border-base-300 pt-2">
         {s.components.length > 0 ? (
           s.components.map((cpt) => <Component key={cpt.name} s={s} cpt={cpt} />)

@@ -73,8 +73,11 @@ css_path = os.path.join(REPO, "app", "static", linked[0][len("/static/"):]) if l
     else os.path.join(REPO, "app", "static", "dist", "assets")
 check("linked stylesheet exists on disk", os.path.isfile(css_path), css_path)
 css = open(css_path, encoding="utf-8").read()
-# CSS escapes selector metachars (lg:col-span-8 -> lg\:col-span-8): compare flat
-css_flat = css.replace("\\", "")
+# CSS escapes selector metachars (lg:col-span-8 -> lg\:col-span-8) and
+# digit-leading names with a hex escape (.2xl\:grid-cols-3 -> .\32 xl\:...):
+# resolve both before the flat comparison, or a `2xl:` token can never match.
+css_flat = re.sub(r"\\([0-9a-fA-F]{1,6})\s?", lambda m: chr(int(m.group(1), 16)), css)
+css_flat = css_flat.replace("\\", "")
 
 FAMILIES = ("col-span", "row-span", "grid-cols", "progress-", "max-h-")
 tokens = set()

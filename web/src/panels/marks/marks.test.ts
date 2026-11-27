@@ -11,7 +11,8 @@ const PROPS: MarksProps = {
   subjects: [
     {
       code: '21CSS201T', title: 'Computer Organization And Architecture',
-      scored_disp: '32.5', max_disp: '50', pct: 65, pct_disp: '65.0', outlier: true,
+      scored_disp: '32.5', max_disp: '50', head_disp: '32.5/50', sub_disp: '',
+      grade: '', internal: false, pct: 65, pct_disp: '65.0', outlier: true,
       components: [
         { name: 'FT-I', date_disp: '04 Sep', score_disp: '8.5', max_disp: '15',
           derived: 'IE-1', confirmed: null,
@@ -22,8 +23,15 @@ const PROPS: MarksProps = {
     },
     {
       code: '21CSC203P', title: 'Advanced Programming Practice', scored_disp: '9',
-      max_disp: '10', pct: 90, pct_disp: '90.0', outlier: false,
+      max_disp: '10', head_disp: '9/10', sub_disp: '', grade: '', internal: false,
+      pct: 90, pct_disp: '90.0', outlier: false,
       components: [],   // -> "No assessment data"
+    },
+    {
+      // internal-only course: /100 total -> the GRADE leads, the total is the sub-line
+      code: '21LEM201T', title: 'Professional Ethics', scored_disp: '91', max_disp: '100',
+      head_disp: 'A+', sub_disp: '91/100', grade: 'A+', internal: true,
+      pct: 91, pct_disp: '91.0', outlier: false, components: [],
     },
   ],
 };
@@ -62,7 +70,7 @@ describe('P6.3 marks island', () => {
     expect(mount().getAttribute('data-hydrated')).toBe('1');
     expect(LOG).toEqual([]);
     expect(mount().textContent).not.toContain('SERVER PAINT');
-    expect(cards()).toHaveLength(2);
+    expect(cards()).toHaveLength(3);
   });
 
   it('subject rows match the view model, in order, with the one accent', async () => {
@@ -73,21 +81,26 @@ describe('P6.3 marks island', () => {
     expect(weak.querySelector('h3')!.textContent).toBe('Computer Organization And Architecture');
     expect(weak.textContent).toContain('32.5/50');
     // exactly one text-secondary on the page, on the outlier (§2.7)
-    const pct = weak.querySelector('.text-lg')!;
-    expect(pct.textContent).toBe('65.0%');
-    expect(pct.className).toContain('text-secondary');
+    const head = weak.querySelector('.text-lg')!;
+    expect(head.textContent).toBe('32.5/50');   // scored/max, never a percentage
+    expect(head.className).toContain('text-secondary');
     expect(document.querySelectorAll('.text-secondary')).toHaveLength(1);
     expect(strong.querySelector('h3')!.textContent).toBe('Advanced Programming Practice');
     expect(strong.querySelector('.text-lg')!.className).not.toContain('text-secondary');
+    // internal-only: grade headline + scored/100 sub-line, no percentage anywhere
+    const internal = cards()[2];
+    expect(internal.querySelector('.text-lg')!.textContent).toBe('A+');
+    expect(internal.textContent).toContain('91/100');
+    expect(internal.textContent).not.toContain('%');
   });
 
   it('component breakdown: chip, date, score, tag form and the nested IE row', async () => {
     document.body.innerHTML = page();
     await hydrateAll(document, Date.now() / 1000);
     const weak = cards()[0];
-    // Chips only: `w-14 h-5` is the chip fill (marks.html:216, DESIGN §4.13).
-    // `.rounded-full` also catches the tag summary button + its sr-only label.
-    const chips = Array.from(weak.querySelectorAll('.w-14.h-5')).map((e) => e.textContent);
+    // Chips only: `h-5 rounded-full` is the chip fill (marks.html, DESIGN §4.13).
+    // `span` excludes the tag summary button (a `<summary>`) and its sr-only label.
+    const chips = Array.from(weak.querySelectorAll('span.h-5.rounded-full')).map((e) => e.textContent);
     // DOM order follows the component: FT-I, then its nested IE row, then FT-II.
     expect(chips).toEqual(['FT-I', 'IE-1', 'FT-II']);
     expect(weak.textContent).toContain('04 Sep');

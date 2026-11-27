@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 with tempfile.TemporaryDirectory() as td:
     os.environ["DATA_DIR"] = td
     from app.app import (_marks_view, _marks_summary, _week_marks, _fmt_date, _fmt_max,
-                         _fmt_score, _derive_ie, _class_key, _group_key)
+                         _fmt_score, _derive_ie_roles, _internal_grade,
+                         _class_key, _group_key)
 
 # ── formatting ────────────────────────────────────────────────────────
 assert _fmt_date("04/Sep/2026") == "04 Sep"
@@ -19,12 +20,28 @@ assert _fmt_max(15.0) == "15" and _fmt_max(10.0) == "10" and _fmt_max(20.0) == "
 assert _fmt_max(15.5) == "15.50", _fmt_max(15.5)      # fractional maxima keep 2 decimals
 assert _fmt_score(11.7) == "11.7" and _fmt_score(5) == "5"
 
-# ── IE-1 derivation (a guess until confirmed) ─────────────────────────
-assert _derive_ie("21CSS201T", 15.0) == "IE-1"        # the /15 component
-assert _derive_ie("21CSC203P", 10.0) == "IE-1"        # practical /10
-assert _derive_ie("21CSS201T", 10.0) is None          # theory /10 is NOT an IE
-assert _derive_ie("21LEM201T", 20.0) is None          # Professional Ethics: never
-assert _derive_ie("21CSS201T", 5.0) is None           # FT-I /5: neither
+# ── IE-1/IE-2 derivation: one pair per SUBJECT, never three IE-1s ────
+# the repeated family at one max is the exam pair; earliest = IE-1, latest = IE-2
+_ft = [{"name": f"FT-{n}", "entered": d, "scored": s, "max": m} for n, d, s, m in (
+    ("I", "04/Sep/2026", 5.0, 5.0), ("II", "09/Sep/2026", 11.7, 15.0),
+    ("III", "07/Oct/2026", 12.0, 15.0), ("IV", "19/Nov/2026", 8.5, 15.0))] + [
+    {"name": "LLT-I", "entered": "02/Nov/2026", "scored": 8.0, "max": 10.0}]
+assert _derive_ie_roles(_ft) == {"FT-II": "IE-1", "FT-IV": "IE-2"}, _derive_ie_roles(_ft)
+# a practical subject: the FP pair is the exam, the wider PBL group is coursework
+_prac = [{"name": "FP-I", "entered": "23/Sep/2026", "scored": 8.0, "max": 10.0},
+         {"name": "FP-II", "entered": "16/Nov/2026", "scored": 5.7, "max": 10.0},
+         {"name": "PBL-I", "entered": "09/Oct/2026", "scored": 20.0, "max": 20.0},
+         {"name": "PBL-II", "entered": "16/Sep/2026", "scored": 20.0, "max": 20.0},
+         {"name": "PBL-III", "entered": "26/Aug/2026", "scored": 20.0, "max": 20.0}]
+assert _derive_ie_roles(_prac) == {"FP-I": "IE-1", "FP-II": "IE-2"}, _derive_ie_roles(_prac)
+assert _derive_ie_roles([]) == {} and _derive_ie_roles(None) == {}
+assert _derive_ie_roles([{"name": "FT-I", "entered": "04/Sep/2026", "max": 5.0}]) == {}
+
+# ── internal-only (/100) courses show a grade, not a running total ────
+assert _internal_grade(93.9) == "O" and _internal_grade(91) == "O"
+assert _internal_grade(90.9) == "A+" and _internal_grade(82) == "A+"
+assert _internal_grade(47.1) == "D" and _internal_grade(12) == "F"
+assert _internal_grade(None) == "" and _internal_grade("junk") == ""
 
 MARKS = [
     {"code": "21CSS201T", "title": "COMPUTER ORGANIZATION AND ARCHITECTURE",
@@ -68,14 +85,32 @@ assert coa["FT-I"]["score_disp"] == "4.5" and coa["FT-I"]["max_disp"] == "5"
 assert coa["FT-I"]["date_disp"] == "04 Sep" and coa["FT-I"]["ie"] is None
 assert coa["FT-I"]["derived"] == "" and coa["FT-I"]["confirmed"] is None
 
-# ── derived IE row: 11.7/15 -> 39/50 ──────────────────────────────────
-assert coa["FT-II"]["derived"] == "IE-1" and coa["FT-II"]["confirmed"] is None
-assert coa["FT-II"]["ie"]["role"] == "IE-1" and coa["FT-II"]["ie"]["confirmed"] is False
-assert coa["FT-II"]["ie"]["score_disp"] == "39" and coa["FT-II"]["ie"]["max_disp"] == "50"
+# ── no repeated component family => no derived IE at all ──────────────
+assert coa["FT-II"]["derived"] == "" and coa["FT-II"]["ie"] is None
 pe = by["21LEM201T"]["components"][0]                # Professional Ethics: no tag
 assert pe["ie"] is None and pe["max_disp"] == "20"
-prac = by["21CSC203P"]["components"][0]              # practical /10 -> 7.2/10 = 36/50
-assert prac["ie"]["role"] == "IE-1" and prac["ie"]["score_disp"] == "36"
+prac = by["21CSC203P"]["components"][0]              # single FP: nothing to pair with
+assert prac["ie"] is None
+
+# ── derived IE pair: earliest -> /50, latest -> /60, middle unlabelled ─
+_pair = _marks_view([{"code": "21MAB206T", "title": "NUMERICAL METHODS AND ANALYSIS",
+                      "components": _ft, "scored_total": 45.2, "max_total": 60.0}])[0]
+pc = {c["name"]: c for c in _pair["components"]}
+assert pc["FT-II"]["derived"] == "IE-1" and pc["FT-II"]["ie"]["confirmed"] is False
+assert pc["FT-II"]["ie"]["score_disp"] == "39" and pc["FT-II"]["ie"]["max_disp"] == "50"
+assert pc["FT-IV"]["derived"] == "IE-2" and pc["FT-IV"]["ie"]["score_disp"] == "34"
+assert pc["FT-III"]["derived"] == "" and pc["FT-III"]["ie"] is None   # middle repeat: no guess
+assert pc["FT-I"]["derived"] == ""                                    # /5 is never an IE
+
+# ── headline: scored/max, or the grade for an internal-only /100 course ─
+assert by["21CSS201T"]["head_disp"] == "16.2/20" and by["21CSS201T"]["sub_disp"] == ""
+assert by["21CSS201T"]["internal"] is False and by["21CSS201T"]["grade"] == ""
+_internal = _marks_view([{"code": "21LEM201T", "title": "PROFESSIONAL ETHICS",
+                          "components": [{"name": "FML-II", "entered": "16/Nov/2026",
+                                          "scored": 91.0, "max": 100.0}],
+                          "scored_total": 91.0, "max_total": 100.0}])[0]
+assert _internal["internal"] is True and _internal["grade"] == "O"
+assert _internal["head_disp"] == "O" and _internal["sub_disp"] == "91/100"
 
 # ── confirmed tags beat the derivation (incl. 'neither') ─────────────
 tags = {("21CSS201T", "FT-II"): {"role": "IE-2", "raw_max": 60.0, "scaled_max": 15.0}}
