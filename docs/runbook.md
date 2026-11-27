@@ -645,7 +645,7 @@ Every threshold was picked at design time with no production history —
 | Alert | Fires when | First action |
 |---|---|---|
 | OpenSRMAppDown | scrape down 5m | `docker ps` + `docker logs opensrm` |
-| OpenSRMPushTickStale | no tick >5m, 5m sustained | check the Hermes cron job + push-tick.log |
+| OpenSRMPushTickStale | no tick >5m, 5m sustained | `ssh oracle`, then check `/etc/cron.d/opensrm-push-tick` and `/var/log/opensrm-push-tick.log` |
 | OpenSRMSyncFailureRatioHigh | >20% failing, ≥10 syncs/h | read the error= breakdown |
 | OpenSRMParseEmpty | any parse-empty in 1h | compare a capture vs `app/portal/parsers/` |
 | OpenSRMSyncP95TooSlow | p95 >90s for 1h | correlate lock rejections |
@@ -684,30 +684,36 @@ it. The app runs with or without it (endpoint returns 401 to nothing).
 
 ## Push tick (scheduler, alerting, dead-man)
 
-**Scheduler: a Hermes cron job, not cron-job.org.** The job
-`opensrm-push-tick` (id `4352c6d4be31`, `* * * * *`, no-agent, enabled) runs
-`/opt/data/scripts/push-tick.sh` on the Hermes host, which POSTs
-`https://srm.200871.xyz/internal/push/tick` with `X-Push-Tick` (secret at
-`/opt/data/secrets/push_tick_secret`, 25 s timeout). Verified:
-`python3` read of `/opt/data/cron/jobs.json` → schedule/state above; one
-caller only, ~1/min (recon counted 725 `push/tick` 200s in ~776 min:
-`ssh lab 'grep -a -c "push/tick" /app/data/opensrm.log'`). cron-job.org is
-kept in [push.md](push.md) as an alternative scheduler only — the same
-URL/header/schedule can be entered there if the Hermes host ever goes away.
+**Scheduler: plain cron on oclab, the box that runs production.**
+`/etc/cron.d/opensrm-push-tick` runs `/usr/local/bin/opensrm-push-tick.sh`
+every minute as root. The script reads `PUSH_TICK_SECRET` from
+`/docker/opensrm/.env`, POSTs `https://srm.200871.xyz/internal/push/tick`
+with `X-Push-Tick` and a 25 s client timeout, and appends one line per
+attempt to `/var/log/opensrm-push-tick.log`. Both files are copied from
+`ops/oclab/` in this repo.
 
-The script is **silent on HTTP 200**, appends one JSON line per success to
-`/opt/data/cron/output/push-tick.log` (only successes write), and exits 1 only
-at **≥3 consecutive failures** (1st/2nd are silent by design — deploys
-routinely drop a tick or two). Failures alert through two independent chains:
+Verified 2026-11-27: ticks at 07:46, 07:47, 07:48, 07:49 and 07:50 IST, each
+`200` with `{"ok": true, "mode": "live"}`. The Prometheus gauge
+`opensrm_push_tick_last_success_timestamp_seconds` appeared in the same
+window, so the dead-man rule below has a series to watch.
 
-1. **Tick chain** — exit 1 → Hermes records a `cron_incidents` row and
-   delivers to chat + ntfy (38 incidents in the job's history, 36 alerted —
-   e.g. the Oct 8 20:11–21:47 deploy outage; evidence:
-   `python3` over `/opt/data/cron/executions.db`).
-2. **App chain** — `NTFY_ALERT_URL` set in the project env file → the app
-   POSTs its own ERROR-level (5xx/unhandled — **not** WARNING) log records to
-   ntfy, rate-limited 1/min (`app/logging_setup.py` `NtfyHandler`; on the lab:
-   `grep -cE "^NTFY_ALERT_URL=.+" /docker/opensrm/.env` → 1).
+The two earlier schedulers stay as disabled fallbacks, never as a second
+caller:
+
+- Hermes cron `opensrm-push-tick`, id `4352c6d4be31` — **disabled**.
+- cron-job.org `opensrm-push-tick`, id `8744871` — **disabled** (last run
+  2026-11-04 09:50 IST).
+
+The script is silent in the cron-mail sense (its output goes to `/dev/null`)
+and it keeps no failure counter. It does not need one: the app's own gauge
+plus the Prometheus rule are the alert path, and they sit outside the process
+that fails. Failures still reach ntfy through two independent chains:
+
+1. **Stale-tick chain** — `OpenSRMPushTickStale` fires when the gauge is
+   more than 300 s old for 5 m, and Alertmanager delivers it to ntfy.
+2. **App chain** — `NTFY_ALERT_URL` in the project env file makes the app
+   POST its own ERROR-level (5xx/unhandled, **not** WARNING) log records to
+   ntfy, rate-limited 1/min (`app/logging_setup.py` `NtfyHandler`).
 
 ### Dead-man (implemented — Prometheus alert on the app's own gauge)
 
@@ -732,14 +738,11 @@ alarm lives OUTSIDE the process that fails, which was the whole point.
 Both the counter and the gauge are pinned by `tests/unit/test_push_tick.py`
 (27/27) and the rule is promtool-tested both ways.
 
-Not yet deployed on the lab: it needs the optional observability stack
-brought up (see [Observability stack](#observability-stack-optional)) —
-the metrics are in the app image, but until `METRICS_SECRET` + the stack
-go live, the dead-man watches nothing. The earlier proposal — a Uptime Kuma
-push monitor fed by `push-tick.sh` — stays a valid stack-free alternative
-(needs the Hermes-side script edit, outside this repo); the Prometheus
-route shipped instead because the rules are in git, promtool-tested, and
-the delivery path was verified end-to-end.
+Live on oclab since 2026-11-27. The observability stack runs there, and a
+direct query of `opensrm_push_tick_last_success_timestamp_seconds` through
+the Prometheus container returned a fresh series, so the dead-man watches a
+real value rather than nothing. A stack-free alternative — an Uptime Kuma
+push monitor fed by the tick script — stays valid but is not needed.
 
 ## Upgrade notes (accumulated)
 
