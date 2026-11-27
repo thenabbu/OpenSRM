@@ -322,5 +322,19 @@ check("official_rows= merges into scribe rows",
       merged_rows is not None and {r["code"] for r in merged_rows} >= {"21AAA101J", "21BBB102J"},
       str(merged_rows))
 
+# ── 16. official fetch only for the windows the scribe probe listed
+import app.http_scraper as H  # noqa: E402
+
+_calls = []
+H._official_exam_post = lambda o, b, x, m, y: (_calls.append((m, y)), ((m, y), HDR_ETT))[1]
+_only_rows = H._official_exam_rows(None, None, None,
+                                   [((11, 2026), FULL_PAGE), ((12, 2026), "<html>x</html>"), None])
+check("official fetched ONLY for scribe windows", _calls == [(11, 2029)], str(_calls))
+check("official rows parsed from that window", len(_only_rows) == 2, str(_only_rows))
+H._official_exam_post = H._merge_official_rows  # restore-ish (unused below)
+_calls.clear()
+check("no scribe rows -> no official request",
+      H._official_exam_rows(None, None, None, []) == [] and _calls == [], str(_calls))
+
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)
