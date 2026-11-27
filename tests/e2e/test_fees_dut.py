@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
-"""Fees tab DUT: layout law + contrast + the reworked density, measured.
+"""Fees tab DUT: layout law + contrast + density, measured on the real page.
 
-Law under test (agents/rework-fees.md, navya's corrections 1-6):
-  - Paid rows: date (leftmost) | 1px vertical rule | name | amount (rightmost),
-    all on ONE line box; amounts right-align on one x; no dividers between
-    rows (zero horizontal borders inside a group); group gapping: the space
-    under a year header is strictly larger than the gap between rows.
-  - Receipts: ONE collapsed <details> ("Receipts (6)"); inside it each receipt
-    is its own collapsed <details>; opening one reveals voucher + narration
-    only for that receipt. No per-receipt type badge.
-  - Zero dues: the all-clear widget is GONE — the panel's first element is the
-    Paid header (no hero). Dues > 0: the hero is the only coloured object.
+Law under test (the fees redesign):
+  - A charge is a NAMED card: feetype + the portal's cycle on line 1, the
+    22px rupee amount + its deadline + the days-left word on line 2, and the
+    late-fee delta under it. The card states the deadline pair the SCOPE row
+    actually ships, and "overdue"/"late fee applied" when it is past.
+  - The "Owed" total line exists ONLY for 2+ charges: with one charge it is
+    the same number twice, 40px apart.
+  - Paid rows: date (leftmost) | name | amount (rightmost) on ONE line box,
+    THREE tracks — the old decorative 1px rule column is gone (it measured as
+    a disconnected divider and ate a phone row's width). Amounts right-align
+    on one x, dates on one x, no horizontal borders inside a group, and the
+    space under a year header is strictly larger than the row gap.
+  - Year headers exist only with 2+ years; one year moves onto the "Paid"
+    heading as a label.
+  - Zero dues: one plain "Nothing due." sentence, then the Paid header.
+  - Receipts: ONE collapsed <details> ("Payment receipts (6)"); inside it each
+    receipt is its own collapsed <details>; opening one reveals voucher +
+    narration only for that receipt.
   - WCAG at 393x851 AND 1280x900: every text node on its real bg.
   - Geometry at both: no h-overflow, no overlap, positive gaps.
 
-Needs DATA_DIR + DUT_BASE inline; self-seeds both arms (dues / all paid).
+Needs DATA_DIR + DUT_BASE inline; self-seeds every arm (see tests/e2e/_fees_seed.py).
+Set FEE_SHOTS=<dir> to also save a full-page PNG per arm/resolution.
 """
 import os
 import sys
@@ -117,41 +126,64 @@ CONTRAST_JS = """
 }
 """
 
-# ── paid-row geometry + law (collapsed state, real layout)
+# ── paid rows: three tracks, no rule column, uniform gap ---------------------
 LAW_JS = """
 () => {
   const r = e => e.getBoundingClientRect();
   const panel = document.querySelector('#tab-fees');
-  const rows = [...panel.querySelectorAll('section > div.flex > div')];
-  const out = {rows: [], headerGaps: [], rowGaps: [], borders: 0, badges: 0, total: 0};
-  out.total = rows.length;
+  const rows = [...panel.querySelectorAll('section div.grid')];
+  const out = {rows: [], headerGaps: [], rowGaps: [], hborders: 0, vborders: 0,
+               total: rows.length, yearHeaders: panel.querySelectorAll('section h2').length};
   rows.forEach(row => {
-    const [d, v, n, a] = row.children;
-    const rd = r(d), rv = r(v), rn = r(n), ra = r(a);
-    out.rows.push({left: +rd.left.toFixed(2), rule: +rv.left.toFixed(2),
-                   ruleW: +rv.width.toFixed(2), ruleH: +rv.height.toFixed(2),
-                   ruleBorder: parseFloat(getComputedStyle(v).borderLeftWidth) || 0,
-                   name: +rn.left.toFixed(2), amtRight: +ra.right.toFixed(2),
-                   top: +rd.top.toFixed(2), h: +rd.height.toFixed(2),
+    const [d, n, a] = row.children;
+    const rd = r(d), rn = r(n), ra = r(a);
+    out.rows.push({left: +rd.left.toFixed(2), name: +rn.left.toFixed(2),
+                   amtRight: +ra.right.toFixed(2), top: +rd.top.toFixed(2),
+                   h: +rd.height.toFixed(2), tracks: row.children.length,
                    nameClipped: n.scrollWidth > n.clientWidth + 1});
-    [row, d, v, n, a].forEach(el => {
+    [row, d, n, a].forEach(el => {
       const cs = getComputedStyle(el);
-      if (parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0) out.borders++;
+      if (parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderBottomWidth) > 0) out.hborders++;
+      if (parseFloat(cs.borderLeftWidth) > 0 || parseFloat(cs.borderRightWidth) > 0) out.vborders++;
     });
   });
-  // gaps: header bottom -> first row top (group gapping) vs row -> row (uniform)
+  // group gapping: year-header bottom -> first row top, vs row -> row
   [...panel.querySelectorAll('section')].forEach(s => {
-    const head = s.firstElementChild, first = s.querySelector('div.flex > div');
+    const head = s.querySelector('h2');
+    if (!head) return;
+    const first = s.querySelector('div.grid');
+    if (!first) return;
     out.headerGaps.push(+(r(first).top - r(head).bottom).toFixed(2));
-    const cs = [...s.querySelectorAll('div.flex')[1].children].map(r);
-    for (let i = 1; i < cs.length; i++) out.rowGaps.push(+(cs[i].top - cs[i - 1].bottom).toFixed(2));
+    const cells = [...s.querySelectorAll('div.grid')].map(r);
+    for (let i = 1; i < cells.length; i++) out.rowGaps.push(+(cells[i].top - cells[i - 1].bottom).toFixed(2));
   });
-  out.badges = panel.querySelectorAll('section .badge').length;
   return out;
 }
 """
 
-# ── receipts: structure + per-receipt accordion behaviour
+# ── charge cards: name, amount+deadline+days word, late-fee line -------------
+CARDS_JS = """
+() => {
+  const panel = document.querySelector('#tab-fees');
+  const cards = [...panel.querySelectorAll('[data-charge]')];
+  const sum = [...panel.children].find(c => /^Owed/.test(c.textContent.trim()));
+  return {
+    n: cards.length,
+    sumText: sum ? sum.textContent.replace(/\\s+/g, ' ').trim() : '',
+    sumLevel: sum ? sum.querySelector('.font-mono').className : '',
+    cards: cards.map(c => ({
+      text: c.textContent.replace(/\\s+/g, ' ').trim(),
+      head: c.children[0].children[0].textContent.trim(),
+      amt: c.querySelector('.font-mono.font-bold').textContent.trim(),
+      amtSize: parseFloat(getComputedStyle(c.querySelector('.font-mono.font-bold')).fontSize),
+      amtLevel: c.querySelector('.font-mono.font-bold').className,
+      headSize: parseFloat(getComputedStyle(c.children[0].children[0]).fontSize),
+    })),
+  };
+}
+"""
+
+# ── receipts: structure + per-receipt accordion behaviour --------------------
 RECEIPT_JS = """
 () => {
   const panel = document.querySelector('#tab-fees');
@@ -165,11 +197,12 @@ RECEIPT_JS = """
   const inner = [...shell.querySelectorAll('details')];
   out.summaries = inner.map(d => {
     const kids = [...d.querySelector('summary').children];
-    return {date: kids[0].textContent.trim(), head: kids[2].textContent.trim(),
-            amt: kids[3].textContent.trim(), gap: +(kids[2].getBoundingClientRect().left
-                 - kids[1].getBoundingClientRect().right).toFixed(1)};
+    return {date: kids[0].textContent.trim(), head: kids[1].textContent.trim(),
+            amt: kids[2].textContent.trim(), tracks: kids.length,
+            gap: +(kids[1].getBoundingClientRect().left
+                 - kids[0].getBoundingClientRect().right).toFixed(1),
+            clipped: kids[1].scrollWidth > kids[1].clientWidth + 1};
   });
-  // open the 2nd receipt only: its content shows, the 1st stays closed
   const body = d => d.querySelector('.collapse-content');
   inner[1].open = true;
   const shown = getComputedStyle(body(inner[1])).visibility !== 'hidden'
@@ -186,7 +219,7 @@ RECEIPT_JS = """
 }
 """
 
-# ── dues-absent arm: the all-clear widget is gone entirely
+# ── nothing-owed arm: one sentence, then the Paid header --------------------
 CLEAR_JS = """
 () => {
   const panel = document.querySelector('#tab-fees');
@@ -198,52 +231,25 @@ CLEAR_JS = """
 }
 """
 
-# ── dues arm: hero present, first, and the single coloured object
-DUES_JS = """
-() => {
-  const panel = document.querySelector('#tab-fees');
-  const hero = panel.firstElementChild;
-  const num = hero.querySelector('.text-2xl');
-  return {firstText: hero.textContent.replace(/\\s+/g, ' ').trim().slice(0, 60),
-          dueText: num ? num.textContent.trim() : '',
-          level: num ? num.className : '',
-          coloured: [...panel.querySelectorAll('*')].filter(el => {
-            if (!el.getBoundingClientRect().width) return false;
-            const t = [...el.childNodes].filter(n => n.nodeType === 3)
-              .map(n => n.textContent.trim()).join(' ').trim();
-            if (!t) return false;
-            const c = getComputedStyle(el).color;
-            return /oklch\\(0\\.(6[5-9]|7|8)/.test(c) || /warning|error|success/.test(el.className);
-          }).map(el => el.textContent.trim().slice(0, 24))};
-}
-"""
-
 
 def settle(page, tag):
     """Wait for the fees document to be PAINTED, not for a guessed delay.
 
     `#tab-fees-tab` is an <a href="/fees">, so the click is a real navigation.
-    The old `wait_for_timeout(250)` raced the stylesheet: when it landed first
-    the law was measured on a parsed-but-unstyled document (rows display:block,
-    0px rule, three ragged right edges, zero gaps) and this test reported four
-    red assertions that no CSS could fix — 10/10 in the DUT suite, then red
-    inside it, purely on timing. A row only stops being display:block when
-    Tailwind's `.grid` rule has applied, so gate on the computed style.
+    A bare `wait_for_timeout` raced the stylesheet: when it landed first the law
+    was measured on a parsed-but-unstyled document. `#tab-fees` carries
+    `max-w-3xl mx-auto`, so its computed maxWidth only becomes a pixel value
+    once Tailwind has applied — that is the gate.
     """
     page.wait_for_selector("#tab-fees", state="attached", timeout=15000)
     try:
         page.wait_for_function(
-            "() => [...document.querySelectorAll('#tab-fees section > div.flex > div')]"
-            ".some(e => getComputedStyle(e).display === 'grid')",
+            "() => getComputedStyle(document.querySelector('#tab-fees')).maxWidth !== 'none'",
             timeout=15000)
     except PWTimeout:
-        check(f"{tag}: fees stylesheet applied (rows are grid, not display:block)",
-              False, "no grid row after 15s — app.css/dist never applied")
+        check(f"{tag}: fees stylesheet applied", False, "max-w-3xl never resolved — CSS did not apply")
         return False
-    n = page.evaluate("() => document.querySelectorAll("
-                      "'#tab-fees section > div.flex > div').length")
-    check(f"{tag}: fees stylesheet applied ({n} rows are grid, not display:block)",
-          n >= 3, f"{n} laid-out rows")
+    check(f"{tag}: fees stylesheet applied", True)
     return True
 
 
@@ -254,6 +260,16 @@ def overflow_js():
             ".map(e => e.getBoundingClientRect().right - document.documentElement.clientWidth))})")
 
 
+SHOTS = os.environ.get("FEE_SHOTS", "")
+
+
+def shoot(page, arm, w, h):
+    if not SHOTS:
+        return
+    os.makedirs(SHOTS, exist_ok=True)
+    page.screenshot(path=os.path.join(SHOTS, f"{arm}-{w}x{h}.png"), full_page=True)
+
+
 def run(browser, w, h, arm):
     _fees_seed.seed(arm)
     ctx = browser.new_context(viewport={"width": w, "height": h})
@@ -261,8 +277,6 @@ def run(browser, w, h, arm):
     page = ctx.new_page()
     page.goto(BASE + "/", wait_until="networkidle")
     tag = f"{arm} {w}x{h}"
-    # The tab click navigates to /fees; wait for the navigation AND the styles,
-    # then read geometry. A sleep here measured an unstyled document under load.
     with page.expect_navigation():
         page.evaluate("() => document.querySelector('#tab-fees-tab').click()")
     if not settle(page, tag):
@@ -272,62 +286,100 @@ def run(browser, w, h, arm):
     if arm == "clear":
         c = page.evaluate(CLEAR_JS)
         check(f"{tag}: no all-clear widget anywhere", not c["hasAllClear"], c["txt"][:80])
-        check(f"{tag}: page starts at the Paid header",
-              c["firstTag"] == "DIV" and c["firstText"].startswith("Paid"), c["firstText"])
+        check(f"{tag}: one plain 'Nothing due.' sentence first",
+              c["firstTag"] == "P" and c["firstText"] == "Nothing due.", c["firstText"])
         check(f"{tag}: paid groups render", c["stands"] >= 1, str(c["stands"]))
 
     law = page.evaluate(LAW_JS)
     check(f"{tag}: paid rows present", law["total"] >= 3, str(law["total"]))
-    check(f"{tag}: no horizontal dividers/borders on paid rows", law["borders"] == 0,
-          f"{law['borders']} border edges")
-    check(f"{tag}: no per-row badge/chip", law["badges"] == 0, str(law["badges"]))
+    check(f"{tag}: paid rows are THREE tracks (date | name | amount)",
+          all(r["tracks"] == 3 for r in law["rows"]), str({r["tracks"] for r in law["rows"]}))
+    check(f"{tag}: no horizontal dividers on paid rows", law["hborders"] == 0,
+          f"{law['hborders']} border edges")
+    check(f"{tag}: the decorative rule column is gone", law["vborders"] == 0,
+          f"{law['vborders']} vertical border edges")
     if law["rows"]:
-        r0 = law["rows"][0]
-        check(f"{tag}: date is leftmost, rule, then name, amount rightmost",
-              r0["left"] < r0["rule"] and r0["rule"] + r0["ruleW"] <= r0["name"]
-              and r0["name"] < r0["amtRight"], str(r0))
-        check(f"{tag}: vertical rule is 1px", abs(r0["ruleW"] - 1) < 0.01, str(r0["ruleW"]))
-        # The 1px grid TRACK already measures 1px wide with an invisible border:
-        # the track, not the hairline, was the only thing asserted here, so the
-        # rule could stop painting outright and this stayed green (R-115).
-        # Assert the painted border too, or the law is not under test.
-        check(f"{tag}: vertical rule is painted, not just a 1px empty track",
-              r0["ruleBorder"] >= 1,
-              f"border-left {r0['ruleBorder']}px on a {r0['ruleW']}px track")
-        check(f"{tag}: vertical rule spans the row height", r0["ruleH"] >= r0["h"], f"{r0['ruleH']} vs {r0['h']}")
         check(f"{tag}: every date on one x", len({r["left"] for r in law["rows"]}) == 1,
               str({r["left"] for r in law["rows"]}))
-        check(f"{tag}: every rule on one x", len({r["rule"] for r in law["rows"]}) == 1)
-        check(f"{tag}: every amount on one right edge", len({r["amtRight"] for r in law["rows"]}) == 1,
-              str({r["amtRight"] for r in law["rows"]}))
-        check(f"{tag}: names never clipped", not any(r["nameClipped"] for r in law["rows"]))
+        check(f"{tag}: every name on one x", len({r["name"] for r in law["rows"]}) == 1,
+              str({r["name"] for r in law["rows"]}))
+        check(f"{tag}: every amount on one right edge",
+              len({r["amtRight"] for r in law["rows"]}) == 1, str({r["amtRight"] for r in law["rows"]}))
+        check(f"{tag}: names never clipped", not any(r["nameClipped"] for r in law["rows"]),
+              str([r for r in law["rows"] if r["nameClipped"]]))
+        check(f"{tag}: row heights uniform", len({r["h"] for r in law["rows"]}) == 1,
+              str({r["h"] for r in law["rows"]}))
         if len(law["rows"]) > 1:
             check(f"{tag}: rows do not overlap", all(
                 law["rows"][i]["top"] >= law["rows"][i - 1]["top"] + law["rows"][i - 1]["h"]
                 for i in range(1, len(law["rows"]))))
-    check(f"{tag}: row heights uniform", len({r["h"] for r in law["rows"]}) == 1,
-          str({r["h"] for r in law["rows"]}))
     if law["headerGaps"]:
         hg = min(law["headerGaps"])
-        check(f"{tag}: group gapping — header→first row gap ({hg}px) > row gap",
+        check(f"{tag}: group gapping — header->row gap ({hg}px) > row gap",
               hg > (max(law["rowGaps"]) if law["rowGaps"] else 0),
               f"header {law['headerGaps']} rows {law['rowGaps']}")
         if law["rowGaps"]:
-            check(f"{tag}: row gaps uniform and > 0", len(set(law["rowGaps"])) == 1 and min(law["rowGaps"]) > 0,
-                  str(law["rowGaps"]))
+            check(f"{tag}: row gaps uniform and > 0",
+                  len(set(law["rowGaps"])) == 1 and min(law["rowGaps"]) > 0, str(law["rowGaps"]))
+
+    cards = page.evaluate(CARDS_JS)
+    # the sum line only exists to sum something: 2+ charges, or it is a dup
+    check(f"{tag}: 'Owed' total line only with 2+ charges",
+          bool(cards["sumText"]) == (cards["n"] >= 2),
+          f"{cards['n']} charges, sum line {cards['sumText']!r}")
+    for c in cards["cards"]:
+        check(f"{tag}: charge {c['head']!r} prints its amount at the 22px hero step",
+              c["amtSize"] == 22 and c["amt"].startswith("₹"), f"{c['amtSize']}px {c['amt']}")
+        check(f"{tag}: charge {c['head']!r} names the charge at 14px", c["headSize"] == 14,
+              f"{c['headSize']}px")
+
+    if arm == "live":
+        c = cards["cards"][0]["text"]
+        check(f"{tag}: charge is NAMED with a date-like cycle", "Exam Fees" in c and "Nov 2026" in c, c)
+        check(f"{tag}: charge states the cheap deadline", "by 5 Dec 2026" in c, c)
+        check(f"{tag}: charge states the days left", "days left" in c, c)
+        check(f"{tag}: charge states the late-fee DELTA, not the 4,150 total",
+              "Late fee ₹1,000 from 6 Dec 2026" in c and "4,150" not in c, c)
+        check(f"{tag}: no duplicate total above one charge", cards["sumText"] == "", cards["sumText"])
+
+    if arm == "overdue":
+        c = cards["cards"][0]["text"]
+        check(f"{tag}: overdue charge says 'was due'", "was due 22 Nov 2026" in c, c)
+        check(f"{tag}: overdue charge says 'overdue' in words", "overdue" in c, c)
+        check(f"{tag}: applied late fee is named", "Late fee ₹1,000 applied" in c, c)
+        check(f"{tag}: overdue amount carries the error colour",
+              "text-error" in cards["cards"][0]["amtLevel"], cards["cards"][0]["amtLevel"])
+
+    if arm == "multi":
+        check(f"{tag}: two charges, both named", cards["n"] == 2, str(cards["n"]))
+        check(f"{tag}: the sum line totals both (3,150 + 1,00,000)",
+              "₹1,03,150" in cards["sumText"], cards["sumText"])
+        check(f"{tag}: a dateless charge says so instead of inventing a date",
+              any("no due date from SRM yet" in c["text"] for c in cards["cards"]),
+              str([c["text"][:40] for c in cards["cards"]]))
+        check(f"{tag}: two years get their own header rows", law["yearHeaders"] == 2,
+              str(law["yearHeaders"]))
+
+    if arm in ("live", "overdue", "clear", "exam"):
+        check(f"{tag}: a single year is a label, not a header row",
+              law["yearHeaders"] == 0, str(law["yearHeaders"]))
 
     rc = page.evaluate(RECEIPT_JS)
-    check(f"{tag}: receipts is ONE collapsed details", rc.get("summary", "").startswith("Receipts (")
+    check(f"{tag}: receipts is ONE collapsed details",
+          rc.get("summary", "").startswith("Payment receipts (")
           and rc.get("openByDefault") is False, str(rc.get("summary")))
-    check(f"{tag}: every receipt is its own accordion, all closed at rest", rc.get("inner") == 6
-          and rc.get("innerOpenByDefault") == 0, str(rc.get("inner")))
+    check(f"{tag}: every receipt is its own accordion, all closed at rest",
+          rc.get("inner") == 6 and rc.get("innerOpenByDefault") == 0, str(rc.get("inner")))
     check(f"{tag}: no receipt type badge", rc.get("badges") == 0, str(rc.get("badges")))
-    heads = [s["head"] for s in rc.get("summaries", [])]
-    check(f"{tag}: receipt rest line = date | head (no channel tail, one line)",
-          len(heads) == 6 and all("through online" not in x and "IMPS/" not in x for x in heads),
-          str(heads[:2]))
-    check(f"{tag}: receipt summaries keep the date|name gap", all(s["gap"] >= 8 for s in rc.get("summaries", [])),
-          str([s["gap"] for s in rc.get("summaries", [])][:3]))
+    sums = rc.get("summaries", [])
+    check(f"{tag}: receipt rest line is three tracks", all(s["tracks"] == 3 for s in sums),
+          str({s["tracks"] for s in sums}))
+    heads = [s["head"] for s in sums]
+    check(f"{tag}: receipt head is one short line, no channel tail",
+          len(heads) == 6 and all(len(x) <= 44 and "through online" not in x
+                                  and "IMPS/" not in x for x in heads), str(heads[:2]))
+    check(f"{tag}: receipt summaries keep the date|name gap",
+          all(s["gap"] >= 8 for s in sums), str([s["gap"] for s in sums][:3]))
     check(f"{tag}: opening one receipt hides the others", rc.get("oneATA") is True, str(rc.get("oneATA")))
     check(f"{tag}: opened receipt carries voucher + narration",
           rc.get("hasVoucher") and len(rc.get("bodyText", "")) > 40, str(rc.get("bodyText"))[:60])
@@ -343,36 +395,19 @@ def run(browser, w, h, arm):
 
     if arm == "exam":
         # the real 2026-11-04 shape: the fee rows all say paid==total, so the
-        # dues panel can ONLY come from getStudentExamFeesDetails
-        e = page.evaluate("""() => {
-          const panel = document.querySelector('#tab-fees');
-          const boxes = [...panel.children];
-          const hero = boxes.find(b => /Outstanding dues/.test(b.textContent));
-          const due = hero ? hero.querySelector('.text-2xl').textContent.trim() : '';
-          const item = [...panel.querySelectorAll('div')]
-            .filter(d => /Due \\d{2}-\\d{2}-\\d{4}/.test(d.textContent || ''))
-            .map(d => d.textContent.replace(/\\s+/g, ' ').trim())
-            .filter((v, i, a) => a.indexOf(v) === i)[0] || '';
-          return {due, item};
-        }""")
-        check(f"{tag}: exam dues hero shows the real amount", e["due"] == "₹3,150.00", e["due"])
-        check(f"{tag}: exam dues row names the due date", "Due 25-11-2026" in e["item"], e["item"])
-        check(f"{tag}: exam dues row carries the amount", "3,150.00" in e["item"], e["item"])
+        # charge card can ONLY come from getStudentExamFeesDetails
+        c = cards["cards"][0]
+        check(f"{tag}: the charge comes from the exam-fee op, not the paid row",
+              c["amt"] == "₹3,150" and c["head"] == "Exam fee", f"{c['head']} {c['amt']}")
 
-    if arm in ("dues", "exam"):
-        d = page.evaluate(DUES_JS)
-        check(f"{tag}: dues hero is the first element", d["firstText"].startswith("Outstanding dues"),
-              d["firstText"])
-        check(f"{tag}: dues hero holds the loud number", d["dueText"].startswith("₹"), d["dueText"])
-        check(f"{tag}: exactly one coloured object (the dues number)", len(d["coloured"]) == 1,
-              str(d["coloured"]))
+    shoot(page, arm, w, h)
     ctx.close()
 
 
 with sync_playwright() as pw:
     b = pw.chromium.launch(headless=True, args=["--no-sandbox"])
     for w, h in ((393, 851), (1280, 900)):
-        for arm in ("dues", "clear", "exam"):
+        for arm in ("live", "overdue", "multi", "clear", "exam"):
             print(f"── {arm} {w}x{h}")
             run(b, w, h, arm)
     b.close()

@@ -97,35 +97,49 @@ never generates or falls back to generated keys at runtime. **All three
 secrets must be copied into Vercel Production env vars unchanged when the
 app moves.**
 
-## Tick scheduler (live: Hermes cron job; cron-job.org works too)
+## Tick scheduler (live: cron on oclab)
 
 The tick is fired by a scheduled job that POSTs the endpoint below every
-minute. **On the lab this is the Hermes cron job `opensrm-push-tick`** (id
-`4352c6d4be31`, no-agent, `* * * * *`, script
-`/opt/data/scripts/push-tick.sh`, success lines in
-`/opt/data/cron/output/push-tick.log`) — one caller, ~1/min, verified
-2026-10-16. It is silent on HTTP 200 and exits 1 only at ≥3 consecutive
-failures, which Hermes turns into a chat + ntfy alert (see
-[docs/runbook.md](runbook.md#push-tick-scheduler-alerting-dead-man) for the
-failure chains and the proposed dead-man monitor). Any other scheduler that
-can POST a header on a cron works identically; a cron-job.org free account is
-the drop-in alternative (no account needed while the Hermes job runs).
+minute. **The scheduler is the oclab host** — the Oracle box that runs
+production. `/etc/cron.d/opensrm-push-tick` runs
+`/usr/local/bin/opensrm-push-tick.sh` once per minute as root. The script
+reads `PUSH_TICK_SECRET` from `/docker/opensrm/.env`, POSTs the endpoint, and
+appends one line per attempt to `/var/log/opensrm-push-tick.log`. Both files
+are copied from `ops/oclab/` in this repo, so a rebuilt host gets them back.
+
+The box that runs the app also drives it. That removes the two earlier
+schedulers and their failure modes: the Hermes cron job whose host could go
+away, and the cron-job.org job that stops after 25 consecutive failures. Both
+jobs still exist and both are **disabled**, so either one is a revert, not a
+rebuild:
+
+- Hermes cron `opensrm-push-tick`, id `4352c6d4be31`.
+- cron-job.org `opensrm-push-tick`, id `8744871`.
+
+Alerting does not depend on the scheduler. The handler stamps
+`opensrm_push_tick_last_success_timestamp_seconds` on every successful tick.
+The Prometheus rule `OpenSRMPushTickStale` fires when that stamp is more than
+300 s old for 5 m. Alertmanager sends the alert to ntfy.
 
 | Field | Value |
 |-------|-------|
-| Name | `opensrm-push-tick` |
+| Script | `/usr/local/bin/opensrm-push-tick.sh` (repo: `ops/oclab/opensrm-push-tick.sh`) |
+| Cron file | `/etc/cron.d/opensrm-push-tick` (repo: `ops/oclab/opensrm-push-tick.cron`) |
 | URL | `https://srm.200871.xyz/internal/push/tick` |
 | Method | POST (empty body is fine) |
 | Custom header | `X-Push-Tick: <value of PUSH_TICK_SECRET from /docker/opensrm/.env — never paste it anywhere else>` |
-| Schedule | Every 1 minute |
-| Request timeout | 30 s (server self-limits to 20 s; overlap is harmless) |
-| Failure notification | ON — alert after ~3 consecutive failures |
-| Enable | Only **after** `PUSH_TICK_SECRET` is deployed — an unset secret = permanent 401s |
+| Schedule | Every minute |
+| Request timeout | 25 s on the client (`curl -m 25`). The server self-limits to 20 s, so overlap is harmless |
+| Log | `/var/log/opensrm-push-tick.log`, one line per attempt (`time http_code json`), trimmed to the last 10 000 lines |
+| Exit code | 0 only on HTTP 200. Nothing reads the code. The log line is the record |
+| Enable | Only **after** `PUSH_TICK_SECRET` is deployed. An unset secret means permanent 401s |
 
-Observed/constraints (FAQ + live probes, 2026-10-05; scheduler re-verified
-2026-10-16): jobs run at most once per minute; cron-job.org keeps its last 50
-executions (with duration) ~2 days — use that log to read the *real* timeout
-and jitter after the first live runs (numbers not yet observed). Cloudflare
+To confirm that the tick runs, read the log on the box:
+
+```bash
+ssh oracle 'sudo tail -3 /var/log/opensrm-push-tick.log; systemctl is-active cron'
+```
+
 was probed with a non-browser POST against the zone: **no WAF challenge** (no
 custom rules, managed ruleset, security level `medium`, rate limit 5 req/10
 s/IP — 1 tick/min is far under). If real runs ever get challenged, add the
@@ -144,8 +158,8 @@ logged (only a 12-char hash prefix).
 1. Deploy with `PUSH_ENABLED` unset (off). Snapshot live DB + back up
    `docker-compose.yml` first; follow "Prod deploy + smoke" in AGENTS.md.
    Add the env vars to `/docker/opensrm/.env` (keys generated once).
-2. Point the tick scheduler at the tick (the Hermes cron job already does
-   this on the lab); watch logs — `mode: "off"` ticks should show real
+2. Install `ops/oclab/opensrm-push-tick.sh` and its cron file (see "Tick
+   scheduler" above); watch logs — `mode: "off"` ticks should show real
    `audited` counts. Compare logged due-list against the real timetable.
 3. `PUSH_ENABLED=1` + `PUSH_DRY_RUN=1` → same audit, claims still not made.
 4. `PUSH_ALLOW_NETIDS=<yours>` only, dry-run off → your devices first.
@@ -180,8 +194,8 @@ The push feature was built to survive the move unchanged:
   `get_conn()` at Postgres/libSQL; plain SQL, no SQLite-only features (a test
   enforces this).
 - **Scheduler**: the tick job's URL switches to the new deployment URL —
-  header/method/schedule unchanged (works for the Hermes cron job or a
-  cron-job.org job alike).
+  header/method/schedule unchanged (works for the oclab cron job or any
+  hosted scheduler alike).
 - **Stateless**: no module-level state, no threads outliving a request, no
   filesystem reads on the push path; the tick's 20 s deadline and at-most-once
   claims make overlapping/cold-started functions harmless.

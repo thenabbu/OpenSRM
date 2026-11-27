@@ -21,19 +21,26 @@ const SCHEMA = 'zz2222'; // a DIFFERENT student's rows, to prove scoping
 /** Exactly what /api/fees serves (vm["fees"]) — the store holds this shape. */
 const API: FeesData = {
   due: 3150,
-  due_disp: '3,150.00',
+  due_disp: '3,150',
+  due_sum: '',
   level: 'text-warning',
-  dues: [{ amt: '3,150.00', due: '25-11-2026', penalty: '24-11-2026', penalised: false }],
-  paid_total: '200,000.00',
+  dues: [{
+    head: 'Exam Fees', cycle: 'November-2026', amt: '3,150', level: 'text-warning',
+    deadline: '23 Nov 2026', late_on: '24 Nov 2026', late_extra: '1,000',
+    days_left: 4, overdue: false, penalised: false, min: '',
+  }],
+  paid_total: '2,00,000',
+  multi_year: false,
+  year_label: '2026',
   years: [
     {
       year: '2026',
-      total: '100,000.00',
-      rows: [{ date: '2026-07-12', head: 'Semester fee', amt: '75,000.00' }],
+      total: '1,00,000',
+      rows: [{ date: '12 Jul 2026', head: 'Semester fee', amt: '75,000' }],
     },
   ],
   ledger: [
-    { date: '2026-08-02', amt: '25,000.00', vno: 'RC-77', head: 'Exam fee', full: 'Exam fee paid online' },
+    { date: '2 Aug 2026', amt: '25,000', vno: 'RC-77', head: 'Exam fee', full: 'Exam fee paid online' },
   ],
 };
 // Positive control for the fixture itself: if this ever fails, the constant
@@ -44,9 +51,11 @@ expect(FeesSchema.safeParse(API).success).toBe(true);
 const CACHED: FeesData = {
   ...API,
   due: 999,
-  due_disp: '999.00',
-  dues: [{ amt: '999.00', due: '01-12-2026', penalty: '', penalised: false }],
+  due_disp: '999',
+  dues: [{ ...API.dues[0], amt: '999', deadline: '1 Dec 2026', late_on: '', late_extra: '', days_left: 12 }],
   years: [],
+  year_label: '',
+  paid_total: '',
   ledger: [],
 };
 
@@ -54,7 +63,7 @@ let pageId = 0;
 
 /** The offline shell: the mount exists, its props block is EMPTY, and the
  *  server's first paint is in the mount. */
-const shell = (paint = 'SERVER PAINT: ₹3,150.00', props: unknown = '') => {
+const shell = (paint = 'SERVER PAINT: ₹3,150', props: unknown = '') => {
   const id = `island-fees-${++pageId}`;
   return `
     <div id="tab-fees" role="tabpanel" data-island="fees" data-props="#${id}">
@@ -110,11 +119,11 @@ describe('P7.1 — props empty, cache has a row: the cache renders', () => {
     expect(mount().getAttribute('data-hydrated')).toBe('1');
     // The cached number, the one the class above made up — no other source
     // on this page carries '999.00'.
-    expect(mount().textContent).toContain('₹999.00');
-    expect(mount().textContent).toContain('01-12-2026');
+    expect(mount().textContent).toContain('₹999');
+    expect(mount().textContent).toContain('1 Dec 2026');
     expect(mount().textContent).not.toContain('SERVER PAINT');
     // And it did NOT silently render the API fixture instead.
-    expect(mount().textContent).not.toContain('3,150.00');
+    expect(mount().textContent).not.toContain('3,150');
   });
 
   it('never reads another student\'s cached rows', async () => {
@@ -129,7 +138,7 @@ describe('P7.1 — props empty, cache has a row: the cache renders', () => {
     await hydrate();
 
     expect(mount().textContent).toContain('SERVER PAINT: mine');
-    expect(mount().textContent).not.toContain('999.00');
+    expect(mount().textContent).not.toContain('999');
   });
 });
 
@@ -144,7 +153,7 @@ describe('P7.1 — no cache and a network error: the server paint survives', () 
 
     await hydrate();
 
-    expect(mount().textContent).toContain('SERVER PAINT: ₹3,150.00');
+    expect(mount().textContent).toContain('SERVER PAINT: ₹3,150');
     expect(mount().getAttribute('data-hydrated')).toBeNull();
     // POSITIVE CONTROL: the load path really RAN and really failed — otherwise
     // "paint survived" would also pass with the read path deleted.
@@ -167,10 +176,17 @@ describe('P7.1 — no cache and a network error: the server paint survives', () 
 describe('P7.1 — valid server props are the first paint', () => {
   it('does not re-render over good props when the network answers', async () => {
     const props: FeesProps = {
-      due_disp: '3,150.00',
+      due_disp: '3,150',
+      due_sum: '',
       level: 'text-warning',
-      dues: [{ amt: '3,150.00', due: '25-11-2026', penalty: '', penalised: false }],
+      dues: [{
+        head: 'Exam Fees', cycle: '', amt: '3,150', level: 'text-warning',
+        deadline: '23 Nov 2026', late_on: '', late_extra: '', days_left: 4,
+        overdue: false, penalised: false, min: '',
+      }],
       paid_total: '',
+      multi_year: false,
+      year_label: '',
       years: [],
       ledger: [],
     };
@@ -184,7 +200,7 @@ describe('P7.1 — valid server props are the first paint', () => {
     // The island rendered the PROPS, whose paid_total is '' (no "Paid" header),
     // while API carries 200,000.00 and a year group. A cache/network merge over
     // the props would have added that header.
-    expect(mount().textContent).toContain('₹3,150.00');
+    expect(mount().textContent).toContain('₹3,150');
     expect(mount().textContent).not.toContain('Paid');
   });
 });
@@ -202,7 +218,7 @@ describe('P7.1 — no netid means no cache access at all', () => {
     await hydrate();
 
     expect(mount().textContent).toContain('SERVER PAINT: anonymous');
-    expect(mount().textContent).not.toContain('999.00');
+    expect(mount().textContent).not.toContain('999');
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

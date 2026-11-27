@@ -148,7 +148,7 @@ ROUTES = {
     "/marks":      ("marks",      "[data-island=marks] > div",                    "cache"),
     "/campus":     ("campus",     "[data-island=campus] .card",                   "cache"),
     "/academics":  ("academics",  "[data-island=academics] .acad-srow",           "cache"),
-    "/fees":       ("fees",       "[data-island=fees] .grid-cols-\\[auto_1px_1fr_auto\\]", "cache"),
+    "/fees":       ("fees",       "[data-island=fees] section .grid", "cache"),
     # Measured 2026-11-16: /shell/tools answers 200 with the DASHBOARD panel's
     # markup (its gate is falsy once the shell blanks `tools`), and /settings has
     # no shell entry at all, so the ladder falls back to /shell/dashboard. Both

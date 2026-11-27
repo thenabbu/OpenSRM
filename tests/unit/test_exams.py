@@ -231,6 +231,16 @@ check("hall column gone -> hall empty, seat still read",
 DRIFT = ("<table><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>"
          "<tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></table>")
 check("drifted table -> None (preserve, not wipe)", parse_exam_timetable(DRIFT) is None)
+# live Nov 2026 shape: Hall No. blank, then a ROOM cell ('219 SECOND FLOOR
+# Academic Building Second Floor') then a SEAT cell ('6')
+LIVE_SEAT_ETT = HDR_ETT.replace(
+    "<td>25-NOV-2026 AN  (02:00-05:00)</td><td>12</td><td>08</td>",
+    "<td>25-NOV-2026 AN  (02:00-05:00)</td><td></td>"
+    "<td>219<br>SECOND FLOOR<span>Academic Building Second Floor</span></td><td>6</td>")
+live_rows = parse_exam_timetable(LIVE_SEAT_ETT)
+check("room cell -> hall is the room number", live_rows and live_rows[0]["hall"] == "219",
+      str(live_rows))
+check("seat cell -> seat number", live_rows and live_rows[0]["seat"] == "6", str(live_rows))
 _drift_scribe = _merge_exam_results([((11, 2026), FULL_PAGE)], official_html=DRIFT)
 check("drift + scribe rows -> scribe applied (official broken must not freeze updates)",
       _drift_scribe is not None and {r["code"] for r in _drift_scribe} >= {"21AAA101J", "21BBB102T"},
@@ -297,6 +307,20 @@ check("exam updates muted -> 0 sent, claim kept",
 push_store.set_settings("zz9999", notify_exams=True)
 check("unmuted -> same event now sends (claim was not consumed)",
       _notify_exam_events("zz9999", hv2, conf=conf, send_batch=_fake_batch) == 1, "")
+
+# ── 15. per-window official fetch: hall/seat arrives only for the requested month
+from app.http_scraper import _merge_official_rows  # noqa: E402
+
+off_rows = _merge_official_rows([((11, 2026), HDR_ETT), ((12, 2026), HDR_ETT), None])
+check("_merge_official_rows dedupes across windows",
+      len(off_rows) == 2, str(off_rows))
+check("_merge_official_rows keeps hall/seat",
+      off_rows and off_rows[0]["hall"] == "12" and off_rows[0]["seat"] == "08", str(off_rows))
+check("_merge_official_rows tolerates junk window", _merge_official_rows([None, ((11, 2026), "")]) == [])
+merged_rows = _merge_exam_results([((11, 2026), FULL_PAGE)], official_rows=off_rows)
+check("official_rows= merges into scribe rows",
+      merged_rows is not None and {r["code"] for r in merged_rows} >= {"21AAA101J", "21BBB102J"},
+      str(merged_rows))
 
 print(f"\n{passed}/{passed + failed} passed")
 sys.exit(1 if failed else 0)

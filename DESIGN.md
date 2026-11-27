@@ -174,6 +174,8 @@ text-{{ 'success' if c.status == 'ok' else 'warning' if c.status == 'warn' else 
 | Break, offline banner, hours-missed badge | `warning` |
 | Absent-days count, failed request, destructive action | `error` |
 | Saved / confirmed | `success` |
+| Fee deadline passed or penalty applied (22px figure only, §4.19) | `error` |
+| Fee deadline within 7 days (22px figure only, §4.19) | `warning` |
 | Neutral notice ("No personal details available.") | `info` |
 | Done for today, no timetable, off | gray only (`base-content/50`), no hue |
 
@@ -610,6 +612,22 @@ DATA_DIR=/tmp/osrm-layout .venv/bin/python tests/unit/test_layout.py
 - **Subjects** — the program completion grid as a LIST inside the shared `.widget-scroll` box: category subheads `text-sm font-semibold`, completed rows show the soft grade chip + month (+ a quiet `· N attempts` note when attempts > 1), pending rows keep the portal's `-` at `text-base-content/50` with a `title`.
 
 Pinned by `tests/test_scope_academics.py` (CGPA math incl. ROUND_HALF_UP vs banker's, parsers, envelope sections, the zero-footprint gate) and by the PR's measured evidence: contrast probe 0 fails (141 text/bg pairs at 393×851 and 1280×900), geometry (4 cards, one column x/width, uniform 12px gaps, no horizontal overflow).
+
+### 4.19 Fees tab (SCOPE, `app/views/fees.py`)
+
+One `max-w-3xl mx-auto` panel, three blocks in the order the student asks the questions: **what is owed and when it gets dearer** → **what has been paid** → **the vouchers**. `_fees_view()` returns None (zero footprint, like §4.18) when the `fees` feature is off or no fee/finance row exists.
+
+- **A charge is a card, and it is NAMED.** Header line = `text-sm font-semibold` feetype + the portal cycle right-aligned as `font-mono text-xs /60` (rendered `Nov 2026`, not `NOVEMBER-2026` — it must read as *when*). Second line = the 22px hero step (§4.17/§4.18) + `by <date>` + the days-left word. Third line = `Late fee ₹X from <date>` (or `applied`). A charge with no date from SRM says `no due date from SRM yet` — it never invents one.
+- **The deadline pair is the point of the page.** `lastdateforfeepaymentwithoutlatefee` is the cheap deadline; `penaltydate` + `feewithlatefee` give the penalty. Show the DELTA (`Late fee ₹1,000 from 6 Dec 2026`), never the total-with-penalty — the delta is the number the student fears.
+- **The amount's colour is TIME, not size.** `_level()`: penalty applied or deadline passed → `text-error`; deadline ≤ 7 days → `text-warning`; otherwise uncoloured. There is no amount threshold — a ₹2,00,000 fee due in 60 days is not an error. Only the 22px figure takes a status hue; every 12px line stays grayscale because the raw status tokens fail AA at that size (§4.14 / §2.8), so the words carry the state.
+- **The "Owed" total line exists only with 2+ charges.** With one charge it is the same number twice, 40px apart. Same rule for years: one year becomes a label on the `Paid` heading (`multi_year` false); two or more keep per-year header rows.
+- **The Paid block is a card too** (`bg-base-200 border border-base-300 rounded-box p-4`), like a charge and the receipts box: bare rows on the page
+  background read as an unfinished list. **Its rows are THREE tracks** — `grid grid-cols-[6.5rem_1fr_auto]`, date `font-mono text-xs /60` · name `text-sm` · amount right. No rule column between date and name: it measured as a disconnected divider and ate a phone row's width. Zero horizontal borders inside a group; the header→row gap is strictly larger than the row gap.
+- **Zero dues: one sentence**, `Nothing due.` at `text-sm /60`, then the Paid block. Never an empty slot where the charge card would have been.
+- **Money is Indian-grouped** (`_money`: `2,00,000`, and a whole rupee drops `.00`); **dates are one format** (`_fmt`: `23 Nov 2026`) parsed day-first from all three SCOPE shapes (`31-Jul-2025`, `24-11-2026`, `2025-11-03`). Both are formatted server-side and travel as strings — the island prepends only `₹`.
+- **Receipts** = ONE collapsed `<details>` (`Payment receipts (6)`), each receipt its own collapsed `<details>` inside, showing voucher number + full narration only when opened. The list is never totalled: it is proof, not a second grand total that can disagree with the Paid block.
+
+Pinned by `tests/unit/test_scope_fees.py` (deadline pair, penalty delta, day-first dates, Indian money, level-by-deadline, sort order, year/sum dedup, garbage amounts) and `tests/e2e/test_fees_dut.py` (5 arms × 393×851 and 1280×900: three tracks, no rule column, uniform gaps, card wording, sum-line rule, receipt accordion, WCAG 0 fails, no overflow).
 
 ---
 

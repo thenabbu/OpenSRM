@@ -50,7 +50,7 @@ tests:
               severity: critical
             exp_annotations:
               summary: "No push tick for >10m"
-              description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. Check the Hermes cron job 'opensrm-push-tick' and /opt/data/cron/output/push-tick.log."
+              description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. On oclab, check /etc/cron.d/opensrm-push-tick, the tail of /var/log/opensrm-push-tick.log, and that cron is active."
 
   - interval: 1m
     input_series:

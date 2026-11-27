@@ -26,6 +26,14 @@ def parse_exam_schedule(html):
     return out
 
 
+def _txt(cell_html):
+    """Cell -> text with tags turned into spaces. The portal nests <br>/<span>
+    inside hall/seat cells and `_cells` strips tags with '', gluing the words
+    ('219SECOND FLOORAcademic Building Second Floor')."""
+    t = re.sub(r"<[^>]+>", " ", cell_html or "")
+    return re.sub(r"\s+", " ", t.replace("\xa0", " ").replace("&nbsp;", " ")).strip()
+
+
 def parse_exam_timetable(html):
     """StudentExamTimeTable.jsp (iden=126, official 'Exam Time Table' page)
     -> end-sem exam rows. Verified live Oct 7 2026 (the ONLY published source
@@ -70,6 +78,7 @@ def parse_exam_timetable(html):
 
     out = []
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        tds = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
         cells = _cells(row)
         i_date, i_code = _i("date"), _i("code")
         need = [i for i in (i_date, i_code, _i("hall"), _i("seat")) if i is not None]
@@ -81,13 +90,33 @@ def parse_exam_timetable(html):
             continue  # header/banner rows, pending `- -`, blanked cells
         mon = MONTHS.get(dm.group(2), "00")
         tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", ds)
+        # Hall No. is often blank, and the portal's "Seat No." column holds the
+        # ROOM text while the seat number sits in an extra trailing cell
+        # (live dump 2026-11-27):
+        #   <th>Hall No.</th><th>Seat No.</th>
+        #   <td></td><td>219 SECOND FLOOR Academic Building Second Floor</td><td>6</td>
+        # -> room 219 (2nd floor), seat 6. Every paper is in the same building,
+        # so only the room number is kept.
+        i_h, i_s = _i("hall"), _i("seat")
+        cells_txt = [_txt(t) for t in tds]
+        hall = cells_txt[i_h] if i_h is not None and i_h < len(cells_txt) else ""
+        seat_cell = cells_txt[i_s] if i_s is not None and i_s < len(cells_txt) else ""
+        seat_next = (cells_txt[i_s + 1]
+                     if i_s is not None and i_s + 1 < len(cells_txt) else "")
+        room_m = re.match(r"^(\d{1,4})\b.*\b(FLOOR|BUILDING|BLOCK|HALL|ROOM)\b", seat_cell, re.I)
+        if room_m and re.fullmatch(r"\d{1,3}", seat_next):
+            hall, seat = room_m.group(1), seat_next    # room cell then seat cell
+        else:
+            hall_m = re.match(r"^(\d{1,4})\b", hall)
+            hall = hall_m.group(1) if hall_m else hall
+            seat = (re.match(r"^(\d{1,3})", seat_cell) or [None, ""])[1]
         out.append({
             "code": cells[i_code], "name": (cells[_i("name")] or "") if _i("name") is not None else "",
             "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
             "session": (re.search(r"\b(AN|FN)\b", ds) or [None, ""])[1],
             "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
-            "hall": (cells[_i("hall")] or "") if _i("hall") is not None else "",
-            "seat": (cells[_i("seat")] or "") if _i("seat") is not None else "",
+            "hall": hall,
+            "seat": seat,
         })
     if not out and "<table" in html:
         # table present but nothing parsed: label/column drift or blanked rows.

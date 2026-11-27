@@ -1,13 +1,21 @@
 """Fees seed: writes real-shaped SCOPE fee/finance blobs onto the shared test
 user (tests/_seed.py base user), so the Fees tab renders with no network.
 
-Three arms, chosen by argv[1]:
-  dues   - one unpaid fee head (tuition 200000 vs 100000 paid) -> hero present
-  clear  - every head paid == total, trailing 0      -> hero absent, page
-           starts at Paid (the all-clear widget was removed)
-  exam   - the REAL 2026-11-04 shape: every head shows paid == total and
-           trailing 0, while getStudentExamFeesDetails says 3150 is owed and
-           due 25-11-2026. Before the fix this rendered "no dues".
+Arms, chosen by argv[1]:
+  dues    - one unpaid fee head (tuition 200000 vs 100000 paid) -> a named
+            charge with no deadline, since a fee row carries none
+  clear   - every head paid == total, trailing 0 -> "Nothing due.", page
+            starts at the Paid header
+  exam    - the REAL 2026-11-04 shape: every head shows paid == total and
+            trailing 0, while getStudentExamFeesDetails says 3150 is owed and
+            due 25-11-2026. Before the fix this rendered "no dues".
+  live    - the FULL 2026-11-26 exam-fee shape: feetype, the cheap-payment
+            deadline (05-12), the penalty date (06-12) and the total with the
+            late fee -> the coming-soon card, "N days left", "+1,000 from"
+  overdue - the same row with both dates already past and penaltystatus=1
+            -> "overdue", "was due", "late fee applied"
+  multi   - a trailing-based charge next to the exam one -> the "Owed" sum
+            line appears (2 charges; with 1 it would be a duplicate)
 Receipts are the mission's verbatim finance fixture (6 rows, PayU/IMPS
 narrations) so the collapsed receipt rows are measured on real text.
 """
@@ -61,15 +69,48 @@ EXAM_DUES = [{"partpaymentapplicable": 0, "studentname": "NAVYA GUPTA",
               "ischeckvisible": "t", "appln_category_id": "1"}]
 
 
+# the full live shape (2026-11-26): the page's deadline pair comes from the
+# last two fields here, and are what the old view threw away
+def _live(deadline, penalty_on, penalised=0):
+    return [{"academicyear": "NOVEMBER-2026", "studentname": "NAVYA GUPTA",
+             "minamount": 3150, "concessionamount": 0, "amounttopay": 3150,
+             "paidamount": 0, "studentid": "709245", "enddate": penalty_on,
+             "penaltystatus": penalised, "penaltyamount": 1000, "sno": "2440869",
+             "officeid": "20", "amountwithoutpenalty": 3150, "feetype": "Exam Fees",
+             "feetypeid": "2", "ischeckvisible": "t", "penaltydate": penalty_on,
+             "lastdateforfeepaymentwithoutlatefee": deadline,
+             "feewithlatefee": 4150}]
+
+
+LIVE_DUES = _live("05-12-2026", "06-12-2026")
+OVERDUE_DUES = _live("22-11-2026", "23-11-2026", penalised=1)
+
+# one head short by 100000: this row's own trailing/total disagrees, so it
+# becomes its own named charge (dateless) next to the exam one
+SHORT_FEES = [
+    {"feedetails": "Registration Fee##10000.00##10000.00##13-Aug-2025##2025-2026##0"},
+    {"feedetails": "Tuition Fees##100000.00##200000.00##13-Aug-2025##2025-2026##100000"},
+    # a second academic year: the only case where a year header row exists
+    {"feedetails": "Exam Fees##3150.00##3150.00##24-Sep-2026##2026-2027##0"},
+]
+
+
 def seed(arm="clear"):
     _seed.seed()
     from app import app as A
     scope = {
-        "getFeeDetails": {"data": DUES_FEES if arm == "dues" else CLEAR_FEES, "ts": 1},
+        "getFeeDetails": {"data": DUES_FEES if arm == "dues" else
+                          SHORT_FEES if arm == "multi" else CLEAR_FEES, "ts": 1},
         "getFinanceDetails": {"data": FIN, "ts": 1},
     }
     if arm == "exam":
         scope["getStudentExamFeesDetails"] = {"data": EXAM_DUES, "ts": 1}
+    elif arm == "live":
+        scope["getStudentExamFeesDetails"] = {"data": LIVE_DUES, "ts": 1}
+    elif arm == "multi":
+        scope["getStudentExamFeesDetails"] = {"data": LIVE_DUES, "ts": 1}
+    elif arm == "overdue":
+        scope["getStudentExamFeesDetails"] = {"data": OVERDUE_DUES, "ts": 1}
     c = A.db()
     c.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid='zz9999'",
               (json.dumps(scope), 1))
