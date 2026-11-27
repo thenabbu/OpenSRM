@@ -102,8 +102,12 @@ export function bindTagSave(doc: Document = document): void {
 
 // ─ 2. dash-delete-account ─────────────────────────────────────────────────
 export const DELETE_URL = '/api/account/delete';
-export const DEL_ERR_CLASS = 'mt-2 text-xs text-error';
-export const DEL_IDLE_CLASS = 'mt-2 text-xs text-base-content/70';
+export const DEL_ERR_CLASS = 'text-xs text-error';
+export const DEL_IDLE_CLASS = 'text-xs text-base-content/70';
+
+/** Rows this module already wired — a route swap drops the old node, so the
+ *  entry dies with it and the swapped-in row binds as a fresh element. */
+const boundRows = new WeakSet<Element>();
 
 /**
  * The settings ROW only OPENS the explainer; only the confirm button inside it
@@ -116,8 +120,15 @@ export const DEL_IDLE_CLASS = 'mt-2 text-xs text-base-content/70';
  * removed — the student must be able to see that a destructive action did NOT
  * half-happen.
  */
-export function bindDeleteAccount(doc: Document = document): void {
+export function bindDeleteAccount(doc: Document = document): boolean {
   const btn = doc.getElementById('delete-account-btn');
+  // Idempotent per element: main.ts re-arms this binder after every soft-nav
+  // route swap, and a second listener on #del-confirm would make ONE confirm
+  // POST twice. A module-scoped WeakSet, not a data- attribute: markup must not
+  // be able to pre-flag a row as bound (that would silently disable deletion),
+  // and the flag has no business in the rendered DOM.
+  if (!btn || boundRows.has(btn)) return Boolean(btn);
+  boundRows.add(btn);
   const confirm = doc.getElementById('del-confirm');
   btn?.addEventListener('click', () => {
     (doc.getElementById('delete-account-modal') as HTMLDialogElement | null)?.showModal();
@@ -159,6 +170,7 @@ export function bindDeleteAccount(doc: Document = document): void {
         btnEl.disabled = false;
       });
   });
+  return true;
 }
 
 // ─ 3. dash-details-dismiss ────────────────────────────────────────────────
