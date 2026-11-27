@@ -109,12 +109,13 @@ are copied from `ops/oclab/` in this repo, so a rebuilt host gets them back.
 
 The box that runs the app also drives it. That removes the two earlier
 schedulers and their failure modes: the Hermes cron job whose host could go
-away, and the cron-job.org job that stops after 25 consecutive failures. Both
-jobs still exist and both are **disabled**, so either one is a revert, not a
-rebuild:
+away, and the cron-job.org job that stops after 25 consecutive failures.
 
-- Hermes cron `opensrm-push-tick`, id `4352c6d4be31`.
-- cron-job.org `opensrm-push-tick`, id `8744871`.
+- The Hermes cron job `opensrm-push-tick` (id `4352c6d4be31`) was removed on
+  2026-11-27, together with its script `/opt/data/scripts/push-tick.sh` and
+  its log.
+- The cron-job.org job `opensrm-push-tick` (id `8744871`) stays, disabled, as
+  the fallback for a case where the oclab host is the thing that broke.
 
 Alerting does not depend on the scheduler. The handler stamps
 `opensrm_push_tick_last_success_timestamp_seconds` on every successful tick.
