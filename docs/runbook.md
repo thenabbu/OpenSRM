@@ -697,12 +697,13 @@ Verified 2026-11-27: ticks at 07:46, 07:47, 07:48, 07:49 and 07:50 IST, each
 `opensrm_push_tick_last_success_timestamp_seconds` appeared in the same
 window, so the dead-man rule below has a series to watch.
 
-The two earlier schedulers stay as disabled fallbacks, never as a second
-caller:
+The two earlier schedulers are gone from the live path:
 
-- Hermes cron `opensrm-push-tick`, id `4352c6d4be31` — **disabled**.
+- Hermes cron `opensrm-push-tick`, id `4352c6d4be31` — **removed**
+  2026-11-27, with its script `/opt/data/scripts/push-tick.sh` and its log.
+  Nothing on the Hermes host drives the tick now.
 - cron-job.org `opensrm-push-tick`, id `8744871` — **disabled** (last run
-  2026-11-04 09:50 IST).
+  2026-11-04 09:50 IST). It stays as the fallback for a broken oclab host.
 
 The script is silent in the cron-mail sense (its output goes to `/dev/null`)
 and it keeps no failure counter. It does not need one: the app's own gauge

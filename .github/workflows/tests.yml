@@ -38,10 +38,15 @@ permissions:
   contents: read
 
 concurrency:
-  # Distinct from Build & Push's group on purpose. Both run on a main push, and
-  # a shared group with cancel-in-progress lets one kill the other - observed
-  # as "build: skipped" with no tests job at all in the Build & Push run.
-  group: tests-${{ github.ref }}-${{ github.event_name }}
+  # `github.workflow` belongs in the group. This file runs TWICE on a dev push:
+  # once standalone (push trigger) and once as the reusable job that Build &
+  # Push calls. Inside a called workflow `github.workflow` is the CALLER's
+  # name, so without it both runs share one group and cancel-in-progress kills
+  # the standalone run every time - observed as `Tests` cancelled with
+  # "higher priority waiting request for tests-refs/heads/dev-push exists" on
+  # every dev push. With it, the two runs are separate groups and neither can
+  # cancel a run of the other.
+  group: tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
