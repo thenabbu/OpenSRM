@@ -162,9 +162,9 @@ check("marks chip renders", 'Internal marks' in html and '17.5/20' in html)
 # the pages first let a token pass on either page, which is no assertion.
 _att = GET("/attendance").get_data(as_text=True)
 _tt = GET("/timetable").get_data(as_text=True)
-check("attendance budget rows + alert class (/attendance)",
-      'can skip' in _att and 'att-neg' in _att,
-      "skip=%s neg=%s" % ('can skip' in _att, 'att-neg' in _att))
+check("attendance keeps the per-subject margin classes, drops Estimates (/attendance)",
+      'att-neg' in _att and 'can skip' not in _att,
+      "neg=%s skip=%s" % ('att-neg' in _att, 'can skip' in _att))
 check("'attend N' budget rendered by the timetable grid (/timetable)",
       'attend 3' in _tt, "'attend 3' %s /timetable" % ('in' if 'attend 3' in _tt else 'MISSING from'))
 check("people card lays widgets out 2-up (cols contract)",

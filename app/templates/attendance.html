@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% set active_tab = "attendance" %}
 {% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
-  <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
+  <div id="tab-attendance" role="tabpanel" aria-labelledby="tab-attendance-tab" data-tabpanel class="max-w-3xl lg:max-w-6xl mx-auto" style="">
+   {# Two panes from 1024px up (att-panes in timetable.css): subjects left,
+      detail right. One column stacked below that, in DOM order. #}
+   <div class="att-panes{% if not hourwise and not monthly %} att-panes--single{% endif %}">
+    <div class="att-sub"><div class="att-sub-in">
     <div class="flex items-center justify-between mb-3">
       <h1 class="text-base font-semibold">Subjects</h1>
       <div class="join" role="group" aria-label="Attendance view">
@@ -80,46 +84,41 @@
         </table>
       </div>
     </div>
-
-    {% if has_budgets %}
-    <div class="att-h">Estimates</div>
-    <div class="att-n">can skip: 90 working days (excl. Sat/Sun){% if stop %} · till {{ stop.strftime('%d %b') }} (day before first endsem){% endif %}</div>
-    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5">
-      <div class="qgrid">
-        <span class="qhead">Subject</span>
-        <span class="qhead">90 days{% if days_left_90 is not none %} · {{ days_left_90 }} left{% endif %}</span>
-        <span class="qhead">{% if stop is not none %}till {{ stop.strftime('%d %b') }}{% else %}till first endsem{% endif %}{% if days_left_exam is not none %} · {{ days_left_exam }} left{% endif %}</span>
-        {% for c in courses %}
-        {% if c.m90 is not none or c.m_end is not none %}
-        <span>{{ c.description }}</span>
-        <span class="qnum">{{ c.m90 if c.m90 is not none else '--' }}</span>
-        <span class="qnum">{{ c.m_end if c.m_end is not none else '--' }}</span>
-        {% endif %}
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
+    </div></div>
+    <div class="att-det">
 
     {% if hourwise %}
     <div class="att-h flex items-center gap-2">Detailed attendance
       <span class="sync-line text-xs text-base-content/60 leading-5 whitespace-nowrap" data-ts="{{ hourwise.ts }}" data-full="{{ hourwise.full }}"></span>
     </div>
-    <div class="bg-base-200 border border-base-300 rounded-box p-4 mb-5" id="hourwise-months">
+    <div class="bg-base-200 border border-base-300 rounded-box p-4" id="hourwise-months">
       {% for m in hourwise.months %}
-      <details class="hw-month" data-month="{{ m.label }}">
+      {# The newest month is <details open>: the pane must show a grid, never an
+         empty card that reads like a load failure. Older months stay closed. #}
+      <details class="hw-month" data-month="{{ m.label }}"{% if loop.first %} open{% endif %}>
         <summary class="hw-mrow">
           <span class="hk-label">{{ m.side }}</span>
           <span class="hk-num">{{ m.p }}P{% if m.a %} · {{ m.a }}A{% endif %}{% if m.od %} · {{ m.od }}OD{% endif %}</span>
         </summary>
         <div class="hw-grid-wrap">
           <div class="hw-grid" style="--hw-n:{{ hourwise.hours|length }}" role="table" aria-label="{{ m.label }} hour by hour">
+            {# role="row" wrappers are required by ARIA: columnheader/cell may not
+               be direct children of a table, and axe flags it as critical. The
+               rows are display:contents, so the CSS grid still places every cell. #}
+            <div class="hw-row" role="row">
             <div class="hw-hcell" role="columnheader">Date</div>
             {% for h in hourwise.hours %}<div class="hw-hcell" role="columnheader">h{{ h }}</div>{% endfor %}
+            </div>
             {% for d in m.days %}
+            <div class="hw-row" role="row">
             <div class="hw-dcell" role="rowheader"><span class="hw-wd">{{ d.dow[:3] }}</span> <span class="hw-dt">{{ d.date }}</span></div>
             {% for c in d.cells %}
-            <div class="hw-c{% if c.state %} hw-c-{{ c.state|lower }}{% endif %}" role="cell" title="{{ c.title }}"{% if c.state %} aria-label="{{ c.title }}"{% endif %}>{{ c.state or '' }}</div>
+            {# title= is a desktop-only affordance; a phone never fires it. The
+               click-to-open bubble (bindHwCellTip) reads data-subject — the short
+               name + code, not the whole sentence — so a tap explains the cell. #}
+            <div class="hw-c{% if c.state %} hw-c-{{ c.state|lower }}{% endif %}" role="cell" title="{{ c.title }}" data-subject="{{ (c.subject ~ ' (' ~ c.code ~ ')') if c.subject and c.code else (c.subject or '') }}"{% if c.state %} aria-label="{{ c.title }}"{% endif %}>{{ c.state or '' }}</div>
             {% endfor %}
+            </div>
             {% endfor %}
           </div>
         </div>
@@ -167,6 +166,8 @@
     </div>
     </div>
     {% endif %}
+    </div>{# /att-det #}
+   </div>{# /att-panes #}
   </div>
 </main>
 {% endblock %}

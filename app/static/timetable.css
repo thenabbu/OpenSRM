@@ -226,13 +226,8 @@
 .att-table .att-margin{font-weight:600}
 .att-pos{color:oklch(70% 0.10 163)}
 .att-neg{color:oklch(63% 0.11 25)}
-/* quiet cards: estimates + absences (numbers neutral, labels ≤3 words) */
-.qgrid{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:baseline;font-size:12.5px}
-.qgrid .qhead{font-size:10.5px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);text-align:right;margin-bottom:4px}
-.qgrid .qhead:first-child{text-align:left}
-.qgrid .qnum{text-align:right;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 60%, transparent)}
+/* quiet cards: absences (numbers neutral, labels ≤3 words) */
 .att-h{font-size:13px;font-weight:600;margin:18px 0 8px}
-.att-n{font-size:11px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);margin:-4px 0 8px}
 /* absences card (fallback when the detailed grid is off): month groups */
 .att-abs-card .att-month + .att-month{margin-top:14px}
 /* Detailed attendance: one <details> per month, expanding into date × hour grid.
@@ -248,6 +243,7 @@
 .hk-label{font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hk-num{font-family:monospace;font-size:12px;font-variant-numeric:tabular-nums;color:color-mix(in oklab, var(--color-base-content) 60%, transparent);white-space:nowrap}
 .hw-grid-wrap{overflow-x:auto;padding-bottom:10px}
+.hw-row{display:contents}   /* ARIA rows without breaking the grid */
 .hw-grid{display:grid;grid-template-columns:5.5rem repeat(var(--hw-n,6), minmax(2rem, 1fr));gap:2px;min-width:max-content}
 .hw-hcell{font-size:10.5px;color:color-mix(in oklab, var(--color-base-content) 50%, transparent);text-align:center;padding:0 0 5px}
 .hw-hcell:first-child{text-align:left}
@@ -260,3 +256,30 @@
 .hw-c:hover{background:color-mix(in oklab, var(--color-base-content) 8%, transparent)}
 .hw-c-a:hover{background:color-mix(in oklab, oklch(58% 0.115 25) 24%, transparent)}
 .hw-c-od:hover{background:color-mix(in oklab, oklch(63% 0.115 68) 22%, transparent)}
+
+/* ── Two panes on desktop ────────────────────────────────────────────────
+   Subjects left, detailed grid right, from 1024px up. Below that the same
+   DOM stacks into the phone order it always had. The right column carries
+   the absences card too, so the stacked order stays subjects → detail →
+   absences and no phone user loses their place.
+   `align-items:stretch` (the grid default) is load-bearing: the sticky
+   inner column needs a containing block taller than itself to stick to. */
+.att-panes{display:grid;gap:0}
+/* nothing for the right pane (SCOPE off / no stored hours): one full-width
+   column, or the desktop page shows an empty half that reads as a broken
+   render. The meter grid's auto-fit then spreads the rows across the width. */
+.att-panes--single{display:block}
+@media (min-width:1024px){
+  .att-panes{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:0 20px}
+  .att-sub-in{position:sticky;top:87px}   /* clears the 79px tab bar */
+}
+
+/* ── Period-cell bubble (P / A / OD) ─────────────────────────────────────
+   `title` is desktop-hover only and never fires on a phone, so a tap opens
+   this instead (web/src/data/hwCellTip.ts positions it). One label at a
+   time, anywhere-else-tap closes it, and it is pointer-events:none so the
+   bubble can never eat the click that dismisses it. */
+.hw-tip{position:fixed;z-index:70;max-width:min(20rem,80vw);pointer-events:none;
+  padding:6px 9px;border-radius:6px;font-size:12px;line-height:1.35;
+  background:var(--color-neutral);color:var(--color-neutral-content);
+  box-shadow:0 6px 20px oklch(0% 0 0 / .28);transform:translate(-50%,-100%)}
