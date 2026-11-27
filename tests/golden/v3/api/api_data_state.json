@@ -1,8 +1,8 @@
 {
-  "body": "{\"age_s\":4,\"ok\":true,\"stale\":false,\"window_s\":300}\n",
-  "bytes": 51,
+  "body": "{\"age_s\": 0,\"ok\":true,\"stale\":false,\"window_s\":300}\n",
+  "bytes": 52,
   "content_type": "application/json",
-  "gzip_bytes": 67,
+  "gzip_bytes": 68,
   "path": "/api/data/state",
   "status": 200
 }
