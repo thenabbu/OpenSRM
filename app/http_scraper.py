@@ -54,7 +54,10 @@ JSPS = {
     "126": "/students/transaction/StudentExamTimeTable.jsp",  # official Exam Time Table (verified live Oct 7 2026)
     "10": "/students/report/studentTimeTableDetails.jsp",  # daily Timetable menu (verified live Oct 12 2026; was a server-side "No Time Table Found" gap before)
 }
-HOT_FORMIDS = {"9", "13", "126", "10"}  # attendance + marks + official exam timetable + daily timetable: every sync
+HOT_FORMIDS = {"9", "13", "10"}  # attendance + marks + daily timetable: every sync
+# (no "126": the official exam timetable is fetched PER exam window by
+# _official_exam_post — a bare iden=126 POST returns no room allotment and
+# only added one wasted portal request per sync/relogin)
 # (no "1"/"32": ScribeInner was demoted to the exam probe, and _fb_harvest
 # posts iden=32 itself — nothing reads those batch results; both rode along
 # on every cold sync for nothing)
@@ -798,6 +801,30 @@ def _merge_official_rows(results):
     return rows
 
 
+def _official_exam_rows(opener, base, xheaders, exam_results):
+    """Official iden=126 rows for the windows the scribe probe actually listed.
+
+    The official page only carries the term that is published, so there is no
+    point POSTing every candidate window twice (scribe + official). Fetch it
+    only for windows that returned scribe rows — normally one term.
+    """
+    from app.app import parse_exam_schedule  # deferred: avoid circularity
+    wanted = []
+    for entry in exam_results or []:
+        if not entry:
+            continue
+        for r in parse_exam_schedule(entry[1]):
+            key = (int(r["date"][3:5]), int(r["date"][6:]))
+            if key not in wanted:
+                wanted.append(key)
+    if not wanted:
+        return []
+    with ThreadPoolExecutor(max_workers=min(4, len(wanted))) as ex:
+        futs = [ex.submit(_official_exam_post, opener, base, xheaders, m, y)
+                for m, y in wanted]
+        return _merge_official_rows([f.result() for f in futs])
+
+
 # fallback question ids when the live form fragment carries no
 # hiddenQuestionId field (see _fb_question_ids)
 DEFAULT_FB_QIDS = ",".join(str(x) for x in range(23, 37)) + ","
@@ -1305,14 +1332,12 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
         # responses, no wall-time cost (plan: hot cadence, catches early seeding)
         exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
                      for m, y in cands]
-        # official timetable (iden=126) per window — the portal only returns
-        # hall/seat for the requested month/year, never for a bare fetch
-        official_futs = [ex.submit(_official_exam_post, opener, base, xheaders, m, y)
-                         for m, y in cands]
         parallel_html = {fid: html for fid, html in
                          (f.result() for f in futures)}
         exam_results = [f.result() for f in exam_futs]
-        official_rows = _merge_official_rows([f.result() for f in official_futs])
+    # official timetable (iden=126) for the windows the scribe listed — the
+    # portal only returns hall/seat for the requested month/year
+    official_rows = _official_exam_rows(opener, base, xheaders, exam_results)
     log.debug("jsp fetch done netid=%s sizes=%s", netid,
               {k: len(v) for k, v in parallel_html.items()})
 
@@ -1333,12 +1358,10 @@ def fetch(netid, password, helpers, cold=True, prepared=None, deadline=None):
                        for fid, path in JSPS.items() if fid in fids]
             exam_futs = [ex.submit(_exam_post, opener, base, xheaders, m, y)
                          for m, y in cands]
-            official_futs = [ex.submit(_official_exam_post, opener, base, xheaders, m, y)
-                             for m, y in cands]
             parallel_html = {fid: html for fid, html in
                              (f.result() for f in futures)}
             exam_results = [f.result() for f in exam_futs]
-            official_rows = _merge_official_rows([f.result() for f in official_futs])
+        official_rows = _official_exam_rows(opener, base, xheaders, exam_results)
         # audit S25: re-derive from the REFETCHED body — content_html still
         # held the dead session's page, so a legitimate refetch parsed a
         # 466-byte corpse and reported 'Attendance page did not load'
