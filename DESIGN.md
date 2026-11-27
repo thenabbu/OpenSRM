@@ -499,6 +499,7 @@ Meaning map: live class = `tt-row--now` success tint (the hero states it in word
 
 Rules specific to this card:
 
+- **Grade headline tint.** A grade letter takes the academics tab's own classes (`.acad-g` + `.acad-g-o` for O, `.acad-g-f` for F, defined once in `base.html`); every other headline is neutral.
 - **Numbers are neutral.** No status hue on any number — at most ONE `text-secondary`, on the unique lowest subject and only below the 75 target (§2.7). Green/amber/red stay attendance-only (§2.6).
 - **No percentage anywhere.** The card headline is the subject's own `scored/max`; an internal-only course (internal total already `/100`) leads with its **grade letter** (`GRADE_BANDS` in `views/marks.py`: 91+ O, 81+ A+, 71+ A, 61+ B, 51+ C, 41+ D, else F) and demotes `scored/100` to the sub-line. Grades come from that table, never from an unpublished result row. Maxima print whole (`/15`, never `/15.00`); scores strip trailing zeroes (`16.2`, `5` — never `16.20`/`5.00`); every figure is `font-mono tabular-nums`. Subject names are title-cased in Python (CSS `capitalize` cannot downcase ALL-CAPS portal data).
 - **The component chip is a hand-rolled span, not a `.badge`:** daisyUI badges cannot lose their 1px border (§10.9) and this chip must be solid-fill, borderless. Fixed `w-[6.5rem]` (104px) so no name can shift the date column, with `truncate` + a `title` for names longer than the chip (`R21 Report and Viva`). Fill `bg-base-300`, label `text-base-content/70`.
