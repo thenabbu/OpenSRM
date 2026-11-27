@@ -160,27 +160,27 @@ export function refreshBusy(): boolean {
   return !!btn && btn.getAttribute('aria-disabled') === 'true';
 }
 
+/** `GET /api/data/state` — the server's own staleness window. */
+export const DATA_STATE_URL = '/api/data/state';
+
 /**
  * Ask the SERVER whether this account's data is old, once per page.
  *
- * `checks_stale` is `auto_sync_kick_if_stale` + the SCOPE kick — the exact pair
- * a page render already runs — so this can never disagree with what a reload
- * would have shown: it starts the same background sync a reload would have
- * started, and the scope poll repaints when that run lands.
+ * `stale` is the same `SYNC_MIN_INTERVAL_S` window `POST /api/refresh` caches
+ * on, so a check can never disagree with what a reload would have shown. The
+ * page used to decide this itself, from `data-ts` baked into its markup: that
+ * stamp is one moment in time, so a tab left open stayed "fresh" by its own
+ * reckoning, which is the "data is old until I reload" report.
  *
- * The page used to decide this itself, from `data-ts` baked into its markup.
- * That stamp is one moment in time: a tab left open all day stayed "fresh" by
- * its own reckoning, which is the "data is old until I reload" report. Now the
- * server answers.
+ * GET, never POST: this is a question, and `/api/refresh` answers only POST (a
+ * GET there is a 405 in the server log). Silent on a page with no sync caption
+ * — the login page would otherwise ask about an account it does not have.
  */
 export function revalidatePage(): Promise<void> {
-  return fetch(REFRESH_URL, { credentials: 'same-origin', headers: { accept: 'application/json' } })
-    .then((r) => (r.ok ? (r.json() as Promise<{ sync?: boolean }>) : null))
-    .then((d) => {
-      // The server started a background portal sync; both pollers repaint when
-      // their run lands, so there is nothing else to do here.
-      if (d?.sync) void syncData();
-    })
+  if (!document.querySelector('.sync-line')) return Promise.resolve();
+  return fetch(DATA_STATE_URL, { credentials: 'same-origin', headers: { accept: 'application/json' } })
+    .then((r) => (r.ok ? (r.json() as Promise<{ stale?: boolean }>) : null))
+    .then((d) => (d?.stale ? syncData() : undefined))
     .catch(() => {});
 }
 

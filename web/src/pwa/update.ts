@@ -45,11 +45,9 @@ export const UPDATE_EVENT = 'controllerchange';
  */
 export const STALE_KEY = 'osrm-swapped';
 
-/** Swaps allowed per session. One is enough; the env override exists so a
- *  deployment that keeps finding itself on an old build can prove it. */
-export function maxSwaps(): number {
-  const raw = (globalThis as unknown as { __OSRM_MAX_SWAPS?: number }).__OSRM_MAX_SWAPS;
-  return typeof raw === 'number' ? raw : 1;
+/** How many swaps this session has already spent. Unreadable storage = 0. */
+export function swapsSpent(): number {
+  try { return Number(sessionStorage.getItem(STALE_KEY) || 0) || 0; } catch { return 0; }
 }
 
 /** Count one spent swap. Never throws: private mode has no storage. */
@@ -229,6 +227,12 @@ export function reloadOnNextBoot(
   const win = opts.win ?? window;
   const sw = container();
   if (!sw) return () => {};
+
+  // The swap only matters on a page that has data to refresh. A page without
+  // the sync caption (login, settings, etc.) has no state to lose and no
+  // numbers to show — swapping it is just a churn. The login page already
+  // proved this with its reload loop.
+  if (!win.document.querySelector('.sync-line')) return () => {};
   let done = false;
 
   const idle = (): boolean => {
@@ -259,14 +263,25 @@ export function reloadOnNextBoot(
     }, () => { done = false; });
   };
 
-  // A boot swap in flight: this document keeps its data work but never swaps
-  // again, or a worker that fails to take over would reload in a loop.
-  if (sessionStorage.getItem(STALE_KEY) === '1') return () => {};   // already swapped once
+  // The session already spent its swap. Spending ANOTHER is only correct if the
+  // reload came back on a NEW bundle; if it came back on the same document (an
+  // old worker still serving, a build that never took) reloading again is an
+  // infinite loop — the browser test caught exactly that at `/login`.
+  //
+  // `>=`, not `=== '1'`: the counter climbs, so an equality check against the
+  // FIRST value silently re-arms on the second boot and never stops.
+  if (swapsSpent() > 0) return () => {};
 
-  // The worker took over under this document (`controllerchange`): the next
-  // boot swaps once, which is the backstop for a swap decided mid-session.
+  // The worker took over under THIS document. The swap already achieved what
+  // it was for (a new worker is serving); it only needs a reload if the page
+  // is on markup the new build no longer matches, which the caller decides.
+  // Counting it here would burn the session's only swap on a successful
+  // handover and leave the reload to the next boot — the opposite of the
+  // point. So this listener only exists to keep the hook honest in one case:
+  // a change we did NOT initiate means somebody else swapped.
   const onChange = (): void => {
-    bumpSwaps();
+    if (done) return;          // our own swap: the reload is already queued
+    bumpSwaps();               // a foreign swap: do not spend a second one
   };
 
   const onVisibility = (): void => {

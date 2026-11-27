@@ -308,6 +308,21 @@ describe('reloadOnNextBoot', () => {
     expect(state()).toBe('1');   // one swap spent, this session
   });
 
+  it('a THIRD boot still refuses — the guard counts, it does not compare to "1"', async () => {
+    const { sw, reg } = fakeSW();
+    reg.waiting = { postMessage: vi.fn() };
+    sw.controller = { scriptURL: '/static/sw.js' };
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+
+    // The loop the browser test caught: the counter had climbed to "2", an
+    // equality check against "1" missed it, and every boot reloaded again.
+    sessionStorage.setItem(STALE_KEY, '2');
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it('a first install is a normal load: nothing is reloaded', async () => {
     const { sw } = fakeSW();                    // controller === null
     const reload = vi.fn();

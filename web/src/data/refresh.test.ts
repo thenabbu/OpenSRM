@@ -7,6 +7,7 @@ import {
   bindRefreshButtons,
   refreshProps,
   revalidateOnReturn,
+  revalidatePage,
   startDataRefreshLoop,
   syncData,
   triggerRefresh,
@@ -202,6 +203,47 @@ const fresh = (html: string): Document => {
   Object.defineProperty(d, 'visibilityState', { value: 'visible', configurable: true });
   return d;
 };
+
+describe('revalidatePage', () => {
+  const page = (caption: boolean): Document => {
+    const d = fresh(caption ? '<span class="sync-line" data-ts="0"></span>' : '<div></div>');
+    return d;
+  };
+
+  it('ASKS the state route — never GETs the POST-only refresh route', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const doc = page(true);
+    const stub = (async (url: string, init?: unknown) => {
+      calls.push([url, init]);
+      return { ok: true, json: async () => ({ ok: true, stale: false }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    vi.stubGlobal('fetch', stub);
+    vi.stubGlobal('document', doc);
+    await revalidatePage();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toBe('/api/data/state');
+    // A GET: /api/refresh answers only POST, and a GET there is a 405 the
+    // browser logs as a console error on every page load.
+    const init = calls[0][1] as { method?: string } | undefined;
+    expect(init?.method ?? 'GET').toBe('GET');
+    vi.unstubAllGlobals();
+  });
+
+  it('says nothing on a page with no sync caption (the login page)', async () => {
+    const calls: string[] = [];
+    const stub = (async (url: string) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ ok: true, stale: true }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', stub);
+    vi.stubGlobal('document', page(false));
+    await revalidatePage();
+    expect(calls).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+});
 
 describe('startDataRefreshLoop', () => {
   const page = (canSync = '1'): Document =>

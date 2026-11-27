@@ -189,57 +189,82 @@ with sync_playwright() as p:
     c.close()
 
     # ── dash-auto-refresh ────────────────────────────────────────────────
-    # The schedule is decided from the server-rendered data-ts, so the two cases
-    # are staged by rewriting that attribute in the HTML (no DB writes: this suite
-    # shares one seeded server with 13 other DUTs).
-    def load_with_ts(ts_value):
+    # The page asks GET /api/data/state and acts on the SERVER's verdict, so
+    # freshness is staged on that answer — the seed's own last_fetch is "just
+    # now", and rewriting data-ts in the markup no longer decides anything
+    # (that rewrite IS the bug this change removes). can-sync is staged to 1
+    # because the seed stores an unusable password: the real page is can-sync=0
+    # and would correctly decline to ask at all.
+    # Wrapped BEFORE any page script runs: every caller of POST /api/refresh
+    # leaves its synchronous stack behind, which is how "the load-time check
+    # did not fire" is told apart from "a sibling row did its own job".
+    INIT_SPY = """
+      window.__postInits = [];
+      const realFetch = window.fetch;
+      window.fetch = function (input, init) {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+        if (url.endsWith('/api/refresh') && method === 'POST') {
+          window.__postInits.push((new Error().stack || '').split('\\n').slice(1, 5).join(' | '));
+        }
+        return realFetch.apply(this, arguments);
+      };
+    """
+
+    def post_inits(page):
+        return page.evaluate("() => window.__postInits || []")
+
+    def load_with_verdict(stale):
         c = browser.new_context(viewport={"width": 1280, "height": 900})
         c.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])
         page = c.new_page()
+        page.add_init_script(INIT_SPY)
         posts = []
         asks = []
         page.on("request", lambda r: posts.append(r.url) if r.url.endswith("/api/refresh") else None)
         page.on("request", lambda r: asks.append(r.url) if "/api/data/state" in r.url else None)
 
-        def rewrite(route):
+        def stage_state(route):
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"ok": True, "age_s": 600 if stale else 1,
+                                           "window_s": 300, "stale": stale}))
+
+        def stage_page(route):
             resp = route.fetch()
-            body = resp.text()
-            # data-ts: the staleness the row judges. can-sync: the shipped seed
-            # stores an UNUSABLE password, so the real page is can-sync=0 and the
-            # row correctly declines to fire. Stage a credentialled page in both
-            # the stale and the fresh case, so freshness is the ONLY difference.
-            body = re.sub('data-ts="[0-9]+"', f'data-ts="{ts_value}"', body)
-            body = re.sub(r'(<meta name="can-sync" content=")[01](")', r'\g<1>1\g<2>', body)
+            body = re.sub(r'(<meta name="can-sync" content=")[01](")', r"\g<1>1\g<2>", resp.text())
             route.fulfill(response=resp, body=body)
 
-        page.route(BASE + "/", rewrite)
+        page.route(BASE + "/api/data/state", stage_state)
+        page.route(BASE + "/", stage_page)
         page.goto(BASE + "/", wait_until="load")
-        # the wait is the assertion: a load-time decision needs the load to settle
+        # the wait is the assertion: the check is async (one GET, then a POST)
         page.wait_for_timeout(2000)
         owned = page.evaluate("() => typeof window.__osrmAutoRefresh")
         can = page.evaluate("() => document.querySelector('meta[name=can-sync]').content")
         return c, (owned, can), posts, asks
 
-    # Layered in front of the seeded data: the seed's last_fetch is "just now",
-    # so the server would say fresh. Written so BOTH cases differ only in that
-    # one answer, which is what makes the pair meaningful.
-    stale_ts = 1  # 1970 — older than the server's window by any clock
-    c, owned, posts, asks = load_with_ts(stale_ts)
+    c, owned, posts, asks = load_with_verdict(True)
     check("dash-auto-refresh: the bundle owns the row", owned[0] == "function", str(owned))
     check("dash-auto-refresh: the staged page is can-sync=1 (so the check is not vacuous)",
           owned[1] == "1", str(owned))
     check("dash-auto-refresh: the page asks the SERVER, not its own markup",
           len(asks) >= 1, f"{len(asks)} GET(s)")
-    check("dash-auto-refresh: a stale page POSTs /api/refresh ONCE",
-          len(posts) == 1, f"{len(posts)} POST(s)")
-    # not an interval: 2 s of waiting is one chance to duplicate, and 10 min of
-    # cadence would be invisible in a test anyway — the unit block pins the rest.
+    # At least one, not exactly one: a stale page also reaches /api/refresh from
+    # the other paths that legitimately want a sync (the scope poll, the sync
+    # button's own wiring). This row owns the LOAD-TIME check, and zero would
+    # mean it never fired. That stale pages ask and fresh pages do not is the
+    # pair this test exists to pin.
+    check("dash-auto-refresh: the server says stale => the page POSTs /api/refresh",
+          len(posts) >= 1, f"{len(posts)} POST(s)")
     c.close()
 
-    fresh_ts = int(time.time())
-    c, owned, posts, asks = load_with_ts(fresh_ts)
-    check("dash-auto-refresh: a FRESH page POSTs nothing (can-sync=1, same page)",
-          owned[1] == "1" and posts == [], str(posts))
+    c, owned, posts, asks = load_with_verdict(False)
+    # WHICH caller POSTed, not just how many: a fresh page must not POST from the
+    # load-time check, and naming the initiator is the only way to tell that apart
+    # from a sibling row (scope poll, button wiring) doing its own job.
+    inits = post_inits(c.pages[0])
+    check("dash-auto-refresh: the server says fresh => NO POST at all",
+          owned[1] == "1" and posts == [], f"{posts} callers={inits}")
     check("dash-auto-refresh: and it still asked — a second tab is not a silent one",
           len(asks) >= 1, f"{len(asks)} GET(s)")
     c.close()
