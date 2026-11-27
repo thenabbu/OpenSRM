@@ -1,6 +1,7 @@
 """Marks view models: IE derivation, score/date formatting, tab + glance rows
 (moved from app.app; re-exported from app.app)."""
 
+import re
 from datetime import date, datetime
 
 
@@ -42,29 +43,111 @@ def _fmt_date(s):
         return s or ""
 
 def _derive_ie(code, maximum):
-    """IE-1/IE-2 are never labelled by the portal — guess IE-1 from the
-    component's scaled max (the /15 component; /10 for practicals like
-    21CSC203P). A confirmed tag always wins; this is the 'derived' state."""
+    """DEPRECATED per-component guess — kept only so old callers import.
+
+    The portal never labels IE-1/IE-2, and one max-based rule cannot tell a
+    second internal exam from a fourth frequent test (it painted three
+    "IE-1" rows on one subject). `_derive_ie_roles()` answers the question per
+    SUBJECT instead. Do not call this.
+    """
     if maximum == 15:
         return "IE-1"
     if maximum == 10 and str(code).endswith("P"):
         return "IE-1"
     return None
 
+
+# Marks → letter grade for internal-only courses (a course whose internal
+# total is already /100 has no end-semester paper to wait for). Bands come
+# from the portal's own "marks to grade" conversion modal; high → low, first
+# match wins. ponytail: one table, one place — swap the numbers here if SRM
+# revises the scale, nothing else reads them.
+GRADE_BANDS = ((91, "O"), (81, "A+"), (71, "A"), (61, "B"), (51, "C"), (41, "D"), (0, "F"))
+INTERNAL_ONLY_TOTAL = 100.0   # a /100 internal total = grade, not a raw score
+
+
+def _internal_grade(scored):
+    """Letter grade for an internal-only subject's total, '' when unreadable."""
+    try:
+        s = float(scored)
+    except (TypeError, ValueError):
+        return ""
+    for floor, grade in GRADE_BANDS:
+        if s >= floor:
+            return grade
+    return ""
+
+
+_IE_FAMILY = re.compile(r"^([A-Za-z]+)")
+
+
+def _derive_ie_roles(components):
+    """{component name: 'IE-1'|'IE-2'} for ONE subject — the portal labels no
+    internal exam, so the pair is inferred from the subject's own repeats.
+
+    A component can only be an internal exam if its name family repeats at the
+    same max (FP-I/FP-II at /10; FT-II/FT-III/FT-IV at /15). Among those
+    qualifying groups the smallest one wins (practical subjects carry a wider
+    PBL/R21 group that is coursework, not an exam). Earliest by portal date is
+    IE-1, latest is IE-2, and the middle repeats of a 3-member group stay
+    unlabelled — two IEs is the ceiling, one is the floor.
+
+    Every caller treats this as a guess: a stored tag always overrides it.
+    """
+    groups = {}
+    for i, cpt in enumerate(components or []):
+        m = _IE_FAMILY.match(str(cpt.get("name", "")).strip())
+        if not m:
+            continue
+        try:
+            maximum = float(cpt.get("max") or 0)
+        except (TypeError, ValueError):
+            continue
+        if maximum <= 0:
+            continue
+        groups.setdefault((m.group(1).upper(), maximum), []).append((i, cpt))
+    qual = [(len(v), k[1], v) for k, v in groups.items() if len(v) >= 2]
+    if not qual:
+        return {}
+    qual.sort(key=lambda t: (t[0], t[1]))          # fewest members, then smallest max
+    members = qual[0][2]
+
+    def _when(pair):
+        i, cpt = pair
+        try:
+            return (datetime.strptime(cpt.get("entered") or "", "%d/%b/%Y"), i)
+        except (ValueError, TypeError):
+            return (datetime.min, i)
+
+    ordered = sorted(members, key=_when)
+    roles = {ordered[-1][1].get("name", ""): "IE-2"}
+    if len(ordered) >= 2:
+        roles[ordered[0][1].get("name", "")] = "IE-1"
+    return roles
+
 def _marks_view(marks, tags=None):
     """Marks tab view model: title-cased subjects, components sorted by NAME
     (the portal's order is by entry, dates jump around), '04 Sep' dates,
     integer maxima with 2-decimal scores, and IE rows converted back to their
-    raw /50 (IE-1) or /60 (IE-2) marks. `tags` = confirmed overrides."""
+    raw /50 (IE-1) or /60 (IE-2) marks. `tags` = confirmed overrides.
+
+    The card headline is the subject's own `scored/max`. An internal-only
+    course (total already /100) shows its GRADE there instead, with
+    `scored/max` demoted to the sub-line — a /100 internal total is a result,
+    not a running score. `pct`/`pct_disp` survive only as the ordering key for
+    the single outlier accent; nothing renders them any more.
+    """
     tags = tags or {}
     out = []
     for s in marks:
         code = s.get("code", "")
+        roles = _derive_ie_roles(s.get("components"))
         comps = []
         for cpt in sorted(s.get("components", []), key=lambda c: str(c.get("name", ""))):
             maximum, scored = cpt.get("max", 0.0), cpt.get("scored", 0.0)
-            tag = tags.get((code, cpt.get("name", "")))
-            derived = _derive_ie(code, maximum)
+            name = cpt.get("name", "")
+            tag = tags.get((code, name))
+            derived = roles.get(name)
             role = tag["role"] if tag else derived   # confirmed wins, incl. 'none'
             ie = None
             if role in ("IE-1", "IE-2"):
@@ -72,13 +155,19 @@ def _marks_view(marks, tags=None):
                        else (50.0 if role == "IE-1" else 60.0))
                 ie = {"role": role, "confirmed": bool(tag), "max_disp": _fmt_max(raw),
                       "score_disp": _fmt_score(scored * raw / maximum) if maximum else _fmt_score(0)}
-            comps.append({"name": cpt.get("name", ""), "date_disp": _fmt_date(cpt.get("entered", "")),
+            comps.append({"name": name, "date_disp": _fmt_date(cpt.get("entered", "")),
                           "score_disp": _fmt_score(scored), "max_disp": _fmt_max(maximum),
                           "derived": derived or "", "confirmed": tag["role"] if tag else None,
                           "ie": ie})
         st, mt = s.get("scored_total", 0.0), s.get("max_total", 0.0)
+        total_disp = f"{_fmt_score(st)}/{_fmt_max(mt)}"
+        internal = abs(float(mt or 0) - INTERNAL_ONLY_TOTAL) < 0.005
+        grade = _internal_grade(st) if internal else ""
         out.append({"code": code, "title": (s.get("title") or "").title(),
                     "scored_disp": _fmt_score(st), "max_disp": _fmt_max(mt),
+                    "head_disp": grade or total_disp,      # card headline
+                    "sub_disp": total_disp if grade else "",   # sub-line, /100 only
+                    "grade": grade, "internal": internal,
                     "pct": round(st / mt * 100, 1) if mt else 0.0, "outlier": False,
                     "pct_disp": _fmt_pct(round(st / mt * 100, 1) if mt else 0.0),
                     "components": comps})

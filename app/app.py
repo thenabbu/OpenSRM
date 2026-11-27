@@ -164,10 +164,13 @@ from .views.layout import (
     WIDGETS,  # noqa: F401 — re-exported from app.app
 )
 from .views.marks import (
+    GRADE_BANDS,  # noqa: F401 — re-exported from app.app
     _derive_ie,  # noqa: F401 — re-exported from app.app
+    _derive_ie_roles,  # noqa: F401 — re-exported from app.app
     _fmt_date,  # noqa: F401 — re-exported from app.app
     _fmt_max,  # noqa: F401 — re-exported from app.app
     _fmt_score,  # noqa: F401 — re-exported from app.app
+    _internal_grade,  # noqa: F401 — re-exported from app.app
     _marks_summary,  # noqa: F401 — re-exported from app.app
     _marks_view,  # noqa: F401 — re-exported from app.app
 )

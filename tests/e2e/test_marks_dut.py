@@ -4,7 +4,7 @@ Layers, in order: neutral-colour rules (exactly ONE accent), uniform chips +
 aligned dates, uniform row heights with top-pinned content, WCAG contrast (marks AND dashboard tabs),
 then the tag round-trip (derived -> confirmed IE-2 -> persisted -> reset).
 """
-import json, os, sys
+import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DATA_DIR", "/tmp/osrm-marks")
 from _seed import seed, mint_token, require_own_server
@@ -14,17 +14,21 @@ seed(with_payload=False)
 from app.app import db
 MARKS = [
     {"code": "21CSS201T", "title": "COMPUTER ORGANIZATION AND ARCHITECTURE",
+     # FT-II/FT-III repeat at /15 -> the derived IE pair (IE-1 / IE-2)
      "components": [{"name": "FT-I", "entered": "04/Sep/2026", "scored": 4.5, "max": 5.0},
-                    {"name": "FT-II", "entered": "09/Sep/2026", "scored": 11.7, "max": 15.0}],
-     "scored_total": 16.2, "max_total": 20.0},
+                    {"name": "FT-II", "entered": "09/Sep/2026", "scored": 11.7, "max": 15.0},
+                    {"name": "FT-III", "entered": "07/Oct/2026", "scored": 12.0, "max": 15.0}],
+     "scored_total": 28.2, "max_total": 35.0},
     {"code": "21MAB206T", "title": "NUMERICAL METHODS AND ANALYSIS",
      # dates deliberately NOT in name order: name sort must win over date sort
      "components": [{"name": "FT-I", "entered": "21/Sep/2026", "scored": 5.0, "max": 5.0},
                     {"name": "FT-II", "entered": "07/Sep/2026", "scored": 8.4, "max": 15.0}],
      "scored_total": 13.4, "max_total": 20.0},
     {"code": "21LEM201T", "title": "PROFESSIONAL ETHICS",
-     "components": [{"name": "FML-I", "entered": "09/Sep/2026", "scored": 17.5, "max": 20.0}],
-     "scored_total": 17.5, "max_total": 20.0},
+     # internal-only course: /100 total -> the card leads with the GRADE
+     "components": [{"name": "FML-I", "entered": "09/Sep/2026", "scored": 46.0, "max": 50.0},
+                    {"name": "FML-II", "entered": "16/Nov/2026", "scored": 45.0, "max": 50.0}],
+     "scored_total": 91.0, "max_total": 100.0},
     {"code": "21CSC203P", "title": "ADVANCED PROGRAMMING PRACTICE",
      "components": [{"name": "FP-I", "entered": "23/Sep/2026", "scored": 7.2, "max": 10.0}],
      "scored_total": 7.2, "max_total": 10.0},
@@ -44,7 +48,7 @@ def check(name, ok, detail=""):
 
 JS_AUDIT = r"""() => {
   const out = {overflow: null, chips: [], dateGroups: {}, overlaps: [], status: [],
-               accent: 0, contrast: [], pctTexts: [], cards: [], overall: null};
+               accent: 0, contrast: [], pctTexts: [], heads: [], cards: [], overall: null};
   out.overflow = document.scrollingElement.scrollWidth - document.scrollingElement.clientWidth;
   // P3.1: one panel per route — the marks audit runs on /marks, the glance
   // audit on /, so the "panel" is whichever one this page rendered.
@@ -55,6 +59,9 @@ JS_AUDIT = r"""() => {
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     out.chips.push({w: +r.width.toFixed(2), bg: cs.backgroundColor, bw: cs.borderWidth});
   });
+  // card headline: `scored/max`, or the GRADE LETTER for an internal-only /100 course
+  marks.querySelectorAll('.rounded-box.p-4 span.font-bold').forEach(el =>
+    out.heads.push((el.textContent || '').trim()));
 
   [...marks.querySelectorAll('.rounded-box.p-4')].forEach(card => {
     const cr = card.getBoundingClientRect();
@@ -160,14 +167,26 @@ with sync_playwright() as p:
         a = page.evaluate(JS_AUDIT)
         check(tag + "no horizontal page overflow", a["overflow"] <= 0, str(a["overflow"]))
         check(tag + "overall strip removed", not a["overall"])
-        check(tag + "subject % count == 4 (no per-component %)",
-              len(a["pctTexts"]) == 4, str(a["pctTexts"]))
+        check(tag + "no percent anywhere on the marks tab", not a["pctTexts"], str(a["pctTexts"]))
+        check(tag + "card headline is scored/max or a grade letter",
+              len(a["heads"]) == 4 and all(
+                  re.match(r"^\d+(\.\d+)?/\d+$", h) or h in ("O", "A+", "A", "B", "C", "D", "F")
+                  for h in a["heads"]), str(a["heads"]))
+        grade_card = page.evaluate("""() => { const c = [...document.querySelectorAll('#tab-marks .rounded-box.p-4')]
+              .find(x => x.innerText.includes('21LEM201T'));
+            if (!c) return null;
+            return {head: c.querySelector('span.font-bold').textContent.trim(),
+                    sub: [...c.querySelectorAll('div')]
+                           .map(d => d.textContent.trim()).find(t => /^\\d+\\/100$/.test(t)) || ''}; }""")
+        check(tag + "internal-only /100 course leads with its grade, total in the sub-line",
+              grade_card is not None and grade_card["head"] == "O"
+              and grade_card["sub"] == "91/100", str(grade_card))
         check(tag + "no status-coloured text (success/warning/error/info)",
               not a["status"], str(a["status"][:4]))
         check(tag + "exactly one accent (the outlier)", a["accent"] == 1, str(a["accent"]))
         ws = [ch["w"] for ch in a["chips"]]
-        check(tag + f"chips uniform width 56px ({len(ws)} chips)",
-              ws and all(abs(w - 56) <= 0.5 for w in ws), str(sorted(set(ws))))
+        check(tag + f"chips uniform width 104px ({len(ws)} chips)",
+              ws and all(abs(w - 104) <= 0.5 for w in ws), str(sorted(set(ws))))
         check(tag + "chips solid fill, border-width 0",
               a["chips"] and all(ch["bg"] not in ("rgba(0, 0, 0, 0)", "transparent")
                                  and ch["bw"] == "0px" for ch in a["chips"]),
@@ -211,7 +230,7 @@ with sync_playwright() as p:
             return {indent: +(chip(nested) - chip(main)).toFixed(1),
                     text: nested.innerText.replace(/\\s+/g, ' ').trim()}; })""")
         check(tag + "IE rows nested + indented under their component",
-              len(ie) == 3 and all(x["indent"] >= 20 for x in ie), json.dumps(ie))
+              len(ie) == 4 and all(x["indent"] >= 20 for x in ie), json.dumps(ie))
         check(tag + "IE-1 converts 11.7/15 -> 39/50",
               any("39/50" in x["text"] for x in ie), json.dumps(ie))
         names = page.evaluate("""() => [...document.querySelectorAll('#tab-marks .rounded-box.p-4')]
