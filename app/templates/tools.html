@@ -15,11 +15,11 @@
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body p-4">
           <h2 class="text-base font-semibold mb-3">Tools</h2>
-          {# A card with no rows is either "the sync is still running" or "the
+          {#- A card with no rows is either "the sync is still running" or "the
              backend has nothing for you yet" — and on a first sign-in those
              look identical for a minute. Say which one it is instead of
              rendering an empty list under a heading. Same mechanism as the
-             Absences card's data-scope-pending block on /attendance. #}
+             Absences card's data-scope-pending block on /attendance. -#}
           {%- if not tools %}
           <p data-scope-pending class="text-sm text-base-content/70{% if scope_sync_state not in ('stale', 'running') %} hidden{% endif %}">
             Still loading your SCOPE data — this page fills in by itself.
