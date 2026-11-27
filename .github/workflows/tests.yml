@@ -102,6 +102,8 @@ jobs:
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_tt_history.py
       - name: test_tt_hero (hero attendance join passthrough)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_tt_hero.py
+      - name: test_tt_island_live (island marks one running period)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_tt_island_live.py
       - name: test_relogin_save (mid-scrape relogin)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_relogin_save.py
       - name: test_fernet_rotation (FERNET_KEYS MultiFernet + rotate script)
