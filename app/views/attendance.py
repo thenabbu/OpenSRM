@@ -201,7 +201,20 @@ def hourwise_view(rows, slots, custom=frozenset(), portal_months=None):
                     "a": sum(1 for x in days for c in x["cells"] if c["state"] == "A"),
                     "od": sum(1 for x in days for c in x["cells"] if c["state"] == "OD"),
                     "days": days})
+    # Months newest-first, whatever order the portal or the label sort produced:
+    # the grid is a history and the newest month is the one the page opens, so
+    # its position cannot depend on a label's first letter (Jul < Oct < Sep in
+    # plain string order — that was the bug).
+    out.sort(key=lambda m: _hw_month_key(m["label"]), reverse=True)
     return {"hours": hours, "months": out}
+
+
+def _hw_month_key(label):
+    """`%b %Y` label -> sortable datetime; a label we cannot parse sinks last."""
+    try:
+        return datetime.strptime(str(label), "%b %Y")
+    except (ValueError, TypeError):
+        return datetime.min
 
 # ── moved from app/app.py (facade pump, cycle B) ─────────────────────
 # Attendance row shaping: budget sentences, the subject join, exact truncated

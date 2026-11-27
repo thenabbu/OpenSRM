@@ -175,14 +175,22 @@ export function bindDeleteAccount(doc: Document = document): boolean {
 
 // ─ 3. dash-details-dismiss ────────────────────────────────────────────────
 /**
- * Tap-away closes the open popover <details> (the marks tag panel). Clicks
- * inside it — summary included — are ignored, so the pencil toggle still works
- * and Save is never the only way out of a panel opened by accident.
+ * Tap-away closes the open marks tag popover. Clicks inside it — summary
+ * included — are ignored, so the pencil toggle still works and Save is never
+ * the only way out of a panel opened by accident.
+ *
+ * Scoped to the tag panel (`details[id^="tag-"]`, marks.html) and NOT to
+ * `details[open]`: any disclosure a page opens for itself (the attendance
+ * month accordion ships its newest month open) was being closed by the next
+ * click anywhere, which read as the accordion randomly collapsing.
  */
+export const TAG_PANEL = 'details[id^="tag-"]';
+
 export function bindDetailsDismiss(doc: Document = document): void {
   doc.addEventListener('click', (e) => {
-    const open = doc.querySelector('details[open]');
-    if (open && !open.contains(e.target as Node | null)) (open as HTMLDetailsElement).open = false;
+    for (const el of doc.querySelectorAll<HTMLDetailsElement>(`${TAG_PANEL}[open]`)) {
+      if (!el.contains(e.target as Node | null)) el.open = false;
+    }
   });
 }
 

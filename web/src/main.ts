@@ -15,6 +15,7 @@ import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
+import { bindHwCellTip } from './data/hwCellTip';
 import { bindTimetableEditor } from './data/timetableEditor';
 import { autoRefreshIfStale, bindAvatarOffscreen, bindFeedbackModal } from './data/background';
 import {
@@ -431,6 +432,11 @@ bindCopyTargets(document);
 // both binders would answer the same click.
 (window as unknown as { __osrmAttView?: typeof bindAttView }).__osrmAttView = bindAttView;
 bindAttView();
+
+// W5.2d: the period-cell bubble. Delegated on the document, so it survives
+// every panel swap without a re-arm and no-ops on routes with no hourwise
+// grid. Bound here with the rest of the document-level binders.
+bindHwCellTip();
 
 // W5.4a: the timetable editor. Same shape as the toggle above — but this one
 // is the reason timetable.js cannot be deleted yet, so main.ts is now the only

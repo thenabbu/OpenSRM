@@ -213,21 +213,25 @@ def t_grid_shape():
 
 
 def t_month_labels_follow_portal():
-    """Grid months align to the portal's `MMM / YYYY` labels; strays go last."""
+    """Grid months run NEWEST-first; portal rows still supply wording + pct.
+
+    The order used to be the portal's own list with strays appended, which put
+    Aug between Jul and Sep — string order, not date order. The page opens the
+    first month, so that order decided which month a reader saw.
+    """
     out = hourwise_view(FIX_ROWS, SLOTS, CUSTOM, portal_months={
                         "Oct / 2026": {"label": "Oct / 2026", "pct": 78},
                          "Sep / 2026": {"label": "Sep / 2026", "pct": 71}})
     got = [m["label"] for m in out["months"]]
-    assert got.index("Oct 2026") == 0 and got.index("Sep 2026") == 1, got
+    assert got == ["Nov 2026", "Oct 2026", "Sep 2026", "Aug 2026", "Jul 2026"], got
+    by = {m["label"]: m for m in out["months"]}
     # every month SCOPE reported still renders, nothing dropped for being early
     assert len(out["months"]) == len({d["full"][3:] for d in _all_days()}), out["months"]
-    # a month the portal never reported still renders, after the known ones
-    assert out["months"][0]["side"] == "Oct / 2026" and out["months"][0]["pct"] == 78
-    row = FIX_ROWS + [{"attendancedate": "20-Jul-2026", "h1": "P"}]
-    out = hourwise_view(row, SLOTS, CUSTOM,
-                        portal_months={"Oct / 2026": {"label": "Oct / 2026"}})
-    got = [m["label"] for m in out["months"]]
-    assert got.index("Oct 2026") == 0 and got[-1] == "Sep 2026" and "Jul 2026" in got, got
+    # the portal's own wording and percentage ride on the matching month
+    assert by["Oct 2026"]["side"] == "Oct / 2026" and by["Oct 2026"]["pct"] == 78
+    assert by["Sep 2026"]["side"] == "Sep / 2026" and by["Sep 2026"]["pct"] == 71
+    # a month the portal never reported renders under its own label, no pct
+    assert by["Nov 2026"]["side"] == "Nov 2026" and by["Nov 2026"]["pct"] is None
 
 
 # ── feature gate + render ───────────────────────────────────────────────────
@@ -258,9 +262,13 @@ def t_feature_on_grid_render():
         '<span class="hk-label">Oct 2026</span>',
         "hw-c hw-c-a",                              # absent cell (letter + tint)
         "hw-c hw-c-od",                             # on-duty cell
+        'data-subject="DATA STRUCTURES AND ALGORITHMS (21CSC201J)"',  # the tap bubble's text
         "Thursday · 15 Oct 2026 · h1 · absent · DATA STRUCTURES AND ALGORITHMS (21CSC201J)",
     ):
         assert want in html, f"missing from render: {want}"
+    assert re.search(r'<details class="hw-month" data-month="[^"]+" open>', html), \
+        "the newest month must render open — a closed pane reads like a load failure"
+    assert "Estimates" not in html, "the Estimates card is gone from the page"
     assert "Last 14 school days" not in html, "rejected strip must be gone"
 
 
@@ -313,7 +321,7 @@ TESTS = [
     ("weekend row never gets a subject name", t_weekend_row_unnamed),
     ("cross-check vs attendance-subject within ±1", t_cross_check_subject_totals),
     ("month grid: newest-first days x 6 hours, counted from cells", t_grid_shape),
-    ("grid months align to the portal's month labels", t_month_labels_follow_portal),
+    ("grid months run newest-first, portal wording by label", t_month_labels_follow_portal),
     ("feature off -> no section, Absences card verbatim", t_feature_off_no_join),
     ("feature on -> detailed grid renders with titles", t_feature_on_grid_render),
     ("empty scope_json -> renders exactly as today", t_scope_empty_renders_as_today),
