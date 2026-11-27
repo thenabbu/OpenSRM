@@ -132,21 +132,32 @@ with sync_playwright() as p:
                    else body["tab"] == "dashboard"),
               f"clicked={clicked_item} body={body}")
 
-    # dash-offline-banner on any route that ships it.
+    # dash-offline-pill: a navbar badge, not the old full-width bar. Both
+    # navbars ship one; the desktop bar is the visible one at this viewport.
     pg.goto(BASE + "/marks", wait_until="load")
     pg.wait_for_timeout(1200)
+    pilled = ("() => [...document.querySelectorAll('[data-offline-pill]')]"
+              ".map(e => ({hidden: e.hasAttribute('hidden'), "
+              "visible: !!(e.offsetWidth || e.offsetHeight)}))")
     pg.evaluate("() => window.dispatchEvent(new Event('offline'))")
     pg.wait_for_timeout(250)
-    off = pg.evaluate("""() => { const e = document.getElementById('offline-banner');
-        return {cls: e.className, txt: e.textContent}; }""")
-    check("dash-offline-banner: offline paints alert-warning + the copy",
-          "alert-warning" in off["cls"] and "offline" in off["txt"].lower(), str(off))
+    off = pg.evaluate(pilled)
+    check("dash-offline-pill: offline shows a padded, non-bar icon in the navbar",
+          bool(off) and all(not p["hidden"] for p in off) and any(p["visible"] for p in off),
+          str(off))
+    bar = pg.evaluate("""() => {
+        const e = document.querySelector('[data-offline-pill]');
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return {w: Math.round(r.width), vw: window.innerWidth, bottom: Math.round(r.bottom)};
+    }""")
+    check("dash-offline-pill: it is small, not a full-width bottom bar",
+          bool(bar) and bar["w"] < bar["vw"] / 3 and bar["bottom"] < 120, str(bar))
     pg.evaluate("() => window.dispatchEvent(new Event('online'))")
     pg.wait_for_timeout(250)
-    on = pg.evaluate("""() => { const e = document.getElementById('offline-banner');
-        return {cls: e.className, txt: e.textContent}; }""")
-    check("dash-offline-banner: online clears class and text",
-          on["cls"] == "" and on["txt"] == "", str(on))
+    on = pg.evaluate(pilled)
+    check("dash-offline-pill: online hides it again",
+          bool(on) and all(p["hidden"] for p in on), str(on))
 
     # dash-settings-groups at 1280 px: every group checked. The row's own toggle
     # must stay collapsed — that is the selector bug the port keeps fixed.
