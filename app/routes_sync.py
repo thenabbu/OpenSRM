@@ -676,6 +676,12 @@ def api_scope_status():
     except Exception:
         ops = []
     return {"ok": True, "state": _scope_sync_state(netid), "ops": len(ops),
+            # OP NAMES, not a payload: the catalog is public app configuration
+            # (app/scope/ops.py), carries no user data, and lets a client or a
+            # test build a complete blob. A DUT that guesses the enabled set
+            # writes one missing op, which keeps the account 'stale' forever and
+            # makes a working fix look broken.
+            "op_names": list(ops),
             "sync_due": scope_sync_due(netid)}
 
 # ── Login preflight: browser fires this when the user focuses the

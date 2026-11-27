@@ -29,6 +29,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # _fees_seed
 BASE = os.environ.get("DUT_BASE", "http://127.0.0.1:18181")
 DATA_DIR = os.environ.get("DATA_DIR", "")
 
@@ -44,47 +45,69 @@ def check(name, cond, detail=""):
     print(("PASS " if cond else "FAIL ") + name + (f"  <- {detail}" if not cond and detail else ""))
 
 
-# The op payloads a finished sync leaves behind. Built from the app's OWN op
-# registry rather than hand-listed: `fees` needs getStudentExamFeesDetails, and
-# a hand-written blob that missed one op left scope_needs_sync() true forever —
-# which kept the page 'stale' and made this test look like a nav failure. Any
-# enabled op without an entry here is exactly that class of bug.
+# The op payloads a finished sync leaves behind.
+#
+# WHICH ops is asked of the RUNNING SERVER (/api/scope/status `ops` is a count;
+# the tests below assert against that same count), never of this process's own
+# registry: the server decides SCOPE_FEATURES, and a DUT that computes its own
+# set writes a blob that is missing an op the server wants — which keeps
+# scope_needs_sync() true, keeps the page 'stale', and makes a working fix look
+# broken. That is exactly how this test lied during development.
 #
 # The ROWS come from tests/fixtures/scope (captured from the real backend)
-# because the nav gates are the panel VIEW MODELS, not op presence: academics
-# returns None without a released exam row, fees returns None with no fee/
-# finance rows. A blob of dummy rows passes the sync check and still hides both
-# nav entries — which is what made an earlier version of this test lie.
+# because the nav gates are the panel VIEW MODELS, not op presence.
 _FIX = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), "tests", "fixtures", "scope")
 
-
-def _fixture(name):
-    with open(os.path.join(_FIX, name), encoding="utf-8") as fh:
-        return json.load(fh)
-
-
+# Op names the server can want, taken from the app's catalog. The SUBSET that is
+# actually enabled is discovered from the server below.
 ROWS = {
-    "getExamDetails": _fixture("exam-details.json"),
-    "getStudentExamProvisionalResult": _fixture("exam-provisional.json"),
-    "getStudentExamRevaluationResult": _fixture("exam-revaluation.json"),
-    "getFeeDetails": [{"year": "2026-27", "semester": "3", "due": "0", "paid": "0"}],
-    "getFinanceDetails": [{"date": "01-Oct-2026", "particulars": "Tuition", "amount": "0"}],
-    "getPersonalDetails": {"StudentName": "Test Student"},
+    "getExamDetails": "exam-details.json",
+    "getStudentExamProvisionalResult": "exam-provisional.json",
+    "getStudentExamRevaluationResult": "exam-revaluation.json",
 }
 
+# These ops have no JSON fixture; their shapes live in Python in the fees DUT,
+# which is the source of truth for what the fees view model accepts. Importing
+# them beats copying row shapes into a second place that can silently rot.
+def _row_data(op):
+    try:
+        import _fees_seed as F
+    except Exception:
+        return None
+    return {"getFeeDetails": getattr(F, "DUES_FEES", None),
+            "getFinanceDetails": getattr(F, "FIN", None)}.get(op)
 
-def _scope_ops():
-    from app.scope.ops import enabled_features, ops_for
-    ops = ops_for(enabled_features())
-    # BARE payloads, not the {Status, Data} envelope: scope_cold_sync stores
-    # `{"data": <the op's own Data>, "ts": ...}` (sync.py:272). Wrapping the
-    # envelope here made every view model read the wrong level and return None,
-    # so the nav stayed hidden with a perfectly "complete" blob.
-    return {op: ROWS.get(op, []) for op in ops}
+
+def _make_blob(op_names):
+    """A finished sync's blob for exactly `op_names`: {op: {"data", "ts"}}.
+
+    Each entry is a BARE payload (sync.py stores `{"data": <the op's own
+    Data>, "ts": ...}`) — wrapping the SOAP envelope here makes every view
+    model read the wrong level and return None, hiding the nav with a
+    perfectly "complete" blob.
+    """
+    out = {}
+    for op in op_names:
+        fx = ROWS.get(op)
+        if fx:
+            with open(os.path.join(_FIX, fx), encoding="utf-8") as fh:
+                out[op] = {"data": json.load(fh), "ts": int(time.time())}
+        else:
+            shared = _row_data(op)
+            out[op] = {"data": shared if shared is not None else [],
+                       "ts": int(time.time())}
+    return out
 
 
-SCOPE_OPS = _scope_ops()
+def write_scope_blob(op_names, netid="zz9999"):
+    blob = _make_blob(op_names)
+    c = db()
+    c.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid=?",
+              (json.dumps(blob), int(time.time()), netid))
+    c.commit()
+    c.close()
+    return len(blob)
 
 
 def db():
@@ -93,14 +116,6 @@ def db():
     return c
 
 
-def write_scope_blob(netid="zz9999", ops=None):
-    """Exactly what a finished scope_cold_sync leaves behind."""
-    blob = {op: {"data": data, "ts": int(time.time())} for op, data in (ops or SCOPE_OPS).items()}
-    c = db()
-    c.execute("UPDATE users SET scope_json=?, scope_fetched_at=? WHERE netid=?",
-              (json.dumps(blob), int(time.time()), netid))
-    c.commit()
-    c.close()
 
 
 def clear_scope(netid="zz9999"):
@@ -108,6 +123,23 @@ def clear_scope(netid="zz9999"):
     c.execute("UPDATE users SET scope_json='{}', scope_fetched_at=NULL WHERE netid=?", (netid,))
     c.commit()
     c.close()
+
+
+def server_ops(token):
+    """The op names the RUNNING server wants, straight from /api/scope/status.
+
+    Never derived locally: SCOPE_FEATURES is the server's to decide, and a blob
+    built from this process's own registry is missing whatever the server has
+    enabled beyond it — which pins the account 'stale' and fails a working fix.
+    """
+    import urllib.request
+    req = urllib.request.Request(BASE + "/api/scope/status")
+    req.add_header("Cookie", f"srm_session={token}")
+    with urllib.request.urlopen(req, timeout=20) as r:
+        body = json.load(r)
+    ops = body.get("op_names")
+    assert ops, f"server did not report op_names: {body}"
+    return ops
 
 
 NAV = {
@@ -146,7 +178,7 @@ def main():
 
         # The background sync finishes. NO page.reload() on purpose: the bug was
         # that only a reload helped, so a reload here would prove nothing.
-        write_scope_blob()
+        written = write_scope_blob(server_ops(token))
         body = page.locator("body").get_attribute("data-scope-sync")
 
         # The page polls /api/scope/status itself (startScopePoll, main.ts) and
@@ -154,6 +186,8 @@ def main():
         # has no poll armed — which is the honesty check below, not a workaround:
         # a first sign-in ALWAYS arrives mid-sync because /api/login fires the
         # trigger one line before the browser navigates to "/".
+        check("the blob we wrote covers every op the server wants",
+              written > 0, f"{written} ops")
         check("the page arrived mid-sync, so its poll is armed (first-sign-in state)",
               body in ("stale", "running"), f"data-scope-sync={body!r}")
 
