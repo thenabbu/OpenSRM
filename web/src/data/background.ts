@@ -168,38 +168,58 @@ export function bindFeedbackModal(doc: Document = document, win: Window = window
 
 // ─ 3. dash-auto-refresh ───────────────────────────────────────────────────
 /** The staleness threshold dash.js used: 10 minutes. */
-export const STALE_AFTER_S = 600;
+
+/** `GET /api/data/state` — the server's own staleness window. */
+export const DATA_STATE_URL = '/api/data/state';
 
 /**
- * Ask the server to re-sync ONCE if the page it just painted is stale.
+ * Ask the server whether this account's data is old.
  *
- * Why the server and not the local cache: `load.ts`'s cache->network fallback
- * re-reads what the app already stored; only POST /api/refresh re-reads the
- * PORTAL. So this is not deletable-by-Dexie, it is the one thing a stale page
- * does for itself without the user pressing anything.
+ * The one answer a page cannot compute for itself: `data-ts` is baked in, so a
+ * tab reads a moment that only moves when the document does. A failed check is
+ * NOT stale — nothing starts a portal sync on a guess.
+ */
+export function serverStale(fetcher: typeof fetch = fetch): Promise<boolean> {
+  return fetcher(DATA_STATE_URL, { credentials: 'same-origin', headers: { accept: 'application/json' } })
+    .then((r) => (r.ok ? (r.json() as Promise<{ stale?: boolean }>) : null))
+    .then((d) => !!d?.stale)
+    .catch(() => false);
+}
+
+/**
+ * The page's own data check, at load: ask the SERVER how old this account's
+ * data is, and repaint if anything is new.
  *
- * Returns whether it fired — the only way to assert a load-time decision
- * without a network, and the DUT reads it too.
+ * It used to read `data-ts` out of its own markup and fire a quiet
+ * `POST /api/refresh` on that guess. That stamp is one moment in time, so a tab
+ * left open never looked again — the "nothing updates until I reload" report.
+ * The answer belongs to the server: `GET /api/data/state` is the same
+ * `SYNC_MIN_INTERVAL_S` window `/api/refresh` caches on, so a check can never
+ * disagree with what a reload would have shown.
+ *
+ * Returns whether a check was launched, which is the only part assertable
+ * without a network; the DUT reads it too.
  */
 export function autoRefreshIfStale(
   doc: Document = document,
   win: Window = window,
   refresh: (quiet?: boolean) => Promise<void> = triggerRefresh,
+  state: () => Promise<boolean> = serverStale,
 ): boolean {
   // No navbar caption on this page => no sync-age to judge. (A shell page.)
   const first = doc.querySelector<HTMLElement>('.sync-line');
   if (!first) return false;
   // No readable stored credentials: /api/refresh can only answer 401, and the
   // browser logs that 401 as a console error on THIS page. Nothing to gain —
-  // the server's own auto_sync_kick_if_stale already ran.
+  // the server's own auto_sync_kick_if_stale already ran on that render.
   const can = doc.querySelector('meta[name="can-sync"]');
   if (can && can.getAttribute('content') === '0') return false;
+  if (win.navigator?.onLine === false) return false;
 
-  const ts = parseInt(first.dataset.ts || '0', 10);
-  const stale = !ts || Math.floor(Date.now() / 1000) - ts > STALE_AFTER_S;
-  if (!stale || win.navigator?.onLine === false) return false;
-
-  // quiet=true: a background sync that fails is a log line, never a toast.
-  void refresh(true);
+  // True as soon as the check is launched, not when it answers: the one thing
+  // a caller can act on synchronously is "something is being looked at".
+  void state()
+    .then((stale) => { if (stale) return refresh(true); return undefined; })
+    .catch(() => {});
   return true;
 }

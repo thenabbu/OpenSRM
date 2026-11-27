@@ -525,6 +525,25 @@ def _last_sync_age(netid):
     return max(0.0, time.time() - fetched)
 
 
+@require_login
+def api_data_state():
+    """Is this account's stored data old? Answer only — start nothing.
+
+    The dashboard used to answer this from its own markup (`data-ts`), so a tab
+    left open believed its own age for ever and every later visit said "8h ago"
+    until somebody pressed sync. The browser now asks, and the two paths that
+    refresh once it says yes are the ones that already existed: the scope poll
+    (`/api/scope/status`) and the data poll (this route again).
+    """
+    netid = get_current_user()
+    if not netid:
+        return {"ok": False, "error": "not logged in"}, 401
+    age = _last_sync_age(netid)
+    window = _sync_min_interval_s()
+    return {"ok": True, "age_s": None if age is None else int(age),
+            "window_s": window, "stale": age is None or age >= window}
+
+
 def _cached_sync_answer(netid, window):
     """The cached-refresh response when the last sync is younger than the
     window, else None. Single emit point: every cached answer logs one

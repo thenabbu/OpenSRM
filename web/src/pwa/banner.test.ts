@@ -182,88 +182,45 @@ afterEach(() => {
 });
 
 describe('update banner', () => {
-  it('is invisible on a normal load, then appears with a Reload button', () => {
+  // The banner no longer announces a new version: the app refreshes its data in
+  // place and swaps the bundle on its own (update.ts `reloadOnNextBoot`). What
+  // must hold here is the absence — no "Reload" chore, ever, on any page state.
+  it('says nothing when a new worker claims the page', () => {
     const sw = fakeSW();
     sw.controller = { scriptURL: '/static/sw.js' };        // page already controlled
     mountBanner();
 
-    // Positive control: the element exists but the user sees nothing yet.
+    // Positive control: the element exists but the user sees nothing.
     expect(shown(bannerEl())).toBe(false);
 
     sw.controller = { scriptURL: '/static/sw.js' };        // a new worker claimed
     sw.fire('controllerchange');
 
-    const el = bannerEl();
-    expect(shown(el)).toBe(true);
-    expect(el.textContent).toContain('A new version of openSRM is ready.');
-    expect(labels(el)).toContain('Reload');
+    expect(shown(bannerEl())).toBe(false);
+    expect(bannerEl().textContent).not.toContain('new version');
+    expect(labels(bannerEl())).not.toContain('Reload');
   });
 
-  it('appears from updatefound + installed, with no controllerchange (the iOS path)', async () => {
+  it('says nothing when a worker installs and waits (the iOS path)', async () => {
     const { sw, reg, worker } = fakeSWWithRegistration();
-    sw.controller = { scriptURL: '/static/sw.js' };         // page already controlled
+    sw.controller = { scriptURL: '/static/sw.js' };
     mountBanner();
     await new Promise((resolve) => setTimeout(resolve, 0)); // getRegistration() settles
 
     reg.installing = worker;
     reg.fire('updatefound');
-    expect(shown(bannerEl())).toBe(false);                 // still downloading: nothing to say yet
+    worker.finish();                                       // installed, waiting
 
-    worker.finish();                                       // installed, waiting, page untouched
-    expect(shown(bannerEl())).toBe(true);
-    expect(bannerEl().textContent).toContain('A new version of openSRM is ready.');
-    expect(labels(bannerEl())).toContain('Reload');
+    expect(shown(bannerEl())).toBe(false);
   });
 
-  it('never tells a first-time visitor to reload the page they just opened', () => {
+  it('never tells a first-time visitor anything about a reload', () => {
     const sw = fakeSW();                                   // controller === null
     mountBanner();
 
     sw.controller = { scriptURL: '/static/sw.js' };
     sw.fire('controllerchange');
 
-    expect(shown(bannerEl())).toBe(false);
-  });
-
-  it('clicking Reload promotes the WAITING worker, then reloads exactly once', async () => {
-    const { sw, reg } = fakeSWWithRegistration();
-    const waitingPost = vi.fn();
-    reg.waiting = { postMessage: waitingPost };
-    sw.controller = { scriptURL: '/static/sw.js' };
-    const reload = vi.fn();
-    Object.defineProperty(window, 'location', { value: { reload }, configurable: true });
-    mountBanner();
-    await new Promise((resolve) => setTimeout(resolve, 0)); // getRegistration() settles
-
-    sw.controller = { scriptURL: '/static/sw.js' };
-    sw.fire('controllerchange');
-    click(bannerEl(), 'Reload');
-    await new Promise((resolve) => setTimeout(resolve, 0)); // applyUpdate's lookup settles
-
-    // The cue goes to the waiting worker; the reload is armed by the click and
-    // fires when that worker actually takes over.
-    expect(waitingPost).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
-    expect(reload).not.toHaveBeenCalled();
-    sw.fire('controllerchange');
-    expect(reload).toHaveBeenCalledTimes(1);
-
-    sw.fire('controllerchange');                            // must not reload again
-    expect(reload).toHaveBeenCalledTimes(1);
-  });
-
-  it('dismiss hides the banner and keeps it away for the session', () => {
-    const sw = fakeSW();
-    sw.controller = { scriptURL: '/static/sw.js' };
-    mountBanner();
-
-    sw.controller = { scriptURL: '/static/sw.js' };
-    sw.fire('controllerchange');
-    click(bannerEl(), '✕');
-
-    expect(shown(bannerEl())).toBe(false);
-    expect(sessionStorage.getItem('pwa-banner-dismissed')).toBe('1');
-
-    sw.fire('controllerchange');                            // a later fire must stay quiet
     expect(shown(bannerEl())).toBe(false);
   });
 });

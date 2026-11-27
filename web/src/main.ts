@@ -12,12 +12,14 @@ import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
 import { warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
+import { reloadOnNextBoot } from './pwa/update';
 import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
 import { bindAttView } from './data/attView';
 import { bindHwCellTip } from './data/hwCellTip';
 import { bindTimetableEditor } from './data/timetableEditor';
 import { autoRefreshIfStale, bindAvatarOffscreen, bindFeedbackModal } from './data/background';
+import { refreshBusy, revalidatePage, startDataRefreshLoop } from './data/refresh';
 import {
   bindDeleteAccount,
   bindDetailsDismiss,
@@ -593,6 +595,23 @@ autoRefreshIfStale();
 // P8.3: update + install banner. Independent of hydration on purpose — a
 // pending update matters most exactly when an island is stuck.
 mountBanner();
+
+// P8.3 (2): there is no "a new version is ready — Reload" any more.
+//
+// The complaint that produced this was exact: open the app, new data or a
+// release lands, and the app answers with a chore — press Reload. So:
+//   * the DATA refreshes itself, from the server's own staleness window, at
+//     load and every couple of minutes while the tab is on screen
+//     (`startDataRefreshLoop`), and both of those repaint islands in place;
+//   * the BUNDLE swaps itself while nothing can be lost (`reloadOnNextBoot`),
+//     which is the one reload left and it is never asked for; markup only
+//     changes when the document does.
+// Every leg stands down when there is nothing to do: while a sync runs, while
+// a dialog is open, while the tab is hidden and the data check would just be a
+// background request.
+void revalidatePage();
+startDataRefreshLoop();
+reloadOnNextBoot({ beforeSwap: refreshBusy });
 
 // W5.4e: pull-to-refresh — the four pull.js rows (gesture, excluded regions,
 // dialog guard, refresh-running guard). Same seam as every block above: the

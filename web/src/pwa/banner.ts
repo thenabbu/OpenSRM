@@ -1,8 +1,8 @@
 import { canInstall, isInstalled, isPhone, promptInstall, watchForInstallAvailability } from './install';
-import { applyUpdate, refreshOnVisible, watchForUpdate } from './update';
+import { refreshOnVisible } from './update';
 
 /**
- * P8.3 — the install card and the update notice.
+ * P8.3 — the install card.
  *
  * One container, two jobs, and they are NOT the same message class:
  *  - the install card is a prompt. It appears on a phone only, once per device
@@ -23,8 +23,6 @@ import { applyUpdate, refreshOnVisible, watchForUpdate } from './update';
 const ID = 'pwa-banner';
 const NAV_ID = 'pwa-install-btn';
 const ICON = '/static/icon-192.png';
-// Update notice: per session. A later version is a new message.
-const UPDATE_KEY = 'pwa-banner-dismissed';
 // Install card: per DEVICE. The cross is the user answering "no" to this card
 // forever; the navbar button is what keeps the way back reachable.
 const INSTALL_KEY = 'pwa-install-dismissed';
@@ -36,7 +34,6 @@ const write = (store: () => Storage | undefined, key: string): void => {
   try { store()?.setItem(key, '1'); } catch { /* private mode: stay quiet */ }
 };
 
-const updateDismissed = (): boolean => read(() => sessionStorage, UPDATE_KEY);
 const installAnswered = (): boolean => read(() => localStorage, INSTALL_KEY);
 
 /**
@@ -76,34 +73,6 @@ function closeButton(onClick: () => void): HTMLButtonElement {
   close.textContent = '✕';
   close.addEventListener('click', onClick);
   return close;
-}
-
-/** The update notice: a neutral alert strip, session-dismissed (§4.7). */
-function paintUpdate(el: HTMLElement): void {
-  if (updateDismissed()) return;
-
-  const box = document.createElement('div');
-  box.className = 'alert alert-soft alert-info text-sm gap-2';
-
-  const label = document.createElement('span');
-  label.className = 'flex-1';
-  label.textContent = 'A new version of openSRM is ready.';
-
-  const reload = document.createElement('button');
-  reload.type = 'button';
-  reload.className = 'btn btn-ghost btn-sm';
-  reload.textContent = 'Reload';
-  reload.addEventListener('click', () => applyUpdate());
-
-  const close = closeButton(() => {
-    el.classList.add('hidden');
-    write(() => sessionStorage, UPDATE_KEY);
-  });
-  close.className = 'btn btn-ghost btn-square btn-sm h-11 w-11 shrink-0';
-
-  box.append(label, reload, close);
-  el.replaceChildren(box);
-  el.classList.remove('hidden');
 }
 
 /**
@@ -220,12 +189,9 @@ export function mountBanner(): void {
   if (typeof document === 'undefined' || !document.body) return;
   const el = host();
 
-  watchForUpdate(() => paintUpdate(el));
-
-  // Look for a new worker when the tab comes back into view. Mounted here, with
-  // the watcher above, because the notification it can produce is this banner:
-  // the poll forces `registration.update()`, the update installs, waits, and
-  // `watchForUpdate` turns that into the notice.
+  // Look for a new worker when the tab comes back into view. The swap needs no
+  // notice: it reloads the tab by itself, and this only bounds how long the
+  // wait can last.
   refreshOnVisible();
 
   // `beforeinstallprompt` fires on the browser's own schedule — often after this

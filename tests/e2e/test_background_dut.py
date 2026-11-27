@@ -13,10 +13,12 @@ it asserts WHEN the effect happens, not just that a handler exists:
                          server-rendered one hydration detached).
   dash-fb-modal          CTA opens the dialog, confirm POSTs /api/feedback/fill
                          exactly ONCE (dash.js's copy stands down), counts land.
-  dash-auto-refresh      ONE quiet POST /api/refresh for a page whose data-ts is
-                         older than 10 min, and ZERO for a fresh page. Both are
-                         observations after a wait, because the decision is made
-                         at load, not on a click.
+  dash-auto-refresh      the load-time data check ASKS THE SERVER: a page whose
+                         stored data is stale fires one quiet POST /api/refresh,
+                         a fresh one fires none, and the question itself is a GET
+                         /api/data/state (the server owns the verdict — the page
+                         used to read data-ts out of its own markup, which is why
+                         an open tab never noticed new data).
 
 Run:  python tests/e2e/test_background_dut.py     (DATA_DIR + DUT_BASE, like the
 other browser DUTs — dut_suite.sh provides both).
@@ -195,7 +197,9 @@ with sync_playwright() as p:
         c.add_cookies([{"name": "srm_session", "value": TOK, "url": BASE}])
         page = c.new_page()
         posts = []
+        asks = []
         page.on("request", lambda r: posts.append(r.url) if r.url.endswith("/api/refresh") else None)
+        page.on("request", lambda r: asks.append(r.url) if "/api/data/state" in r.url else None)
 
         def rewrite(route):
             resp = route.fetch()
@@ -214,13 +218,18 @@ with sync_playwright() as p:
         page.wait_for_timeout(2000)
         owned = page.evaluate("() => typeof window.__osrmAutoRefresh")
         can = page.evaluate("() => document.querySelector('meta[name=can-sync]').content")
-        return c, (owned, can), posts
+        return c, (owned, can), posts, asks
 
-    stale_ts = 1  # 1970 — older than 600 s by any clock
-    c, owned, posts = load_with_ts(stale_ts)
+    # Layered in front of the seeded data: the seed's last_fetch is "just now",
+    # so the server would say fresh. Written so BOTH cases differ only in that
+    # one answer, which is what makes the pair meaningful.
+    stale_ts = 1  # 1970 — older than the server's window by any clock
+    c, owned, posts, asks = load_with_ts(stale_ts)
     check("dash-auto-refresh: the bundle owns the row", owned[0] == "function", str(owned))
     check("dash-auto-refresh: the staged page is can-sync=1 (so the check is not vacuous)",
           owned[1] == "1", str(owned))
+    check("dash-auto-refresh: the page asks the SERVER, not its own markup",
+          len(asks) >= 1, f"{len(asks)} GET(s)")
     check("dash-auto-refresh: a stale page POSTs /api/refresh ONCE",
           len(posts) == 1, f"{len(posts)} POST(s)")
     # not an interval: 2 s of waiting is one chance to duplicate, and 10 min of
@@ -228,9 +237,11 @@ with sync_playwright() as p:
     c.close()
 
     fresh_ts = int(time.time())
-    c, owned, posts = load_with_ts(fresh_ts)
+    c, owned, posts, asks = load_with_ts(fresh_ts)
     check("dash-auto-refresh: a FRESH page POSTs nothing (can-sync=1, same page)",
           owned[1] == "1" and posts == [], str(posts))
+    check("dash-auto-refresh: and it still asked — a second tab is not a silent one",
+          len(asks) >= 1, f"{len(asks)} GET(s)")
     c.close()
 
     browser.close()

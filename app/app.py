@@ -897,6 +897,7 @@ from .routes_sync import (  # noqa: E402,F401
     _sync_min_interval_s,
     _tt_diff,
     _tt_sort_key,
+    api_data_state,
     api_get_timetable,
     api_login,
     api_login_preflight,

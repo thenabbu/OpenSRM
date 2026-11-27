@@ -113,7 +113,7 @@ check("isolation: per-app secret keys", a1.secret_key != a2.secret_key)
 EXPECTED = {
     "/", "/api/marks", "/api/feedback/fill", "/static/<path:filename>", "/login",
     "/api/login", "/api/refresh", "/api/login/preflight", "/api/login/progress",
-    "/api/scope/status",
+    "/api/scope/status", "/api/data/state",
     "/api/timetable", "/api/timetable/history", "/marks/tag", "/internal/push/tick",
     "/healthz", "/internal/metrics", "/internal/captcha", "/api/push/status", "/api/push/subscribe",
     "/api/push/unsubscribe", "/api/push/settings", "/api/push/test", "/api/push/receipt",
@@ -157,6 +157,7 @@ EXPECTED_EP = {
     "/api/login/preflight": {("api_login_preflight", "api_login_preflight")},
     "/api/login/progress": {("api_login_progress", "api_login_progress")},
     "/api/scope/status": {("api_scope_status", "api_scope_status")},
+    "/api/data/state": {("api_data_state", "api_data_state")},
     "/api/timetable": {("api_get_timetable", "api_get_timetable"),
                        ("api_save_timetable", "api_save_timetable")},
     "/api/timetable/history": {("api_timetable_history", "api_timetable_history")},

@@ -122,8 +122,156 @@ type Repaint = () => Promise<unknown> | unknown;
 const buttons = (): HTMLElement[] =>
   Array.from(document.querySelectorAll<HTMLElement>('[data-refresh]'));
 const icons = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('.refresh-icon'));
+/** 2 min: fast enough that an open page keeps up, slow enough for a phone. */
+export const DATA_POLL_MS = 120_000;
+
 const syncLines = (): HTMLElement[] =>
   Array.from(document.querySelectorAll<HTMLElement>('.sync-line'));
+
+/**
+ * This bundle's own build stamp, as the build wrote it into the service
+ * worker's cache name (`opensrm-v<N>-<hash>`, workbox-config.js
+ * `stampCacheName`). Both files ship from the same build, so the name the
+ * running worker was built with is the name this bundle came from: equal names
+ * mean the page and the worker it talks to are the same build, and a difference
+ * is a bundle swap that never reloaded the document.
+ *
+ * Read from the SW because nothing else is readable from a page whose main
+ * document the service worker served from cache (a shell).
+ */
+export function bundleVersion(): Promise<string> {
+  const fetcher = (window as unknown as { fetch?: typeof fetch }).fetch;
+  if (typeof fetcher !== 'function') return Promise.resolve('');
+  return fetcher('/static/sw.js', { cache: 'no-store' })
+    .then((r) => (r.ok ? (r.text() as Promise<string>) : ''))
+    .then((src) => (/opensrm-v[\w-]+/.exec(src) || [''])[0])
+    .catch(() => '');
+}
+
+/**
+ * True while a gesture or a sync is in flight — the refresh spinner, or the
+ * pull-to-refresh indicator. A boot swap stands down on both: reloading over a
+ * running sync throws away the numbers it was about to paint, and the student
+ * is watching it.
+ */
+export function refreshBusy(): boolean {
+  if (document.querySelector('.refresh-icon.animate-spin')) return true;
+  const btn = document.querySelector<HTMLElement>('[data-refresh]');
+  return !!btn && btn.getAttribute('aria-disabled') === 'true';
+}
+
+/**
+ * Ask the SERVER whether this account's data is old, once per page.
+ *
+ * `checks_stale` is `auto_sync_kick_if_stale` + the SCOPE kick — the exact pair
+ * a page render already runs — so this can never disagree with what a reload
+ * would have shown: it starts the same background sync a reload would have
+ * started, and the scope poll repaints when that run lands.
+ *
+ * The page used to decide this itself, from `data-ts` baked into its markup.
+ * That stamp is one moment in time: a tab left open all day stayed "fresh" by
+ * its own reckoning, which is the "data is old until I reload" report. Now the
+ * server answers.
+ */
+export function revalidatePage(): Promise<void> {
+  return fetch(REFRESH_URL, { credentials: 'same-origin', headers: { accept: 'application/json' } })
+    .then((r) => (r.ok ? (r.json() as Promise<{ sync?: boolean }>) : null))
+    .then((d) => {
+      // The server started a background portal sync; both pollers repaint when
+      // their run lands, so there is nothing else to do here.
+      if (d?.sync) void syncData();
+    })
+    .catch(() => {});
+}
+
+/**
+ * What the page does when it comes back into view: look at the build stamp,
+ * swap onto a newer one when nothing would be lost, and otherwise ask the
+ * server about the data.
+ *
+ * The build check goes FIRST and the data check is skipped on a tab that is
+ * about to be replaced: the reload loses that answer anyway, and the reloaded
+ * page runs its own checks.
+ *
+ * Never rejects. Everything is injectable, so a test drives every leg.
+ */
+export function revalidateOnReturn(opts: {
+  doc?: Document;
+  version?: () => Promise<string>;
+  revalidate?: () => Promise<void>;
+  swap?: () => Promise<void>;
+  /** The stamp this document loaded with. */
+  loadedWith?: string;
+  /** True once a swap has been decided: no more data work on this document. */
+  swapping?: () => boolean;
+} = {}): Promise<void> {
+  const doc = opts.doc ?? document;
+  const version = opts.version ?? bundleVersion;
+  const revalidate = opts.revalidate ?? revalidatePage;
+  const swapping = opts.swapping ?? (() => false);
+
+  return version()
+    .then((now) => {
+      // No stamp to compare (an older SW, a failed fetch): the page keeps its
+      // data check, and the update hook still gets its chance at boot.
+      if (!now || now === (opts.loadedWith ?? '') || swapping()) return false;
+      if (!opts.swap) return false;
+      return opts.swap().then(() => true);
+    })
+    .catch(() => false)
+    .then((swapped) => {
+      if (swapped || swapping()) return;
+      // Only while the tab is on screen. A hidden tab swaps a worker instead of
+      // asking for data, and polling a server from a background tab is the
+      // request storm SCHEDULERS.md exists to prevent.
+      if (doc.visibilityState !== 'visible') return;
+      return revalidate();
+    });
+}
+
+/**
+ * The data half of staying current, on a timer rather than once at load.
+ *
+ * `autoRefreshIfStale` reads `data-ts` from the markup, so a dashboard left
+ * open never looks again: the user had to reload to see new numbers. This
+ * re-runs the same server check every interval while the tab is visible, so an
+ * open page keeps up on its own.
+ *
+ * Skipped when there is nothing to check (a shell with no caption, a page whose
+ * meta says the browser holds no credential), while a sync is in flight, and
+ * while offline. Returns a stop() for tests and for a route change.
+ */
+export function startDataRefreshLoop(opts: {
+  doc?: Document;
+  win?: Window;
+  intervalMs?: number;
+  refresh?: () => Promise<void>;
+} = {}): () => void {
+  const doc = opts.doc ?? document;
+  const win = opts.win ?? window;
+  const refresh = opts.refresh ?? revalidatePage;
+  const interval = opts.intervalMs ?? DATA_POLL_MS;
+
+  const can = doc.querySelector('meta[name="can-sync"]');
+  if (can && can.getAttribute('content') === '0') return () => {};
+  if (!doc.querySelector('.sync-line')) return () => {};
+
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const tick = (): void => {
+    if (stopped) return;
+    if (doc.visibilityState === 'visible' && win.navigator?.onLine !== false && !refreshBusy()) {
+      void refresh();
+    }
+    // setTimeout, not setInterval: a slow answer delays the next check instead
+    // of stacking requests behind it.
+    timer = setTimeout(tick, interval);
+  };
+  timer = setTimeout(tick, interval);
+  return () => { stopped = true; clearTimeout(timer); };
+}
+
+/** 2 min: fast enough that an open page keeps up, slow enough for a phone. */
 
 /**
  * Repaint every mounted island from its own feed — the data half of a sync.
