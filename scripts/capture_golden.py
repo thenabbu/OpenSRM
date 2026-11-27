@@ -120,7 +120,7 @@ DEFAULT_OUT = Path("/opt/data/missions/opensrm-preact/captures")
 # avatar is rendered in the browser by @blobatar/preact, so there is no SVG URL
 # left to capture.
 API_GETS = ["/", "/login", "/healthz", "/api/marks", "/api/push/status",
-            "/api/scope/status", "/api/timetable", "/api/timetable/history"]
+            "/api/scope/status", "/api/data/state", "/api/timetable", "/api/timetable/history"]
 
 # ── scope payload: repo fixtures (read-only) + literals from repo tests ──
 # op -> repo fixture file holding that op's payload (JSON).
