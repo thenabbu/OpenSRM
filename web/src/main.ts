@@ -308,11 +308,16 @@ export async function hydrateAll(root: ParentNode, now: number): Promise<void> {
  * chunks start rejecting. One island failing leaves the others working and its
  * own paint untouched — the old markup swap had no such middle ground.
  */
-export async function refreshIslands(root: ParentNode, now: number): Promise<void> {
+export async function refreshIslands(
+  root: ParentNode,
+  now: number,
+  only?: readonly string[],
+): Promise<void> {
   const netid = currentNetid();
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-island]'))) {
     const at = mountedAt.get(el);
     if (!at) continue;                       // never painted: the server's markup stands
+    if (only && !only.includes(at.name)) continue;   // a whitelisted partial repaint
     const props = await refreshProps(at.name, {
       netid: netid ?? '',
       groupKey: sessionGroupKey(),
@@ -393,6 +398,73 @@ void (async () => {
 // cost this task exists to delete.
 (window as unknown as { __osrmRefreshData?: () => Promise<void> }).__osrmRefreshData =
   () => refreshIslands(document, Date.now() / 1000);
+
+// W5.5-scope: the NAV can reveal a route, and a repaint cannot.
+//
+// data-island covers panels that already exist in the DOM. The nav entries for
+// Fees, Academics, Campus and Tools are gated server-side on the SCOPE view
+// models (`{% if academics %}` in base.html), so on a first sign-in — where the
+// login response is painted while the SCOPE sync is still running — they are
+// simply absent from the markup, and no amount of island repainting brings them
+// back. The result was the reported bug: only SP data, until a manual reload.
+//
+// So once the SCOPE sync lands, the page re-reads its own HTML and reconciles
+// ONLY the chrome (`<head>` + the two navbars + the dock) with DOMParser.
+// scrollY, focus, open panels and every panel node are untouched — nothing is
+// replaced, nodes that already exist are identical and Preact-free.
+const SCOPE_LANDED_ATTR = 'data-scope-sync';
+
+export async function adoptNavigation(
+  doc: Document = document,
+  doFetch: typeof fetch = fetch,
+): Promise<boolean> {
+  let fresh: Document;
+  try {
+    const res = await doFetch(location.pathname + location.search, {
+      credentials: 'same-origin',
+      headers: { accept: 'text/html' },
+    });
+    if (!res.ok) return false;
+    // A redirect (session expired) hands back /login's markup: adopting that
+    // nav onto a dashboard is worse than leaving the stale nav in place.
+    if (res.redirected || res.url !== location.href.split('#')[0]) return false;
+    fresh = new DOMParser().parseFromString(await res.text(), 'text/html');
+  } catch {
+    return false;                            // offline, or a 5xx: keep what is painted
+  }
+  if (!fresh.body || !doc.body) return false;
+  // ONE gate: the server's own view of "is this the same page". Compare the
+  // route's island set — a panel that landed adds its island, which is exactly
+  // what we are here to pick up.
+  const was = new Set(Array.from(doc.querySelectorAll('[data-island]')).map((e) => e.getAttribute('data-island')));
+  const now = new Set(Array.from(fresh.querySelectorAll('[data-island]')).map((e) => e.getAttribute('data-island')));
+  // A Set has `.has`, not `.includes` — calling includes here threw a TypeError
+  // that the caller's .catch() swallowed, so the nav silently never adopted.
+  const samePage = [...was].every((n) => now.has(n));
+  if (!samePage) return false;               // route changed under us: let the browser navigate
+
+  let changed = false;
+  // The chrome, keyed by its own landmark element so a template change that
+  // reorders the bars still lands on the right node.
+  const CHROME = ['header.navbar', '.navbar.lg\\:hidden', '.dock'] as const;
+  for (const sel of CHROME) {
+    const src = fresh.querySelector(sel);
+    const dst = doc.querySelector(sel);
+    if (!src || !dst) continue;
+    if (src.outerHTML === dst.outerHTML) continue;
+    dst.replaceWith(doc.importNode(src, true));
+    changed = true;
+  }
+  if (changed) {
+    doc.body.setAttribute(SCOPE_LANDED_ATTR, 'complete');
+    doc.dispatchEvent(new CustomEvent('osrm:nav-swapped'));
+  }
+  return changed;
+}
+
+// The poll's repaint entry: panels first (what the user is looking at), then
+// the nav (what they can reach). The island whitelist keeps the two apart —
+// the nav pass would otherwise repaint every panel a second time.
 
 // W5.2a: the refresh primitive and the error toast live in web/src/data now
 // (refresh.ts, errorToast.ts) instead of dash.js, which three files used to
@@ -550,7 +622,12 @@ bindDetailsDismiss();
 actions.__osrmScopePoll = startScopePoll;
 // The only poll in the app: 1.5 s first, 4 s then 8 s, 150 tries max, one
 // repaint on 'complete'. No-ops unless <body data-scope-sync> is stale/running.
-startScopePoll();
+// Its repaint is panels + nav together: panels show the data, the nav shows the
+// routes that data unlocked (see adoptNavigation).
+startScopePoll(document, fetch, async () => {
+  await refreshIslands(document, Date.now() / 1000);
+  await adoptNavigation();
+});
 
 // W5.4d: background — the three dash.js rows that run with no click: the avatar
 // IO deferral, the feedback dialog's open/submit pair, and the load-time stale

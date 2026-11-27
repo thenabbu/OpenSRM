@@ -75,17 +75,45 @@ def _scope_sync_kick_if_stale(netid):
         log.debug("scope.sync dashboard kick skipped: %s", str(e)[:120])
 
 
+def scope_sync_due(netid):
+    """True when a SCOPE sync is still owed for `netid`: an enabled op is
+    missing or stale, or a run is in flight right now.
+
+    ONE definition, two callers: `_scope_sync_state` and /api/scope/status.
+    The status endpoint exposes it so the poll can tell "nothing more is
+    coming" from "a second batch is still owed" — on a first login the
+    feature set can grow between the landing batch and the next poll.
+    Cheap: rows read, no network, no login.
+    """
+    from app.scope.sync import scope_needs_sync
+    with _scope_sync_lock:
+        if netid in _scope_sync_running:
+            return True
+    return scope_needs_sync(netid)
+
+
+def scope_sync_running(netid):
+    """True while a SCOPE sync for `netid` is in flight in THIS process.
+
+    The one signal that says "more data is still coming" — unlike
+    scope_sync_due(), which is derived from the blob and cannot tell an
+    account that synced-and-has-nothing from one that never synced.
+    """
+    with _scope_sync_lock:
+        return netid in _scope_sync_running
+
+
 def _scope_sync_state(netid):
     """'off' | 'stale' | 'running' | 'complete' — the dashboard's one-shot
     reload signal. No payload, no credentials, no cross-user data."""
     try:
         from app.scope.ops import enabled_features, ops_for
-        from app.scope.sync import scope_needs_sync
         if not ops_for(enabled_features()):
             return "off"
         with _scope_sync_lock:
             if netid in _scope_sync_running:
                 return "running"
+        from app.scope.sync import scope_needs_sync
         return "stale" if scope_needs_sync(netid) else "complete"
     except Exception:
         return "off"

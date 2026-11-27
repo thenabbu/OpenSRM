@@ -57,7 +57,7 @@ from .portal_control import (
     _sync_queue_depth,
 )
 from .reqctx import _client_ip
-from .scope_sync import _scope_sync_state, _scope_sync_trigger
+from .scope_sync import _scope_sync_state, _scope_sync_trigger, scope_sync_due
 from .security import require_login
 from .state import _admit_ip, _charge_ip, _ip_retry_text, _portal_cooldown_remaining, progress, rate_limiter
 
@@ -675,7 +675,14 @@ def api_scope_status():
         ops = ops_for(enabled_features())
     except Exception:
         ops = []
-    return {"ok": True, "state": _scope_sync_state(netid), "ops": len(ops)}
+    return {"ok": True, "state": _scope_sync_state(netid), "ops": len(ops),
+            # OP NAMES, not a payload: the catalog is public app configuration
+            # (app/scope/ops.py), carries no user data, and lets a client or a
+            # test build a complete blob. A DUT that guesses the enabled set
+            # writes one missing op, which keeps the account 'stale' forever and
+            # makes a working fix look broken.
+            "op_names": list(ops),
+            "sync_due": scope_sync_due(netid)}
 
 # ── Login preflight: browser fires this when the user focuses the
 #    password field — warms the portal session + solves the captcha

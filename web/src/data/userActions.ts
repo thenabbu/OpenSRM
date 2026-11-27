@@ -222,6 +222,14 @@ export const SCOPE_MAX_TRIES = 150;
  *   * tries     > SCOPE_MAX_TRIES → done;
  *   * a reply that is not `{ok:true}` or a transport error → retry on schedule.
  *
+ * ONE deviation, on `complete`: the reply's `sync_due` decides whether the
+ * page is finished. A first login kicks the sync one line before the dashboard
+ * is requested, so the page paints with `scope_json={}` and the FIRST batch
+ * that lands can still be missing the ops a later-polling feature needs. When
+ * `sync_due` is true, the poll repaints (the page now shows the batch that
+ * landed) and keeps polling instead of stopping; when it is absent (an older
+ * server) the old one-shot behaviour stands.
+ *
  * Returns a stop() for tests and for a route change; production never calls it.
  */
 export function startScopePoll(
@@ -240,15 +248,22 @@ export function startScopePoll(
   const tick = (): void => {
     if (done || tries++ > SCOPE_MAX_TRIES) return;
     doFetch(SCOPE_STATUS_URL, { headers: { Accept: 'application/json' } })
-      .then((r) => (r.ok ? (r.json() as Promise<{ ok?: boolean; state?: string }>) : null))
+      .then((r) => (r.ok ? (r.json() as Promise<{ ok?: boolean; state?: string; sync_due?: boolean }>) : null))
       .then((d) => {
         if (!d || !d.ok) {
           schedule(tick, delay);
           return;
         }
         if (d.state === 'complete') {
-          done = true;
+          // Repaint with the batch that landed, then stop only when the server
+          // says nothing more is owed. `sync_due` undefined (an older server, or
+          // a stubbed reply in a test) keeps the original one-shot behaviour.
           void Promise.resolve(repaint()).catch(() => {});
+          if (d.sync_due) {
+            schedule(tick, delay);
+            return;
+          }
+          done = true;
           return;
         }
         if (d.state === 'off') {

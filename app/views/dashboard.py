@@ -28,7 +28,7 @@ from ..db import jload as _jload
 from ..portal.parsers.common import _class_key, _group_key
 from ..portal.parsers.feedback import _fb_plan
 from ..scope.ops import enabled_features
-from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state
+from ..scope_sync import _scope_sync_kick_if_stale, _scope_sync_state, scope_sync_running
 from ..security import require_login
 from ..usage_metrics import _track
 from . import academics_island, campus_island, fees_island, settings_island, tools_island
@@ -181,6 +181,27 @@ def dashboard_island_payload(vm, netid):
         fb_plan=vm["fb_plan"])
 
 
+def panel_has_data(vm):
+    """Does the active gated panel have anything to render? ONE rule.
+
+    Used by presentation() for the page's 404 and by /api/<panel>
+    (blueprints/panels.py) for its 404, so the page and its data can never
+    disagree about whether a panel exists.
+
+    A panel with no rows still "exists" while a SCOPE sync is IN FLIGHT: a
+    first sign-in paints "/" before the background SCOPE fetch has run, and
+    404ing a link the user then clicks is a blank screen instead of "loading".
+
+    Deliberately `sync_running`, not `scope_sync_due`: the latter is derived
+    from the blob, so an account that synced and genuinely has nothing is just
+    as "due" as one that never synced. Only a live run knows more is coming.
+    When it ends with nothing behind it, the 404 is honest again.
+    """
+    has = {"campus": vm["campus"]["show"], "academics": vm["academics"],
+           "fees": vm["fees"], "tools": vm["tools"]}
+    return has.get(vm["panel"], True) or scope_sync_running(vm["netid"])
+
+
 def presentation(vm):
     """Render one panel from panel_data()'s view model.
 
@@ -227,9 +248,13 @@ def presentation(vm):
     # a URL that renders nothing is a broken link, not a page: 404 (all four
     # gated routes alike). /attendance's hourwise/marks/exams sections have
     # independent fallbacks, so it is not gated this way.
-    gated = {"campus": vm["campus"]["show"], "academics": vm["academics"],
-             "fees": vm["fees"], "tools": vm["tools"]}
-    if not gated.get(vm["panel"], True):
+    #
+    # ONE predicate, page and API alike — see panel_has_data(). The "sync still
+    # owed" half exists because a first sign-in reaches a gated route before the
+    # background SCOPE fetch has run: 404ing there is a blank screen on a link
+    # the user just clicked, and /api/<panel> must agree or the page and its
+    # data disagree about whether the panel exists.
+    if not panel_has_data(vm):
         abort(404)
     return render_template(
         tpl, netid=netid, courses=vm["courses"], monthly=monthly_abs,

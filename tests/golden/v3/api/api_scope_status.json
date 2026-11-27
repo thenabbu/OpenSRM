@@ -1,8 +1,8 @@
 {
-  "body": "{\"ok\":true,\"ops\":27,\"state\":\"stale\"}\n",
-  "bytes": 37,
+  "body": "{\"ok\":true,\"op_names\":[\"getHourwiseAttendance\",\"getExamDetails\",\"getStudentExamProvisionalResult\",\"getStudentExamRevaluationResult\",\"getSubjects\",\"getSubCategoryWiseStatus\",\"getSubCategorySemesterWiseStatus\",\"getProgramSubCategoryWiseSubjects\",\"getFeeDetails\",\"getFinanceDetails\",\"getStudentExamFeesDetails\",\"getStudentAllOfferedJobs\",\"getStudentPlacementRequired\",\"getJobCriteria\",\"getJobQuestions\",\"getResumeUploads\",\"getWillingnessRejectReasons\",\"getPlacementRegistrationDetailsList\",\"getPlacementWillingnessRegistrationOpen\",\"getLibraryTransaction\",\"getHostelDetails\",\"getTransportDetails\",\"getViewNotificationListJson\",\"getPersonalDetails\",\"getCummulativeAttendance\",\"getSubjectwiseAttendance\",\"getInternalMarkDetails\"],\"ops\":27,\"state\":\"stale\",\"sync_due\":true}\n",
+  "bytes": 767,
   "content_type": "application/json",
-  "gzip_bytes": 54,
+  "gzip_bytes": 363,
   "path": "/api/scope/status",
   "status": 200
 }

@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% set active_tab = "tools" %}
 {% block main %}<main class="px-2 pt-[84px] pb-24 lg:pt-[79px] lg:pb-[15px] edge-x">
-  {% if tools %}
+  {# Rendered when the panel has rows OR a SCOPE sync is still owed (the
+     route's 404 gate uses the same condition): a first sign-in reaches here
+     with an empty blob, and an empty <main> under a nav the user just clicked
+     reads as a broken page. #}
+  {% if tools or scope_sync_state in ('stale', 'running') %}
   <div id="tab-tools" role="tabpanel" aria-labelledby="tab-tools-tab" data-tabpanel class="max-w-3xl mx-auto" style="">
     <div class="flex flex-col gap-3">
       <!-- Tools: the SCOPE-sourced surfaces that used to be nowhere on a phone.
@@ -11,6 +15,19 @@
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body p-4">
           <h2 class="text-base font-semibold mb-3">Tools</h2>
+          {#- A card with no rows is either "the sync is still running" or "the
+             backend has nothing for you yet" — and on a first sign-in those
+             look identical for a minute. Say which one it is instead of
+             rendering an empty list under a heading. Same mechanism as the
+             Absences card's data-scope-pending block on /attendance. -#}
+          {%- if not tools %}
+          <p data-scope-pending class="text-sm text-base-content/70{% if scope_sync_state not in ('stale', 'running') %} hidden{% endif %}">
+            Still loading your SCOPE data — this page fills in by itself.
+          </p>
+          <p data-scope-pending class="text-sm text-base-content/70{% if scope_sync_state in ('stale', 'running') %} hidden{% endif %}">
+            No SCOPE data yet. It loads in the background after your session syncs; refresh in a minute.
+          </p>
+          {%- endif %}
           <ul class="flex flex-col gap-2" data-island="tools" data-props="#island-tools">
             {% for t in tools %}
             <li>
