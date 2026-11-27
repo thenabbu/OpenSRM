@@ -160,24 +160,31 @@ def main():
         # The shell is what an offline navigation is served from. Its absence is
         # the single most common cause of "offline paints nothing", and the loose
         # total>10 check above cannot see it.
-        shells = page.evaluate(
-            "async()=>{const ks=await caches.keys();let n=0;for(const k of ks){const c=await caches.open(k);"
-            "n+=(await c.keys()).filter(r=>r.url.includes('/shell/')).length;}return n;}")
-        chk("online: panel shells are cached", shells > 0, f"{shells} shells")
-
-
-        # ── 2. offline ──────────────────────────────────────────────────────
-        # warmShells() runs AFTER hydration and fetches each /shell/<panel>.
-        # Killing the server before the shells are cached races it: offline has
-        # no markup to serve and the reload looks like "offline is broken" when
-        # it is only early. Wait for the CONDITION (shells cached), not a timer.
-        for _ in range(40):
+        # warmShells() runs AFTER hydration (deferred past the load window) and
+        # fetches each route. Killing the server before the snapshots are cached
+        # races it: offline has no document to serve and the reload looks like
+        # "offline is broken" when it is only early. Wait for the CONDITION
+        # (this student's snapshot for /attendance cached), not a timer.
+        #
+        # The wait MUST sit before the assertion, and the assertion is the one
+        # that reaches across a real timing boundary: warmShells is SEQUENTIAL
+        # (owner record first, then one page per round trip), so at ~8 s after
+        # load only the first page or two exist. Measured in CI 2026-11-27:
+        # webkit read `1 snapshot entries` here while chromium and firefox read
+        # the full set, because webkit reached the cut earlier in the burst.
+        for _ in range(160):
             if page.evaluate(
-                    "async()=>{const ks=await caches.keys();let n=0;"
-                    "for(const k of ks){const c=await caches.open(k);"
-                    "n+=(await c.keys()).filter(r=>r.url.includes('/shell/')).length;}return n;}"):
+                    "async()=>{const c=await caches.open('opensrm-snap');"
+                    "const o=await c.match('/__snap/__owner');if(!o)return false;"
+                    "const n=(await o.text()).trim();"
+                    "return (await c.keys()).filter(r=>"
+                    "new URL(r.url).pathname.startsWith('/__snap/'+n+'/')).length > 1;}"):
                 break
             page.wait_for_timeout(250)
+        shells = page.evaluate(
+            "async()=>{const ks=await caches.keys();let n=0;for(const k of ks){const c=await caches.open(k);"
+            "n+=(await c.keys()).filter(r=>r.url.includes('/__snap/')).length;}return n;}")
+        chk("online: page snapshots are cached", shells > 1, f"{shells} snapshot entries")
         if a.kill_cmd:
             subprocess.run(a.kill_cmd, shell=True, check=False,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

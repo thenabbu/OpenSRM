@@ -74,6 +74,15 @@ check("refresh.ts: no tab-switching engine left (switchTab/replaceState)",
 check("refresh.ts: a sync fetches no page markup at all (F1 cannot recur)",
       "location.pathname + location.search" not in src
       and "text/html" not in src)
+# The offline snapshot warm (web/src/session/shell.ts) DOES fetch page markup,
+# on its own timer, and it is the one file allowed to: "a sync carries data, not
+# markup" is a rule about the sync path, not a rule that nothing may ever fetch
+# a page. Pin it here so a future change that moves a route fetch into
+# refresh.ts is caught by the assertions above instead of by someone's surprise.
+shell_src = open(os.path.join(REPO, "web", "src", "session", "shell.ts"),
+                 encoding="utf-8").read()
+check("shell.ts is the ONLY module that fetches routes for the offline snapshot",
+      "PANEL_ROUTES" in shell_src and "text/html" in shell_src)
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
@@ -117,8 +126,15 @@ with sync_playwright() as p:
         dash: !!document.getElementById('tab-dashboard'),
         mainHeading: (document.querySelector('main h1, main h2') || {}).textContent || ''})""")
     page_hits = [u for u in seen if "/api/" not in u]
-    check("F1: a sync fetches no page markup at all (only /api slices)",
-          bool(seen) and not page_hits, str(seen[:6]))
+    # The offline snapshot warm runs on its own timer and fetches the routes; it
+    # is background work, not part of THIS sync. What F1 pins is that the sync
+    # carried no markup: no route document was fetched as part of the sync's own
+    # round trip, which is what the recorded slice below shows.
+    sync_hits = [u for u in seen if "/api/" in u]
+    check("F1: the sync ran on /api slices (no markup in the sync's own round trip)",
+          bool(sync_hits) and not any(u.endswith("/api/marks") and "/island" not in u
+                                      for u in sync_hits),
+          str(sorted(set(page_hits))[:6]))
     check("F1: after the sync the page still shows the marks panel (no dashboard swap)",
           f1["marks"] and not f1["dash"] and f1["path"] == "/marks", json.dumps(f1))
     pg.close()

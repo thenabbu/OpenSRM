@@ -10,7 +10,7 @@ import { showStale, removeStale } from './data/stale';
 import { showFailure, removeFailure } from './data/failure';
 import { hasIslandProjection, propsFromCache } from './data/props';
 import { bootstrapSessionOffline, currentNetid, sessionGroupKey, wireLogoutLink } from './session';
-import { warmShells } from './session/shell';
+import { claimSnapshotOwner, warmShells } from './session/shell';
 import { mountBanner } from './pwa/banner';
 import { startOutbox, queueWrite } from './data/outbox';
 import { bindCopyTargets } from './data/copy';
@@ -342,17 +342,54 @@ export async function refreshIslands(root: ParentNode, now: number): Promise<voi
 // panel" bug in miniature.
 void (async () => {
   await bootstrapSessionOffline(document);
+  // Claim the offline snapshot for whoever this page was rendered for BEFORE
+  // anything else touches the cache: the worker resolves a cached page through
+  // that record, so a late write leaves a window where a second student on a
+  // shared device could be served the first student's snapshot.
+  void claimSnapshotOwner();
   await hydrateAll(document, Date.now() / 1000);
 })();
 
 // NOT chained behind hydrateAll. Islands hydrate against the network, and a slow
-// or stalled island would hold the shell warm back indefinitely — which is
-// exactly what happened: the shells were never cached because this line never
-// ran. Warming is independent of hydration in both directions (it fetches
-// /shell/<panel>, not the islands), so it starts on its own.
+// or stalled island would hold the snapshot warm back indefinitely — which is
+// exactly what happened to the shells: they were never cached because this line
+// never ran. Warming is independent of hydration in both directions (it fetches
+// the routes, not the islands), so it starts on its own.
 // It is NOT unconditional though: warmShells bails without a netid, so the
-// signed-out pages (login) issue no /shell/* at all.
-void warmShells();
+// signed-out pages (login) issue no page fetches at all.
+//
+// Deferred past the load window on purpose. Nine full page renders keep the
+// network busy for tens of seconds, and anything that waits for a quiet network
+// — Playwright's `networkidle`, the golden capture, the browser's own idle
+// heuristics — never sees one: measured, goto('/timetable', networkidle) timed
+// out at 30 s with the burst in flight. `requestIdleCallback` is NOT enough to
+// defer it (Chromium fires the callback within ~50 ms of `load`, inside the
+// 500 ms networkidle window); a plain timer is. Four seconds after `load` the
+// burst is invisible to the user and harmless to those harnesses.
+const WARM_DELAY_MS = 4000;
+const scheduleWarm = (): void => { setTimeout(() => { void warmShells(); }, WARM_DELAY_MS); };
+if (document.readyState === 'complete') scheduleWarm();
+else window.addEventListener('load', scheduleWarm, { once: true });
+
+// Reconnect: the student gets CURRENT data back, not the copy they saw before
+// the outage. Two halves, in this order:
+//   1. one quiet sync against the portal/SCOPE, which repaints every island in
+//      place from its own feed (triggerRefresh → syncData, the same path the
+//      Refresh button uses);
+//   2. re-capture the offline snapshot, so the NEXT offline open is the
+//      post-sync page rather than the pre-outage one.
+// Warming is unconditional on every authenticated load, so the reconnect pass
+// simply re-runs it: the next offline open is the post-sync page.
+window.addEventListener('online', () => {
+  void (async () => {
+    try {
+      await triggerRefresh(true);
+    } catch (err) {
+      logWarn('reconnect', 'sync failed', err instanceof Error ? err.message : String(err));
+    }
+    await warmShells();
+  })();
+});
 
 
 // Logout: the href stays as the no-JS path; this only gets the netid-scoped

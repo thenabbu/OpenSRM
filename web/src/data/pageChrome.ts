@@ -149,19 +149,26 @@ export function applyGroupDefaults(
   );
 }
 
-// ─ 4. Offline banner ──────────────────────────────────────────────────────
-/** The exact daisyUI class list dash.js applied; `''` is the cleared state. */
-export const BANNER_CLASSES =
-  'alert alert-soft alert-warning fixed bottom-0 left-0 right-0 z-50 rounded-none';
-export const BANNER_TEXT = 'You are offline \u2014 showing cached data';
+// ─ 4. Offline pill ────────────────────────────────────────────────────────
+/** Copy for the assistive announcement. The visible node is an icon. */
+export const OFFLINE_PILL_LABEL = 'Offline \u2014 showing saved data';
+/** Every navbar carries one; the attribute is the selector, not a class, so a
+ *  theme change cannot orphan the binder. Both navbars live in base.html, so
+ *  one binder serves phone and desktop. */
+export const OFFLINE_PILL_SELECTOR = '[data-offline-pill]';
 
-/** Paint the banner for the current connectivity, then follow online/offline. */
+/** Toggle the offline pill for the current connectivity, then follow the
+ *  online/offline events.
+ *
+ *  It used to paint a full-width `alert` fixed to the bottom edge, which sat on
+ *  top of the phone dock and the desktop's bottom gutter — a whole bar of chrome
+ *  to say one bit. The pill is a badge in the navbar: same information, no
+ *  layout cost, and it does not cover a tap target. */
 export function bindOfflineBanner(doc: Document = document, win: Window = window): void {
-  const el = doc.getElementById('offline-banner');
-  if (!el) return;
+  const pills = Array.from(doc.querySelectorAll(OFFLINE_PILL_SELECTOR));
+  if (!pills.length) return;
   const paint = (offline: boolean): void => {
-    el.className = offline ? BANNER_CLASSES : '';
-    el.textContent = offline ? BANNER_TEXT : '';
+    for (const el of pills) el.toggleAttribute('hidden', !offline);
   };
   // A page that LOADS offline never fires `offline` — the event only marks a
   // transition — so seed from the current state. dash.js missed this window.

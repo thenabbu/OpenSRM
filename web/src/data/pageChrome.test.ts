@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  BANNER_CLASSES,
-  BANNER_TEXT,
+  OFFLINE_PILL_LABEL,
   SCROLL_CLASS,
   SCROLL_LINGER_MS,
   applyGroupDefaults,
@@ -195,42 +194,49 @@ describe('dash-settings-groups', () => {
   });
 });
 
-// ── dash-offline-banner ───────────────────────────────────────────────────
-describe('dash-offline-banner', () => {
-  const withBanner = (onLine: boolean): Document => {
+// ── dash-offline-pill ─────────────────────────────────────────────────────
+describe('dash-offline-pill', () => {
+  const PILL = `<span data-offline-pill hidden role="status" aria-live="polite"></span>`;
+  const withPill = (onLine: boolean): Document => {
     const doc = fresh();
-    doc.body.innerHTML = '<div id="offline-banner" role="status" aria-live="polite"></div>';
+    // Both navbars carry one; the binder must paint every match, not the first.
+    doc.body.innerHTML = `${PILL}<div id="mobile-navbar">${PILL}</div>`;
     Object.defineProperty(window.navigator, 'onLine', { value: onLine, configurable: true });
     return doc;
   };
-  const banner = (doc: Document) => doc.getElementById('offline-banner')!;
+  const pills = (doc: Document) => Array.from(doc.querySelectorAll('[data-offline-pill]'));
 
   afterEach(() => {
     Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true });
   });
 
-  it('paints the warning text and classes on offline, clears on online', () => {
-    const doc = withBanner(true);
+  it('shows every pill on offline and hides them on online', () => {
+    const doc = withPill(true);
     bindOfflineBanner(doc, window);
+    expect(pills(doc).map((p) => p.hasAttribute('hidden'))).toEqual([true, true]);
 
     window.dispatchEvent(new Event('offline'));
-    expect(banner(doc).className).toBe(BANNER_CLASSES);
-    expect(banner(doc).textContent).toBe(BANNER_TEXT);
+    expect(pills(doc).map((p) => p.hasAttribute('hidden'))).toEqual([false, false]);
 
     window.dispatchEvent(new Event('online'));
-    expect(banner(doc).className).toBe('');
-    expect(banner(doc).textContent).toBe('');
+    expect(pills(doc).map((p) => p.hasAttribute('hidden'))).toEqual([true, true]);
   });
 
   it('paints immediately on a page that loads while already offline', () => {
-    const doc = withBanner(false);
+    const doc = withPill(false);
     bindOfflineBanner(doc, window);
     // no event has fired — the seed must have painted it
-    expect(banner(doc).className).toBe(BANNER_CLASSES);
-    expect(banner(doc).textContent).toBe(BANNER_TEXT);
+    expect(pills(doc).map((p) => p.hasAttribute('hidden'))).toEqual([false, false]);
   });
 
-  it('is a no-op on a route that ships no banner', () => {
+  it('never writes text: the node is an icon, the label lives in the markup', () => {
+    const doc = withPill(false);
+    bindOfflineBanner(doc, window);
+    expect(pills(doc).map((p) => p.textContent)).toEqual(['', '']);
+    expect(OFFLINE_PILL_LABEL).toContain('Offline');
+  });
+
+  it('is a no-op on a route that ships no pill', () => {
     const doc = fresh();
     expect(() => bindOfflineBanner(doc, window)).not.toThrow();
   });
