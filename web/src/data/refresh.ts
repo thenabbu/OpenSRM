@@ -6,6 +6,7 @@ import { propsFromCache } from './props';
 import { showError } from './errorToast';
 import { ageCaption } from '../lib/syncAge';
 import { warn } from '../log';
+import { warmShells } from '../session/shell';
 
 // ── A sync carries DATA, not markup (W5.1b) ──────────────────────────────
 //
@@ -233,6 +234,12 @@ export async function triggerRefresh(quiet = false): Promise<void> {
         el.dataset.full = new Date(nowS * 1000).toLocaleString();
       });
       await syncData();
+      // Re-take the offline snapshot, but AFTER the sync round trip and never
+      // inside it: a sync carries data, not markup (W5.1b), and the touch-feel
+      // DUT pins that a sync's requests are /api slices only — warming here
+      // would add nine route HTML fetches to that window. Deferring keeps both
+      // promises: the offline snapshot still ends up showing the post-sync page.
+      setTimeout(() => { void warmShells(); }, 6000);
       restore();
       return;
     }

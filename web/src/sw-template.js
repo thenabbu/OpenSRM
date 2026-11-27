@@ -94,15 +94,16 @@ self.addEventListener('activate', (event) => {
     }
     // Drop every cache from an earlier generation. Precache entries are
     // repopulated by precacheAndRoute's install step, which ran before this.
-    // The SHELL cache must survive. `opensrm-shell` is written by warmShells()
-    // (web/src/session/shell.ts) and is the ONLY source of the offline panel
-    // shells — the precache list covers dist assets only. An allow-list of
-    // "CACHE_NAME or workbox-precache" deleted it on every activation, which
+    // The OFFLINE caches must survive: `opensrm-snap` holds the real rendered
+    // pages warmShells() (web/src/session/shell.ts) writes, and `opensrm-shell`
+    // holds the legacy PII-free copies older builds warmed. An allow-list of
+    // "CACHE_NAME or workbox-precache" deleted them on every activation, which
     // presented as "offline never works" while __shellWarm still said stored=8.
     // Measured: after a normal authenticated load the only cache left was
     // workbox-precache, with zero shell keys.
     const keys = await caches.keys();
-    const keep = (k) => k === CACHE_NAME || k.startsWith('workbox-precache') || k === 'opensrm-shell';
+    const keep = (k) =>
+      k === CACHE_NAME || k.startsWith('workbox-precache') || k === 'opensrm-snap' || k === 'opensrm-shell';
     await Promise.all(keys.filter((k) => !keep(k)).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
@@ -207,17 +208,45 @@ registerRoute(
   'GET',
 );
 
-// ── HTML: network-first; offline gets the SHELL, never a rendered page ──────
-// Personal data may live on the device (that is what makes offline work), but
-// a rendered page must never be one of the places it lives. The shell is the
-// panel's own markup with every personal value blanked server-side, so it is
-// the same bytes for every student.
+// ── HTML: network-first; offline gets the SNAPSHOT, then the legacy shell ──
+// The snapshot is the real page warmShells() captured while online
+// (`opensrm-snap`, keyed by netid), so an offline navigation returns the same
+// document the server would have sent: identity box, avatar well, island props.
+// An older device that only has PII-free `/shell/<panel>` copies still works —
+// that ladder is the second rung.
 //
-// Offline ladder: /shell/<panel> → /shell/dashboard → /shell/ → generic 503.
+// Offline ladder: /__snap/<owner>/<panel> → /shell/<panel> → /shell/dashboard →
+// /shell/ → generic 503.
 const OFFLINE_503 = new Response(
   '<html><body style="background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center"><div><h1>OpenSRM</h1><p>You are offline and this device has no saved copy yet.</p><p>Connect to the internet and open the site once to enable offline access.</p></div></body></html>',
   { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
 );
+
+const SNAP_PREFIX = '/__snap/';
+const SNAP_OWNER = SNAP_PREFIX + '__owner';
+
+/** The panel name a pathname belongs to. `/` is the dashboard. */
+function panelOf(url) {
+  return url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+}
+
+/** The rendered page warmShells() stored for this netid, or null.
+ *
+ *  The owner record is the ONLY thing that says whose snapshot this device
+ *  holds — the app rewrites it on every warm and warmShells() deletes every
+ *  other netid's entries, so a device never mixes two students. No owner means
+ *  no snapshot was ever taken, and the shell ladder below owns the answer. */
+async function cachedSnapshot(url) {
+  let owner = null;
+  try {
+    const rec = await caches.match(SNAP_OWNER);
+    if (rec) owner = (await rec.text()).trim();
+  } catch {
+    return null;
+  }
+  if (!owner) return null;
+  return (await caches.match(`${SNAP_PREFIX}${owner}/${panelOf(url)}`)) || null;
+}
 
 /** The shell cache keys for a URL, in preference order. */
 function shellPaths(url) {
@@ -231,7 +260,7 @@ function shellPaths(url) {
  *  offline last resort and wrong as a first paint — a tap on /tools would show
  *  the dashboard. */
 async function cachedShell(url, exact = false) {
-  const panel = url.pathname.replace(/^\/+|\/+$/g, '') || 'dashboard';
+  const panel = panelOf(url);
   for (const path of shellPaths(url)) {
     const hit = await caches.match(path);
     if (!hit) continue;
@@ -251,8 +280,8 @@ function tag(res, branch) {
   }
 }
 
-async function offlineShell(url) {
-  return (await cachedShell(url)) || OFFLINE_503;
+async function offlineDoc(url) {
+  return (await cachedSnapshot(url)) || (await cachedShell(url)) || OFFLINE_503;
 }
 
 // A cold PWA launch is this route's worst case: the browser process is new, the
@@ -264,21 +293,22 @@ async function offlineShell(url) {
 // that: it had no networkTimeoutSeconds, and even with one, its timeout path
 // matches 'opensrm-html' — a cache this route deliberately never writes.
 //
-// So the shell becomes a real first-paint candidate, not only the offline
-// fallback: if this device has one cached, race the network against it and paint
-// whichever arrives first. A healthy load is unchanged (the network wins inside
-// the window and the fresh server HTML is used); a stalled one paints the
-// PII-free shell, and the islands repaint it from Dexie.
+// So the cached document becomes a real first-paint candidate, not only the
+// offline fallback: if this device has one, race the network against it and
+// paint whichever arrives first. A healthy load is unchanged (the network wins
+// inside the window and the fresh server HTML is used); a stalled one paints the
+// last snapshot, which is the full page, not a blank shell.
 const SHELL_RACE_MS = 2000;
 
 const html = new NetworkFirst({
   cacheName: 'opensrm-html',
-  // Offline must reach the shell ladder, not a cached rendered page: nothing
-  // here is ever written to the cache, so a cached response cannot be served.
+  // Offline must reach the snapshot/shell ladder, not a cached rendered page:
+  // nothing here is ever written to the cache, so a cached response cannot be
+  // served.
   plugins: [
     {
       cacheWillUpdate: async () => null,
-      handlerDidError: async ({ request }) => tag(await offlineShell(new URL(request.url)), 'offline-ladder'),
+      handlerDidError: async ({ request }) => tag(await offlineDoc(new URL(request.url)), 'offline-ladder'),
     },
   ],
 });
@@ -286,13 +316,14 @@ const html = new NetworkFirst({
 registerRoute(
   // Navigations ONLY. A page-initiated `fetch(route, {accept: text/html})` is how
   // soft navigation swaps a route in place (web/src/nav/softNav.ts): routing that
-  // through here would hand it a shell instead of the page it asked for.
+  // through here would hand it a cached document instead of the page it asked for.
   ({ request }) => request.mode === 'navigate',
   async (params) => {
-    // Exact panel only, and only for the RACE: a shell that belongs to another
-    // route is not a valid first paint. The offline ladder below still takes any
-    // shell (a wrong-panel shell beats an error page when there is no network).
-    const shell = await cachedShell(new URL(params.request.url), true);
+    const target = new URL(params.request.url);
+    // Exact panel only, and only for the RACE: a document that belongs to
+    // another route is not a valid first paint. The offline ladder below still
+    // takes any shell (a wrong-panel shell beats an error page with no network).
+    const firstPaint = (await cachedSnapshot(target)) || (await cachedShell(target, true));
 
     // Navigation preload starts the request while the worker boots, so a
     // controlled page does not pay worker-startup latency. With the server DEAD
@@ -313,12 +344,12 @@ registerRoute(
       ? preload.then((r) => (r || viaStrategy())).catch(viaStrategy)
       : viaStrategy();
 
-    // No shell for THIS panel on this device: nothing to race with, so wait for
-    // the network and let the strategy own the failure path. X-Osrm-Path says
-    // which branch answered — a harness that only sees "a page arrived" cannot
-    // otherwise tell a shell from a real render.
-    if (!shell) {
-      const res = (await network) || offlineShell(new URL(params.request.url));
+    // Nothing cached for THIS panel: wait for the network and let the strategy
+    // own the failure path. X-Osrm-Path says which branch answered — a harness
+    // that only sees "a page arrived" cannot otherwise tell a cached document
+    // from a real render.
+    if (!firstPaint) {
+      const res = (await network) || offlineDoc(target);
       return tag(res, res ? 'network-or-ladder' : 'none');
     }
 
@@ -328,7 +359,7 @@ registerRoute(
     });
     try {
       const raced = await Promise.race([network, stall]);
-      return tag(raced || shell, raced ? 'network' : 'shell-race');
+      return tag(raced || firstPaint, raced ? 'network' : 'shell-race');
     } finally {
       clearTimeout(timer);
     }
