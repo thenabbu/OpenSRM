@@ -28,19 +28,18 @@ groups:
       - alert: OpenSRMPushTickStale
         # Dead-man switch for the /internal/push/tick scheduler (closes the
         # runbook's former 'dead-man gap'): the handler stamps this gauge on
-        # every successful tick, and the cron fires every minute, so >5m of
-        # silence means the Hermes cron job died, was disabled, or the host
-        # is gone. STARTING POINT 5m: the scheduler is per-minute and the
-        # existing Hermes-side chain already tolerates 3 consecutive
-        # failures (~3 min), so 5m of server-observed silence is genuinely
-        # abnormal. Retune if the tick cadence ever changes.
+        # every successful tick, and the cron on oclab fires every minute, so
+        # >5m of silence means that cron entry died, was removed, or the host
+        # is gone. STARTING POINT 5m: the scheduler is per-minute, so 5m of
+        # server-observed silence is already abnormal. Retune if the tick
+        # cadence ever changes.
         expr: time() - opensrm_push_tick_last_success_timestamp_seconds > 300
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "No push tick for >10m"
-          description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. Check the Hermes cron job 'opensrm-push-tick' and /opt/data/cron/output/push-tick.log."
+          description: "opensrm_push_tick_last_success_timestamp_seconds is >300s stale (for 5m). The every-minute tick scheduler is dead or disabled. On oclab, check /etc/cron.d/opensrm-push-tick, the tail of /var/log/opensrm-push-tick.log, and that cron is active."
 
   - name: opensrm-sync-health
     rules:

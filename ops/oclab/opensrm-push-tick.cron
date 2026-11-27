@@ -1,0 +1,5 @@
+# OpenSRM class-reminder tick, driven by the box that runs the app (oclab).
+# Replaces cron-job.org and the Hermes cron job of the same name.
+SHELL=/bin/sh
+PATH=/usr/local/bin:/usr/bin:/bin
+* * * * * root /usr/local/bin/opensrm-push-tick.sh >/dev/null 2>&1

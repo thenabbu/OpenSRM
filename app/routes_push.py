@@ -52,7 +52,7 @@ def _db_path():
 
 
 PUSH_TICK_HEADER = "X-Push-Tick"
-TICK_DEADLINE_S = 20.0       # cron-job.org's hard budget is ~30s; keep 10s margin
+TICK_DEADLINE_S = 20.0       # the oclab cron caller gives up at 25s (curl -m 25); keep 5s margin
 STALE_CLAIM_S = 120          # claims older than this with no outcome -> orphaned
 log_push = logging.getLogger("opensrm.push")
 
@@ -240,9 +240,9 @@ def _run_tick(now=None, conf=None, send_batch=None, deadline_s=TICK_DEADLINE_S):
 
 
 def push_tick():
-    """The every-minute tick scheduler (the Hermes cron job opensrm-push-tick;
-    cron-job.org is the kept alternative scheduler, see docs/push.md) fires
-    this. Secret header, no session; wrong/missing secret => bare 401 with
+    """The every-minute tick scheduler fires this — plain cron on oclab
+    (`/etc/cron.d/opensrm-push-tick`, source in ops/oclab/; see docs/push.md).
+    Secret header, no session; wrong/missing secret => bare 401 with
     no detail (nothing to probe)."""
     conf = _push_conf()
     got = request.headers.get(PUSH_TICK_HEADER, "")
