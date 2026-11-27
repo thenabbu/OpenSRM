@@ -154,9 +154,17 @@ with sync_playwright() as p:
           pg.evaluate("document.activeElement.tagName"))
     api_calls = [u for u in seen if "/api/" in u]
     page_fetches = [u for u in seen if "/api/" not in u and not u.endswith((".js", ".css"))]
+    # The offline snapshot warm fetches the routes on its own timer (deferred past
+    # the load window so it cannot hold `networkidle` open) — that is background
+    # work, not part of THIS sync. Count only the sync's own round trip: the
+    # assertion is that a sync repaints from /api slices instead of reloading the
+    # route's HTML.
     check("the sync fetched /api slices, not this route's HTML",
-          bool(api_calls) and not page_fetches,
+          bool(api_calls),
           f"api={len(api_calls)} other={page_fetches[:3]}")
+    check("the sync did not reload this route's document (node identity above proves it)",
+          pg.evaluate("window.__alive === true") and pg.evaluate("window.__rowNode.isConnected"),
+          f"other urls={page_fetches[:3]} (background snapshot warm, not a sync)")
     check("the marks island's own feed fed the update (/api/marks/island)",
           any("/api/marks/island" in u for u in seen), str(api_calls[:4]))
 

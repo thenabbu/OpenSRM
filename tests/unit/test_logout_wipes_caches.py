@@ -53,12 +53,12 @@ def main():
         "reverted to the single-cache delete",
     )
 
-    # Positive control: the shell cache name must exist somewhere in the worker,
-    # otherwise "every cache" is trivially true because there is only one.
+    # Positive control: the offline cache names must exist somewhere in the
+    # worker, otherwise "every cache" is trivially true because there is only one.
     check(
-        "control: 'opensrm-shell' exists in the worker at all",
-        "opensrm-shell" in src,
-        "if the shell cache is gone the assertion above proves nothing",
+        "control: the offline cache names exist in the worker at all",
+        "opensrm-snap" in src and "opensrm-shell" in src,
+        "if the offline caches are gone the assertion above proves nothing",
     )
 
     print(f"\nRESULT: {'PASS' if not fails else 'FAIL'} — {len(fails)} failed")

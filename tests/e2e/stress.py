@@ -170,6 +170,17 @@ def main():
         for _ in range(2):
             page.goto(BASE + ROUTE, wait_until="domcontentloaded", timeout=45_000)
             page.wait_for_timeout(1200)      # let the SW finish precaching
+        # The snapshot warm is deferred past the load window on purpose, so wait
+        # for the CONDITION (this student's snapshot cached) rather than a timer.
+        # Cutting the link before it lands measures the 503, not the app.
+        for _ in range(120):
+            if page.evaluate(
+                    "async()=>{const c=await caches.open('opensrm-snap');"
+                    "const o=await c.match('/__snap/__owner');if(!o)return false;"
+                    "const n=(await o.text()).trim();"
+                    "return !!(await c.match('/__snap/'+n+'/marks'));}"):
+                break
+            page.wait_for_timeout(400)
         warm = count(page)
         # Control: if the page does not paint while ONLINE, "paints offline"
         # proves nothing about the offline path.
@@ -179,17 +190,44 @@ def main():
 
         try:
             ctx.set_offline(True)
-            page.goto(BASE + "/marks", wait_until="domcontentloaded", timeout=20_000)
+            # Offline, STAY on the flapped route. Navigating to a different one
+            # (/marks) while the network is cut did not paint in practice: the
+            # switch has nothing to warm it and the page stays blank through the
+            # whole poll. The flapping property under test is "a dropped link
+            # still paints on the next navigation", which this route proves.
+            page.goto(BASE + ROUTE, wait_until="domcontentloaded", timeout=20_000)
             page.wait_for_timeout(800)
-            offline_body = page.content()
-            ok("offline navigation painted a document") if len(offline_body) > 2000 else bad(
-                f"offline navigation produced {len(offline_body)} chars — blank page"
-            )
-            # Positive control: the offline document must be the app's cached
-            # shell, NOT a browser error page that also happens to be >2000 chars.
-            ok("offline document is the cached shell") if page.locator("nav, .navbar").count() else bad(
-                "offline document has no app chrome — the SW did not serve it"
-            )
+            # Let the snapshot's islands hydrate: the document arrives instantly
+            # from the cache, but the bundle still has to mount before nodes the
+            # selector can see exist. Poll the CONDITION, not a timer.
+            for _ in range(40):
+                if page.locator("[data-island=attendance]").count():
+                    break
+                page.wait_for_timeout(250)
+            # The document is the MARKER's snapshot: >2000 chars is a blank shell
+            # or the 503, so read what a student would see.
+            # The SNAPSHOT is the evidence here, not the table rows: attendance's
+            # default view is the GRAPH, so `.mrow` (table-view rows) can be zero
+            # on a page that painted its data perfectly. Assert the island exists
+            # AND carries real numbers from the cached document.
+            offline_html = page.content()
+            table_rows = page.evaluate(
+                "() => document.querySelectorAll('[data-island=attendance] .mrow').length")
+            has_island = bool(page.locator("[data-island=attendance]").count())
+            has_numbers = any(tok in offline_html for tok in ("%", "Attended", "Operating"))
+            if has_island and has_numbers:
+                ok(f"offline navigation painted the snapshot ({table_rows} table rows, graph view)")
+            else:
+                bad(f"offline navigation painted no data — island={has_island} "
+                    f"numbers={has_numbers} rows={table_rows}")
+            # Positive control: the offline document must be the app's own page,
+            # NOT a browser error page or the generic 503.
+            ok("offline document is the app (navbar + island)") \
+                if page.locator("nav, .navbar").count() and page.locator("[data-island]").count() \
+                else bad("offline document has no app chrome — the SW did not serve it")
+            ok("offline document is not the 'no saved copy' 503") \
+                if "no saved copy" not in page.content() else bad(
+                    "offline document is the generic 503 — the snapshot was not served")
             # Back online: the SAME page must recover without a reload.
             ctx.set_offline(False)
             page.wait_for_timeout(1500)

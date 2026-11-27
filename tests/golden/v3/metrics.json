@@ -1,9 +1,15 @@
 {
   "api": {
     "/": {
+<<<<<<< HEAD
       "bytes": 54031,
       "content_type": "text/html; charset=utf-8",
       "gzip_bytes": 13026,
+=======
+      "bytes": 55364,
+      "content_type": "text/html; charset=utf-8",
+      "gzip_bytes": 13261,
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
       "status": 200
     },
     "/api/marks": {
@@ -271,43 +277,66 @@
       "status": 200
     },
     "/static/sw.js": {
-      "bytes": 30703,
+      "bytes": 30933,
       "content_type": "text/javascript; charset=utf-8",
+<<<<<<< HEAD
       "gzip_bytes": 9806,
+=======
+      "gzip_bytes": 9898,
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
       "status": 200
     }
   },
   "pages": {
     "/": {
+<<<<<<< HEAD
       "dom_nodes": 355,
       "html_bytes": 54031,
       "html_gzip_bytes": 13026,
       "js_bytes": 46265,
+=======
+      "dom_nodes": 364,
+      "html_bytes": 55364,
+      "html_gzip_bytes": 13261,
+      "js_bytes": 46495,
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/perf.js",
         "/static/push.js",
         "/static/sw.js"
       ],
+<<<<<<< HEAD
       "js_gzip_bytes": 15492,
+=======
+      "js_gzip_bytes": 15584,
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
       "script_tags": 5
     },
     "/login": {
       "dom_nodes": null,
       "html_bytes": 17975,
       "html_gzip_bytes": 5122,
-      "js_bytes": 37068,
+      "js_bytes": 37298,
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/login.js",
         "/static/perf.js",
         "/static/sw.js"
       ],
+<<<<<<< HEAD
       "js_gzip_bytes": 12522,
       "script_tags": 3
     }
   },
   "revision": "4547d16",
+=======
+      "js_gzip_bytes": 12614,
+      "script_tags": 3
+    }
+  },
+  "revision": "c5c08e9",
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -356,6 +385,7 @@
     }
   },
   "totals": {
+<<<<<<< HEAD
     "api_bytes": 603163,
     "api_gzip_bytes": 194033,
     "dom_nodes_all_panels": 2133,
@@ -364,5 +394,15 @@
     "html_gzip_bytes": 18148,
     "js_bytes": 51142,
     "js_gzip_bytes": 17286
+=======
+    "api_bytes": 604726,
+    "api_gzip_bytes": 194360,
+    "dom_nodes_all_panels": 2062,
+    "dom_nodes_page": 364,
+    "html_bytes": 73339,
+    "html_gzip_bytes": 18383,
+    "js_bytes": 51372,
+    "js_gzip_bytes": 17378
+>>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
   }
 }

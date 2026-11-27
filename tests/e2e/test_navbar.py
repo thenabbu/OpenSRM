@@ -118,8 +118,14 @@ with sync_playwright() as p:
     r_on, r_off = contrast(rgb(d['onBg'], nav_bg), nav_bg), contrast(rgb(d['offBg'], nav_bg), nav_bg)
     check('desktop: selected tab tint vs navbar >= 1.15:1', r_on >= 1.15, f"{d['onTab']} = {d['onBg']} -> {r_on:.3f}:1")
     check('desktop: unselected tab stays flush with navbar', d['offBg'] in ('rgba(0, 0, 0, 0)', 'transparent'), f"{d['offBg']} -> {r_off:.3f}:1")
+    # endOrder is [pill?, refresh, sync-caption]. The offline pill leads the
+    # cluster and is hidden online, so drop exactly one leading SPAN before the
+    # order assertion; a logout anchor or a second caption still fails.
+    order = list(d['endOrder'])
+    if order[:1] == ['SPAN'] and order.count('SPAN') == 2:
+        order = order[1:]
     check('desktop: caption follows the refresh button in the DOM (no logout anchor — it lives in Settings now)',
-          d['endOrder'] == ['BUTTON', 'SPAN'], str(d['endOrder']))
+          order == ['BUTTON', 'SPAN'], f"{d['endOrder']} -> {order}")
     check('desktop: fresh sync shows no caption', d['syncText'] == '' and d['syncDisplay'] == 'none',
           f"text={d['syncText']!r} display={d['syncDisplay']}")
 

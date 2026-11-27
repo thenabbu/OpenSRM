@@ -17,13 +17,14 @@ reads the app.
 
 Legs
   A. nine routes: online load (island + rows, the positive control), cut the
-     network, reload -> a document IS served (not the browser's error page and
-     not the "no saved copy" 503), zero page exceptions, no personal data in the
-     document, and:
+     network, reload -> the WARMED SNAPSHOT is served (not the browser's error
+     page and not the "no saved copy" 503), zero page exceptions, the student's
+     own rendered data present (owner decision 2026-11-27: the cached document is
+     the real page), another student's data absent, and:
        * the six Dexie-backed panels paint exactly the rows they painted online
          (`/` included, from its own cache path),
-       * /tools and /settings are shell-only: measured, they are served another
-         panel's shell, so the assertion is "no rows and no PII", named per route.
+       * /tools and /settings carry their own snapshot now, so they are asserted
+         the same way (offline rows == online rows).
   B. two students on ONE device: A's rows cache, cookie swaps to B, B's page must
      paint B's rows and never A's — online AND with the network cut, which is the
      case a cache key without netid would fail. Plus the raw IndexedDB proof that
@@ -149,13 +150,11 @@ ROUTES = {
     "/campus":     ("campus",     "[data-island=campus] .card",                   "cache"),
     "/academics":  ("academics",  "[data-island=academics] .acad-srow",           "cache"),
     "/fees":       ("fees",       "[data-island=fees] section .grid", "cache"),
-    # Measured 2026-11-16: /shell/tools answers 200 with the DASHBOARD panel's
-    # markup (its gate is falsy once the shell blanks `tools`), and /settings has
-    # no shell entry at all, so the ladder falls back to /shell/dashboard. Both
-    # are therefore asserted as "a shell was served, zero rows, no PII" — not as
-    # six-row panels, and not skipped.
-    "/tools":      ("tools",      "[data-island=tools] > li",                     "shell"),
-    "/settings":   ("settings",   "[data-island=settings] [data-copy]",           "shell"),
+    # Every route now carries its own warmed snapshot, so /tools and /settings
+    # are asserted the same way as the six Dexie panels: the offline document is
+    # the real page, so the row count must match the online one.
+    "/tools":      ("tools",      "[data-island=tools] > li",                     "cache"),
+    "/settings":   ("settings",   "[data-island=settings] [data-copy]",           "cache"),
 }
 
 results = []
@@ -221,6 +220,29 @@ def rows(page, sel, tries=30):
     return n
 
 
+def wait_snapshot(page, panel="attendance", timeout_s=45):
+    """Wait until THIS student's snapshot for `panel` is in the cache.
+
+    Snapshot warming is deferred a few seconds past load on purpose (a burst of
+    nine page renders inside the load window breaks every `networkidle` wait in
+    the repo), so a test that cuts the network immediately after load measures
+    the shell fallback, not the snapshot. Poll the cache instead of sleeping.
+    """
+    for _ in range(int(timeout_s / 0.4)):
+        ok = page.evaluate(
+            """async (p) => {
+                const c = await caches.open('opensrm-snap');
+                const o = await c.match('/__snap/__owner');
+                if (!o) return false;
+                const n = (await o.text()).trim();
+                return !!(await c.match('/__snap/' + n + '/' + p));
+            }""", panel)
+        if ok:
+            return True
+        page.wait_for_timeout(400)
+    return False
+
+
 def wait_controlled(page, timeout_s=20):
     end = time.time() + timeout_s
     while time.time() < end:
@@ -268,20 +290,21 @@ def run(ctx, pw):
     page.reload(wait_until="domcontentloaded")
     wait_settled(page)
 
-    # Warm the eight shells; the suite asserts they are there rather than
+    # Warm the nine page snapshots; the suite asserts they are there rather than
     # trusting warmShells' log line.
     shell_keys = []
-    for _ in range(40):
+    for _ in range(80):
         shell_keys = page.evaluate(
             """async () => { const ks = await caches.keys();
-                 const k = ks.find(n => n === 'opensrm-shell'); if (!k) return [];
+                 const k = ks.find(n => n === 'opensrm-snap'); if (!k) return [];
                  const c = await caches.open(k);
-                 return (await c.keys()).map(r => new URL(r.url).pathname).sort(); }""")
-        if len(shell_keys) >= 8:
+                 return (await c.keys()).map(r => new URL(r.url).pathname)
+                          .filter(p => p.startsWith('/__snap/') && !p.endsWith('/__owner')).sort(); }""")
+        if len(shell_keys) >= 9:
             break
         page.wait_for_timeout(400)
-    check("A1: all eight panel shells are warmed before the cut",
-          len(shell_keys) >= 8, f"{len(shell_keys)} shells: {shell_keys}")
+    check("A1: all nine page snapshots are warmed before the cut",
+          len(shell_keys) >= 9, f"{len(shell_keys)} snapshots: {shell_keys}")
 
     online_rows = {}
     for route, (island, sel, _mode) in ROUTES.items():
@@ -327,10 +350,20 @@ def run(ctx, pw):
         else:
             check(f"A5 {route}: offline is shell-only (no {island} rows)",
                   n == 0, f"{n} rows; islands={st['islands']}")
-        check(f"A6 {route}: offline carries no personal data",
-              not any(x and x in st["text"] for x in ("zz9999", B_NETID, "Test Student", B_NAME,
-                                                      "RA2500000000")),
-              "no netid / name / register number in the served document")
+        # Owner decision 2026-11-27: the cached document IS the real page, so it
+        # carries the student's own identity (netid, name, register number) and
+        # their island props. That is the feature — "offline looks like nothing
+        # happened". The isolation rule did not change: student B's values must
+        # never be readable on A's page, offline or online.
+        own = "zz9999"
+        served_netid = page.evaluate(
+            "() => (document.body && document.body.dataset.netid) || null")
+        check(f"A6 {route}: offline carries the student's OWN rendered data",
+              served_netid == own or "Test Student" in st["text"],
+              f"body data-netid={served_netid!r} — snapshot is the real page, not a blank shell")
+        check(f"A6b {route}: and never another student's data",
+              not any(x and x in st["text"] for x in (B_NETID, B_NAME, "RA2500000001")),
+              "B's netid / name / register number absent from A's document")
         check(f"A7 {route}: zero uncaught exceptions offline",
               not page_errors, "; ".join(page_errors[:2]))
         page_errors.clear()
@@ -363,6 +396,8 @@ def run(ctx, pw):
 
     # With the network cut, B's page can only be B's cache. This is the leg a
     # cache key without netid fails: B would paint A's attendance.
+    check("B4a: student B's own snapshot is warmed before the cut", wait_snapshot(page),
+          "owner record names B and /__snap/<B>/attendance exists")
     ctx.set_offline(True)
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(800)
@@ -371,13 +406,20 @@ def run(ctx, pw):
     ctx.set_offline(False)
     check("B4: offline, student B still never sees A's rows", A_MARK not in b_off,
           f"{n_b} attendance rows on the offline page")
-    # And nothing at all is the DESIGNED answer here: recallNetid()/recallGroupKey()
-    # refuse to guess when the device holds more than one student's meta row
-    # (session.ts: `metas.length === 1`), because guessing is how B would paint
-    # A's rows from A's key. So the shared device asserts zero, and "B's cache is
-    # still usable" is proved on a device that has only seen B (B8-B10 below).
-    check("B5: two-student device offline paints nothing rather than guessing",
-          n_b == 0, f"{n_b} rows; recall refuses with {2} meta rows")
+    # IndexedDB recall refuses to guess when the device holds more than one
+    # student's meta row (session.ts: `metas.length === 1`), because guessing is
+    # how B would paint A's rows from A's key. The warmed PAGE is a different
+    # source: its owner record names one student explicitly, so B's snapshot is
+    # served — and it must be B's, which is what the check below pins. "B's cache
+    # is still usable with no other student present" is proved on B8-B10.
+    # And on a shared device the offline document is the student whose page was
+    # warmed last — the owner record names them, so this is a key, not a guess.
+    # IndexedDB recall keeps the old rule (never guess from two meta rows, B4
+    # pins that A's rows stay absent); the WARMED PAGE is the new, explicit
+    # answer, and it must be B's own page.
+    check("B5: two-student device offline paints B's own warmed page, never A's",
+          n_b > 0 and B_MARK in b_off and A_MARK not in b_off,
+          f"{n_b} rows; owner record names B")
 
     idb = page.evaluate("""async () => {
       const open = () => new Promise((res, rej) => {
@@ -424,6 +466,8 @@ def run(ctx, pw):
         wait_settled(bp)
         n_on = rows(bp, "[data-island=attendance] .mrow")
         b_on2 = bp.inner_text("body")
+        check("B8a: B-only device warmed B's snapshot before the cut", wait_snapshot(bp),
+              "single-student device owns its own snapshot")
         b_only.set_offline(True)
         bp.reload(wait_until="domcontentloaded")
         bp.wait_for_timeout(800)
@@ -448,13 +492,14 @@ def run(ctx, pw):
       let shell = 0;
       for (const k of ks) {
         const c = await caches.open(k);
-        shell += (await c.keys()).filter(r => new URL(r.url).pathname.startsWith('/shell/')).length;
+        shell += (await c.keys()).filter(r => new URL(r.url).pathname.startsWith('/__snap/')).length;
       }
       return {dbs: names, caches: ks.length, shells: shell};
     }""")
     check("C0: pre-logout state is dirty on all four fronts (control)",
-          pre["dbs"] and pre["shells"] >= 8,
-          f"dbs={pre['dbs']} caches={pre['caches']} shell keys={pre['shells']}")
+          pre["dbs"] and pre["shells"] >= 6,
+          f"dbs={pre['dbs']} caches={pre['caches']} snapshot keys={pre['shells']} "
+          "(B's sparser seed renders fewer than nine routes)")
     page.evaluate("""() => { localStorage.setItem('attView', 'table');
                              sessionStorage.setItem('pwa-banner-dismissed', '1'); }""")
 
@@ -525,12 +570,12 @@ def run(ctx, pw):
       }
       return out;
     }""")
-    shell_left = [e for e in cached if e["path"].startswith("/shell/")]
+    shell_left = [e for e in cached if e["path"].startswith(("/shell/", "/__snap/"))]
     html_left = [e for e in cached if "text/html" in e["type"]]
     pii_left = [e for e in cached if any(x in e["body"] for x in
                                          ("zz9999", B_NETID, "Test Student", B_NAME, "RA2500000000"))]
-    check("C4: logout leaves no shell in the Cache API", not shell_left,
-          f"{len(shell_left)} shell entries; {len(cached)} cache entries total")
+    check("C4: logout leaves no snapshot or shell in the Cache API", not shell_left,
+          f"{len(shell_left)} html entries; {len(cached)} cache entries total")
     check("C5: logout leaves no HTML and no personal data in the Cache API",
           not html_left and not pii_left,
           f"html={len(html_left)} pii={[e['path'] for e in pii_left][:3]}")
@@ -565,17 +610,18 @@ def run(ctx, pw):
     page.reload(wait_until="domcontentloaded")
     wait_settled(page)
     warmed = []
-    for _ in range(40):
+    for _ in range(80):
         warmed = page.evaluate(
             """async () => { const ks = await caches.keys();
-                 const k = ks.find(n => n === 'opensrm-shell'); if (!k) return [];
+                 const k = ks.find(n => n === 'opensrm-snap'); if (!k) return [];
                  const c = await caches.open(k);
-                 return (await c.keys()).map(r => new URL(r.url).pathname).sort(); }""")
-        if len(warmed) >= 8:
+                 return (await c.keys()).map(r => new URL(r.url).pathname)
+                          .filter(p => p.startsWith('/__snap/') && !p.endsWith('/__owner')).sort(); }""")
+        if len(warmed) >= 9:
             break
         page.wait_for_timeout(400)
-    check("D0b: eight panel shells warmed on this device", len(warmed) >= 8,
-          f"{len(warmed)} shells: {warmed}")
+    check("D0b: nine page snapshots warmed on this device", len(warmed) >= 9,
+          f"{len(warmed)} snapshots: {warmed}")
 
     # What a deploy changes, from the worker's point of view: a new precache
     # manifest (a renamed dist chunk) and a new activate, which drops every cache
@@ -602,18 +648,36 @@ def run(ctx, pw):
                 return (await c.keys()).map(r => new URL(r.url).pathname).sort();
             }""") or []
 
-    def shell_body(name):
+    def snapshot_body(name):
         return page.evaluate(
             """async (n) => {
-                const c = await caches.open('opensrm-shell');
-                const r = await c.match('/shell/' + n);
+                const c = await caches.open('opensrm-snap');
+                const o = await c.match('/__snap/__owner');
+                if (!o) return null;
+                const r = await c.match('/__snap/' + (await o.text()).trim() + '/' + n);
                 return r ? await r.text() : null;
             }""", name)
 
+    def poison_snapshot(name, mark):
+        return page.evaluate(
+            """async ([n, mark]) => {
+                const c = await caches.open('opensrm-snap');
+                const o = await c.match('/__snap/__owner');
+                if (!o) return false;
+                const key = '/__snap/' + (await o.text()).trim() + '/' + n;
+                const r = await c.match(key);
+                if (!r) return false;
+                const body = await r.text();
+                if (body.includes('<!--' + mark + '-->')) return true;
+                await c.put(key, new Response(body + '<!--' + mark + '-->',
+                                              {headers: {'Content-Type': 'text/html'}}));
+                return true;
+            }""", [name, mark])
+
     def keep(k):
-        # exactly sw-template.js:86
+        # mirrors the sw-template.js activate allow-list
         return (k.startswith("workbox-precache") or k == "opensrm-shell"
-                or k.startswith("opensrm-v"))
+                or k == "opensrm-snap" or k.startswith("opensrm-v"))
 
     v1_entries = precache_entries()
     entry = next((u for u in v1_entries
@@ -621,29 +685,19 @@ def run(ctx, pw):
     check("D1: pre-deploy precache lists the current entry chunk",
           bool(entry), f"{len(v1_entries)} entries, entry={entry}")
 
-    # POSITIVE CONTROL: poison the shell cache the way a previous deploy left it,
+    # POSITIVE CONTROL: poison the snapshot the way a previous deploy left it,
     # and prove the poison is readable before the deploy. Without this the "not
     # stale" assertions below could pass because nothing was ever stale.
     # Re-poison until the read-back shows it: warmShells() is still writing the
-    # eight shells for a moment after load, and one of those writes can land on
-    # top of the poison (it did, once, in CI).
+    # nine snapshots for a moment after load, and one of those writes can land
+    # on top of the poison.
     for _ in range(10):
-        page.evaluate(
-            """async (mark) => {
-                const c = await caches.open('opensrm-shell');
-                const r = await c.match('/shell/attendance');
-                if (!r) return;
-                const body = await r.text();
-                if (body.includes('<!--' + mark + '-->')) return;
-                await c.put('/shell/attendance',
-                            new Response(body + '<!--' + mark + '-->',
-                                         {headers: {'Content-Type': 'text/html'}}));
-            }""", STALE_MARK)
-        if STALE_MARK in (shell_body("attendance") or ""):
+        poison_snapshot("attendance", STALE_MARK)
+        if STALE_MARK in (snapshot_body("attendance") or ""):
             break
         page.wait_for_timeout(300)
-    check("D2: a stale shell CAN be served from the cache before the deploy (control)",
-          STALE_MARK in (shell_body("attendance") or ""), "stale mark readable")
+    check("D2: a stale snapshot CAN be served from the cache before the deploy (control)",
+          STALE_MARK in (snapshot_body("attendance") or ""), "stale mark readable")
 
     # Seed a cache the new worker's activate MUST drop. Measuring only what the
     # page happened to create makes this test hostage to routing: once every
@@ -728,19 +782,19 @@ def run(ctx, pw):
     check("D6: the new deploy's chunk is precached after activate",
           PROBE in v2_entries, f"{len(v2_entries)} entries")
 
-    # ── no stale shell served after the deploy ──────────────────────────────
+    # ── no stale snapshot served after the deploy ───────────────────────────
     # The first online load after the swap is the deploy's own re-warm. Then the
     # network is cut and the page navigates AGAIN: the swap is already behind us,
     # so an offline document cannot be the swap's forced reload -- the only bytes
     # in play are the ones in the caches.
     page.reload(wait_until="domcontentloaded")
     wait_settled(page)
-    for _ in range(30):
-        if STALE_MARK not in (shell_body("attendance") or ""):
+    for _ in range(60):
+        if STALE_MARK not in (snapshot_body("attendance") or ""):
             break
         page.wait_for_timeout(300)
-    check("D7: the deploy's first load overwrote the stale shell in the cache",
-          STALE_MARK not in (shell_body("attendance") or ""), "stale mark gone")
+    check("D7: the deploy's first load overwrote the stale snapshot in the cache",
+          STALE_MARK not in (snapshot_body("attendance") or ""), "stale mark gone")
 
     ctx.set_offline(True)
     served = ""
@@ -749,11 +803,12 @@ def run(ctx, pw):
         served = page.content()
     finally:
         ctx.set_offline(False)
-    check("D8: offline shell after the deploy is NOT the stale one",
+    check("D8: offline document after the deploy is NOT the stale one",
           bool(served) and STALE_MARK not in served,
           f"stale mark in served document={STALE_MARK in served}")
-    check("D9: offline shell after the deploy is a real attendance shell",
-          'data-island="attendance"' in served, f"{len(served)} bytes")
+    check("D9: offline document after the deploy is the real attendance page",
+          'data-island="attendance"' in served and "data-netid" in served,
+          f"{len(served)} bytes")
 
     # restore the tree
     restore_worker()
@@ -778,6 +833,7 @@ def run(ctx, pw):
                 """() => ({islands: [...document.querySelectorAll('[data-island]')]
                                                 .map(e => e.dataset.island),
                            text: document.body ? document.body.innerText.slice(0, 4000) : '',
+                           netid: document.body ? document.body.dataset.netid : null,
                            html: document.documentElement.outerHTML.length})""")
         finally:
             ctx.set_offline(False)
@@ -795,20 +851,21 @@ def run(ctx, pw):
           NO_COPY not in st["text"], "shell ladder reached a panel shell")
     check("E3: cold offline paints the attendance island",
           "attendance" in st["islands"], f"islands: {st['islands']}")
-    check("E4: cold offline carries no personal data",
-          not any(x and x in st["text"] for x in ("zz9999", "Test Student", "RA2500000000")),
-          "no netid / name / register number in the served document")
+    check("E4: cold offline carries the student's own rendered data",
+          st.get("netid") is not None or "Test Student" in st["text"],
+          f"body data-netid={st.get('netid')!r} — snapshot served, not a blank shell")
     check("E5: cold offline zero uncaught exceptions",
           not errs, "; ".join(errs[:2]))
 
-    # NEGATIVE CONTROL: empty the SHELL cache and repeat the identical cold
+    # NEGATIVE CONTROL: empty the offline caches and repeat the identical cold
     # start. It must now fall through the ladder to the 503 page. Without this,
     # E1-E5 would pass for any document source and prove nothing about the
-    # shell cache.
+    # snapshot cache.
     page.evaluate(
         """async () => {
             const ks = await caches.keys();
-            await Promise.all(ks.filter(k => k === 'opensrm-shell').map(k => caches.delete(k)));
+            await Promise.all(ks.filter(k => k === 'opensrm-snap' || k === 'opensrm-shell')
+                                 .map(k => caches.delete(k)));
         }""")
     st2, _ = cold_offline("/attendance")
     check("E6: negative control - with no shell cache the same cold start is the 503 page",
