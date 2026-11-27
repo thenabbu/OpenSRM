@@ -31,6 +31,7 @@ import {
   bindScrollIndicator,
   registerServiceWorker,
 } from './data/pageChrome';
+import { bindDockMore } from './data/dockMore';
 import { bindPullToRefresh } from './data/pullToRefresh';
 import { bindSoftNav } from './nav/softNav';
 import { warn as logWarn } from './log';
@@ -417,6 +418,11 @@ bridge.__osrmShowError = showError;
 bridge.__osrmRevalidate = triggerRefresh;
 bridge.__osrmSyncCaption = renderSyncCaptions;
 bindRefreshButtons();
+
+// Dock "More" sheet (phone only; the trigger does not exist on desktop, so
+// this no-ops there). The dock sits OUTSIDE the route markers, so it is never
+// swapped away — one bind per document is the whole lifecycle.
+bindDockMore();
 
 // W5.2b: the copy cluster. Bound BEFORE hydration on purpose — it registers the
 // `osrm:island-mounted` listener that re-stamps copy targets, and listening

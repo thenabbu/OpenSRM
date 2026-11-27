@@ -1,4 +1,4 @@
-"""Navbar DUT (18 checks): desktop bar sheds the netid echo, the selected tab
+"""Navbar DUT (22 checks): desktop bar sheds the netid echo, the selected tab
 has a perceivable tint (daisyUI .btn-active is a no-op on this dark surface),
 the sync caption is a relative age to the right of the refresh button and
 disappears when fresh, the mobile bar shows no version badge, the wordmark
@@ -268,6 +268,8 @@ with sync_playwright() as p:
         logoCentre: (() => { const r = nav.querySelector('img').getBoundingClientRect(); return Math.round((r.x + r.right) / 2 * 10) / 10; })(),
         navCentre: (() => { const r = nav.getBoundingClientRect(); return Math.round((r.x + r.right) / 2 * 10) / 10; })(),
         dockTabs: [...document.querySelectorAll('.dock [data-tab]')].map(x => x.dataset.tab),
+        dockMoreSlot: !!document.getElementById('dock-more-btn'),
+        dockButtons: document.querySelectorAll('.dock > *').length,
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         // On failure the FAIL line must NAME the overflowing element (env
         // font-metric changes moved this by 8px on the Ubuntu 26 runner):
@@ -315,15 +317,85 @@ with sync_playwright() as p:
     check('mobile: wordmark centred in the bar (both icon controls sit outside it)',
           abs(m['logoCentre'] - m['navCentre']) <= 1,
           f"logoCentre={m['logoCentre']} navCentre={m['navCentre']}")
-    # Dock carries Settings' old slot to Tools. With no SCOPE feature seeded
-    # the Tools tab hides entirely, so the dock is the four core tabs and
-    # Settings must still be reachable — via the gear, its only route.
-    check('mobile: dock is Dashboard/Attendance/Timetable/Marks (+Tools when SCOPE data exists) and never Settings',
-          m['dockTabs'][:4] == ['dashboard', 'attendance', 'timetable', 'marks']
-          and m['dockTabs'] in (['dashboard', 'attendance', 'timetable', 'marks'],
-                                ['dashboard', 'attendance', 'timetable', 'marks', 'tools'])
-          and 'settings' not in m['dockTabs'],
-          str(m['dockTabs']))
+    # Five slots, and the middle one is More. The four daily pages keep their
+    # one-tap slot; everything else opens in the More sheet, so Settings is no
+    # longer a dock entry (it is a sheet row + the navbar gear).
+    check('mobile: dock is exactly Dashboard/Timetable/More/Marks/Attendance',
+          m['dockTabs'] == ['dashboard', 'timetable', 'marks', 'attendance']
+          and m['dockMoreSlot'] and m['dockButtons'] == 5,
+          f"{m['dockTabs']} more={m['dockMoreSlot']} buttons={m['dockButtons']}")
+
+    # ── The More sheet: closed by default, grows up, rows reachable ────────
+    page.click('#dock-more-btn')
+    page.wait_for_timeout(450)          # --t-sheet is 320ms
+    sh = page.evaluate("""() => {
+      const sheet = document.getElementById('dock-more-sheet');
+      const btn = document.getElementById('dock-more-btn');
+      const dock = document.querySelector('.dock');
+      const r = sheet.getBoundingClientRect(), dr = dock.getBoundingClientRect();
+      return {
+        open: sheet.hasAttribute('data-open'),
+        expanded: btn.getAttribute('aria-expanded'),
+        height: Math.round(r.height),
+        // grows UP: the sheet's bottom edge meets the bar's top edge, so the
+        // sheet paints above the bar and never below the viewport.
+        sheetBottom: Math.round(r.bottom),
+        dockTop: Math.round(dr.top),
+        sheetTop: Math.round(r.top),
+        viewportH: window.innerHeight,
+        rows: [...sheet.querySelectorAll('a')].length,
+        rowLabels: [...sheet.querySelectorAll('a .font-semibold')].map(x => x.textContent.trim()),
+        inert: sheet.firstElementChild.hasAttribute('inert'),
+        visible: getComputedStyle(sheet).visibility
+      };
+    }""")
+    check('mobile: More sheet opens above the dock (grows up, not down)',
+          sh['open'] and sh['height'] >= 52 * sh['rows']
+          and abs(sh['sheetBottom'] - sh['dockTop']) <= 1
+          and sh['sheetTop'] < sh['dockTop'] and sh['sheetTop'] >= 0
+          and sh['visible'] == 'visible',
+          f"h={sh['height']} rows={sh['rows']} sheetTop={sh['sheetTop']} sheetBottom={sh['sheetBottom']} dockTop={sh['dockTop']} vis={sh['visible']}")
+    check('mobile: More sets aria-expanded=true and un-inerts the sheet',
+          sh['expanded'] == 'true' and not sh['inert'],
+          f"expanded={sh['expanded']} inert={sh['inert']}")
+    check('mobile: More sheet lists every /tools row plus Settings',
+          sh['rows'] >= 1 and 'Settings' in sh['rowLabels'] and 'More' not in sh['rowLabels'],
+          f"rows={sh['rows']} {sh['rowLabels']}")
+
+    # A row tap must navigate AND leave the sheet closed behind the new route.
+    first_row = sh['rowLabels'][0]
+    page.click('#dock-more-sheet a')
+    page.wait_for_load_state('networkidle')
+    page.wait_for_timeout(300)
+    after = page.evaluate("""() => ({
+      path: location.pathname,
+      open: document.getElementById('dock-more-sheet').hasAttribute('data-open'),
+      expanded: document.getElementById('dock-more-btn').getAttribute('aria-expanded')
+    })""")
+    check('mobile: a More row navigates and the sheet closes on the way out',
+          after['path'] != '/' and not after['open'] and after['expanded'] == 'false',
+          f"{first_row} -> {json.dumps(after)}")
+
+    # Escape closes (keyboard exit) — reopen first.
+    page.click('#dock-more-btn')
+    page.wait_for_timeout(400)
+    page.keyboard.press('Escape')
+    page.wait_for_timeout(400)
+    esc = page.evaluate("""() => ({
+      open: document.getElementById('dock-more-sheet').hasAttribute('data-open'),
+      expanded: document.getElementById('dock-more-btn').getAttribute('aria-expanded'),
+      h: Math.round(document.getElementById('dock-more-sheet').getBoundingClientRect().height),
+      // what is actually PAINTED: the inner grid item's height. The sheet
+      // itself keeps a 1px border + the inner's padding even at 0fr — that
+      // strip is invisible (visibility:hidden), so height alone is the wrong
+      // signal. Zero inner height is what "collapsed" really means.
+      inner: Math.round(document.getElementById('dock-more-sheet').firstElementChild.getBoundingClientRect().height),
+      vis: getComputedStyle(document.getElementById('dock-more-sheet')).visibility
+    })""")
+    check('mobile: Escape closes the More sheet to nothing visible',
+          not esc['open'] and esc['expanded'] == 'false'
+          and esc['inner'] == 0 and esc['vis'] == 'hidden',
+          json.dumps(esc))
     page.click('.navbar-end [data-tab=settings]')
     page.wait_for_load_state('networkidle')
     page.wait_for_timeout(300)
@@ -338,6 +410,12 @@ with sync_playwright() as p:
           st['path'] == '/settings' and st['settingsPresent'] and not st['dashboardPresent']
           and st['gearCurrent'] == 'page',
           json.dumps(st))
+    # Settings is reachable twice on a phone: the navbar gear and a More row.
+    # It is NOT a dock slot any more — the middle slot is More.
+    gear = page.evaluate("() => ({inSheet: !!document.querySelector('#dock-more-sheet a[data-tab=settings]'), inDock: !!document.querySelector('.dock a[data-tab=settings]')})")
+    check('mobile: Settings has two routes (navbar gear + More row), not a dock slot',
+          gear['inSheet'] and not gear['inDock'],
+          json.dumps(gear))
     back = page.evaluate("""() => ({
         path: location.pathname,
         gearCurrent: document.querySelector('.navbar-end [data-tab=settings]').getAttribute('aria-current'),

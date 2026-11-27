@@ -109,6 +109,101 @@ button, a, summary, label, [role=tab], .dock > * { touch-action: manipulation; u
   .pressable, .pressable:active { transition: none; transform: none; }
 }
 
+/* ── Dock "More" sheet ────────────────────────────────────────────────────
+   Five dock slots, the middle one opens this.
+
+   The sheet and the bar are siblings inside `.dock-sheet-anchor`, a fixed
+   container pinned to the bottom edge. The sheet is the anchor's FIRST child
+   and the bar its last, so the sheet renders immediately ABOVE the bar — it
+   grows upward — and neither needs to know the other's height. (An earlier
+   version offset the sheet by a hard-coded 56px, which was wrong: the real
+   bar measures 79px because the labels wrap, and a guessed height drifts the
+   moment a label's font metric changes.)
+
+   The animation is a grid row going 0fr -> 1fr. That is the only way CSS
+   animates to the content's own height without JS measuring it: the inner
+   wrapper exists purely to be the grid item that must carry overflow:hidden
+   for the collapse to clip. `hidden`/`display:none` is NOT used — a
+   display:none element cannot transition — so the closed state is 0fr plus
+   visibility:hidden, and `inert` keeps its rows out of the tab order. */
+.dock-sheet-anchor {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;              /* the gap above the bar stays tappable */
+  isolation: isolate;
+}
+.dock-sheet {
+  order: 0;
+  pointer-events: auto;
+  display: grid;
+  grid-template-rows: 0fr;
+  background: var(--color-base-200);
+  border-top: 1px solid var(--color-base-300);
+  visibility: hidden;
+  transition: grid-template-rows var(--t-sheet) var(--ease-out),
+              visibility 0s linear var(--t-sheet);
+}
+.dock-sheet[data-open] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows var(--t-sheet) var(--ease-out),
+              visibility 0s;
+}
+.dock-sheet-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  /* Padding does NOT collapse with the 0fr track: at grid-template-rows:0fr
+     the inner box still measured 12px tall from its padding alone, which
+     leaves a 12px invisible strip. Zero it while closed so "collapsed" means
+     a 0-height box, not a hidden-but-present one. */
+  transition: padding var(--t-sheet) var(--ease-out);
+}
+.dock-sheet:not([data-open]) .dock-sheet-inner { padding-block: 0; }
+.dock-sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;                  /* DESIGN §5: 44px floor for a thumb */
+  padding: 8px 12px;
+  border-radius: var(--radius-box);
+  background: color-mix(in oklab, var(--color-base-300) 50%, transparent);
+  border: 1px solid var(--color-base-300);
+  transition: background-color 150ms;
+}
+.dock-sheet-row:active { background: var(--color-base-300); }
+.dock-sheet-row[aria-current="page"] {
+  background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+}
+/* The bar keeps its daisyUI geometry but stops being fixed itself: it is the
+   anchor's last child, so the sheet stacks on top of it. */
+.dock-sheet-anchor > .dock {
+  order: 1;
+  position: static;
+  pointer-events: auto;
+  background: var(--color-base-200);
+}
+.dock-more-slot { position: relative; }
+.dock-more-slot[aria-expanded="true"] { color: var(--color-base-content); }
+.dock-more-slot[aria-expanded="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0.5rem; right: 0.5rem; top: 0;
+  height: 2px;
+  background: currentColor;          /* same cue as .dock-active */
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-sheet, .dock-sheet[data-open] { transition: none; }
+}
+
 /* ── Phase 6: avatar idle loops pause on weak devices and offscreen ──
    Pausing preserves the resolved pose (motion.css explains why). The tier
    is set by perf.js before first paint; .is-offscreen is toggled by the
