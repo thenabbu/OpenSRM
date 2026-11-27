@@ -90,20 +90,32 @@ def parse_exam_timetable(html):
             continue  # header/banner rows, pending `- -`, blanked cells
         mon = MONTHS.get(dm.group(2), "00")
         tm = re.search(r"\((\d{2}:\d{2})-(\d{2}:\d{2})\)", ds)
-        # Hall No. is often blank while the Seat no. cell carries
-        # '219 SECOND FLOOR Academic Building Second Floor'. Split the number
-        # off and keep the room text as the hall when the hall cell is empty.
+        # Hall No. is often blank, and the portal's "Seat No." column holds the
+        # ROOM text while the seat number sits in an extra trailing cell
+        # (live dump 2026-11-27):
+        #   <th>Hall No.</th><th>Seat No.</th>
+        #   <td></td><td>219 SECOND FLOOR Academic Building Second Floor</td><td>6</td>
+        # -> room 219 (2nd floor), seat 6. Every paper is in the same building,
+        # so only the room number is kept.
         i_h, i_s = _i("hall"), _i("seat")
-        hall = _txt(tds[i_h]) if i_h is not None and i_h < len(tds) else ""
-        seat_raw = _txt(tds[i_s]) if i_s is not None and i_s < len(tds) else ""
-        sm = re.match(r"^(\d+[A-Za-z]?)\s+(.+)$", seat_raw)
-        seat, room = (sm.group(1), sm.group(2)) if sm else (seat_raw, "")
+        cells_txt = [_txt(t) for t in tds]
+        hall = cells_txt[i_h] if i_h is not None and i_h < len(cells_txt) else ""
+        seat_cell = cells_txt[i_s] if i_s is not None and i_s < len(cells_txt) else ""
+        seat_next = (cells_txt[i_s + 1]
+                     if i_s is not None and i_s + 1 < len(cells_txt) else "")
+        room_m = re.match(r"^(\d{1,4})\b.*\b(FLOOR|BUILDING|BLOCK|HALL|ROOM)\b", seat_cell, re.I)
+        if room_m and re.fullmatch(r"\d{1,3}", seat_next):
+            hall, seat = room_m.group(1), seat_next    # room cell then seat cell
+        else:
+            hall_m = re.match(r"^(\d{1,4})\b", hall)
+            hall = hall_m.group(1) if hall_m else hall
+            seat = (re.match(r"^(\d{1,3})", seat_cell) or [None, ""])[1]
         out.append({
             "code": cells[i_code], "name": (cells[_i("name")] or "") if _i("name") is not None else "",
             "date": f"{dm.group(1)}-{mon}-{dm.group(3)}",
             "session": (re.search(r"\b(AN|FN)\b", ds) or [None, ""])[1],
             "slot": f"{tm.group(1)}-{tm.group(2)}" if tm else "",
-            "hall": hall or room,
+            "hall": hall,
             "seat": seat,
         })
     if not out and "<table" in html:

@@ -25,7 +25,7 @@
       </span>
       <span class="min-w-0 flex-1 sm:hidden">
         <span class="block text-sm font-semibold leading-snug text-balance text-base-content">{{ e.name_disp }}</span>
-        <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %}{% if e.hall.isdigit() %} &middot; Hall {{ e.hall }}{% else %} &middot; {{ e.hall }}{% endif %}{% endif %}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}</span>
+        <span class="block mt-0.5 font-mono text-xs text-base-content/60">{{ e.code }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %} &middot; Hall {{ e.hall }}{% endif %}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}</span>
       </span>
       <!-- desktop: one dense line, date right -->
       <span class="hidden sm:flex sm:w-full sm:items-baseline sm:justify-between sm:gap-4">
@@ -33,7 +33,7 @@
           <span class="font-mono text-base-content/60">{{ e.code }}</span>
           <span class="text-base-content">{{ e.name_disp }}</span>
         </span>
-        <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %}{% if e.hall.isdigit() %} &middot; Hall {{ e.hall }}{% else %} &middot; {{ e.hall }}{% endif %}{% endif %}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}</span>
+        <span class="shrink-0 font-mono text-xs text-base-content/60">{{ e.short }} &middot; {{ e.session_disp }}{% if e.slot %} &middot; {{ e.slot }}{% endif %}{% if e.hall %} &middot; Hall {{ e.hall }}{% endif %}{% if e.seat %} &middot; Seat {{ e.seat }}{% endif %}</span>
       </span>
     </li>
     {% endfor %}
