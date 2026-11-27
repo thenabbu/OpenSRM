@@ -238,13 +238,13 @@ describe('dash-delete-account', () => {
 describe('dash-details-dismiss', () => {
   const page = (): Document =>
     fresh(`
-      <details id="panel"><summary id="sum">tag</summary><form id="form"></form></details>
+      <details id="tag-21CSC201J-CAT1"><summary id="sum">tag</summary><form id="form"></form></details>
       <h3 id="outside">x</h3>`);
 
   it('closes an open details on an outside click', () => {
     const doc = page();
     bindDetailsDismiss(doc);
-    const d = doc.getElementById('panel') as HTMLDetailsElement;
+    const d = doc.getElementById('tag-21CSC201J-CAT1') as HTMLDetailsElement;
     d.open = true;
 
     doc.getElementById('outside')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -258,7 +258,7 @@ describe('dash-details-dismiss', () => {
     // behaviour flips it after dispatch in both documents (measured). What the
     // dismiss OWNS is the decision, so that is what is captured — an outside
     // click closes, an inside click (form or summary) does not.
-    const d = doc.getElementById('panel') as HTMLDetailsElement;
+    const d = doc.getElementById('tag-21CSC201J-CAT1') as HTMLDetailsElement;
     const closes: boolean[] = [];
     doc.addEventListener('click', () => closes.push(d.open));
     d.open = true;
@@ -270,6 +270,21 @@ describe('dash-details-dismiss', () => {
     expect(closes).toEqual([true, true]);             // summary is inside => ignored
     doc.getElementById('outside')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(closes).toEqual([true, true, false]);      // outside => closed
+  });
+
+  it('leaves a disclosure that is not the tag panel alone', () => {
+    // The attendance month accordion ships its newest month open; a click
+    // anywhere on the page used to collapse it (the dismiss matched the first
+    // `details[open]` in the document, whoever owned it).
+    const doc = page();
+    doc.body.insertAdjacentHTML('beforeend',
+      '<details class="hw-month" data-month="Nov 2026" open><summary>Nov 2026</summary></details>');
+    bindDetailsDismiss(doc);
+    const month = doc.querySelector('.hw-month') as HTMLDetailsElement;
+
+    doc.getElementById('outside')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(month.open).toBe(true);
   });
 });
 
