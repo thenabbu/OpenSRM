@@ -1,15 +1,9 @@
 {
   "api": {
     "/": {
-<<<<<<< HEAD
-      "bytes": 54031,
+      "bytes": 55125,
       "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13026,
-=======
-      "bytes": 55364,
-      "content_type": "text/html; charset=utf-8",
-      "gzip_bytes": 13261,
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
+      "gzip_bytes": 13196,
       "status": 200
     },
     "/api/marks": {
@@ -279,38 +273,23 @@
     "/static/sw.js": {
       "bytes": 30933,
       "content_type": "text/javascript; charset=utf-8",
-<<<<<<< HEAD
-      "gzip_bytes": 9806,
-=======
-      "gzip_bytes": 9898,
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
+      "gzip_bytes": 9897,
       "status": 200
     }
   },
   "pages": {
     "/": {
-<<<<<<< HEAD
-      "dom_nodes": 355,
-      "html_bytes": 54031,
-      "html_gzip_bytes": 13026,
-      "js_bytes": 46265,
-=======
-      "dom_nodes": 364,
-      "html_bytes": 55364,
-      "html_gzip_bytes": 13261,
+      "dom_nodes": 362,
+      "html_bytes": 55125,
+      "html_gzip_bytes": 13196,
       "js_bytes": 46495,
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
       "js_files": [
         "/static/dist/assets/app-HASH.js",
         "/static/perf.js",
         "/static/push.js",
         "/static/sw.js"
       ],
-<<<<<<< HEAD
-      "js_gzip_bytes": 15492,
-=======
-      "js_gzip_bytes": 15584,
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
+      "js_gzip_bytes": 15583,
       "script_tags": 5
     },
     "/login": {
@@ -324,19 +303,11 @@
         "/static/perf.js",
         "/static/sw.js"
       ],
-<<<<<<< HEAD
-      "js_gzip_bytes": 12522,
+      "js_gzip_bytes": 12613,
       "script_tags": 3
     }
   },
-  "revision": "4547d16",
-=======
-      "js_gzip_bytes": 12614,
-      "script_tags": 3
-    }
-  },
-  "revision": "c5c08e9",
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
+  "revision": "5f30644",
   "tabs": {
     "academics": {
       "panel_dom_nodes": 623,
@@ -385,24 +356,13 @@
     }
   },
   "totals": {
-<<<<<<< HEAD
-    "api_bytes": 603163,
-    "api_gzip_bytes": 194033,
+    "api_bytes": 604487,
+    "api_gzip_bytes": 194294,
     "dom_nodes_all_panels": 2133,
-    "dom_nodes_page": 355,
-    "html_bytes": 72006,
-    "html_gzip_bytes": 18148,
-    "js_bytes": 51142,
-    "js_gzip_bytes": 17286
-=======
-    "api_bytes": 604726,
-    "api_gzip_bytes": 194360,
-    "dom_nodes_all_panels": 2062,
-    "dom_nodes_page": 364,
-    "html_bytes": 73339,
-    "html_gzip_bytes": 18383,
+    "dom_nodes_page": 362,
+    "html_bytes": 73100,
+    "html_gzip_bytes": 18318,
     "js_bytes": 51372,
-    "js_gzip_bytes": 17378
->>>>>>> 0efc217 (build: rebuild dist + sw, recapture v3 golden, retarget the offline suites)
+    "js_gzip_bytes": 17377
   }
 }
