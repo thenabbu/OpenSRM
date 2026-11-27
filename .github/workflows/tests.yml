@@ -505,6 +505,7 @@ jobs:
             test_fees_dut test_scope_profile_dut \
             test_widget_parity_dut \
             test_page_chrome_dut \
+            test_scope_first_paint \
             test_island_api
 
       - name: test_dash_fit (dashboard fit DUT, self-booting)

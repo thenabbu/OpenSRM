@@ -20,22 +20,32 @@ from flask import jsonify
 
 from ..app import get_current_user
 from ..views import attendance_island, marks_island, timetable_island, tools_island
-from ..views.dashboard import dashboard_island_payload, panel_data
+from ..views.dashboard import dashboard_island_payload, panel_data, panel_has_data
 from ..views.timetable import _day_slots, _tt_grid
 from . import FlatBlueprint
 
 bp = FlatBlueprint("panels", __name__)
 
 
-def _panel(getter, error="no data yet — sync first"):
+def _panel(getter, error="no data yet — sync first", panel="dashboard"):
     """401/404/200 wrapper shared by the four endpoints. `getter` pulls the
     slice out of panel_data()'s model and returns None when the panel is
     gated — the one place the "no data" rule is spelled."""
     netid = get_current_user()
     if not netid:
         return jsonify(ok=False, error="not logged in"), 401
-    data = getter(panel_data(netid))
-    if data is None:
+    # `panel` names WHICH panel's gate applies: panel_has_data() keys on
+    # vm["panel"], which defaults to 'dashboard'. Passing it is what makes
+    # /api/tools/island 404 exactly when /tools 404s.
+    vm = panel_data(netid, panel)
+    data = getter(vm)
+    # ONE gate, the SAME one presentation() uses for the page's 404 — so the
+    # page and its data can never disagree about whether a panel exists.
+    #
+    # `getter` is not the gate: api_campus returns {"show": False, "cards": []}
+    # (a dict, not None) for a hidden tab, so testing `data is None` let the API
+    # answer 200 on a page that 404s. Ask the predicate instead.
+    if data is None or not panel_has_data(vm):
         return jsonify(ok=False, error=error), 404
     resp = jsonify(ok=True, data=data)
     resp.headers["Cache-Control"] = "no-store"
@@ -63,19 +73,20 @@ def api_attendance():
 def api_fees():
     """/fees as data: the fees tab's own view model (due, dues, years, ledger),
     None when the page would 404."""
-    return _panel(lambda vm: vm["fees"], "no fees data yet — sync first")
+    return _panel(lambda vm: vm["fees"], "no fees data yet — sync first", panel="fees")
 
 
 def api_campus():
     """/campus as data: {"show", "cards"}, 404 while show is False (the page's
     own gate)."""
     return _panel(lambda vm: vm["campus"] if vm["campus"]["show"] else None,
-                  "no campus data yet — sync first")
+                  "no campus data yet — sync first", panel="campus")
 
 
 def api_academics():
     """/academics as data: {"cgpa", "courses"}, None when the page would 404."""
-    return _panel(lambda vm: vm["academics"], "no academics data yet — sync first")
+    return _panel(lambda vm: vm["academics"], "no academics data yet — sync first",
+                  panel="academics")
 
 
 def api_marks_island():
@@ -103,7 +114,7 @@ def api_timetable():
 def api_tools():
     """/tools as data: tools_island.props() — {"rows": [...]}."""
     return _panel(lambda vm: tools_island.props(vm["tools"]),
-                  "no tools available")
+                  "no tools available", panel="tools")
 
 
 def api_attendance_island():

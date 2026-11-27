@@ -348,6 +348,36 @@ describe('dash-scope-poll', () => {
     expect(spy).toHaveBeenCalledTimes(3);
   });
 
+  // The first-sign-in bug: the login repaints the page while the SCOPE sync is
+  // still running, so the page arrives with no Academics/Fees/Tools nav at all.
+  // One `complete` was treated as "done", but a second batch (the ops that come
+  // with the features the first batch unlocked) can still be owed. `sync_due`
+  // is the server saying so, and ignoring it is exactly the reported symptom.
+  it('keeps polling when the server says another SCOPE batch is still due', async () => {
+    const doc = fresh('');
+    doc.body.setAttribute('data-scope-sync', 'running');
+    const spy = vi
+      .fn()
+      .mockResolvedValueOnce(json({ ok: true, state: 'complete', sync_due: true }))
+      .mockResolvedValueOnce(json({ ok: true, state: 'complete', sync_due: false }));
+    const repaint = vi.fn(async () => undefined);
+    const sched = driver();
+    startScopePoll(doc, spy as unknown as typeof fetch, repaint, sched.schedule);
+
+    await sched.run(SCOPE_FIRST_DELAY_MS);
+    // First landing still repaints the page the user is looking at.
+    expect(repaint).toHaveBeenCalledTimes(1);
+    expect(sched.pending).toHaveLength(1);            // ...but it does not stop
+
+    await sched.run(SCOPE_DELAY_MS);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(repaint).toHaveBeenCalledTimes(2);
+    expect(sched.pending).toHaveLength(0);            // now it is really done
+
+    await sched.run(SCOPE_DELAY_MS).catch(() => {});
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('stops silently on "off"', async () => {
     const doc = fresh('');
     doc.body.setAttribute('data-scope-sync', 'stale');

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'preact';
-import { hydrateAll, mountBounded } from './main';
+import { adoptNavigation, hydrateAll, mountBounded } from './main';
 
 // W4.3: deliberately NOT ported to @testing-library/preact. The unit under test
 // is main.ts's hydration boundary itself (readProps -> mountBounded -> restore),
@@ -231,5 +231,102 @@ describe('mountBounded clears the mount before rendering', () => {
     const Boom = () => { throw new Error('boom'); };
     expect(mountBounded('t', Boom as never, el, {}, 0)).toBe(false);
     expect(el.textContent).toContain('SERVER');
+  });
+});
+
+// ── W5.5-scope: the nav a first sign-in is missing ────────────────────────
+// The reported bug: a new user sees only SP data, and the SCOPE-backed nav
+// (Academics / Fees / Tools) appears only after a manual reload. Those entries
+// are gated server-side on the SCOPE view models, so they are ABSENT from the
+// markup the login response paints — and refreshIslands() cannot reveal a route
+// that is not in the DOM. adoptNavigation() re-reads the page and reconciles
+// the chrome, which is what makes them appear without a reload.
+describe('adoptNavigation', () => {
+  const html = (nav: string) => `<!doctype html><html><head><title>t</title></head>
+    <body data-scope-sync="running">
+      <header class="navbar">${nav}</header>
+      <div class="navbar lg:hidden">${nav}</div>
+      <nav class="dock">${nav}</nav>
+      <main><div data-island="dashboard"></div></main>
+    </body></html>`;
+
+  const withNav = '<a href="/academics">Academics</a><a href="/fees">Fees</a><a href="/tools">Tools</a>';
+
+  /** A standalone document, the way a browser holds a parsed page. */
+  const parse = (body: string) => new DOMParser().parseFromString(body, 'text/html');
+
+  /** A fetch stub that answers with `body` for THIS page's URL. `redirected`
+   *  simulates an expired session landing on /login. */
+  const reply = (body: string, opts: { redirected?: boolean; ok?: boolean } = {}) =>
+    vi.fn(async () => ({
+      ok: opts.ok ?? true,
+      redirected: opts.redirected ?? false,
+      url: opts.redirected ? 'https://x/login' : location.href,
+      text: async () => body,
+    })) as unknown as typeof fetch;
+
+  it('picks up nav entries that appeared after the SCOPE sync landed', async () => {
+    // First paint: portal-only. No SCOPE nav anywhere.
+    const doc = parse(html('<a href="/">Home</a>'));
+    expect(doc.querySelector('a[href="/academics"]')).toBeNull();
+
+    const changed = await adoptNavigation(doc, reply(html(withNav)));
+
+    expect(changed).toBe(true);
+    // Every bar, not just the desktop one: the dock is the phone's only nav.
+    expect(doc.querySelectorAll('a[href="/academics"]')).toHaveLength(3);
+    expect(doc.querySelectorAll('a[href="/tools"]')).toHaveLength(3);
+    expect(doc.querySelector('a[href="/"]')).toBeNull();   // Home: the nav replaced
+    // The signal a still-running poll reads.
+    expect(doc.body.getAttribute('data-scope-sync')).toBe('complete');
+  });
+
+  it('leaves the page alone when the server still has the same nav', async () => {
+    const doc = parse(html(withNav));
+    const before = doc.querySelector('header.navbar')!.outerHTML;
+
+    const changed = await adoptNavigation(doc, reply(html(withNav)));
+
+    expect(changed).toBe(false);
+    expect(doc.querySelector('header.navbar')!.outerHTML).toBe(before);
+    // Not marked complete: the server's own state stands, so a second batch can
+    // still be polled for.
+    expect(doc.body.getAttribute('data-scope-sync')).toBe('running');
+  });
+
+  it('refuses a login page that arrived as a redirect', async () => {
+    const doc = parse(html('<a href="/">Home</a>'));
+    const changed = await adoptNavigation(
+      doc, reply(html('<a href="/login">Sign in</a>'), { redirected: true }));
+    expect(changed).toBe(false);
+    expect(doc.querySelector('a[href="/login"]')).toBeNull();
+  });
+
+  it('keeps the painted nav when the refetch fails', async () => {
+    const doc = parse(html('<a href="/">Home</a>'));
+    const boom = vi.fn(async () => { throw new Error('offline'); }) as unknown as typeof fetch;
+    await expect(adoptNavigation(doc, boom)).resolves.toBe(false);
+    expect(doc.querySelector('a[href="/"]')).not.toBeNull();
+  });
+
+  // REGRESSION: the same-page check compared two Sets with `.includes` (a
+  // Set has `.has`). It threw a TypeError that the caller's .catch() swallowed,
+  // so adoptNavigation returned "no change" on EVERY same-route call and the
+  // nav never appeared. Every other test here passed while that was true —
+  // only this one walks the equal-island-set branch.
+  it('adopts the nav when the island set is UNCHANGED (the normal landing)', async () => {
+    const doc = parse(html('<a href="/">Home</a>'));
+    const changed = await adoptNavigation(doc, reply(html(withNav)));
+    expect(changed).toBe(true);
+    expect(doc.querySelector('a[href="/academics"]')).not.toBeNull();
+  });
+
+  it('does not adopt a nav from a DIFFERENT route', async () => {
+    // A 200 for another page (a routing change mid-flight, a prefetch landing
+    // wrong) must never repaint this page's chrome.
+    const doc = parse(html('<a href="/">Home</a>'));
+    const other = html(withNav).replace('data-island="dashboard"', 'data-island="academics"');
+    expect(await adoptNavigation(doc, reply(other))).toBe(false);
+    expect(doc.querySelector('a[href="/academics"]')).toBeNull();
   });
 });
