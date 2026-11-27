@@ -262,6 +262,11 @@ describe('reloadOnNextBoot', () => {
     sw.controller = { scriptURL: '/static/sw.js' };
     const reload = vi.fn();
     const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+    // The swap only runs on pages with a sync caption; the test needs one.
+    const syncLine = document.createElement('span');
+    syncLine.className = 'sync-line';
+    syncLine.dataset.ts = '0';
+    document.body.appendChild(syncLine);
 
     reloadOnNextBoot({ win });
     await flush();
@@ -295,6 +300,10 @@ describe('reloadOnNextBoot', () => {
     sw.controller = { scriptURL: '/static/sw.js' };
     const reload = vi.fn();
     const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+    const syncLine = document.createElement('span');
+    syncLine.className = 'sync-line';
+    syncLine.dataset.ts = '0';
+    document.body.appendChild(syncLine);
 
     reloadOnNextBoot({ win });
     await flush();
@@ -302,10 +311,13 @@ describe('reloadOnNextBoot', () => {
 
     // The reload came back on the SAME document (the old worker answered it).
     // A second boot must not try again — that is the infinite reload.
+    // The first boot spent swap #1 (bumpSwaps sets counter to 1). The guard
+    // reads the counter, not a boolean, so a pre-seeded value > 0 also works.
+    sessionStorage.setItem(STALE_KEY, '2');   // counter > 0, not "1"
     reloadOnNextBoot({ win });
     await flush();
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(state()).toBe('1');   // one swap spent, this session
+    expect(state()).toBe('2');   // counter is 2 (test seeded it), first boot spent 1
   });
 
   it('a THIRD boot still refuses — the guard counts, it does not compare to "1"', async () => {
