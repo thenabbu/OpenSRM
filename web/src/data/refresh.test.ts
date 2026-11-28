@@ -3,7 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import attendanceIsland from '../contracts/fixtures/attendance_island.json';
 import { attendanceProps } from '../panels/attendance/contract';
 import { wipeAll } from '../db';
-import { bindRefreshButtons, refreshProps, syncData, triggerRefresh } from './refresh';
+import {
+  bindRefreshButtons,
+  refreshProps,
+  revalidateOnReturn,
+  revalidatePage,
+  startDataRefreshLoop,
+  syncData,
+  triggerRefresh,
+} from './refresh';
 
 // The sync path: a repaint is only allowed to touch the DOM when the server
 // answered something the island's OWN schema accepts. Everything else keeps the
@@ -183,5 +191,136 @@ describe('the refresh primitive (W5.2a)', () => {
     b.click();                     // aria-disabled is set synchronously by the first click
     await vi.waitFor(() => expect(b.hasAttribute('aria-disabled')).toBe(false));
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A throwaway document with whatever markup is given. */
+const fresh = (html: string): Document => {
+  const d = document.implementation.createHTMLDocument('t');
+  d.body.innerHTML = html;
+  // A created document reports 'prerender', and both loops rightly stand down
+  // there. These tests describe a tab somebody is looking at.
+  Object.defineProperty(d, 'visibilityState', { value: 'visible', configurable: true });
+  return d;
+};
+
+describe('revalidatePage', () => {
+  const page = (caption: boolean): Document => {
+    const d = fresh(caption ? '<span class="sync-line" data-ts="0"></span>' : '<div></div>');
+    return d;
+  };
+
+  it('ASKS the state route — never GETs the POST-only refresh route', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const doc = page(true);
+    const stub = (async (url: string, init?: unknown) => {
+      calls.push([url, init]);
+      return { ok: true, json: async () => ({ ok: true, stale: false }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+
+    vi.stubGlobal('fetch', stub);
+    vi.stubGlobal('document', doc);
+    await revalidatePage();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toBe('/api/data/state');
+    // A GET: /api/refresh answers only POST, and a GET there is a 405 the
+    // browser logs as a console error on every page load.
+    const init = calls[0][1] as { method?: string } | undefined;
+    expect(init?.method ?? 'GET').toBe('GET');
+    vi.unstubAllGlobals();
+  });
+
+  it('says nothing on a page with no sync caption (the login page)', async () => {
+    const calls: string[] = [];
+    const stub = (async (url: string) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ ok: true, stale: true }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', stub);
+    vi.stubGlobal('document', page(false));
+    await revalidatePage();
+    expect(calls).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('startDataRefreshLoop', () => {
+  const page = (canSync = '1'): Document =>
+    fresh(`<meta name="can-sync" content="${canSync}"><span class="sync-line" data-ts="0"></span>`);
+
+  it('re-checks on a timer while the tab is visible, so an open page keeps up', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => {});
+    const doc = page();
+    const stop = startDataRefreshLoop({ doc, win: window, intervalMs: 1000, refresh });
+
+    vi.advanceTimersByTime(1000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    stop();
+    vi.advanceTimersByTime(5000);
+    expect(refresh).toHaveBeenCalledTimes(2);       // stop() means stop
+    vi.useRealTimers();
+  });
+
+  it('a hidden tab asks for nothing', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => {});
+    const doc = page();
+    Object.defineProperty(doc, 'visibilityState', { value: 'hidden', configurable: true });
+    const stop = startDataRefreshLoop({ doc, win: window, intervalMs: 1000, refresh });
+
+    vi.advanceTimersByTime(3000);
+    expect(refresh).not.toHaveBeenCalled();
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('does nothing on a page with no credential or no caption', () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => {});
+    const stopA = startDataRefreshLoop({ doc: page('0'), win: window, intervalMs: 1000, refresh });
+    const stopB = startDataRefreshLoop({ doc: fresh(''), win: window, intervalMs: 1000, refresh });
+    vi.advanceTimersByTime(5000);
+    expect(refresh).not.toHaveBeenCalled();
+    stopA(); stopB();
+    vi.useRealTimers();
+  });
+});
+
+describe('revalidateOnReturn', () => {
+  it('swaps instead of fetching data when the build stamp moved', async () => {
+    const revalidate = vi.fn(async () => {});
+    const swap = vi.fn(async () => {});
+    const doc = fresh('<div></div>');
+    Object.defineProperty(doc, 'visibilityState', { value: 'visible', configurable: true });
+
+    await revalidateOnReturn({ doc, version: async () => 'opensrm-v69-bbb', loadedWith: 'opensrm-v69-aaa', revalidate, swap });
+    expect(swap).toHaveBeenCalledTimes(1);
+    expect(revalidate).not.toHaveBeenCalled();      // the reload runs its own check
+  });
+
+  it('same stamp: asks the server about data instead', async () => {
+    const revalidate = vi.fn(async () => {});
+    const swap = vi.fn(async () => {});
+    const doc = fresh('<div></div>');
+    Object.defineProperty(doc, 'visibilityState', { value: 'visible', configurable: true });
+
+    await revalidateOnReturn({ doc, version: async () => 'opensrm-v69-aaa', loadedWith: 'opensrm-v69-aaa', revalidate, swap });
+    expect(swap).not.toHaveBeenCalled();
+    expect(revalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unreadable stamp is not evidence of a new build', async () => {
+    const revalidate = vi.fn(async () => {});
+    const swap = vi.fn(async () => {});
+    const doc = fresh('<div></div>');
+    Object.defineProperty(doc, 'visibilityState', { value: 'visible', configurable: true });
+
+    await revalidateOnReturn({ doc, version: async () => '', loadedWith: '', revalidate, swap });
+    expect(swap).not.toHaveBeenCalled();
+    expect(revalidate).toHaveBeenCalledTimes(1);
   });
 });

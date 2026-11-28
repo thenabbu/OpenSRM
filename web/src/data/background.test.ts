@@ -3,7 +3,6 @@ import {
   AVATAR_SELECTOR,
   FB_FILL_URL,
   OFFSCREEN_CLASS,
-  STALE_AFTER_S,
   autoRefreshIfStale,
   bindAvatarOffscreen,
   bindFeedbackModal,
@@ -182,48 +181,47 @@ describe('dash-fb-modal', () => {
 
 // ── dash-auto-refresh ─────────────────────────────────────────────────────
 describe('dash-auto-refresh', () => {
-  const nowS = (): number => Math.floor(Date.now() / 1000);
-  const page = (ts: number | null, canSync = '1'): Document =>
+  const page = (canSync = '1'): Document =>
     fresh(`
       <meta name="can-sync" content="${canSync}">
-      <span class="sync-line" data-ts="${ts ?? 0}"></span>`);
+      <span class="sync-line" data-ts="0"></span>`);
 
-  it('fires ONE quiet refresh when the last sync is older than 10 minutes', () => {
+  it('asks the SERVER, and fires ONE quiet refresh when it says stale', async () => {
     const refresh = vi.fn(async () => {});
-    const fired = autoRefreshIfStale(page(nowS() - (STALE_AFTER_S + 1)), window, refresh);
-    expect(fired).toBe(true);
-    expect(refresh).toHaveBeenCalledTimes(1);
+    const state = vi.fn(async () => true);
+    expect(autoRefreshIfStale(page(), window, refresh, state)).toBe(true);
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(state).toHaveBeenCalledTimes(1);
     // quiet=true — a background sync never toasts
     expect(refresh).toHaveBeenCalledWith(true);
   });
 
-  it('is a threshold, not a timer: 599 s is fresh, 601 s is stale', () => {
+  it('repaints nothing when the server says the data is fresh', async () => {
     const refresh = vi.fn(async () => {});
-    expect(autoRefreshIfStale(page(nowS() - 599), window, refresh)).toBe(false);
+    const state = vi.fn(async () => false);
+    autoRefreshIfStale(page(), window, refresh, state);
+    await vi.waitFor(() => expect(state).toHaveBeenCalled());
     expect(refresh).not.toHaveBeenCalled();
-    expect(autoRefreshIfStale(page(nowS() - 601), window, refresh)).toBe(true);
-    expect(refresh).toHaveBeenCalledTimes(1);
-  });
-
-  it('treats "never synced" as stale', () => {
-    const refresh = vi.fn(async () => {});
-    expect(autoRefreshIfStale(page(null), window, refresh)).toBe(true);
   });
 
   it('does not fire without credentials, offline, or without a caption', () => {
     const refresh = vi.fn(async () => {});
-    expect(autoRefreshIfStale(page(1, '0'), window, refresh)).toBe(false);
-    expect(autoRefreshIfStale(fresh('<span class="sync-line" data-ts="1"></span>'), window, refresh)).toBe(true);
+    const state = vi.fn(async () => true);
+    expect(autoRefreshIfStale(page('0'), window, refresh, state)).toBe(false);
+    expect(autoRefreshIfStale(fresh('<span class="sync-line" data-ts="1"></span>'), window, refresh, state)).toBe(true);
     vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
-    expect(autoRefreshIfStale(page(1), window, refresh)).toBe(false);
-    expect(autoRefreshIfStale(fresh(''), window, refresh)).toBe(false);
+    expect(autoRefreshIfStale(page(), window, refresh, state)).toBe(false);
+    expect(autoRefreshIfStale(fresh(''), window, refresh, state)).toBe(false);
+    // Only the one page with credentials + a caption asked: the first three
+    // returned before the check, so the server saw exactly one question.
+    expect(state).toHaveBeenCalledTimes(1);
   });
 
-  it('runs ONCE per call and never re-arms itself (no interval)', () => {
-    vi.useFakeTimers();
+  it('a failed check never starts a portal sync on a guess', async () => {
     const refresh = vi.fn(async () => {});
-    autoRefreshIfStale(page(1), window, refresh);
-    vi.advanceTimersByTime(60_000);
-    expect(refresh).toHaveBeenCalledTimes(1);
+    const state = vi.fn(async () => { throw new Error('offline'); });
+    autoRefreshIfStale(page(), window, refresh, state);
+    await vi.waitFor(() => expect(state).toHaveBeenCalled());
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

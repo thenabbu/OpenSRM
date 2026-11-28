@@ -120,7 +120,7 @@ DEFAULT_OUT = Path("/opt/data/missions/opensrm-preact/captures")
 # avatar is rendered in the browser by @blobatar/preact, so there is no SVG URL
 # left to capture.
 API_GETS = ["/", "/login", "/healthz", "/api/marks", "/api/push/status",
-            "/api/scope/status", "/api/timetable", "/api/timetable/history"]
+            "/api/scope/status", "/api/data/state", "/api/timetable", "/api/timetable/history"]
 
 # ── scope payload: repo fixtures (read-only) + literals from repo tests ──
 # op -> repo fixture file holding that op's payload (JSON).
@@ -552,6 +552,11 @@ def api_capture(base: str, token: str, out: Path) -> dict:
         (out / "api").mkdir(parents=True, exist_ok=True)
         if ctype.startswith("text/") or ctype == "" or "json" in ctype or "javascript" in ctype:
             text = normalize(raw.decode("utf-8", "replace"))
+            if path == "/api/data/state":
+                # `age_s` is seconds since the seed stamped last_fetch: it
+                # differs by a few every run and means nothing in a diff. The
+                # verdict (`stale`) is the part that must stay byte-equal.
+                text = re.sub(r'"age_s":\s*\d+', '"age_s": 0', text)
             if path == "/internal/metrics":
                 # runtime telemetry: values are timing/RSS/ages (differ every
                 # run); keep metric names + labels, zero the values

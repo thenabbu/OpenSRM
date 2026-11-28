@@ -94,6 +94,9 @@ jobs:
         run: PYTHONPATH=. .venv/bin/python scripts/check_css_classes.py
       - name: test_app_factory (create_app isolation)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_app_factory.py
+      # The verdict a dashboard asks for instead of reading its own data-ts.
+      - name: test_data_state_route (GET /api/data/state)
+        run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_data_state_route.py
       - name: test_exams (end-sem parser)
         run: DATA_DIR="$(mktemp -d)" .venv/bin/python tests/unit/test_exams.py
       - name: test_exams_view (exam card view model)

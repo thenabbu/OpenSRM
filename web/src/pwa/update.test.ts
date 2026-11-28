@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyUpdate, refreshOnVisible, watchForUpdate } from './update';
+import { applyUpdate, refreshOnVisible, reloadOnNextBoot, STALE_KEY, watchForUpdate } from './update';
 
 /**
  * P8.3 — update banner.
@@ -79,6 +79,11 @@ const watchVisibility = (): ReturnType<typeof vi.fn> => {
 beforeEach(() => {
   Object.defineProperty(navigator, 'serviceWorker', { value: undefined, configurable: true });
   setVisibility('visible');
+  // The swap budget is sessionStorage, which jsdom keeps across tests: a test
+  // that spends it would silently disarm the next one.
+  sessionStorage.clear();
+  (document.activeElement as HTMLElement | null)?.blur?.();
+  document.body.replaceChildren();
 });
 afterEach(() => {
   unsubscribes.splice(0).forEach((off) => off());
@@ -244,5 +249,99 @@ describe('refreshOnVisible', () => {
   it('does not throw when service workers are unsupported', () => {
     expect(() => refreshOnVisible()).not.toThrow();
     expect(() => fireVisibility()).not.toThrow();
+  });
+});
+
+describe('reloadOnNextBoot', () => {
+  const state = (): string => sessionStorage.getItem(STALE_KEY) ?? '';
+
+  it('swaps a waiting worker at boot and reloads ONCE, unasked', async () => {
+    const { sw, reg } = fakeSW();
+    const waitingPost = vi.fn();
+    reg.waiting = { postMessage: waitingPost };
+    sw.controller = { scriptURL: '/static/sw.js' };
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+    // The swap only runs on pages with a sync caption; the test needs one.
+    const syncLine = document.createElement('span');
+    syncLine.className = 'sync-line';
+    syncLine.dataset.ts = '0';
+    document.body.appendChild(syncLine);
+
+    reloadOnNextBoot({ win });
+    await flush();
+
+    expect(waitingPost).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not swap while a field is focused — a typed value is never lost', async () => {
+    const { sw, reg } = fakeSW();
+    reg.waiting = { postMessage: vi.fn() };
+    sw.controller = { scriptURL: '/static/sw.js' };
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(sw.controller).toBeTruthy();
+    expect(reload).not.toHaveBeenCalled();      // stood down: the field is in use
+
+    input.remove();                             // this doc's focus is NOT the next test's
+  });
+
+  it('never reloads twice in one session, so a failed takeover cannot loop', async () => {
+    const { sw, reg } = fakeSW();
+    reg.waiting = { postMessage: vi.fn() };
+    sw.controller = { scriptURL: '/static/sw.js' };
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+    const syncLine = document.createElement('span');
+    syncLine.className = 'sync-line';
+    syncLine.dataset.ts = '0';
+    document.body.appendChild(syncLine);
+
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // The reload came back on the SAME document (the old worker answered it).
+    // A second boot must not try again — that is the infinite reload.
+    // The first boot spent swap #1 (bumpSwaps sets counter to 1). The guard
+    // reads the counter, not a boolean, so a pre-seeded value > 0 also works.
+    sessionStorage.setItem(STALE_KEY, '2');   // counter > 0, not "1"
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(state()).toBe('2');   // counter is 2 (test seeded it), first boot spent 1
+  });
+
+  it('a THIRD boot still refuses — the guard counts, it does not compare to "1"', async () => {
+    const { sw, reg } = fakeSW();
+    reg.waiting = { postMessage: vi.fn() };
+    sw.controller = { scriptURL: '/static/sw.js' };
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+
+    // The loop the browser test caught: the counter had climbed to "2", an
+    // equality check against "1" missed it, and every boot reloaded again.
+    sessionStorage.setItem(STALE_KEY, '2');
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a first install is a normal load: nothing is reloaded', async () => {
+    const { sw } = fakeSW();                    // controller === null
+    const reload = vi.fn();
+    const win = { document, navigator, location: { reload } } as unknown as Window & typeof globalThis;
+
+    reloadOnNextBoot({ win });
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
   });
 });

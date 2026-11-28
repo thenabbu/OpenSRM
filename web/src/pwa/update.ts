@@ -22,9 +22,40 @@
  * not fire `controllerchange` reliably, so signal 2 alone can leave an iPhone
  * with a waiting worker and no banner at all. Signal 1 plus the
  * `visibilitychange` re-poll below (`refreshOnVisible`) cover that.
+ *
+ * NO BANNER, NO RELOAD
+ * --------------------
+ * A student does not care which worker is serving them, so nothing here asks
+ * them to reload. This module used to paint "a new version is ready" and
+ * reload on a click; now the page repaints its own data in place and the first
+ * `controllerchange` reloads once, unasked (`reloadOnNextBoot`), for a bundle
+ * the running page was never loaded with. `applyUpdate` survives only as the
+ * one forced way out (a route the new worker may have removed).
  */
 
 export const UPDATE_EVENT = 'controllerchange';
+
+/**
+ * sessionStorage flag meaning "the worker took over under this document".
+ *
+ * `sessionStorage`, not memory, because a reload clears memory: the only place
+ * evidence of a swap can survive the swap is storage that outlives the
+ * document. Set at most once per session, so a page that keeps finding itself
+ * on an old build reloads at most twice.
+ */
+export const STALE_KEY = 'osrm-swapped';
+
+/** How many swaps this session has already spent. Unreadable storage = 0. */
+export function swapsSpent(): number {
+  try { return Number(sessionStorage.getItem(STALE_KEY) || 0) || 0; } catch { return 0; }
+}
+
+/** Count one spent swap. Never throws: private mode has no storage. */
+function bumpSwaps(): void {
+  try {
+    sessionStorage.setItem(STALE_KEY, String(Number(sessionStorage.getItem(STALE_KEY) || 0) + 1));
+  } catch { /* private mode: the loop risk is accepted over a broken page */ }
+}
 
 /** How often a tab regaining focus may force a worker check. */
 const REFRESH_MS = 5000;
@@ -167,4 +198,110 @@ export function refreshOnVisible(): () => void {
 
   document.addEventListener('visibilitychange', onVisible);
   return () => document.removeEventListener('visibilitychange', onVisible);
+}
+
+/**
+ * Take a waiting new worker at the next moment nothing is going on, then reload
+ * ONCE so the page runs the bundle that worker carries.
+ *
+ * Why a reload at all: repainting in place refreshes DATA, never markup —
+ * `refreshIslands` patches islands from their `/api` slices, so a release that
+ * changed a template would otherwise reach an open tab only on its next open.
+ * The swap is therefore automatic, never asked for: taken at boot (a fresh
+ * document, nothing typed) or while the tab is hidden (nobody looking), and
+ * `pending` is the boot-time backstop for a swap taken mid-session.
+ *
+ * The rules that must hold:
+ *   * nothing typed is lost — `dialog[open]`, `details[open]`, a focused input
+ *     and a running sync all stand the swap down, and it looks again later;
+ *   * a first install is a normal load and never reloads;
+ *   * a swap that reloads onto the SAME build stops after `STALE_MAX` boots,
+ *     or a worker that cannot take over reloads the tab for ever.
+ *
+ * `beforeSwap` is the last look at the page before it goes. Returns an
+ * unsubscribe.
+ */
+export function reloadOnNextBoot(
+  opts: { beforeSwap?: () => boolean; win?: Window & typeof globalThis; loadedWith?: () => string } = {},
+): () => void {
+  const win = opts.win ?? window;
+  const sw = container();
+  if (!sw) return () => {};
+
+  // The swap only matters on a page that has data to refresh. A page without
+  // the sync caption (login, settings, etc.) has no state to lose and no
+  // numbers to show — swapping it is just a churn. The login page already
+  // proved this with its reload loop.
+  if (!win.document.querySelector('.sync-line')) return () => {};
+  let done = false;
+
+  const idle = (): boolean => {
+    const d = win.document;
+    if (!d) return false;
+    if (d.querySelector('dialog[open]') || d.querySelector('details[open]')) return true;
+    const a = d.activeElement as HTMLElement | null;
+    if (a && a !== d.body) {
+      const tag = a.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || a.isContentEditable) return true;
+    }
+    return !!opts.beforeSwap?.();
+  };
+
+  const swap = (): void => {
+    if (done || !sw.controller) return;
+    if (win.navigator?.onLine === false) return;
+    if (idle()) return;
+    done = true;
+    bumpSwaps();                  // spent BEFORE the reload, not after it
+    void sw.getRegistration?.call(sw).then((reg) => {
+      if (reg?.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        win.location.reload();     // queued behind the worker: the new one serves it
+        return;
+      }
+      void reg?.update?.().then(() => win.location.reload(), () => {});
+    }, () => { done = false; });
+  };
+
+  // The session already spent its swap. Spending ANOTHER is only correct if the
+  // reload came back on a NEW bundle; if it came back on the same document (an
+  // old worker still serving, a build that never took) reloading again is an
+  // infinite loop — the browser test caught exactly that at `/login`.
+  //
+  // `>=`, not `=== '1'`: the counter climbs, so an equality check against the
+  // FIRST value silently re-arms on the second boot and never stops.
+  if (swapsSpent() > 0) return () => {};
+
+  // The worker took over under THIS document. The swap already achieved what
+  // it was for (a new worker is serving); it only needs a reload if the page
+  // is on markup the new build no longer matches, which the caller decides.
+  // Counting it here would burn the session's only swap on a successful
+  // handover and leave the reload to the next boot — the opposite of the
+  // point. So this listener only exists to keep the hook honest in one case:
+  // a change we did NOT initiate means somebody else swapped.
+  const onChange = (): void => {
+    if (done) return;          // our own swap: the reload is already queued
+    bumpSwaps();               // a foreign swap: do not spend a second one
+  };
+
+  const onVisibility = (): void => {
+    if (win.document.visibilityState === 'hidden') swap();
+  };
+
+  sw.addEventListener(UPDATE_EVENT, onChange);
+  win.document.addEventListener('visibilitychange', onVisibility);
+  // A focused field was left: the swap it stood down on is now allowed.
+  win.document.addEventListener('focusout', swap);
+
+  // A hidden tab is still on the line, and `hidden` fires at load for a
+  // prerendered or background tab, so read it before the boot swap.
+  if (win.document.visibilityState === 'hidden') swap();
+  else if (win.document.readyState === 'complete') setTimeout(swap, 0);
+  else win.addEventListener('load', swap, { once: true });
+
+  return () => {
+    sw.removeEventListener(UPDATE_EVENT, onChange);
+    win.document.removeEventListener('visibilitychange', onVisibility);
+    win.document.removeEventListener('focusout', swap);
+  };
 }
