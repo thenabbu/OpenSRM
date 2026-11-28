@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit: the timetable's live marker is ONE running period, on today.
 
-The panels hydrate from props(), so `live` is what the student sees after the
+The panels hydrate from props(), so `live` is what the page shows after the
 island takes over. api_timetable used to hand props() today=None, so `d ==
 today` could only be false and NOTHING was marked live while the server markup
 had its own idea — a page whose two paints disagree reads as "every period is
@@ -53,16 +53,42 @@ def lives(payload):
 # to every row, and a prop that is always equal is a highlight on every row)
 check("today=None marks nothing live", lives(props(slots, SLOTS, None)) == [])
 
-real = slow_clock(12, 30)                     # inside period 4, 12:10-13:00
+# during period 4 (12:10-13:00) on a Monday: exactly ONE row is live
+real = slow_clock(12, 30)
 try:
     p = props(slots, SLOTS, A.datetime.now().strftime("%A"))
 finally:
     A.datetime = real
-check("today marks today's rows", len(lives(p)) == len(slots[DAY]), lives(p))
+check("exactly one slot live during its window", len(lives(p)) == 1, lives(p))
+check("the live slot is period 4 (12:10-13:00)", lives(p)[0]["start"] == "12:10", lives(p))
 check("nothing live off today",
       not [r for d in p["days"] if d["day"] != DAY
            for r in d["rows"] if r["kind"] == "class" and r["live"]])
 check("default_day is today", p["default_day"] == DAY)
+
+# before first class: nothing live
+real = slow_clock(8, 0)
+try:
+    p = props(slots, SLOTS, A.datetime.now().strftime("%A"))
+finally:
+    A.datetime = real
+check("before school: nothing live", lives(p) == [])
+
+# after last class: nothing live
+real = slow_clock(18, 0)
+try:
+    p = props(slots, SLOTS, A.datetime.now().strftime("%A"))
+finally:
+    A.datetime = real
+check("after school: nothing live", lives(p) == [])
+
+# during break: nothing live (breaks don't get live=true)
+real = slow_clock(11, 15)  # inside break 11:10-11:20
+try:
+    p = props(slots, SLOTS, A.datetime.now().strftime("%A"))
+finally:
+    A.datetime = real
+check("during break: nothing live", lives(p) == [])
 
 if fails:
     print(f"\nFAILED: {len(fails)}")
