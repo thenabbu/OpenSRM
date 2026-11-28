@@ -3,6 +3,11 @@ import { markHydrated, type HostProps } from '../../islands/contract';
 
 export type MarksHost = HostProps;
 
+/** A grade headline takes the academics tab's tint: O = faint info blue,
+ * F = faint red (base.html `.acad-g-o` / `.acad-g-f`). Nothing else is tinted. */
+const gradeTint = (s: MarksSubject): string =>
+  s.grade === 'O' ? ' acad-g acad-g-o' : s.grade === 'F' ? ' acad-g acad-g-f' : '';
+
 const CHIP = 'inline-flex items-center justify-center w-[6.5rem] h-5 shrink-0 rounded-full bg-base-300 text-base-content/70 font-mono text-xs px-2';
 
 /**
@@ -85,7 +90,7 @@ function Subject({ s }: { s: MarksSubject }) {
           <span class="font-mono text-xs text-base-content/60">{s.code}</span>
           {/* neutral number; exactly one outlier may take the accent (§2.7).
               An internal-only course (/100) leads with its GRADE. */}
-          <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}`}>{s.head_disp}</span>
+          <span class={`font-mono font-bold text-lg tabular-nums${s.outlier ? ' text-secondary' : ''}${gradeTint(s)}`}>{s.head_disp}</span>
         </div>
         <h3 class="text-sm font-semibold leading-snug">{s.title || s.code}</h3>
         {s.sub_disp ? <div class="font-mono text-xs text-base-content/50 tabular-nums">{s.sub_disp}</div> : null}

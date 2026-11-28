@@ -90,6 +90,8 @@ describe('P6.3 marks island', () => {
     // internal-only: grade headline + scored/100 sub-line, no percentage anywhere
     const internal = cards()[2];
     expect(internal.querySelector('.text-lg')!.textContent).toBe('A+');
+    // A+ is neutral; only O takes the academics blue, F the faint red
+    expect(internal.querySelector('.text-lg')!.className).not.toContain('acad-g');
     expect(internal.textContent).toContain('91/100');
     expect(internal.textContent).not.toContain('%');
   });
@@ -112,6 +114,21 @@ describe('P6.3 marks island', () => {
     expect(weak.textContent).toContain('Derived none · confirmed neither');
     expect(weak.querySelector('form[action="/marks/tag"] input[name="component"]')).toBeTruthy();
     expect(weak.querySelector('details')!.id).toBe('tag-21CSS201T-FT-I');
+  });
+
+  it('an O headline takes the academics tint, nothing else does', async () => {
+    const props = {
+      subjects: [
+        { code: '21LEM201T', title: 'Professional Ethics', scored_disp: '91', max_disp: '100',
+          head_disp: 'O', sub_disp: '91/100', grade: 'O', internal: true,
+          pct: 91, pct_disp: '91.0', outlier: false, components: [] },
+      ],
+    };
+    document.body.innerHTML = page(props);
+    await hydrateAll(document, Date.now() / 1000);
+    const head = cards()[0].querySelector('.text-lg')!;
+    expect(head.textContent).toBe('O');
+    expect(head.className).toContain('acad-g-o');
   });
 
   it('empty component list renders the neutral fallback, not a blank card', async () => {
