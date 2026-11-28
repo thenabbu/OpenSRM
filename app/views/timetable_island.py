@@ -28,7 +28,7 @@ def props(day_slots, grid, today):
     # Imported here, not at module top: timetable.py imports this module, so a
     # top-level import of that module from here is circular.
     from ..portal.parsers.timetable import DAY_ORDER
-    from .timetable import _title_case, _tt_att_sig
+    from .timetable import _now, _title_case, _tt_att_sig
 
     days = []
     for d in DAY_ORDER:
@@ -45,6 +45,11 @@ def props(day_slots, grid, today):
             if not sl:
                 continue
             sig = _tt_att_sig((sl.get("_att") or None))
+            now = _now()
+            now_mins = now.hour * 60 + now.minute
+            sm = int(s["start"][:2]) * 60 + int(s["start"][3:])
+            em = int(s["end"][:2]) * 60 + int(s["end"][3:])
+            live = d == today and sm <= now_mins < em
             rows.append({
                 "kind": "class",
                 "start": s["start"],
@@ -52,7 +57,7 @@ def props(day_slots, grid, today):
                 "code": sl["code"],
                 "name": _title_case(sl["name"]),
                 "location": sl.get("location", ""),
-                "live": d == today,
+                "live": live,
                 "sig": None if not sig else {"cls": sig["cls"], "num": sig["num"]},
             })
         days.append({"day": d, "short": d[:3], "rows": rows, "empty": not rows})

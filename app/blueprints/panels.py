@@ -21,7 +21,7 @@ from flask import jsonify
 from ..app import get_current_user
 from ..views import attendance_island, marks_island, timetable_island, tools_island
 from ..views.dashboard import dashboard_island_payload, panel_data
-from ..views.timetable import _day_slots, _tt_grid
+from ..views.timetable import _day_slots, _now, _tt_grid
 from . import FlatBlueprint
 
 bp = FlatBlueprint("panels", __name__)
@@ -96,7 +96,10 @@ def api_timetable():
         slots = _day_slots(gk)
         if slots is None:
             return None
-        return timetable_island.props(slots, _tt_grid(gk), None)
+        # the live-row marker is "this row is the period running now": the same
+        # today the page paints with, or every row hydrates as tt-row--now.
+        today = _now().strftime("%A")
+        return timetable_island.props(slots, _tt_grid(gk), today)
     return _panel(get, "no timetable yet — sync first")
 
 
